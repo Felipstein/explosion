@@ -133,9 +133,9 @@ void main(){
 
     // ---- pass final --------------------------------------------------
     this.shFinal = new Shader(gl, FS_VS, HEAD + COMMON + `
-uniform sampler2D uScene, uBloom, uStreak;
+uniform sampler2D uScene, uBloom, uStreak, uAdapt;
 uniform vec2 uRes;
-uniform float uExposure, uBloomStrength, uStreakStrength;
+uniform float uExposure, uBloomStrength, uStreakStrength, uUseAdapt;
 uniform float uCA, uVignette, uGrain, uTime, uSaturation, uContrast, uLift, uHuePreserve;
 out vec4 oCol;
 
@@ -162,7 +162,9 @@ void main(){
     col = sampleScene(uv, 0.0);
   }
 
-  col *= uExposure;
+  // fator da adaptação às explosões (exposure.js): 1 = exposição analítica
+  float adapt = uUseAdapt > 0.5 ? texelFetch(uAdapt, ivec2(0), 0).r : 1.0;
+  col *= uExposure * adapt;
 
   // ---- tonemap com preservação de matiz -------------------------------
   // ACES aplicado por canal dessatura highlights em direção ao branco: com
@@ -286,7 +288,9 @@ void main(){
       .set('uSaturation', P.saturation).set('uContrast', P.contrast).set('uLift', P.lift)
       .set('uHuePreserve', P.huePreserve ?? 0.35)
       .set('uTime', time)
-      .tex('uScene', sceneTex).tex('uBloom', this.mips[0].tex).tex('uStreak', this.streakTex);
+      .set('uUseAdapt', P.aeTex ? 1 : 0)
+      .tex('uScene', sceneTex).tex('uBloom', this.mips[0].tex).tex('uStreak', this.streakTex)
+      .tex('uAdapt', P.aeTex || this.mips[0].tex);
     drawFS(gl);
   }
 }

@@ -12,12 +12,13 @@ import { SSAO } from './ssao.js';
 import { ExplosionBake } from './bake.js';
 import { BlastInstances, MAGNITUDES, magnitudeOf } from './instances.js';
 import { InstanceSparks } from './sparks.js';
+import { AutoExposure } from './exposure.js';
 import { loadSettings, saveSettings, matchPreset, PRESETS, PRESET_NAMES, ITEMS, SCHEMA,
          bakeVramMB } from './settings.js';
 import { Camera } from './camera.js';
 import { buildBlackbodyLUT, uploadBlackbodyLUT } from './blackbody.js';
 import { Atmosphere } from './atmosphere.js';
-import { sunPosition, moonPosition, exposureForSun,
+import { sunPosition, moonPosition, exposureForSun, EXPOSURE_BASE,
          SUN_ILLUMINANCE, MOON_ILLUMINANCE, MOON_TINT } from './celestial.js';
 import { clamp, smoothstep } from './math.js';
 import { GPUProfiler } from './profiler.js';
@@ -90,6 +91,20 @@ export const ENV = {
   fireTauCap: 3.2,   // profundidade óptica máx. da sombra do fogo (e^-3.2 ≈ 4%)
   fogFireGain: 0.010,
   exposure: 10.0,   // derivada da elevação solar a cada frame
+  // Adaptação às explosões (exposure.js): fecha até aeMaxEV stops quando uma
+  // bola de fogo grande domina o quadro, rápido; reabre devagar.
+  autoExposure: true,
+  aeTarget: 1.4,      // luminância exposta alvo da média de potência
+  aePower: 3.0,       // p da média: clarão pequeno pesa pouco, grande pesa muito
+  aeClamp: 40.0,
+  aeMaxEVNight: 2.5,  // stops que ela pode fechar à noite (de dia só ~0.5); mais que isso
+                      // apagava o campo de batalha inteiro numa batalha noturna
+  aeAttack: 0.08,     // s
+  aeRelease: 1.60,    // s
+  // flash da detonação: pulso curto de luz na cena antes da exposição reagir
+  flashOn: true,
+  flashGain: 180.0,   // mesma unidade da curva de luz assada (pico ~150)
+  flashTau: 0.035,    // s de sequência
   bloomThreshold: 1.70,
   bloomKnee: 0.55,
   bloomClamp: 90.0,
@@ -163,6 +178,7 @@ class App {
       filter: gl.NEAREST, data: new Uint8Array([255, 255, 255, 255]),
     });
     this.sparks = new InstanceSparks(gl, this.bbTex);
+    this.ae = new AutoExposure(gl);
     // Bake + cena + instâncias. O bake sobrevive à troca de qualidade da
     // simulação ao vivo; só a opção "detalhe das explosões" o recria. NADA
     // de bake síncrono: o primeiro frame sai já, e o arsenal carrega (ou
@@ -501,6 +517,10 @@ class App {
     env.chromaticOn = S.chromatic;
     env.lightGain = S.lightGain;
     env.instLightOcc = S.smokeBlocksLight;
+    env.autoExposure = S.autoExposure;
+    env.flashOn = S.flash;
+    this.inst.params.flashGain = S.flash ? env.flashGain : 0;
+    this.inst.params.flashTau = env.flashTau;
     if (this.vol.params.volScale !== S.volScale) {
       this.vol.params.volScale = S.volScale;
       this._applyRenderScale(true);
@@ -932,6 +952,7 @@ class App {
       blasts: shaded, instLights: this.inst.lights(S.instLights),
       instShadows: S.instShadows ? this.inst.shadowCasters(this.cam, S.instShadows) : [],
       lightGain: S.lightGain, instLightOcc: env.instLightOcc,
+      flashGain: env.flashOn ? env.flashGain : 0, flashTau: env.flashTau,
       scorch: this.inst.scorchData(),
       bakeTex: this.bake.tex, bakeMacroTex: this.bake.macroTex,
       bakeFrames: this.bake.frames,
@@ -1002,6 +1023,21 @@ class App {
         aoFloor: env.aoFloor, aoDebug: env.aoDebug,
       });
     prof.end();
+
+    // ---- 5b. adaptação de exposição às explosões ------------------------
+    if (!this.skip.ae && env.autoExposure !== false) {
+      // Quanto ela pode fechar acompanha a escuridão do ambiente: de dia a
+      // bola de fogo quase não estoura e fechar a cena inteira a cada
+      // explosão de uma batalha seria um bombeamento constante; à noite
+      // (exposição ~8× a de dia) é onde o fogo vira mancha branca.
+      env.aeMaxEV = clamp(0.5 + Math.log2(env.exposure / EXPOSURE_BASE), 0.5, env.aeMaxEVNight);
+      this.ae.update(this.vol.volTarget.texs[0], env.exposure, Math.min(Math.max(realDt, 0), 0.1), env);
+      env.aeTex = this.ae.tex;
+    } else {
+      // desligada = exposição fixa exata, e o estado volta a 1 pra religar limpo
+      if (env.aeTex) this.ae.reset();
+      env.aeTex = null;
+    }
 
     // ---- 6. post ---------------------------------------------------------
     prof.begin('post');

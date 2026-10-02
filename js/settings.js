@@ -71,6 +71,11 @@ export const SCHEMA = [
       options: [[0.6, '60%'], [0.8, '80%'], [1, '100%'], [1.3, '130%'], [1.7, '170%']] },
   ] },
   { group: 'Pós-processo', items: [
+    { id: 'autoExposure', label: 'Exposição automática', apply: 'live',
+      hint: 'a câmera fecha ao clarão de uma bola de fogo grande e reabre devagar',
+      options: [[true, 'on'], [false, 'off']] },
+    { id: 'flash', label: 'Flash da detonação', apply: 'live',
+      options: [[true, 'on'], [false, 'off']] },
     { id: 'bloom', label: 'Bloom', apply: 'live', options: [[true, 'on'], [false, 'off']] },
     { id: 'grain', label: 'Granulação de filme', apply: 'live', options: [[true, 'on'], [false, 'off']] },
     { id: 'chromatic', label: 'Aberração cromática', apply: 'live', options: [[true, 'on'], [false, 'off']] },
@@ -84,25 +89,25 @@ export const PRESETS = {
     bakeRes: 48, lightCache: 0, msOctaves: 1, instSteps: 32, sparks: 0.25, liveSim: 64,
     renderScale: 0.67, volScale: 0.5, dynamicRes: true, targetFps: 60,
     ao: 0, instShadows: 0, smokeBlocksLight: false, instLights: 4, lightGain: 1,
-    bloom: true, grain: false, chromatic: false,
+    bloom: true, grain: false, chromatic: false, autoExposure: true, flash: true,
   },
   media: {
     bakeRes: 64, lightCache: 2, msOctaves: 2, instSteps: 44, sparks: 0.5, liveSim: 96,
     renderScale: 0.8, volScale: 0.6, dynamicRes: true, targetFps: 60,
     ao: 0.55, instShadows: 2, smokeBlocksLight: false, instLights: 4, lightGain: 1,
-    bloom: true, grain: true, chromatic: true,
+    bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   alta: {
     bakeRes: 64, lightCache: 6, msOctaves: 3, instSteps: 56, sparks: 1, liveSim: 128,
     renderScale: 0.88, volScale: 0.72, dynamicRes: true, targetFps: 60,
     ao: 0.8, instShadows: 4, smokeBlocksLight: false, instLights: 8, lightGain: 1,
-    bloom: true, grain: true, chromatic: true,
+    bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   ultra: {
     bakeRes: 96, lightCache: 8, msOctaves: 3, instSteps: 72, sparks: 1, liveSim: 160,
     renderScale: 1, volScale: 1, dynamicRes: true, targetFps: 60,
     ao: 1, instShadows: 4, smokeBlocksLight: true, instLights: 8, lightGain: 1,
-    bloom: true, grain: true, chromatic: true,
+    bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
 };
 export const PRESET_NAMES = { baixa: 'baixa', media: 'média', alta: 'alta', ultra: 'ultra' };

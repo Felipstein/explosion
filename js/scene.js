@@ -693,6 +693,11 @@ void main(){
       org.set(b.fluid.domainOrigin, i * 3);
       fpos.set(f.pos, i * 3);
       fcol.set(f.color, i * 3);
+      // flash da detonação (mesmo pulso das instâncias), pela idade do slot
+      if (env.flashGain > 0 && b.age < 8 * env.flashTau) {
+        const k = env.flashGain * Math.exp(-b.age / env.flashTau);
+        fcol[i * 3] += k; fcol[i * 3 + 1] += k * 0.86; fcol[i * 3 + 2] += k * 0.64;
+      }
       // opção "brilho das explosões" vale também pra simulação ao vivo
       const g = env.lightGain ?? 1;
       fcol[i * 3] *= g; fcol[i * 3 + 1] *= g; fcol[i * 3 + 2] *= g;

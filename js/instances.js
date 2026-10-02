@@ -788,6 +788,14 @@ void main(){
       L.idx = idx;                 // identidade: o sombreador pula a si mesmo
       L.xform = [o.pos[0], o.pos[1], o.pos[2], o.scale];
       L.frame = (o.variant || 0) * this.bake.frames + this.bake.frameOfTime(o.t);
+      // Flash da detonação: pulso curto (~35 ms de sequência) antes da curva
+      // assada subir. Ilumina a cena inteira por um instante — o "clarão" que
+      // a câmera vê antes de a exposição reagir.
+      const fg = this.params.flashGain || 0;
+      if (fg > 0 && o.t < 8 * this.params.flashTau) {
+        const k = fg * o.scale * o.scale * Math.exp(-o.t / this.params.flashTau);
+        L.color[0] += k; L.color[1] += k * 0.86; L.color[2] += k * 0.64;
+      }
       L.power = L.color[0] + L.color[1] + L.color[2];
       L.s2 = o.scale * o.scale;    // raio da fonte extensa (ver scene.js)
       return L;
