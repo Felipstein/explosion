@@ -133,9 +133,29 @@ void main(){
 
     // ---- pass final --------------------------------------------------
     this.shFinal = new Shader(gl, FS_VS, HEAD + COMMON + `
-uniform sampler2D uScene, uBloom, uStreak, uAdapt;
+uniform sampler2D uScene, uBloom, uStreak, uAdapt, uEnvLut;
 uniform vec2 uRes;
-uniform float uExposure, uBloomStrength, uStreakStrength, uUseAdapt;
+uniform float uExposure, uBloomStrength, uStreakStrength, uUseAdapt, uPurkinje;
+
+// ---- Purkinje shift (visão mesópica/escotópica) -------------------------
+// Patry, "Real-Time Samurai Cinema" (Ghost of Tsushima, SIGGRAPH 2021),
+// sobre Cao et al. 2008. No escuro os bastonetes, que enxergam mais o
+// azul-verde e usam as mesmas vias dos cones, somam um sinal próprio: a cena
+// fica mais clara nos escuros, azulada e dessaturada; com luz o ganho dos
+// cones cai e o efeito some sozinho. Matrizes geradas por tools/purkinje.py
+// (cones Smith-Pokorny, V'(λ) CIE 1951, D65, espectros de Smits).
+//   PURK_G: RGB → (0.33/m)(q_LMS + k q_R)    PURK_R: RGB → q_R
+//   PURK_D: M̂⁻¹ A⁻¹ (K/S) B diag(k) diag(m)⁻¹
+const mat3 PURK_G = mat3(0.147629, 0.0751296, 0.00385728, 0.418795, 0.691496, 0.0537957, 0.0720858, 0.145298, 0.136669);
+const vec3 PURK_R = vec3(0.0107999, 0.622593, 0.39211);
+const mat3 PURK_D = mat3(8.2769, 2.28736, 16.2269, -9.45385, 7.05768, 16.0246, 0.241254, -0.233032, 1.50034);
+// s converte a radiância do render pra unidade de resposta dos cones (inclui
+// a escala física da hora); vem do texel 4 da LUT de ambiente
+vec3 purkinjeShift(vec3 c, float s){
+  c = max(c, vec3(0.0));
+  vec3 g = inversesqrt(1.0 + s * (PURK_G * c));
+  return max(c + (PURK_D * g) * dot(PURK_R, c), vec3(0.0));
+}
 uniform float uCA, uVignette, uGrain, uTime, uSaturation, uContrast, uLift, uHuePreserve;
 out vec4 oCol;
 
@@ -162,9 +182,14 @@ void main(){
     col = sampleScene(uv, 0.0);
   }
 
+  // exposição analítica da hora + escala física (atmosphere.js, texel 4)
+  vec4 ex = texelFetch(uEnvLut, ivec2(4, 0), 0);
+  // na radiância da cena, antes da exposição: é a luz que chega no olho
+  if (uPurkinje > 0.5) col = purkinjeShift(col, ex.w);
+
   // fator da adaptação às explosões (exposure.js): 1 = exposição analítica
   float adapt = uUseAdapt > 0.5 ? texelFetch(uAdapt, ivec2(0), 0).r : 1.0;
-  col *= uExposure * adapt;
+  col *= uExposure * ex.x * adapt;
 
   // ---- tonemap com preservação de matiz -------------------------------
   // ACES aplicado por canal dessatura highlights em direção ao branco: com
@@ -280,7 +305,8 @@ void main(){
       .set('uRes', [w, h])
       // bloom desligado: a pirâmide não é reconstruída e guarda o quadro
       // antigo, então a força tem que ir a zero aqui
-      .set('uExposure', P.exposure)
+      .set('uExposure', P.exposureBias ?? 1)
+      .set('uPurkinje', P.purkinje === false ? 0 : 1)
       .set('uBloomStrength', P.bloomOn === false ? 0 : P.bloomStrength)
       .set('uStreakStrength', P.bloomOn === false ? 0 : P.streakStrength)
       .set('uCA', P.chromaticOn === false ? 0 : P.chromatic).set('uVignette', P.vignette)
@@ -290,7 +316,8 @@ void main(){
       .set('uTime', time)
       .set('uUseAdapt', P.aeTex ? 1 : 0)
       .tex('uScene', sceneTex).tex('uBloom', this.mips[0].tex).tex('uStreak', this.streakTex)
-      .tex('uAdapt', P.aeTex || this.mips[0].tex);
+      .tex('uAdapt', P.aeTex || this.mips[0].tex)
+      .tex('uEnvLut', P.envLut);
     drawFS(gl);
   }
 }

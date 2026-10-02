@@ -1,4 +1,4 @@
-# Estado atual — 01/10/2026 (rev. 2)
+# Estado atual — 02/10/2026
 
 Rodar: `python3 -m http.server 8129` na raiz e abrir http://localhost:8129
 (ou o preview `explosion` do `.claude/launch.json`).
@@ -410,6 +410,44 @@ Ferramentas: `inst.params.joint` e `inst.params.debug`.
 
 Git: `v1-antes-composicao-conjunta` (estado anterior) e
 `v2-composicao-conjunta`.
+
+## Noite (Ghost of Tsushima) + sombras da luz do fogo (02/10, noite) — tag v4-noite-sombras
+
+Aprovado pelo usuário. Detalhes em ARCHITECTURE.md §2c
+e §3.
+
+- Sombra "atrasada": o mapa de 145° pra baixo só cobria ~7 m em volta de uma
+  bola de fogo baixa → 2 cubos de distância radial. Presente desde o quadro 1.
+- Noite invisível: o céu não espalhava a Lua, a exposição da noite deixava o
+  chão ~6.5 stops abaixo do dia e o "lift" azul era um Purkinje falso. Agora:
+  céu de luar na mesma atmosfera, exposição por iluminância física
+  (lua cheia alta ≈ −2.75 stops na tela), Purkinje shift do Ghost calibrado
+  nos slides, luar fisicamente avermelhado.
+- A noite visível expôs o fogo: o chão perto da explosão (~900× o luar)
+  estourava a tela de branco por >1 s. O medidor da adaptação passou a ver as
+  superfícies (não só o volume) e pode fechar até a exposição do dia.
+- Granulado/malha nas sombras: IGN sem TAA + penumbra enorme. VSM testado e
+  descartado (perde a sombra); ficou PCSS + PCF bilinear + filtro bilateral
+  em tela (`js/shadowdenoise.js`).
+- Sombra sumindo à noite quando o fogo fica vermelho (achado pelo usuário):
+  o critério de quem ganha cubo era potência > 2, absoluto. Agora é o
+  contraste da sombra contra a luz ambiente da hora (≥ 3%). À noite o cubo
+  fica ~4.5 s em vez de ~1.9 s (o custo dura mais, junto).
+- Asset r64 re-assado (o hash cobre glsl.js/volumeRender.js); r48/r80/r96
+  re-assam ao trocar de qualidade.
+
+Ferramentas: `captures/_harness.js` (importar no console) — `__runSeq`,
+`__sheet`, `__still`, `__env4` (texel 4: exposição, lux, E_render, escala do
+Purkinje), `__ae`, `__hdr`. `env.purkinje` liga/desliga o shift.
+
+Em aberto, visto nos testes:
+- Faíscas brancas na face dos pilares sob luz do fogo: relevo procedural do
+  material (aparece com o cubo desligado) — aliasing de normal, não sombra.
+- Crepúsculo (17.3–18h) bem saturado laranja → magenta: é o modelo
+  atmosférico (ozônio) agora visível; falta adaptação cromática (white
+  balance por hora, como o Ghost faz).
+- Os 4 primeiros quadros de uma explosão perto são o clarão branco (ataque
+  da adaptação 0.08 s).
 
 ## Ainda não construído
 

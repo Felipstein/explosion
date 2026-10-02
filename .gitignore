@@ -2,3 +2,4 @@
 captures/
 .DS_Store
 __pycache__/
+tools/.purkinje-data/

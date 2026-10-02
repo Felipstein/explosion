@@ -50,15 +50,6 @@ export function moonPosition(hours, latDeg, day) {
 }
 
 /**
- * Exposição analítica a partir da elevação solar.
- *
- * A iluminância real cai ~6 ordens de grandeza do meio-dia à noite fechada.
- * Compensar isso por inteiro deixaria a noite com a mesma aparência do dia
- * (e a explosão viraria um borrão branco). Cinema não faz isso: empurra
- * 4–5 stops e deixa a noite ler como noite. É o que esta curva faz —
- * fisicamente motivada no formato, mas limitada no alcance.
- */
-/**
  * Calibração de exposição. Com a iluminância solar normalizada em 1.0 no topo
  * da atmosfera, uma superfície de albedo A sob sol pleno tem radiância
  * A·E·cosθ/π — pro concreto da cena (A≈0.11) ao meio-dia isso dá ~0.017.
@@ -68,26 +59,59 @@ export function moonPosition(hours, latDeg, day) {
  */
 export const EXPOSURE_BASE = 10.0;
 
-export function exposureForSun(sunAltDeg, moonAltDeg, bias = 1) {
-  const e = sunAltDeg;
-  // luz diurna: satura rápido acima de ~10°
-  const day = Math.max(0, Math.sin(Math.max(e, 0) * DEG)) ** 0.42;
-  // crepúsculo: decai suave até -18° (fim do crepúsculo astronômico)
-  const twi = Math.exp(-Math.pow(Math.max(-e, 0) / 7.5, 1.35));
-  // piso noturno, reforçado pela lua acima do horizonte
-  const moon = 0.055 + 0.085 * Math.max(0, Math.sin(Math.max(moonAltDeg, 0) * DEG));
-  const level = Math.max(day, twi * 0.85, moon);
-  // mapeia nível de luz → multiplicador de exposição (1× dia, ~14× noite)
-  return bias * EXPOSURE_BASE * (1.0 / Math.pow(Math.max(level, 0.045), 0.80));
-}
+/**
+ * Exposição analítica (calculada na GPU, atmosphere.js texel 4):
+ *
+ *   exposição = BASE · (E_ref / E_render) · (E_lux / E_ref_lux)^α
+ *
+ * O primeiro fator é compensação total — a câmera mede a luz incidente e
+ * tudo fica igual ao meio-dia. O segundo devolve parte da diferença: o brilho
+ * exibido cai como E^α com a iluminância física. É o papel da "Exposure
+ * Compensation Curve" (compensação por EV100) do Unreal, e o "day-for-night"
+ * do cinema, que subexpõe 2–2.5 stops. O alvo é a imagem FINAL: o pé da
+ * curva ACES ainda escurece os escuros (cinza médio −2.3 stops na cena vira
+ * −3.1 na tela), e o Purkinje devolve ~0.35 stop. Com α = EXPOSURE_ALPHA o
+ * chão sob lua cheia alta sai ~2.75 stops abaixo do meio-dia na tela — entre
+ * o day-for-night (2–2.5) e Ghost of Tsushima (~4, medido nos slides), mais
+ * claro porque num RTS a leitura das unidades vem primeiro (StarCraft II).
+ *
+ * E_ref é escolhida pra que o meio-dia da cena (sol a 43°, E_render 0.656
+ * medido na LUT) tenha a mesma exposição da curva anterior (11.4) — o dia
+ * aprovado fica igual. α: meio-dia 84 klux → lua cheia alta 0.29 lux são
+ * 18.1 stops físicos; 2.29 stops na cena / 18.1 = 0.1265.
+ */
+export const EXPOSURE_REF = 0.768;
+export const EXPOSURE_ALPHA = 0.1265;
 
 /** Iluminância solar normalizada (1.0 = topo da atmosfera). */
 export const SUN_ILLUMINANCE = 1.0;
+/** a mesma coisa em lux (constante solar luminosa) */
+export const SUN_LUX = 128000;
 
 /**
- * Iluminância lunar. A real é ~2.5e-6 da solar (19 stops abaixo) — com isso
- * a cena noturna seria matematicamente invisível. Este valor é o "luar de
- * cinema": exagerado de propósito, e exposto como parâmetro.
+ * Lua cheia. A real tem magnitude −12.74 contra −26.74 do Sol: 14 magnitudes,
+ * 10^(−5.6) ≈ 2.5e-6 da iluminância solar — 0.32 lux no topo da atmosfera,
+ * ~0.25–0.3 lux no chão com ela alta. É esse valor que a exposição e a visão
+ * noturna enxergam (MOON_PHYS_RATIO).
+ *
+ * O render usa uma Lua mais forte (MOON_ILLUMINANCE) por dois motivos: a
+ * precisão do half-float (a luz física cairia nos subnormais) e o contraste
+ * fogo/noite — com o luar físico a explosão seria ~10⁵× mais forte que o
+ * ambiente e o campo de batalha sumiria toda vez que a câmera fechasse.
+ * Far Cry 5 chegou na mesma conclusão (valores físicos dão contraste demais).
  */
+export const MOON_PHYS_RATIO = 2.5e-6;
 export const MOON_ILLUMINANCE = 2.2e-3;
-export const MOON_TINT = [0.62, 0.74, 1.0];
+
+/**
+ * Cor do luar: luz do Sol refletida por um solo levemente avermelhado.
+ * Índice de cor B−V da Lua cheia 0.92 contra 0.656 do Sol (0.26 mag mais
+ * vermelha); com refletância linear em λ que reproduz isso, integrada contra
+ * D65 e os cones (tools/purkinje.py), a cor sai [1.165, 0.976, 0.753].
+ * O azul que o olho vê no luar NÃO é do luar: é o Purkinje shift (post.js).
+ * Jensen et al. 2001, "A Physically-Based Night Sky Model", faz o mesmo.
+ */
+export const MOON_TINT = [1.165, 0.976, 0.753];
+
+/** céu sem lua (estrelas + airglow), lux — piso físico da noite */
+export const NIGHT_GLOW_LUX = 0.002;

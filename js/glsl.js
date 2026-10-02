@@ -193,7 +193,11 @@ vec3 envSunColor(){ return texelFetch(uEnvLut, ivec2(3, 0), 0).rgb; }  // disco 
 export const ATMOS = `
 uniform sampler2D uSkyView;
 uniform vec3 uSunDir, uMoonDir;
-uniform float uSkyTime, uStarBright, uNightGlow, uMoonBright;
+uniform float uSkyTime, uStarBright, uNightGlow, uMoonBright, uMoonBoost;
+// As fontes da noite (Lua, estrelas, airglow, Via Láctea) são definidas em
+// cd/m² físicos; uStarBright/uNightGlow/uMoonBright já trazem a conversão pra
+// unidade do render com o mesmo reforço da Lua (celestial.js), então entre
+// elas as razões são as reais.
 
 // mesma parametrização usada pra CONSTRUIR a LUT: azimute relativo ao sol
 // (a atmosfera é simétrica em volta dele) e zênite com distorção sqrt pra
@@ -229,7 +233,9 @@ vec3 starField(vec3 dir){
   // temperatura de cor: azuladas e alaranjadas
   float ct = hash11(mag * 53.0);
   vec3 tint = mix(vec3(1.00, 0.78, 0.60), vec3(0.72, 0.84, 1.00), smoothstep(0.25, 0.8, ct));
-  return tint * core * tw * 26.0;
+  // a mais forte ≈ magnitude −1 (Sírius): 5.3e-6 lux espalhados na pegada
+  // do núcleo (~8e-8 sr) dão ~65 cd/m²
+  return tint * core * tw * 65.0;
 }
 
 // ---- Via Láctea: banda com faixas de poeira --------------------------
@@ -240,20 +246,26 @@ vec3 milkyWay(vec3 dir){
   if (band <= 0.0) return vec3(0.0);
   float glow = 0.45 + 0.55 * fbm(dir * 5.5, 4, 2.3, 0.55);
   float dust = 1.0 - 0.75 * smoothstep(0.35, 0.75, billow(dir * 9.0 + 3.1, 4, 2.4, 0.5));
-  return vec3(0.72, 0.76, 0.95) * band * glow * dust * 0.055;
+  // trecho mais brilhante ~20.5 mag/arcsec² ≈ 4e-4 cd/m²
+  return vec3(0.94, 0.99, 1.24) * band * glow * dust * 4.0e-4;
 }
 
 // céu completo pro passe de fundo
 vec3 skyRadiance(vec3 dir){
-  vec3 col = skyBase(dir);
-  // estrelas somem sozinhas quando o céu clareia — sem curva de fade manual
-  // o céu diurno tem radiância ~2e-2 aqui; 2500 garante que as estrelas
-  // sumam completamente de dia e voltem sozinhas no crepúsculo
-  float wash = 1.0 / (1.0 + luma(col) * 2500.0);
+  vec4 sv = texture(uSkyView, skyViewUV(dir));
+  vec3 col = sv.rgb;
+  // As fontes da noite estão reforçadas como a Lua; o céu iluminado pelo Sol
+  // não. Pra que o contraste estrela/céu seja o físico também no crepúsculo,
+  // elas são atenuadas pela razão céu-do-render / céu-físico (o alfa da LUT é
+  // a parte lunar). Sem curva de fade manual: somem sozinhas de dia.
+  float skyM = sv.a, skyS = max(luma(sv.rgb) - sv.a, 0.0);
+  float wash = (skyS + skyM + 1e-12) / (skyS * max(uMoonBoost, 1.0) + skyM + 1e-12);
   if (wash > 0.004 && dir.y > -0.06){
     float h = smoothstep(-0.06, 0.08, dir.y);
     col += (starField(dir) + milkyWay(dir)) * wash * h * uStarBright;
-    col += vec3(0.0022, 0.0032, 0.0050) * wash * h * uNightGlow;  // airglow
+    // céu natural sem lua (airglow + luz zodiacal) ~2e-4 cd/m², cor
+    // levemente quente (B−V ≈ 0.9) — o azul é do Purkinje
+    col += vec3(1.165, 0.976, 0.753) * 2.0e-4 * wash * h * uNightGlow;
   }
   return col;
 }
@@ -277,11 +289,12 @@ vec3 celestialDisks(vec3 dir){
     float rr = clamp(length(uv), 0.0, 1.0);
     float limb = sqrt(max(1.0 - rr * rr, 0.0)) * 0.45 + 0.55;
     float maria = 0.76 + 0.24 * fbm(vec3(uv * 2.2, 0.0), 4, 2.3, 0.55);
-    col += vec3(1.0, 0.97, 0.92) * moonDisk * limb * maria * uMoonBright;
+    // superfície da lua cheia ~2500 cd/m², cor do luar (B−V 0.92)
+    col += vec3(1.165, 0.976, 0.753) * 2500.0 * moonDisk * limb * maria * uMoonBright;
   }
-  // halo atmosférico em volta da lua
-  col += vec3(0.55, 0.68, 1.0) * pow(max(dm, 0.0), 420.0) * uMoonBright * 0.030;
-  col += vec3(0.45, 0.58, 0.95) * pow(max(dm, 0.0), 24.0) * uMoonBright * 0.0022;
+  // auréola estreita (< 2°, abaixo da resolução da LUT); a larga já vem do
+  // espalhamento Mie da própria LUT
+  col += vec3(1.165, 0.976, 0.753) * 75.0 * pow(max(dm, 0.0), 420.0) * uMoonBright;
   return col;
 }
 `;

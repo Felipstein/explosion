@@ -116,13 +116,58 @@ A troca acontece onde ambas as irradiâncias já são ~0, então não aparece. O
 shadow map direcional segue a luz-chave e só é re-renderizado quando ela
 realmente muda de direção.
 
-**Exposição analítica**, derivada da elevação solar — nunca auto-exposure,
-que pulsaria junto com a explosão. A iluminância real cai ~6 ordens de
-grandeza do meio-dia à noite; compensar tudo faria a noite parecer dia.
-A curva empurra ~4 stops e deixa a noite ler como noite, que é o que cinema
-faz. A emissão do fogo fica em unidades físicas e *não* é reescalada, então
-de noite a bola de fogo estoura mais — exatamente como uma câmera exposta
-pro luar se comportaria.
+**Exposição analítica**, calculada na GPU (texel 4 da LUT de ambiente) a
+partir da iluminância da hora — nunca da imagem, que pulsaria junto com a
+explosão. Ver §2c.
+
+## 2c. Noite: luar, visão noturna e exposição
+
+Seguindo Ghost of Tsushima (Patry, *Real-Time Samurai Cinema*, SIGGRAPH 2021
+Advances) — a noite tem que *parecer* noite e ainda assim dar pra jogar.
+
+- **Céu de luar físico**: a sky-view espalha também a luz da Lua, na mesma
+  atmosfera, com a fase dela. A Lua é a antípoda do Sol (lua cheia), então
+  fica no mesmo plano vertical e a simetria azimutal da LUT continua valendo.
+  O alfa da LUT guarda a parte lunar (luminância) — o ambiente usa pra
+  separar luz solar de luar.
+- **Duas escalas**: o render usa uma Lua ~880× mais forte que a real
+  (`MOON_ILLUMINANCE`), por precisão de half-float e pra conter o contraste
+  fogo/noite. Estrelas, airglow, Via Láctea e o disco lunar são definidos em
+  cd/m² físicos e entram com o MESMO reforço, então entre si as razões são as
+  reais; o céu solar do crepúsculo não é reforçado, e as estrelas são
+  atenuadas pela razão céu-render/céu-físico pra aparecerem na hora certa.
+  A exposição e a visão noturna enxergam a escala física: lua cheia
+  2.5e-6 do Sol (magnitudes −12.74/−26.74) ≈ 0.29 lux; céu sem lua 0.002 lux.
+- **Cor do luar**: luz solar refletida por um solo levemente avermelhado
+  (B−V 0.92 contra 0.656 do Sol) → [1.165, 0.976, 0.753]. O azul que o olho vê
+  não é do luar, é do Purkinje (Jensen et al. 2001 faz o mesmo).
+- **Exposição**: `BASE · (E_ref/E_render) · (E_lux/E_ref_lux)^α`. O primeiro
+  fator é compensação total (medidor de luz incidente); o segundo devolve
+  parte da diferença — o brilho exibido cai como E^α (papel da Exposure
+  Compensation Curve do Unreal / day-for-night do cinema). E_ref fixa o
+  meio-dia igual à curva antiga; α = 0.1265 põe o chão sob lua cheia alta
+  ~2.75 stops abaixo do meio-dia NA TELA (o pé do ACES escurece os escuros
+  além da cena; o Purkinje devolve ~0.35 stop). Ghost fica ~4 stops (medido
+  nos slides); num RTS a leitura vem antes.
+- **Purkinje shift** (`post.js`, antes da exposição): no escuro os bastonetes
+  somam um sinal azul-esverdeado pelas vias dos cones — a cena clareia nos
+  escuros, azula e dessatura; com luz o ganho dos cones cai e o efeito some
+  sozinho (≥400 lux: nada). Modelo de Cao et al. 2008 como o Patry implementa;
+  matrizes geradas por `tools/purkinje.py` a partir de dados espectrais
+  (cones Smith-Pokorny, V'(λ) CIE 1951, D65, espectros de Smits/pbrt). As
+  constantes m do slide batem com os picos de Smith-Pokorny normalizados em
+  trolands (0.6372/0.3920), o que fixou a normalização. A escala absoluta foi
+  calibrada contra as capturas do slide 173 a 0.05 lux: direção do desvio
+  [−0.03, 0.26, 0.97] contra [0.01, 0.16, 0.99] medido; ganhos cinza 1.61 =
+  1.61, folhagem amarela 1.39 ≈ 1.42, grama 1.85 ≈ 1.75.
+- **Adaptação às explosões** (`exposure.js`): o medidor vê as superfícies
+  (com a luz do fogo nelas) e o volume, nunca céu/sol/lua — o "luminância só
+  quando há altas luzes" do Ghost. Média de potência p=0.5 (entre a
+  logarítmica do medidor de câmera e a aritmética: explosão pequena e longe
+  quase não pesa); alvo 0.45, acima de qualquer cena sem explosão (0.03–0.29
+  medido). À noite ela pode fechar até a exposição do dia (+0.5 EV): o chão a
+  8 m de uma bola de fogo recebe ~160 klux, mais que o meio-dia — com o
+  limite antigo de 2.5 EV a tela inteira estourava de branco por >1 s.
 
 ## 3. Cena e integração de luz
 
@@ -140,6 +185,24 @@ pro luar se comportaria.
   render em vez de sombra. Precisa ser envolvente e respeitar o shadow map da
   geometria — a versão uniforme acendia todas as faces e os props pareciam
   emissivos.
+- **Sombra dos props pra luz do fogo**: 2 cubos de distância radial (R32F
+  512²) compartilhados entre as luzes mais fortes — a bola de fogo nasce rente
+  ao chão e precisa enxergar o horizonte (o mapa de 145° pra baixo cobria só
+  ~7 m e a sombra só aparecia quando o fogo subia). PCSS de fonte extensa
+  (raio da bola de fogo) com PCF bilinear manual (o R32F não filtra). A
+  penumbra é larguíssima e sem TAA o PCSS granula; VSM pré-filtrado foi
+  testado e não serve (com kernel desse tamanho o chão distante puxa a média
+  dos momentos pra trás do receptor e a sombra some). Então o fator é filtrado
+  em espaço de tela (`shadowdenoise.js`, bilateral por profundidade e normal,
+  como a light attenuation buffer do Unreal): a cena grava por cubo a luz que
+  ele multiplica (RGB) e o fator ruidoso (A), e o composite faz
+  `cena += L·(filtrado − ruidoso)` — exato na cor. 8+8 amostras; ~1.9 ms com
+  uma luz a 983×597.
+  Quem ganha cubo: as luzes mais fortes cuja sombra ainda é VISÍVEL contra o
+  ambiente — contraste E_f/(E_f + E_amb) ≥ ~3% (E_f a 5 m, E_amb lida da LUT
+  de ambiente por PBO assíncrono). O limiar absoluto antigo (potência > 2)
+  desligava a sombra à noite assim que o fogo ficava vermelho, com ele ainda
+  ~100× mais forte que o luar.
 - **Sombra volumétrica na cena**: cada pixel da cena marcha em direção ao fogo
   através do volume de densidade → sombra suave, gigante e em movimento no
   chão. Idem para o sol via `lightVol`.

@@ -291,6 +291,10 @@ void main(){
     // cheio. É o que impede halo de fumaça em cima das silhuetas.
     this.shComposite = new Shader(gl, FS_VS, HEAD + COMMON + ENVLUT + ATMOS + `
 uniform sampler2D uScene, uVol, uVolAux, uDepth, uHalfDepth, uAO, uSceneNrm;
+// sombra do fogo filtrada (shadowdenoise.js): a cena gravou a luz de cada
+// cubo (rgb) e o fator ruidoso (a); aqui o fator vira o filtrado
+uniform sampler2D uFireL0, uFireL1, uFireMask;
+uniform float uFireMaskOn;
 uniform mat4 uInvViewProj;
 uniform vec3 uCamPos;
 uniform vec2 uRes, uHalfRes;
@@ -350,6 +354,11 @@ void main(){
   }
   vec2 suv = clamp(uv + refr, vec2(0.001), vec2(0.999));
   vec3 scene = texture(uScene, suv).rgb;
+  if (uFireMaskOn > 0.5){
+    vec4 l0 = texture(uFireL0, suv), l1 = texture(uFireL1, suv);
+    vec2 F = texture(uFireMask, suv).rg;
+    scene = max(scene + l0.rgb * (F.r - l0.a) + l1.rgb * (F.g - l1.a), vec3(0.0));
+  }
 
   // ---- oclusão de ambiente, aplicada SÓ na parcela indireta ------------
   if (uAODebug > 0.5){ oCol = vec4(vec3(texture(uAO, suv).r), 1.0); return; }
@@ -706,7 +715,10 @@ void main(){
       .tex('uVolAux', this.volTarget.texs[1]).tex('uDepth', depthTex)
       .tex('uHalfDepth', this.halfDepth.tex)
       .tex('uSkyView', env.skyView).tex('uEnvLut', env.envLut)
-      .tex('uAO', env.ao).tex('uSceneNrm', env.sceneNrm);
+      .tex('uAO', env.ao).tex('uSceneNrm', env.sceneNrm)
+      .set('uFireMaskOn', env.fireMask ? 1 : 0)
+      .tex('uFireL0', env.fireL0 || env.sceneNrm).tex('uFireL1', env.fireL1 || env.sceneNrm)
+      .tex('uFireMask', env.fireMask || env.sceneNrm);
     dst.bind(); drawFS(gl);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }

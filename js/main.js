@@ -9,6 +9,7 @@ import { Scene } from './scene.js';
 import { VolumeRenderer } from './volumeRender.js';
 import { Post } from './post.js';
 import { SSAO } from './ssao.js';
+import { ShadowDenoise } from './shadowdenoise.js';
 import { ExplosionBake } from './bake.js';
 import { BlastInstances, MAGNITUDES, magnitudeOf } from './instances.js';
 import { InstanceSparks } from './sparks.js';
@@ -18,8 +19,9 @@ import { loadSettings, saveSettings, matchPreset, PRESETS, PRESET_NAMES, ITEMS, 
 import { Camera } from './camera.js';
 import { buildBlackbodyLUT, uploadBlackbodyLUT } from './blackbody.js';
 import { Atmosphere } from './atmosphere.js';
-import { sunPosition, moonPosition, exposureForSun, EXPOSURE_BASE,
-         SUN_ILLUMINANCE, MOON_ILLUMINANCE, MOON_TINT } from './celestial.js';
+import { sunPosition, moonPosition, EXPOSURE_BASE, EXPOSURE_REF, EXPOSURE_ALPHA,
+         SUN_ILLUMINANCE, SUN_LUX, MOON_ILLUMINANCE, MOON_PHYS_RATIO, MOON_TINT,
+         NIGHT_GLOW_LUX } from './celestial.js';
 import { clamp, smoothstep } from './math.js';
 import { GPUProfiler } from './profiler.js';
 import { contactSheet, showSheet, saveSheet, fieldSheet, heroShot } from './contactsheet.js';
@@ -90,18 +92,26 @@ export const ENV = {
   fireFill: 0.085,   // espalhamento múltiplo da luz do fogo (sem sombra)
   fireTauCap: 3.2,   // profundidade óptica máx. da sombra do fogo (e^-3.2 ≈ 4%)
   fogFireGain: 0.010,
-  exposure: 10.0,   // derivada da elevação solar a cada frame
+  // exposição analítica: calculada na GPU a partir da iluminância da hora
+  // (atmosphere.js texel 4, curva em celestial.js); exposureBias multiplica
+  expAlpha: EXPOSURE_ALPHA,
+  // Purkinje shift (post.js): visão de bastonetes no escuro, Ghost of Tsushima
+  purkinje: true,
+  purkS: 1.0e5,       // resposta dos cones por cd/m², calibrada no slide 173 do Patry
   // Adaptação às explosões (exposure.js): fecha até aeMaxEV stops quando uma
   // bola de fogo grande domina o quadro, rápido; reabre devagar.
   autoExposure: true,
-  aeTarget: 1.4,      // luminância exposta alvo da média de potência
-  aePower: 3.0,       // p da média: clarão pequeno pesa pouco, grande pesa muito
-  aeClamp: 40.0,
-  aeMaxEVNight: 2.5,  // stops que ela pode fechar à noite (de dia só ~0.5); mais que isso
-                      // apagava o campo de batalha inteiro numa batalha noturna
+  aeTarget: 0.45,     // limiar: as cenas sem explosão medem 0.03–0.29 (pôr do sol);
+                      // o chão perto de uma bola de fogo recebe ~1 stop a mais
+                      // que ao meio-dia, e é nesse nível que ele assenta
+  aePower: 0.5,       // p da média: explosão pequena e longe quase não pesa
+  aeClamp: 1e5,       // sem teto: o céu já fica fora do medidor
+  aeExpDay: EXPOSURE_BASE * 1.14,  // exposição do meio-dia (11.4)
+  aeMaxEV: 8.0,       // trava de segurança; o alcance real vem da exposição da hora
   aeAttack: 0.08,     // s
   aeRelease: 1.60,    // s
   // flash da detonação: pulso curto de luz na cena antes da exposição reagir
+  fireRad: 3.5,       // raio da fonte extensa da explosão ao vivo (m), pras sombras
   flashOn: true,
   flashGain: 180.0,   // mesma unidade da curva de luz assada (pico ~150)
   flashTau: 0.035,    // s de sequência
@@ -117,7 +127,7 @@ export const ENV = {
   huePreserve: 0.45,  // quanto da crominância volta sobre o highlight
   saturation: 1.16,
   contrast: 1.06,
-  lift: 0.30,
+  lift: 0.0,          // o "lift" azul das sombras era um Purkinje falso; o de verdade está no post
   timeScale: 1.0,
   adaptive: true,     // resolução dinâmica
   maxClickRange: 260, // m — além disso o clique é ignorado
@@ -170,6 +180,7 @@ class App {
     this._mark('lut');
     this.post = new Post(gl, 8, 8);
     this.ssao = new SSAO(gl);
+    this.shadowDenoise = new ShadowDenoise(gl);
     this._mark('atmo+post+ssao');
     // AO cinza 1×1: o composite amostra a oclusão sempre; com AO desligado
     // ele precisa de "sem oclusão", não do último AO calculado
@@ -412,10 +423,16 @@ class App {
       moonTint: e.moonTint,
       keyIsSun,
       camHeight: 0.002,     // km — a câmera está ao nível do solo
+      sunLux: SUN_LUX,
+      moonPhysRatio: MOON_PHYS_RATIO / Math.max(e.moonIlluminance, 1e-12),
+      glowLux: NIGHT_GLOW_LUX,
+      expBase: EXPOSURE_BASE, expRef: EXPOSURE_REF, expAlpha: e.expAlpha,
+      purkS: e.purkS,
     });
-
-    // exposição analítica: sem auto-exposure, que pulsaria com a explosão
-    e.exposure = exposureForSun(this.sun.altDeg, this.moon.altDeg, e.exposureBias);
+    e.envLut = this.atmo.envLut.tex;   // o post e a adaptação leem a exposição dali
+    // fontes da noite em cd/m² → render, com o mesmo reforço da Lua
+    e.moonBoost = e.moonIlluminance / MOON_PHYS_RATIO;
+    e.nightScale = e.moonBoost / SUN_LUX;
 
     // shadow map só re-renderiza quando a luz-chave realmente mudou de direção
     const k = this.keyDir;
@@ -582,7 +599,10 @@ class App {
     this.rw = rw; this.rh = rh;
     const rgba = { internalFormat: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT };
     if (this.sceneT) { this.sceneT.dispose(); this.compT.dispose(); }
-    this.sceneT = new MRTarget(gl, rw, rh, [rgba, rgba], { depth: true });
+    // 0 cor · 1 normal+fração indireta · 2,3 luz do fogo de cada cubo de
+    // sombra + fator ruidoso (shadowdenoise.js)
+    this.sceneT = new MRTarget(gl, rw, rh, [rgba, rgba, rgba, rgba], { depth: true });
+    this.shadowDenoise.resize(rw, rh);
     this.compT = new Target(gl, rw, rh, rgba);
     this.vol.resize(rw, rh);
     this.post.resize(rw, rh);
@@ -764,7 +784,8 @@ class App {
     const sceneEnv = {
       sunDir: this.sun.dir, moonDir: this.moon.dir, keyDir: this.keyDir,
       skyView: this.atmo.skyView.tex, envLut: this.atmo.envLut.tex,
-      starBright: env.starBright, nightGlow: env.nightGlow, moonBright: env.moonBright,
+      starBright: env.starBright * env.nightScale, nightGlow: env.nightGlow * env.nightScale,
+      moonBright: env.moonBright * env.nightScale, moonBoost: env.moonBoost,
       skyTime: t, blasts: this.pool.sortedFor(this.cam.pos).slice(0, MAX_SHADED),
       instLights: this.inst.lights(this.settings.instLights),
       instShadows: this.settings.instShadows ? this.inst.shadowCasters(this.cam, this.settings.instShadows) : [],
@@ -808,7 +829,7 @@ class App {
     r.sim = net(timeIt(() => this.pool.step(1 / 600, this.keyDir,
       this.vol.params.sootExt, this.vol.params.dustExt, this.vol.params.erode * 0.5)));
     r.luzFogo = net(timeIt(() => this.vol.updateFireLight(lead)));
-    r.sombraFogo = net(timeIt(() => this.scene.renderFireShadow(lead.fluid.blastPos)));
+    r.sombraFogo = net(timeIt(() => this.scene.renderFireShadows([{ pos: lead.fluid.blastPos, radius: 3.5, kind: 1, idx: 0 }])));
     r.cena = net(timeIt(() => { this.sceneT.bind(true); this.scene.render(this.cam, sceneEnv); }));
     r.ssao = net(timeIt(() => this.ssao.render(this.cam, this.sceneT.depthTex, this.sceneT.texs[1], 0.5)));
     r.volume = net(timeIt(() => this.vol.march(this.cam, volEnv, blasts,
@@ -934,11 +955,39 @@ class App {
       prof.end();
     }
 
-    // ---- 3. shadow map do fogo (só a explosão principal) -----------------
-    if (!this.skip.sombraFogo && lead) {
+    // ---- 3. sombras das luzes de explosão ---------------------------------
+    // As 2 luzes mais fortes do quadro — a explosão ao vivo principal ou as
+    // do clique — ganham cubo de sombra. O flash de uma explosão nova já a
+    // põe na frente, então a sombra nasce junto com o clarão.
+    const instLights = this.inst.lights(S.instLights);
+    let fireCubes = [];
+    if (S.fireShadows > 0 && !this.skip.sombraFogo) {
+      const cands = [];
+      if (lead && lead.fire) {
+        const c = lead.fire.color;
+        cands.push({ pos: lead.fire.pos, power: c[0] + c[1] + c[2], radius: env.fireRad, kind: 1, idx: 0 });
+      }
+      instLights.forEach((L, i) => {
+        cands.push({ pos: L.pos, power: L.power, radius: 2.2 * Math.sqrt(L.s2 ?? 1), kind: 2, idx: i,
+          s2: L.s2 ?? 1 });
+      });
+      // Uma luz merece cubo enquanto a sombra dela for VISÍVEL, e isso é
+      // relativo à luz do ambiente: o contraste de uma sombra do fogo é
+      // E_f/(E_f + E_amb). Abaixo de ~3% (1.5–3× a fração de Weber pra campos
+      // grandes, 1–2%) ninguém vê. Um limiar absoluto (potência > 2) cortava a
+      // sombra à noite logo que o fogo ficava vermelho, com ele ainda ~100×
+      // mais forte que o luar. E_f é a iluminância a 5 m, mesma queda do
+      // sombreador; sem a leitura da CPU ainda, toda luz entra.
+      this.atmo.pollEnv();
+      const eAmb = this.atmo.envCPU ? this.atmo.envCPU.eRender : 0;
+      const eAt5 = (c) => (c.power / 3) / (c.kind === 1 ? 1.5 : c.s2 + 0.5);
+      const pick = cands.filter((c) => c.power > 1e-4 && eAt5(c) >= 0.03 * eAmb)
+        .sort((x, y) => y.power - x.power)
+        .slice(0, S.fireShadows);
       prof.begin('sombraFogo');
-      this.scene.renderFireShadow(lead.fire ? lead.fire.pos : lead.fluid.blastPos);
+      fireCubes = this.scene.renderFireShadows(pick);
       prof.end();
+      this._lastFireCubes = fireCubes;   // inspeção
     }
 
     // ---- 4. cena ---------------------------------------------------------
@@ -947,9 +996,10 @@ class App {
     const sceneEnv = {
       sunDir: this.sun.dir, moonDir: this.moon.dir, keyDir: this.keyDir,
       skyView: this.atmo.skyView.tex, envLut: this.atmo.envLut.tex,
-      starBright: env.starBright, nightGlow: env.nightGlow, moonBright: env.moonBright,
+      starBright: env.starBright * env.nightScale, nightGlow: env.nightGlow * env.nightScale,
+      moonBright: env.moonBright * env.nightScale, moonBoost: env.moonBoost,
       skyTime: t,
-      blasts: shaded, instLights: this.inst.lights(S.instLights),
+      blasts: shaded, instLights, fireCubes, smDebug: env.smDebug,
       instShadows: S.instShadows ? this.inst.shadowCasters(this.cam, S.instShadows) : [],
       lightGain: S.lightGain, instLightOcc: env.instLightOcc,
       flashGain: env.flashOn ? env.flashGain : 0, flashTau: env.flashTau,
@@ -974,12 +1024,24 @@ class App {
     // brasas desenhadas AQUI, dentro do alvo da cena: o composite do volume
     // multiplica tudo pela transmitância, então a fumaça as oculta de graça
     if (!this.skip.particles) {
+      // as brasas só escrevem cor e normal; os alvos da luz do fogo ficam
+      // com o que a cena escreveu (sem isso o conteúdo seria indefinido)
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.NONE, gl.NONE]);
       for (const b of blasts) {
         b.particles.draw(this.cam, this.vol.params.tempScale, this.vol.params.emissionCurve);
       }
       this.sparks.draw(this.cam, this.vol.params.tempScale, this.vol.params.emissionCurve);
+      this.sceneT.bind();
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2, gl.COLOR_ATTACHMENT3]);
     }
     prof.end();
+
+    // ---- 4a. sombra do fogo filtrada em espaço de tela -------------------
+    this._fireMask = null;
+    if (sceneEnv.fireCubes && sceneEnv.fireCubes.length) {
+      this._fireMask = this.shadowDenoise.render(this.cam, this.sceneT.texs[2], this.sceneT.texs[3],
+        this.sceneT.depthTex, this.sceneT.texs[1]);
+    }
 
     // ---- 4b. oclusão de ambiente ----------------------------------------
     prof.begin('ssao');
@@ -1021,6 +1083,7 @@ class App {
         ao: this.skip.ssao ? this._noAO : (this._aoTex || this.ssao.a.tex),
         sceneNrm: this.sceneT.texs[1],
         aoFloor: env.aoFloor, aoDebug: env.aoDebug,
+        fireL0: this.sceneT.texs[2], fireL1: this.sceneT.texs[3], fireMask: this._fireMask,
       });
     prof.end();
 
@@ -1029,9 +1092,10 @@ class App {
       // Quanto ela pode fechar acompanha a escuridão do ambiente: de dia a
       // bola de fogo quase não estoura e fechar a cena inteira a cada
       // explosão de uma batalha seria um bombeamento constante; à noite
-      // (exposição ~8× a de dia) é onde o fogo vira mancha branca.
-      env.aeMaxEV = clamp(0.5 + Math.log2(env.exposure / EXPOSURE_BASE), 0.5, env.aeMaxEVNight);
-      this.ae.update(this.vol.volTarget.texs[0], env.exposure, Math.min(Math.max(realDt, 0), 0.1), env);
+      // é onde o fogo vira mancha branca. O alcance é calculado na GPU a
+      // partir da iluminância física da hora (exposure.js).
+      this.ae.update(this.vol.volTarget.texs[0], this.compT.tex, this.sceneT.depthTex, this.atmo.envLut.tex,
+        Math.min(Math.max(realDt, 0), 0.1), env);
       env.aeTex = this.ae.tex;
     } else {
       // desligada = exposição fixa exata, e o estado volta a 1 pra religar limpo

@@ -13,9 +13,13 @@
 //      (espalhamento simples sozinho perde ~40% da energia). UMA vez.
 //   3. LUT sky-view          (192×128) — radiância do céu inteiro pra
 //      direção do sol atual. Recalculada só quando o sol se move.
-//   4. LUT de ambiente       (4×1)     — irradiância da luz-chave,
-//      irradiância hemisférica do céu (cima/baixo) e cor do disco solar,
-//      integradas na GPU. Evita qualquer readback pra CPU.
+//   4. LUT de ambiente       (5×1)     — irradiância da luz-chave,
+//      irradiância hemisférica do céu (cima/baixo), cor do disco solar e
+//      (texel 4) exposição analítica + iluminância física da hora, que o
+//      post usa no Purkinje shift. Tudo na GPU, sem readback pra CPU.
+//
+// A Lua espalha na mesma atmosfera que o Sol: o céu de luar sai do mesmo
+// modelo, só com outra fonte (mais fraca e um pouco mais avermelhada).
 //
 // O meio inclui ozônio (perfil tenda em 25km), que é o que torna o
 // crepúsculo azul-violeta em vez de marrom.
@@ -125,11 +129,24 @@ export class Atmosphere {
     this.trans = new Target(gl, T_W, T_H, fmt);
     this.ms = new Target(gl, MS_RES, MS_RES, fmt);
     this.skyView = new Target(gl, SKY_W, SKY_H, fmt);
-    this.envLut = new Target(gl, 4, 1, fmt32);
+    this.envLut = new Target(gl, 5, 1, fmt32);
 
     this._lastSun = new Float32Array([9, 9, 9]);
     this._lastMoon = new Float32Array([9, 9, 9]);
     this._lastParams = '';
+
+    // Cópia na CPU do texel 4 (exposição, lux, E_render, escala do Purkinje),
+    // lida de forma assíncrona (PBO + fence) quando a LUT muda: quem decide
+    // na CPU o que vale a pena desenhar precisa saber a luz da hora, e um
+    // readPixels direto travava o quadro (21 ms).
+    this.envCPU = null;
+    this._envBuf = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._envBuf);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, 16, gl.STREAM_READ);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._envFence = null;
+    this._envDirty = false;
+    this._envRead = new Float32Array(4);
 
     // ---- 1. transmitância -------------------------------------------------
     this.shTrans = new Shader(gl, FS_VS, HEAD + COMMON + MEDIUM + `
@@ -225,8 +242,8 @@ void main(){
 
     // ---- 3. sky-view ------------------------------------------------------
     this.shSkyView = new Shader(gl, FS_VS, HEAD + COMMON + MEDIUM + SAMPLERS + `
-uniform vec3 uSunDir;
-uniform float uSunIlluminance, uCamHeight;
+uniform vec3 uSunDir, uMoonDir, uMoonTint;
+uniform float uSunIlluminance, uMoonIlluminance, uCamHeight;
 out vec4 oCol;
 
 #define VSTEPS 32
@@ -250,12 +267,17 @@ void main(){
   float muS = uSunDir.y;
   float cosT = dot(dir, uSunDir);
   float phR = phaseRayleigh(cosT), phM = phaseMie(cosT);
+  // a Lua espalha na mesma atmosfera, com a própria fase. Ela é a antípoda do
+  // Sol (celestial.js: lua cheia), então fica no mesmo plano vertical e a
+  // simetria azimutal da LUT continua valendo.
+  float cosTm = dot(dir, uMoonDir);
+  float phRm = phaseRayleigh(cosTm), phMm = phaseMie(cosTm);
 
   bool ground = hitsGround(r, mu);
   float tMax = ground ? raySphere(r, mu, Rg) : raySphere(r, mu, Rt);
   vec3 origin = vec3(0.0, r, 0.0);
 
-  vec3 L = vec3(0.0), tp = vec3(1.0);
+  vec3 L = vec3(0.0), Lm = vec3(0.0), tp = vec3(1.0);
   float prevT = 0.0;
   for (int i = 0; i < VSTEPS; i++){
     // distribuição quadrática: passos curtos perto da câmera, onde a
@@ -276,15 +298,25 @@ void main(){
     vec3 ms = multiScatter(rr, muSl);
 
     vec3 S = sunT * (sR * phR + vec3(sM * phM)) + (sR + vec3(sM)) * ms;
-    L += tp * (S - S * stepT) / ext;
+    float muMl = dot(normalize(p), uMoonDir);
+    vec3 Sm = sunTransmittance(rr, muMl) * (sR * phRm + vec3(sM * phMm))
+            + (sR + vec3(sM)) * multiScatter(rr, muMl);
+    vec3 w = tp * (1.0 - stepT) / ext;
+    L += w * S;
+    Lm += w * Sm;
     tp *= stepT;
   }
   if (ground){
     vec3 p = origin + dir * tMax;
     float muSg = dot(normalize(p), uSunDir);
     if (muSg > 0.0) L += tp * GROUND_ALBEDO * muSg * transmittanceTo(Rg, muSg) / PI;
+    float muMg = dot(normalize(p), uMoonDir);
+    if (muMg > 0.0) Lm += tp * GROUND_ALBEDO * muMg * transmittanceTo(Rg, muMg) / PI;
   }
-  oCol = vec4(L * uSunIlluminance, 1.0);
+  vec3 moon = Lm * uMoonIlluminance * uMoonTint;
+  // alfa = a parte do céu que vem da Lua (luminância): o passe de ambiente
+  // precisa dela pra saber quanto da luz da cena é luar
+  oCol = vec4(L * uSunIlluminance + moon, luma(moon));
 }`, 'atmosSkyView');
 
     // ---- 4. LUT de ambiente (4×1) ----------------------------------------
@@ -295,6 +327,9 @@ uniform sampler2D uSkyView;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uSunIlluminance, uMoonIlluminance, uKeyIsSun, uCamHeight;
 uniform vec3 uMoonTint;
+// exposição e visão noturna (texel 4) — ver celestial.js
+uniform float uSunLux, uMoonPhysRatio, uGlowLux;
+uniform float uExpBase, uExpRef, uExpAlpha, uPurkS;
 out vec4 oCol;
 
 vec2 skyViewUV(vec3 dir){
@@ -311,6 +346,21 @@ vec2 skyViewUV(vec3 dir){
   return vec2(u, clamp(v, 0.0, 1.0));
 }
 vec3 sky(vec3 d){ return texture(uSkyView, skyViewUV(d)).rgb; }
+float skyMoon(vec3 d){ return texture(uSkyView, skyViewUV(d)).a; }
+
+// Σ L·cosθ·dω / π no hemisfério de cima, só da parte lunar (luminância)
+float skyUpMoon(){
+  const int N = 48;
+  float acc = 0.0;
+  for (int i = 0; i < N; i++){
+    float fi = float(i) + 0.5;
+    float ct = 1.0 - fi / float(N);
+    float st = sqrt(max(1.0 - ct * ct, 0.0));
+    float ph = fi * 2.39996323;
+    acc += skyMoon(vec3(cos(ph) * st, ct, sin(ph) * st)) * ct;
+  }
+  return acc * (2.0 / float(N));
+}
 
 void main(){
   int idx = int(gl_FragCoord.x);
@@ -322,6 +372,39 @@ void main(){
   if (idx == 0){
     // irradiância da luz-chave, na direção da própria luz-chave
     oCol = vec4(uKeyIsSun > 0.5 ? sunIrr : moonIrr, 1.0);
+  } else if (idx == 4){
+    // ---- exposição analítica + escala física da visão noturna ----------
+    // Iluminância horizontal que a cena recebe (chave + céu), separada em
+    // parte solar e lunar. A Lua do render é mais forte que a real (ver
+    // MOON_ILLUMINANCE); a parte lunar volta à escala física por
+    // uMoonPhysRatio, e o brilho do céu noturno (estrelas + airglow) entra
+    // como piso físico — ele não ilumina o render.
+    vec3 upRgb = vec3(0.0);
+    {
+      const int N = 48;
+      for (int i = 0; i < N; i++){
+        float fi = float(i) + 0.5;
+        float ct = 1.0 - fi / float(N);
+        float st = sqrt(max(1.0 - ct * ct, 0.0));
+        float ph = fi * 2.39996323;
+        upRgb += sky(vec3(cos(ph) * st, ct, sin(ph) * st)) * ct;
+      }
+      upRgb *= 2.0 / float(N);
+    }
+    float eKey = luma(uKeyIsSun > 0.5 ? sunIrr : moonIrr);
+    float eRender = eKey + PI * luma(upRgb);
+    float eMoon = (uKeyIsSun > 0.5 ? 0.0 : eKey) + PI * skyUpMoon();
+    float eSun = max(eRender - eMoon, 0.0);
+    float eLux = uSunLux * (eSun + eMoon * uMoonPhysRatio) + uGlowLux;
+    eRender = max(eRender, 1e-9);
+    // Exposição: compensação parcial da iluminância. Compensação total
+    // (∝ 1/E) deixaria a noite igual ao dia; aqui o brilho exibido cai
+    // devagar com a luz física, (E/E_ref)^α, e a noite lê como noite.
+    float expo = uExpBase * (uExpRef / eRender)
+               * pow(eLux / (uSunLux * uExpRef), uExpAlpha);
+    // radiância do render → cd/m²: E_lux / E_render (mesma razão de π);
+    // uPurkS é a escala de resposta dos cones calibrada no slide do Ghost
+    oCol = vec4(expo, eLux, eRender, uPurkS * eLux / eRender);
   } else if (idx == 1 || idx == 2){
     // irradiância hemisférica do céu / π (o lóbulo difuso já divide por π)
     // Integração de Fibonacci sobre o hemisfério, ponderada por cosseno.
@@ -374,7 +457,8 @@ void main(){
    */
   update(sunDir, moonDir, p) {
     const gl = this.gl;
-    const key = `${p.sunIlluminance}|${p.moonIlluminance}|${p.keyIsSun}|${p.camHeight}`;
+    const key = `${p.sunIlluminance}|${p.moonIlluminance}|${p.moonTint}|${p.keyIsSun}|${p.camHeight}`
+              + `|${p.sunLux}|${p.moonPhysRatio}|${p.glowLux}|${p.expBase}|${p.expRef}|${p.expAlpha}|${p.purkS}`;
     const moved = Math.abs(sunDir[0] - this._lastSun[0]) + Math.abs(sunDir[1] - this._lastSun[1])
                 + Math.abs(sunDir[2] - this._lastSun[2])
                 + Math.abs(moonDir[1] - this._lastMoon[1]) > 1e-4;
@@ -386,8 +470,9 @@ void main(){
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
     this.shSkyView.use()
-      .set('uSunDir', sunDir)
+      .set('uSunDir', sunDir).set('uMoonDir', moonDir)
       .set('uSunIlluminance', p.sunIlluminance)
+      .set('uMoonIlluminance', p.moonIlluminance).set('uMoonTint', p.moonTint)
       .set('uCamHeight', p.camHeight)
       .tex('uTransLut', this.trans.tex).tex('uMsLut', this.ms.tex);
     this.skyView.bind(); drawFS(gl);
@@ -399,11 +484,39 @@ void main(){
       .set('uMoonTint', p.moonTint)
       .set('uKeyIsSun', p.keyIsSun ? 1 : 0)
       .set('uCamHeight', p.camHeight)
+      .set('uSunLux', p.sunLux).set('uMoonPhysRatio', p.moonPhysRatio).set('uGlowLux', p.glowLux)
+      .set('uExpBase', p.expBase).set('uExpRef', p.expRef).set('uExpAlpha', p.expAlpha)
+      .set('uPurkS', p.purkS)
       .tex('uTransLut', this.trans.tex).tex('uMsLut', this.ms.tex)
       .tex('uSkyView', this.skyView.tex);
     this.envLut.bind(); drawFS(gl);
+    this._envDirty = true;
+    this.pollEnv();
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return true;
+  }
+
+  /** chamar uma vez por quadro: recolhe a leitura pronta e pede outra se a LUT mudou */
+  pollEnv() {
+    const gl = this.gl;
+    if (this._envFence && gl.getSyncParameter(this._envFence, gl.SYNC_STATUS) === gl.SIGNALED) {
+      gl.deleteSync(this._envFence);
+      this._envFence = null;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._envBuf);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this._envRead);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      const [expo, lux, eRender, purkS] = this._envRead;
+      this.envCPU = { expo, lux, eRender, purkS };
+    }
+    if (this._envDirty && !this._envFence) {
+      this._envDirty = false;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.envLut.fbo);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._envBuf);
+      gl.readPixels(4, 0, 1, 1, gl.RGBA, gl.FLOAT, 0);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this._envFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
   }
 }

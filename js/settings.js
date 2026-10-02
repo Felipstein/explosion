@@ -58,6 +58,9 @@ export const SCHEMA = [
   { group: 'Iluminação', items: [
     { id: 'ao', label: 'Oclusão de ambiente', apply: 'live',
       options: [[0, 'off'], [0.55, 'baixa'], [0.8, 'média'], [1, 'alta']] },
+    { id: 'fireShadows', label: 'Sombras da luz das explosões', apply: 'live',
+      hint: 'quantas explosões do clique fazem os prédios e destroços projetarem sombra (as mais fortes)',
+      options: [[0, 'off'], [1, '1'], [2, '2']] },
     { id: 'instShadows', label: 'Sombra das explosões no chão', apply: 'live',
       hint: 'quantas explosões do clique projetam sombra volumétrica',
       options: [[0, 'off'], [2, '2'], [4, '4']] },
@@ -88,25 +91,25 @@ export const PRESETS = {
   baixa: {
     bakeRes: 48, lightCache: 0, msOctaves: 1, instSteps: 32, sparks: 0.25, liveSim: 64,
     renderScale: 0.67, volScale: 0.5, dynamicRes: true, targetFps: 60,
-    ao: 0, instShadows: 0, smokeBlocksLight: false, instLights: 4, lightGain: 1,
+    ao: 0, fireShadows: 0, instShadows: 0, smokeBlocksLight: false, instLights: 4, lightGain: 1,
     bloom: true, grain: false, chromatic: false, autoExposure: true, flash: true,
   },
   media: {
     bakeRes: 64, lightCache: 2, msOctaves: 2, instSteps: 44, sparks: 0.5, liveSim: 96,
     renderScale: 0.8, volScale: 0.6, dynamicRes: true, targetFps: 60,
-    ao: 0.55, instShadows: 2, smokeBlocksLight: false, instLights: 4, lightGain: 1,
+    ao: 0.55, fireShadows: 1, instShadows: 2, smokeBlocksLight: false, instLights: 4, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   alta: {
     bakeRes: 64, lightCache: 6, msOctaves: 3, instSteps: 56, sparks: 1, liveSim: 128,
     renderScale: 0.88, volScale: 0.72, dynamicRes: true, targetFps: 60,
-    ao: 0.8, instShadows: 4, smokeBlocksLight: false, instLights: 8, lightGain: 1,
+    ao: 0.8, fireShadows: 2, instShadows: 4, smokeBlocksLight: false, instLights: 8, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   ultra: {
     bakeRes: 96, lightCache: 8, msOctaves: 3, instSteps: 72, sparks: 1, liveSim: 160,
     renderScale: 1, volScale: 1, dynamicRes: true, targetFps: 60,
-    ao: 1, instShadows: 4, smokeBlocksLight: true, instLights: 8, lightGain: 1,
+    ao: 1, fireShadows: 2, instShadows: 4, smokeBlocksLight: true, instLights: 8, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
 };

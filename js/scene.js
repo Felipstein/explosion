@@ -21,6 +21,7 @@ const HEAD = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 precision highp sampler2DArray;
+precision highp samplerCube;   // o cubo de sombra guarda distância em R32F
 `;
 
 // 8 taps em vez de 12: com rotação por pixel + dither o ruído residual some
@@ -32,12 +33,54 @@ const vec2 POISSON[8] = vec2[8](
   vec2( 0.519,  0.767), vec2( 0.185, -0.893));
 `;
 
-/** shadow map: FBO só com profundidade */
-class ShadowMap {
-  constructor(gl, size) {
+// Mapa de sombra em CUBO pra luz de explosão (luz pontual/extensa).
+// Antes era uma perspectiva de 145° olhando pra baixo: com a bola de fogo a
+// 2.3 m do chão ela só cobria ~7 m em volta (2.3·tan 72.5°) e o resto ficava
+// "sem sombra" — a sombra nascia no pé do pilar e só se esticava conforme o
+// fogo subia, bem atrasada. A bola de fogo nasce rente ao chão: o caso em que
+// a luz precisa enxergar o horizonte. O cubo cobre a esfera inteira.
+// Guarda DISTÂNCIA RADIAL (R32F), então a comparação é exata em qualquer face.
+// A penumbra larga da fonte extensa (PCSS) deixa ruído; ele é filtrado em
+// espaço de tela (shadowdenoise.js).
+const CUBE_FACES = [
+  [[1, 0, 0], [0, -1, 0]], [[-1, 0, 0], [0, -1, 0]],
+  [[0, 1, 0], [0, 0, 1]], [[0, -1, 0], [0, 0, -1]],
+  [[0, 0, 1], [0, -1, 0]], [[0, 0, -1], [0, -1, 0]],
+];
+const CUBE_SIZE = 512, CUBE_NEAR = 0.05, CUBE_FAR = 160.0;
+class CubeShadow {
+  constructor(gl, size = CUBE_SIZE) {
     this.gl = gl;
     this.size = size;
-    this.tex = createTexture(gl, size, size, {
+    this.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.tex);
+    gl.texStorage2D(gl.TEXTURE_CUBE_MAP, 1, gl.R32F, size, size);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    for (const w of ['TEXTURE_WRAP_S', 'TEXTURE_WRAP_T', 'TEXTURE_WRAP_R']) {
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl[w], gl.CLAMP_TO_EDGE);
+    }
+    this.depth = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, this.depth);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, size, size);
+    this.fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depth);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.proj = m4.perspective(m4.create(), Math.PI / 2, 1, CUBE_NEAR, CUBE_FAR);
+    this.vp = m4.create();
+  }
+}
+
+/** shadow map: FBO só com profundidade. `tiles` > 1 = atlas horizontal de
+ *  vários mapas do mesmo tamanho (um sampler só pra todos) */
+class ShadowMap {
+  constructor(gl, size, tiles = 1) {
+    this.gl = gl;
+    this.size = size;
+    this.tiles = tiles;
+    this.vps = Array.from({ length: tiles }, () => m4.create());
+    this.tex = createTexture(gl, size * tiles, size, {
       internalFormat: gl.DEPTH_COMPONENT24, format: gl.DEPTH_COMPONENT,
       type: gl.UNSIGNED_INT, filter: gl.NEAREST,
     });
@@ -54,9 +97,12 @@ class ShadowMap {
   bind() {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
-    gl.viewport(0, 0, this.size, this.size);
+    gl.viewport(0, 0, this.size * this.tiles, this.size);
     gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.viewport(0, 0, this.size, this.size);
   }
+  /** viewport de um tile (depois de bind) */
+  tile(k) { this.gl.viewport(k * this.size, 0, this.size, this.size); }
 }
 
 export class Scene {
@@ -73,7 +119,10 @@ export class Scene {
       filter: gl.NEAREST, data: new Uint8Array(4),
     });
     this.sunSM = new ShadowMap(gl, 2048);
-    this.fireSM = new ShadowMap(gl, 1024);
+    // Sombras das luzes de explosão: 2 cubos COMPARTILHADOS entre a explosão
+    // ao vivo e as do clique — as 2 luzes mais fortes do quadro levam. Um
+    // cubo por luz estouraria o limite de 16 texturas do shader da cena.
+    this.fireCubes = [new CubeShadow(gl), new CubeShadow(gl)];
     this.groundTile = 18.0;      // metros cobertos por um tile
     this._bakeGround(1024);
 
@@ -111,17 +160,35 @@ void main(){
   gl_Position = uVP * vec4(wp, 1.0);
 }`, HEAD + `void main(){}`, 'depth');
 
+    // distância radial até a luz, pros cubos de sombra
+    this.shDist = new Shader(gl, HEAD + INST_VS + `
+uniform mat4 uVP;
+out vec3 vWP;
+void main(){
+  vec3 lp = aPos * iB.xyz;
+  vWP = qrot(iD, lp) + iA.xyz;
+  gl_Position = uVP * vec4(vWP, 1.0);
+}`, HEAD + `
+in vec3 vWP;
+uniform vec3 uLightPos;
+out vec4 oDist;
+void main(){ oDist = vec4(length(vWP - uLightPos), 0.0, 0.0, 1.0); }`, 'cubeDist');
+
     // ---- céu ------------------------------------------------------------
     this.shSky = new Shader(gl, FS_VS, HEAD + `in vec2 vUV;\n` + COMMON + ENVLUT + ATMOS + `
 uniform mat4 uInvViewProj;
 uniform vec3 uCamPos;
 layout(location=0) out vec4 oCol;
 layout(location=1) out vec4 oNrm;
+layout(location=2) out vec4 oF0;   // luz do fogo que o cubo 0 multiplica · fator ruidoso
+layout(location=3) out vec4 oF1;
 void main(){
   vec4 h = uInvViewProj * vec4(vUV * 2.0 - 1.0, 1.0, 1.0);
   vec3 dir = normalize(h.xyz / h.w - uCamPos);
   oCol = vec4(skyRadiance(dir) + celestialDisks(dir), 1.0);
   oNrm = vec4(0.0, 0.0, 0.0, 0.0);   // ambFrac = 0: o céu não recebe AO
+  oF0 = vec4(0.0, 0.0, 0.0, 1.0);     // sem luz de fogo, fator 1
+  oF1 = vec4(0.0, 0.0, 0.0, 1.0);
 }`, 'sky');
 
     // ---- passe principal da cena ---------------------------------------
@@ -144,8 +211,15 @@ void main(){
 in vec3 vWP; in vec3 vN; in vec3 vLP; in vec4 vB; in vec4 vC; in float vSeed;
 ` + COMMON + ENVLUT + ATMOS + PBR + P + VOLUME_SHADOW + POISSON + `
 uniform vec3 uCamPos;
-uniform mat4 uSunVP, uFireVP;
-uniform sampler2D uSunShadow, uFireShadow, uGroundA, uGroundN;
+uniform mat4 uSunVP;
+uniform sampler2D uSunShadow, uGroundA, uGroundN;
+// cubos de sombra das luzes de explosão (ver CubeShadow)
+uniform samplerCube uFireCube0, uFireCube1;
+uniform vec3 uCubePos[2];
+uniform float uCubeRad[2];      // raio da fonte extensa (m)
+uniform int uCubeKind[2];       // 0 vazio · 1 explosão ao vivo (luz 0) · 2 luz de instância
+uniform int uCubeIdx[2];        // índice da luz de instância
+uniform float uSMDebug;         // depuração: 1 = pinta o fator de sombra do cubo 0
 // Uma entrada por explosão ativa. Em GLSL ES 3.0 índice de laço com limites
 // constantes conta como constant-index-expression, então indexar array de
 // sampler assim é legal.
@@ -208,7 +282,7 @@ float bakeShadow(vec3 wp, vec3 dir, float maxDist, vec4 xf, float frame,
 }
 uniform float uGroundTile;
 uniform vec3 uKeyDir;
-uniform float uSunSMTexel, uFireSMTexel;
+uniform float uSunSMTexel;
 uniform float uSootExt, uDustExt, uFireOcclude, uFireTauCap, uFireFill, uErodeMean;
 uniform vec4 uScorch[16];   // x, z, raio, intensidade — um por explosão
 uniform int uScorchCount;
@@ -216,6 +290,8 @@ uniform float uFogDensity, uFogFalloff, uFogFireGain, uAmbient;
 uniform float uFrameJitter;
 layout(location=0) out vec4 oCol;
 layout(location=1) out vec4 oNrm;
+layout(location=2) out vec4 oF0;   // luz do fogo que o cubo 0 multiplica · fator ruidoso
+layout(location=3) out vec4 oF1;
 
 // ================= materiais procedurais =================
 
@@ -365,6 +441,87 @@ void material(out vec3 alb, out float rough, out float metal, out vec3 N, out fl
 
 // ================= sombras =================
 
+// PCSS (Fernando 2005) num CUBO de distância radial, pra fonte extensa de
+// raio R. A bola de fogo tem metros de raio: a sombra é dura no pé do objeto
+// e abre em penumbra com a distância entre ele e o chão. Tudo em ÂNGULO visto
+// do centro da fonte (vale igual em qualquer face do cubo):
+//   1) busca de bloqueadores numa janela ~ 2.3·R/d
+//   2) penumbra angular  θ = R (dR − dB) / (dR · dB)
+//   3) PCF com esse raio
+// disco de Vogel: N amostras na espiral do ângulo áureo, girada por pixel.
+// Distribui uniforme pra qualquer N (o Poisson fixo de 8 deixava a penumbra
+// larga granulada, e não há TAA pra alisar).
+vec2 vogel(int i, int n, float rot){
+  float r = sqrt((float(i) + 0.5) / float(n));
+  float a = float(i) * 2.39996323 + rot;
+  return vec2(cos(a), sin(a)) * r;
+}
+// Comparação com filtro bilinear (o PCF 2×2 que o hardware faz num mapa de
+// profundidade): o R32F não filtra, então os 4 texels vizinhos são lidos no
+// centro e o resultado da comparação é interpolado. A grade de texels de uma
+// face é simétrica em torno do centro, então qualquer orientação de u,v serve.
+float cubeCmp(samplerCube cm, vec3 d, float ref){
+  const float SZ = ${CUBE_SIZE}.0;
+  vec3 a = abs(d);
+  vec3 n, u, v; float ma;
+  if (a.x >= a.y && a.x >= a.z){ ma = a.x; n = vec3(sign(d.x), 0.0, 0.0); u = vec3(0.0, 0.0, 1.0); v = vec3(0.0, 1.0, 0.0); }
+  else if (a.y >= a.z)        { ma = a.y; n = vec3(0.0, sign(d.y), 0.0); u = vec3(1.0, 0.0, 0.0); v = vec3(0.0, 0.0, 1.0); }
+  else                        { ma = a.z; n = vec3(0.0, 0.0, sign(d.z)); u = vec3(1.0, 0.0, 0.0); v = vec3(0.0, 1.0, 0.0); }
+  vec2 st = vec2(dot(d, u), dot(d, v)) / ma;
+  vec2 px = (st * 0.5 + 0.5) * SZ - 0.5;
+  vec2 f = fract(px), b0 = floor(px);
+  float r = 0.0;
+  for (int j = 0; j < 2; j++)
+    for (int i = 0; i < 2; i++){
+      vec2 c = clamp((b0 + vec2(float(i), float(j)) + 0.5) / SZ, 0.5 / SZ, 1.0 - 0.5 / SZ) * 2.0 - 1.0;
+      float w = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+      r += w * step(ref, textureLod(cm, n + u * c.x + v * c.y, 0.0).r);
+    }
+  return r;
+}
+// PCSS (Fernando 2005) sobre o cubo: oclusor médio → penumbra da fonte
+// extensa de raio R → PCF bilinear num disco de Vogel. O ruído da rotação por
+// pixel é tirado depois, em espaço de tela (shadowdenoise.js).
+float cubeShadow(samplerCube cm, vec3 Lp, vec3 P, float R, float jit){
+  vec3 v = P - Lp;
+  float dR = length(v);
+  if (dR < 1e-3) return 1.0;
+  vec3 dir = v / dR;
+  vec3 t = normalize(cross(dir, abs(dir.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
+  vec3 b = cross(dir, t);
+  float bias = 0.05 + 0.012 * dR;
+  const float TEXA = ${(2 / CUBE_SIZE).toFixed(5)};   // ângulo de um texel no centro da face
+  float rot = jit * TAU;
+  float thS = clamp(2.3 * R / dR, 2.0 * TEXA, 0.5);
+  float zB = 0.0, nB = 0.0;
+  for (int i = 0; i < 8; i++){
+    vec2 o = vogel(i, 8, rot);
+    float z = texture(cm, dir + (t * o.x + b * o.y) * thS).r;
+    if (z < dR - bias){ zB += z; nB += 1.0; }
+  }
+  if (nB < 0.5) return 1.0;                         // nada entre o ponto e o fogo
+  zB /= nB;
+  float thP = clamp(R * (dR - zB) / (dR * max(zB, 0.2)), TEXA, 0.5);
+  float lit = 0.0;
+  for (int i = 0; i < 8; i++){
+    vec2 o = vogel(i, 8, rot + 1.3);
+    lit += cubeCmp(cm, dir + (t * o.x + b * o.y) * thP, dR - bias);
+  }
+  return lit / 8.0;
+}
+// os dois cubos têm samplers diferentes: escolha com índice constante
+float fireCube(int k, vec3 P, float jit){
+  return k == 0 ? cubeShadow(uFireCube0, uCubePos[0], P, uCubeRad[0], jit)
+                : cubeShadow(uFireCube1, uCubePos[1], P, uCubeRad[1], jit + 0.61);
+}
+// O que cada cubo multiplica neste pixel (luz do fogo antes da sombra) e o
+// fator ruidoso — vão pro MRT pro composite trocar pelo fator filtrado.
+vec3 gCubeL0 = vec3(0.0), gCubeL1 = vec3(0.0);
+float gCubeF0 = 1.0, gCubeF1 = 1.0;
+void addCube(int k, vec3 L, float f){
+  if (k == 0){ gCubeL0 += L; gCubeF0 = f; } else { gCubeL1 += L; gCubeF1 = f; }
+}
+
 float pcf(sampler2D sm, vec3 s, float texel, float bias, float radius, float jit){
   if (s.x < 0.001 || s.x > 0.999 || s.y < 0.001 || s.y > 0.999 || s.z > 1.0) return 1.0;
   float ang = jit * TAU;
@@ -416,27 +573,27 @@ void main(){
     float dist = max(length(Ld), 1e-3);
     Ld /= dist;
     float NoL = dot(N, Ld);
-    float fsmFill = 1.0;
+    // sombra dos props pra explosão ao vivo principal (luz 0), se ela
+    // levou um dos cubos neste quadro
+    float fsm = 1.0; int fk = -1;
+    if (i == 0){
+      for (int k = 0; k < 2; k++){
+        if (uCubeKind[k] == 1){ fsm = fireCube(k, vWP + N * 0.08, jit); fk = k; }
+      }
+    }
     if (NoL > -0.05){
       float att = 1.0 / (1.0 + dist * dist * 0.020);
-      // o shadow map do fogo cobre só a explosão principal (índice 0): é a
-      // mais próxima da câmera e a que domina a imagem
-      float fsm = 1.0;
-      if (i == 0){
-        vec4 lp2 = uFireVP * vec4(vWP + N * 0.08 - Ld * 0.06, 1.0);
-        if (lp2.w > 0.0){
-          vec3 s2 = lp2.xyz / lp2.w * 0.5 + 0.5;
-          fsm = pcf(uFireShadow, s2, uFireSMTexel, 0.0035, 3.1, jit + 0.37);
-        }
-      }
-      fsmFill = mix(1.0, fsm, 0.65);
       // a fumaça de QUALQUER explosão bloqueia a luz desta
       float fv = ${fireOccChain};
-      direct += brdf(N, V, Ld, alb, rough, metal) * fcol * att * fsm * fv;
+      vec3 Lsh = brdf(N, V, Ld, alb, rough, metal) * fcol * att * fv;
+      direct += Lsh * fsm;
+      if (fk >= 0) addCube(fk, Lsh, fsm);
     }
     float wrap = saturate((dot(N, Ld) + 0.75) / 1.75);
     float attF = 1.0 / (1.0 + dist * dist * 0.012);
-    fillTerm += alb * (1.0 / PI) * fcol * attF * uFireFill * wrap * fsmFill;
+    vec3 fillI = alb * (1.0 / PI) * fcol * attF * uFireFill * wrap;
+    fillTerm += fillI * mix(1.0, fsm, 0.65);
+    if (fk >= 0) addCube(fk, fillI * 0.65, fsm);
   }
   direct += fillTerm;
 
@@ -465,9 +622,21 @@ void main(){
       iv *= bakeShadow(vWP + N * 0.05, Ld, dist * 0.90, uInstShX[j], uInstShF[j],
                        uSootExt * uFireOcclude, uDustExt * uFireOcclude, 1.4);
     }
-    direct += brdf(N, V, Ld, alb, rough, metal) * c * att * iv;
+    // sombra dos props pra esta luz, se ela levou um dos cubos neste quadro
+    float ish = 1.0; int ik = -1;
+    for (int k = 0; k < 2; k++){
+      if (uCubeKind[k] == 2 && uCubeIdx[k] == i){ ish = fireCube(k, vWP + N * 0.08, jit); ik = k; }
+    }
+    if (uSMDebug > 0.5 && uCubeKind[0] == 2 && uCubeIdx[0] == i){
+      oCol = vec4(vec3(ish) * 0.02, 1.0); oNrm = vec4(N * 0.5 + 0.5, 0.0);
+      oF0 = vec4(0.0, 0.0, 0.0, 1.0); oF1 = vec4(0.0, 0.0, 0.0, 1.0); return;
+    }
+    vec3 Lsh = brdf(N, V, Ld, alb, rough, metal) * c * att * iv;
+    direct += Lsh * ish;
     float wrap = saturate((dot(N, Ld) + 0.75) / 1.75);
-    direct += alb * (1.0 / PI) * c * (1.0 / (s2 + d2 * 0.012)) * uFireFill * wrap;
+    vec3 fillI = alb * (1.0 / PI) * c * (1.0 / (s2 + d2 * 0.012)) * uFireFill * wrap;
+    direct += fillI * mix(1.0, ish, 0.65);
+    if (ik >= 0) addCube(ik, Lsh + fillI * 0.65, ish);
   }
 
   // ---- ambiente hemisférico -------------------------------------------
@@ -498,6 +667,10 @@ void main(){
                 * (1.0 - saturate(fog));
   oCol = vec4(col, 1.0);
   oNrm = vec4(N * 0.5 + 0.5, ambFrac);
+  // a névoa atenua a luz do fogo como o resto da cor
+  float tFog = 1.0 - saturate(fog);
+  oF0 = vec4(gCubeL0 * tFog, gCubeF0);
+  oF1 = vec4(gCubeL1 * tFog, gCubeF1);
 }`, 'scene');
   }
 
@@ -619,26 +792,45 @@ void main(){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  /** shadow map do fogo: perspectiva de FOV largo apontando pra baixo.
-   *  Cobre o chão e a base dos props — onde as sombras do fogo aparecem. */
-  renderFireShadow(firePos) {
-    const gl = this.gl, sm = this.fireSM;
-    const y = Math.max(firePos[1], 2.0);
-    const view = m4.lookAt(m4.create(), [firePos[0], y, firePos[2]],
-                           [firePos[0], -1, firePos[2] + 0.001], [0, 0, -1]);
-    const proj = m4.perspective(m4.create(), 2.53, 1, 0.35, 140); // ~145°
-    m4.mul(sm.vp, proj, view);
-    sm.bind();
+  /**
+   * Renderiza os cubos de sombra das luzes de explosão.
+   * @param lights [{pos, radius, kind, idx}] — as escolhidas (no máximo 2)
+   * @returns o que o render precisa: [{pos, radius, kind, idx}]
+   */
+  renderFireShadows(lights) {
+    const gl = this.gl, out = [];
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
+    // só faces de trás: superfície da frente nunca se sombreia sozinha
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.FRONT);
-    this.shDepth.use().set('uVP', sm.vp);
-    this.meshBoxes.draw();
-    this.meshCyls.draw();
-    this.meshGround.draw();
+    const sh = this.shDist;
+    lights.slice(0, this.fireCubes.length).forEach((L, k) => {
+      const cube = this.fireCubes[k];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, cube.fbo);
+      gl.viewport(0, 0, cube.size, cube.size);
+      sh.use().set('uLightPos', L.pos);
+      for (let f = 0; f < 6; f++) {
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+                                gl.TEXTURE_CUBE_MAP_POSITIVE_X + f, cube.tex, 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
+        gl.clearColor(1e4, 0, 0, 1);          // "nada até o infinito"
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        const [dir, up] = CUBE_FACES[f];
+        const view = m4.lookAt(m4.create(), L.pos,
+          [L.pos[0] + dir[0], L.pos[1] + dir[1], L.pos[2] + dir[2]], up);
+        m4.mul(cube.vp, cube.proj, view);
+        sh.set('uVP', cube.vp);
+        this.meshBoxes.draw();
+        this.meshCyls.draw();
+        // o chão não precisa projetar: nada fica embaixo dele
+      }
+      out.push({ pos: L.pos, radius: L.radius, kind: L.kind, idx: L.idx });
+    });
+    gl.clearColor(0, 0, 0, 0);
     gl.cullFace(gl.BACK);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return out;
   }
 
   render(cam, env) {
@@ -651,7 +843,7 @@ void main(){
       .set('uInvViewProj', cam.invViewProj).set('uCamPos', cam.pos)
       .set('uSunDir', env.sunDir).set('uMoonDir', env.moonDir).set('uSkyTime', env.skyTime)
       .set('uStarBright', env.starBright).set('uNightGlow', env.nightGlow)
-      .set('uMoonBright', env.moonBright);
+      .set('uMoonBright', env.moonBright).set('uMoonBoost', env.moonBoost ?? 1);
     this.shSky.tex('uSkyView', env.skyView).tex('uEnvLut', env.envLut);
     drawFS(gl);
 
@@ -665,9 +857,9 @@ void main(){
       .set('uSunDir', env.sunDir).set('uMoonDir', env.moonDir).set('uKeyDir', env.keyDir)
       .set('uSkyTime', env.skyTime)
       .set('uStarBright', env.starBright).set('uNightGlow', env.nightGlow)
-      .set('uMoonBright', env.moonBright)
-      .set('uSunVP', this.sunSM.vp).set('uFireVP', this.fireSM.vp)
-      .set('uSunSMTexel', 1 / this.sunSM.size).set('uFireSMTexel', 1 / this.fireSM.size)
+      .set('uMoonBright', env.moonBright).set('uMoonBoost', env.moonBoost ?? 1)
+      .set('uSunVP', this.sunSM.vp)
+      .set('uSunSMTexel', 1 / this.sunSM.size)
 
       .set('uSootExt', env.sootExt).set('uDustExt', env.dustExt)
       .set('uFireOcclude', env.fireOcclude).set('uFireTauCap', env.fireTauCap)
@@ -678,7 +870,9 @@ void main(){
       .set('uFogFireGain', env.fogFireGain)
       .set('uAmbient', env.ambient).set('uFrameJitter', env.frameJitter)
       .set('uGroundTile', this.groundTile);
-    s.tex('uSunShadow', this.sunSM.tex).tex('uFireShadow', this.fireSM.tex)
+    s.tex('uSunShadow', this.sunSM.tex)
+      .tex('uFireCube0', this.fireCubes[0].tex, gl.TEXTURE_CUBE_MAP)
+      .tex('uFireCube1', this.fireCubes[1].tex, gl.TEXTURE_CUBE_MAP)
       .tex('uSkyView', env.skyView).tex('uEnvLut', env.envLut)
       .tex('uGroundA', this.groundA.tex).tex('uGroundN', this.groundN.tex);
 
@@ -763,7 +957,17 @@ void main(){
       gl2.uniform1fv(s.loc('uInstShF[0]'), fr);
       gl2.uniform1iv(s.loc('uInstShId[0]'), sid);
     }
-    s.set('uInstLightOcc', env.instLightOcc ? 1 : 0);
+    s.set('uInstLightOcc', env.instLightOcc ? 1 : 0).set('uSMDebug', env.smDebug ? 1 : 0);
+    {
+      const C = env.fireCubes || [];
+      const kind = new Int32Array(2), idx = new Int32Array([-1, -1]);
+      const rad = new Float32Array(2), pos = new Float32Array(6);
+      C.forEach((c, k) => { kind[k] = c.kind; idx[k] = c.idx; rad[k] = c.radius; pos.set(c.pos, k * 3); });
+      gl2.uniform1iv(s.loc('uCubeKind[0]'), kind);
+      gl2.uniform1iv(s.loc('uCubeIdx[0]'), idx);
+      gl2.uniform1fv(s.loc('uCubeRad[0]'), rad);
+      gl2.uniform3fv(s.loc('uCubePos[0]'), pos);
+    }
     s.set('uTemporalLerpK', 0).set('uBakeKFrames', env.bakeFrames || 1);
     s.tex('uBakeK', env.bakeTex, gl2.TEXTURE_2D_ARRAY)
       .tex('uBakeMacroQ', env.bakeMacroTex, gl2.TEXTURE_2D_ARRAY);
