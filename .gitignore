@@ -1,0 +1,4 @@
+# capturas de inspeção (prints de teste, regeneráveis)
+captures/
+.DS_Store
+__pycache__/

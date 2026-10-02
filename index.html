@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Explosão volumétrica</title>
+<style>
+  /* ---- paleta: metal escuro + âmbar, na linha dos HUDs de C&C ---- */
+  :root{
+    --metal-1:#2a2d26; --metal-2:#191b16; --metal-3:#0e100d;
+    --bevel-hi:rgba(190,200,170,.22); --bevel-lo:rgba(0,0,0,.72);
+    --amber:#ffb347; --amber-dim:#8c6a32; --green:#8ddf6a;
+    --txt:#cfd2c4; --txt-dim:#7c8073;
+    --hud-w:252px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#07070a;overflow:hidden}
+  body{font:12px/1.45 ui-monospace,"SF Mono",Menlo,monospace;color:var(--txt);
+       -webkit-font-smoothing:antialiased}
+  #gl{display:block;position:fixed;inset:0;cursor:crosshair}
+
+  /* ================= sidebar ================= */
+  #hud{position:fixed;top:0;right:0;bottom:0;width:var(--hud-w);z-index:20;
+       display:flex;flex-direction:column;gap:7px;padding:9px;
+       background:linear-gradient(180deg,var(--metal-1),var(--metal-2) 55%,var(--metal-3));
+       border-left:1px solid var(--bevel-hi);
+       box-shadow:-10px 0 34px rgba(0,0,0,.6), inset 1px 0 0 rgba(255,255,255,.05);
+       overflow-y:auto; overscroll-behavior:contain}
+  #hud::-webkit-scrollbar{width:7px}
+  #hud::-webkit-scrollbar-thumb{background:#3a3e33;border:1px solid #0c0d0a}
+
+  .panel{background:linear-gradient(180deg,#23261f,#14160f);
+         border-top:1px solid var(--bevel-hi);border-left:1px solid var(--bevel-hi);
+         border-right:1px solid var(--bevel-lo);border-bottom:1px solid var(--bevel-lo);
+         padding:8px}
+
+  .brandbar{display:flex;align-items:baseline;justify-content:space-between;
+            padding:7px 9px;background:linear-gradient(180deg,#3a3f31,#1d2017);
+            border-top:1px solid var(--bevel-hi);border-bottom:1px solid var(--bevel-lo)}
+  .brandbar b{font-size:12px;letter-spacing:.22em;color:var(--amber);font-weight:700}
+  .brandbar span{font-size:9.5px;letter-spacing:.1em;color:var(--txt-dim)}
+
+  .sec-title{font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+             color:var(--amber-dim);margin-bottom:7px;
+             border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:4px}
+
+  /* ---- cartão de ordnance (thumb estilo C&C) ---- */
+  .cards{display:flex;flex-direction:column;gap:6px}
+  .card{display:block;width:100%;padding:0;cursor:pointer;text-align:left;
+        background:#0b0c09;border:1px solid #000;position:relative;
+        transition:box-shadow .12s, transform .08s}
+  .card-img{position:relative;line-height:0;
+            border:2px solid;border-color:var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi)}
+  .card-img img{width:100%;display:block;image-rendering:auto;filter:saturate(1.08) contrast(1.05);
+                background:#0b0c09;aspect-ratio:16/10;object-fit:cover}
+  /* grade de 2 colunas, como a barra de construção do C&C: cabe tudo sem
+     empurrar Ambiente e Sistema pra fora da tela */
+  .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+  /* min-width:0 deixa a coluna encolher; sem isso o nome em nowrap força a
+     largura mínima e a 3ª coluna sai pra fora do painel */
+  .card{min-width:0;overflow:hidden}
+  .card-body{padding:3px 5px 4px;display:block}
+  .card-name{font-size:9px;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card-meta{display:none}
+  .card-yield{position:absolute;top:3px;right:4px;z-index:3;font-size:8px;padding:0 3px;
+              color:var(--amber);background:rgba(0,0,0,.62);letter-spacing:.04em}
+  .card[title]{cursor:pointer}
+  .card-img::after{content:"";position:absolute;inset:0;
+      background:linear-gradient(180deg,rgba(255,200,120,.08),transparent 45%,rgba(0,0,0,.45));
+      pointer-events:none}
+  .card-body{padding:6px 8px 7px}
+  .card-name{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--txt)}
+  .card-meta{font-size:9px;letter-spacing:.07em;color:var(--txt-dim);margin-top:2px}
+  .card:hover{box-shadow:0 0 0 1px var(--amber-dim)}
+  .card:active{transform:translateY(1px)}
+  .card.on{box-shadow:0 0 0 1px var(--amber), 0 0 16px rgba(255,179,71,.28)}
+  .card.on .card-name{color:var(--amber)}
+  .card.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+                   background:var(--amber);z-index:2}
+  .card.fired .card-img{animation:flash .45s ease-out}
+
+  /* ---- arsenal em preparo: o "relógio de construção" do C&C ----
+     Enquanto o bake roda, cada cartão escurece e um setor varre no sentido
+     horário conforme o progresso; ao terminar, o cartão acende. */
+  .sec-title{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  #armStatus{letter-spacing:.08em;text-transform:none;color:var(--amber);opacity:.85;
+             font-variant-numeric:tabular-nums}
+  .card-img::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+      background:conic-gradient(transparent calc(var(--p,1) * 360deg), rgba(4,5,3,.78) 0);
+      transition:opacity .5s}
+  .cards:not(.building) .card-img::before{opacity:0}
+  .cards.building .card-img img{filter:grayscale(.75) brightness(.55)}
+  .card-prog{position:absolute;inset:0;z-index:3;display:flex;align-items:center;
+             justify-content:center;font-size:10px;letter-spacing:.14em;color:var(--amber);
+             text-shadow:0 1px 2px #000,0 0 8px rgba(0,0,0,.9);pointer-events:none;
+             font-variant-numeric:tabular-nums}
+  .cards:not(.building) .card-prog{display:none}
+  .cards.ready .card-img{animation:flash .6s ease-out}
+  @keyframes flash{0%{filter:brightness(2.4)}100%{filter:brightness(1)}}
+
+  /* ---- hora do dia ---- */
+  #todRange{-webkit-appearance:none;appearance:none;width:100%;height:5px;margin:2px 0 7px;
+    border:1px solid #000;outline:none;cursor:ew-resize;
+    background:linear-gradient(90deg,#0d1020 0%,#16203c 16%,#5d3f46 23%,#d98a4a 27%,
+      #7fa8d0 35%,#9dc0e2 50%,#7fa8d0 65%,#d98a4a 73%,#5d3f46 77%,#16203c 84%,#0d1020 100%)}
+  #todRange::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:15px;
+    background:linear-gradient(180deg,#e8e2d2,#8d8a7c);border:1px solid #000;cursor:ew-resize}
+  #todRange::-moz-range-thumb{width:9px;height:15px;border:1px solid #000;border-radius:0;
+    background:linear-gradient(180deg,#e8e2d2,#8d8a7c);cursor:ew-resize}
+  .readout{display:flex;align-items:baseline;gap:7px;
+     background:#070806;border:1px solid var(--bevel-lo);padding:4px 7px;margin-bottom:7px}
+  .readout b{font-size:15px;color:var(--green);letter-spacing:.06em;
+             font-variant-numeric:tabular-nums;text-shadow:0 0 9px rgba(141,223,106,.45)}
+  .readout span{font-size:9px;color:var(--txt-dim);letter-spacing:.06em}
+
+  .btnrow{display:flex;flex-wrap:wrap;gap:3px}
+  .btn{flex:1 1 auto;min-width:0;font:inherit;font-size:9px;letter-spacing:.06em;
+       padding:4px 2px;cursor:pointer;color:var(--txt-dim);text-transform:uppercase;
+       background:linear-gradient(180deg,#2b2f25,#15170f);
+       border-top:1px solid var(--bevel-hi);border-left:1px solid var(--bevel-hi);
+       border-right:1px solid var(--bevel-lo);border-bottom:1px solid var(--bevel-lo)}
+  .btn:hover{color:var(--txt)}
+  .btn.on{color:#13150f;background:linear-gradient(180deg,#ffc971,#c2883a);
+          border-color:var(--bevel-lo) var(--bevel-hi) var(--bevel-hi) var(--bevel-lo)}
+
+  .stats{display:grid;grid-template-columns:auto 1fr;gap:2px 9px;font-size:9.5px;
+         color:var(--txt-dim);margin-top:7px}
+  .stats i{font-style:normal;color:var(--amber-dim);letter-spacing:.08em}
+  .stats b{font-weight:400;color:var(--txt);font-variant-numeric:tabular-nums}
+
+  .foot{margin-top:auto;padding:5px 8px;text-align:center;font-size:8.5px;line-height:1.35;
+        letter-spacing:.09em;color:var(--txt-dim);
+        background:#0a0b08;border-top:1px solid var(--bevel-hi)}
+  .foot b{color:var(--amber);font-weight:400}
+
+  /* ---- marcador do alvo no terreno ---- */
+  #mark{position:fixed;z-index:15;width:46px;height:46px;margin:-23px 0 0 -23px;
+        pointer-events:none;opacity:0}
+  #mark.go{animation:ping .7s ease-out}
+  @keyframes ping{
+    0%{opacity:1;transform:scale(.35)}
+    70%{opacity:.55}
+    100%{opacity:0;transform:scale(1.5)}}
+
+  /* ---- gaveta de configuração ---- */
+  #cfg{position:fixed;top:0;bottom:0;right:var(--hud-w);width:min(372px,calc(100vw - var(--hud-w) - 16px));
+       z-index:19;display:flex;flex-direction:column;
+       background:linear-gradient(180deg,#22251e,#121410);
+       border-left:1px solid var(--bevel-hi);box-shadow:-14px 0 40px rgba(0,0,0,.65)}
+  #cfg[hidden]{display:none}
+  .cfg-head{display:flex;justify-content:space-between;align-items:center;padding:9px 11px;
+            background:linear-gradient(180deg,#3a3f31,#1d2017);border-bottom:1px solid var(--bevel-lo)}
+  .cfg-head b{font-size:11px;letter-spacing:.2em;color:var(--amber)}
+  .cfg-x{font:inherit;font-size:16px;line-height:1;color:var(--txt-dim);background:none;border:0;cursor:pointer;padding:0 4px}
+  .cfg-x:hover{color:var(--amber)}
+  .cfg-presets{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;
+               padding:8px 11px;border-bottom:1px solid rgba(255,255,255,.06)}
+  .cfg-presets span{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber-dim)}
+  .cfg-presets i{grid-column:2;font-style:normal;font-size:9px;color:var(--txt-dim);letter-spacing:.06em}
+  #cfgBody{overflow-y:auto;padding:4px 11px 10px;flex:1}
+  #cfgBody::-webkit-scrollbar{width:7px}
+  #cfgBody::-webkit-scrollbar-thumb{background:#3a3e33;border:1px solid #0c0d0a}
+  .cfg-group{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber-dim);
+             margin:11px 0 5px;padding-bottom:3px;border-bottom:1px solid rgba(255,255,255,.07)}
+  .cfg-row{display:grid;grid-template-columns:1fr;gap:3px;margin-bottom:7px}
+  .cfg-label{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--txt)}
+  .cfg-label em{font-style:normal;color:var(--txt-dim);font-size:9px;text-align:right}
+  .cfg-row .btn{padding:3px 2px}
+  .cfg-foot{padding:7px 11px;font-size:9px;color:var(--txt-dim);border-top:1px solid rgba(255,255,255,.06);
+            letter-spacing:.04em;line-height:1.5}
+  #cfgBtn.on{color:#13150f}
+
+  #err{display:none;position:fixed;inset:0;z-index:99;padding:40px;
+       background:#0a0a0d;color:#ff8f6b;white-space:pre-wrap;font-size:13px}
+
+  body.hide-ui #hud{transform:translateX(100%);transition:transform .25s}
+  @media (max-width:760px){ :root{--hud-w:206px} }
+  /* tela baixa: 3 colunas e sem rodapé, pra Ambiente e Sistema caberem sem
+     rolar — a dica de uso fica no title dos cartões */
+  @media (max-height:820px){
+    .cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+    .card-name{font-size:8px;letter-spacing:.03em}
+    .card-yield{font-size:7.5px}
+    .foot{display:none}
+    .panel{padding:6px 7px}
+    .sec-title{margin-bottom:5px;padding-bottom:3px}
+    .readout{margin-bottom:5px}
+    #hud{gap:5px;padding:7px}
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<svg id="mark" viewBox="0 0 48 48" fill="none" stroke="#ffb347" stroke-width="1.6">
+  <circle cx="24" cy="24" r="15" opacity=".9"/>
+  <circle cx="24" cy="24" r="7" opacity=".5"/>
+  <path d="M24 2v9M24 37v9M2 24h9M37 24h9" opacity=".9"/>
+</svg>
+
+<aside id="hud">
+  <div class="brandbar"><b>ARSENAL</b><span id="hudFps">—</span></div>
+
+  <div class="panel">
+    <div class="sec-title">Armamento<span id="armStatus"></span></div>
+    <div class="cards building" id="cards"></div>
+  </div>
+
+  <div class="panel">
+    <div class="sec-title">Ambiente</div>
+    <input type="range" id="todRange" min="0" max="1439" step="1" value="1095">
+    <div class="readout"><b id="todClock">18:15</b><span id="todPhase"></span></div>
+    <div class="btnrow" id="presets">
+      <button class="btn" data-h="5.35">amanhecer</button>
+      <button class="btn" data-h="8.5">manhã</button>
+      <button class="btn" data-h="12.6">meio-dia</button>
+      <button class="btn" data-h="17.45">dourada</button>
+      <button class="btn" data-h="18.55">crepúsculo</button>
+      <button class="btn" data-h="22.5">noite</button>
+      <button class="btn" id="cycleBtn" title="ciclo automático (tecla t)">ciclo</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="sec-title">Sistema</div>
+    <div class="btnrow" id="qrow">
+      <button class="btn" data-q="baixa">baixa</button>
+      <button class="btn" data-q="media">média</button>
+      <button class="btn on" data-q="alta">alta</button>
+      <button class="btn" data-q="ultra">ultra</button>
+    </div>
+    <div class="btnrow" style="margin-top:3px">
+      <button class="btn" id="cfgBtn" title="todas as opções gráficas">⚙ personalizar</button>
+    </div>
+    <div class="stats">
+      <i>grade</i><b id="stGrid">—</b>
+      <i>render</i><b id="stRes">—</b>
+      <i>passos</i><b id="stSteps">—</b>
+      <i>inst+sim</i><b id="stTime">—</b>
+    </div>
+  </div>
+
+  <div class="foot"><b>CLIQUE NO TERRENO</b> para detonar<br>arraste para orbitar · scroll zoom</div>
+</aside>
+
+<!-- gaveta de configuração gráfica (montada a partir de settings.js) -->
+<section id="cfg" aria-label="Configuração gráfica" hidden>
+  <div class="cfg-head"><b>CONFIGURAÇÃO GRÁFICA</b><button class="cfg-x" id="cfgClose" title="fechar (Esc)">×</button></div>
+  <div class="cfg-presets"><span>preset</span>
+    <div class="btnrow" id="cfgPresets"></div>
+    <i id="cfgPresetName"></i>
+  </div>
+  <div id="cfgBody"></div>
+  <div class="cfg-foot" id="cfgFoot"></div>
+</section>
+
+<div id="err"></div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
