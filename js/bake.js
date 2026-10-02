@@ -109,6 +109,7 @@ export class ExplosionBake {
     this._fbo = gl.createFramebuffer();
     this._shM = this._macroShader();
     this.variantsReady = 0;
+    this.bounds = null;      // caixa justa por quadro (computeBounds)
     this.frameTimes = new Float32Array(frames);
     for (let f = 0; f < frames; f++) this.frameTimes[f] = this.timeOfFrame(f);
     this.ready = false;
@@ -280,6 +281,7 @@ void main(){
     };
     this.variantsReady = 0;
     this.ready = false;
+    this.bounds = null;
   }
 
   /** fração concluída, pelo tempo simulado */
@@ -428,6 +430,44 @@ void main(){
   // fontes); o resultado vira um arquivo que as próximas cargas só baixam.
 
   get layerBytes() { return this.grid.atlasW * this.grid.atlasH * 4; }
+
+  /**
+   * Caixa JUSTA de cada quadro (espaço local, metros): onde a fumaça existe
+   * de fato. A caixa do domínio tem 38 m, e no começo a bola de fogo ocupa
+   * uma fração dela; com a caixa justa o recorte em tela e o trecho de marcha
+   * encolhem, e só se agrupam pra marcha conjunta explosões que se tocam.
+   * Amostra 1 voxel a cada 2 e alarga 2 células pra compensar.
+   */
+  computeBounds(vox) {
+    const G = this.grid, { nx, ny, nz, tilesX, atlasW, cell } = G, mn = G.domainMin;
+    const out = new Float32Array(this.layers * 6);
+    const per = this.layerBytes;
+    for (let l = 0; l < this.layers; l++) {
+      let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+      const base = l * per;
+      for (let z = 0; z < nz; z += 2) {
+        const tx = z % tilesX, ty = (z / tilesX) | 0;
+        for (let y = 0; y < ny; y += 2) {
+          let i = base + ((ty * ny + y) * atlasW + tx * nx) * 4;
+          for (let x = 0; x < nx; x += 2, i += 8) {
+            if (vox[i] > 3 || vox[i + 2] > 3) {
+              if (x < x0) x0 = x; if (x > x1) x1 = x;
+              if (y < y0) y0 = y; if (y > y1) y1 = y;
+              if (z < z0) z0 = z; if (z > z1) z1 = z;
+            }
+          }
+        }
+      }
+      if (x1 < x0) continue;   // quadro vazio: caixa nula (zeros)
+      const pad = 2;
+      x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); z0 = Math.max(0, z0 - pad);
+      x1 = Math.min(nx, x1 + 1 + pad); y1 = Math.min(ny, y1 + 1 + pad); z1 = Math.min(nz, z1 + 1 + pad);
+      out.set([mn[0] + x0 * cell, mn[1] + y0 * cell, mn[2] + z0 * cell,
+               mn[0] + x1 * cell, mn[1] + y1 * cell, mn[2] + z1 * cell], l * 6);
+    }
+    this.bounds = out;
+    return out;
+  }
   get fuelLayerBytes() { return this.fuelGrid.atlasW * this.fuelGrid.atlasH; }
 
   /** lê o combustível das camadas [from, to) — R8 só sai como RGBA */
@@ -460,8 +500,9 @@ void main(){
 
   /** cabeçalho + curva de luz + voxels, num único buffer */
   pack(voxels, fuel, meta = {}) {
+    if (!this.bounds) this.computeBounds(voxels);
     const head = new TextEncoder().encode(JSON.stringify({
-      ...meta, res: this.grid.nx, fuelRes: this.fuelGrid.nx, frames: this.frames,
+      ...meta, bounds: Array.from(this.bounds, (v) => +v.toFixed(2)), res: this.grid.nx, fuelRes: this.fuelGrid.nx, frames: this.frames,
       variants: this.variants, duration: this.duration, curve: this.curve,
     }));
     const headLen = (head.length + 3) & ~3;
@@ -496,6 +537,11 @@ void main(){
       throw new Error('bake: tamanho inválido');
     }
     const vox = buf.subarray(off + 2 * fl, off + 2 * fl + nv);
+    if (Array.isArray(meta.bounds) && meta.bounds.length === this.layers * 6) {
+      this.bounds = Float32Array.from(meta.bounds);
+    } else {
+      this.computeBounds(vox);   // asset anterior às caixas justas
+    }
     const fuel = buf.subarray(off + 2 * fl + nv);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);

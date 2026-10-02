@@ -398,6 +398,19 @@ prontos pras quatro resoluções. Fumaça-bloqueia-luz-de-outras saiu do padrão
 física (luz ∝ área, vida ∝ tamanho), não bug: a Carga Pesada do clique tem a
 mesma curva de luz da ao vivo; "Brilho das explosões" ajusta.
 
+## Explosões sobrepostas (02/10, noite)
+
+Várias pequenas + uma grande em cima: a fumaça das pequenas aparecia colada
+por cima da bola de fogo. Agora volumes que se interpenetram são marchados
+juntos (ARCHITECTURE.md §4f2). Caminho percorrido, pra não repetir: a luz
+cruzada sem auto-sombra deixava a fumaça das pequenas "algodão branco"; a
+aproximação pelo céu olhava pra cima com o fogo embaixo; e a linha reta era a
+face dos blocos macro da grande (luz pulada junto com a densidade vazia).
+Ferramentas: `inst.params.joint` e `inst.params.debug`.
+
+Git: `v1-antes-composicao-conjunta` (estado anterior) e
+`v2-composicao-conjunta`.
+
 ## Ainda não construído
 
 - SSAO — o MRT de normal + fração-de-ambiente já existe em `sceneT.texs[1]`

@@ -346,6 +346,46 @@ A cena recebe até 8 luzes de instância como pontuais sem sombra volumétrica
 sombrear); as explosões SIMULADAS ao vivo mantêm o caminho completo com
 sombra marchada.
 
+## 4f2. Explosões sobrepostas: marcha conjunta
+
+Antes cada instância era marchada sozinha e o resultado inteiro composto na
+frente ou atrás da outra pela distância do centro. Com volumes que se
+interpenetram (várias pequenas e uma grande em cima) isso põe a fumaça escura
+da pequena — que está dentro/atrás da bola de fogo — colada por cima dela.
+
+- **Caixa justa por quadro** (`ExplosionBake.computeBounds`, guardada no
+  cabeçalho do asset): onde a fumaça existe de fato. No começo é ~1/12 do
+  domínio. Encolhe o recorte em tela e o trecho de marcha de TODA instância.
+- **Grupos por interseção 3D** das caixas justas. Instância sozinha (o caso
+  comum) vai pelo shader enxuto. Grupo vai pelo shader conjunto: um raio só,
+  e em cada passo cada membro que ocupa o ponto entra com seu meio —
+  transporte de MISTURA (extinções e emissões somam, espalhamento ponderado
+  por σ). Os itens (sozinhas e grupos) são desenhados em ordem de
+  profundidade.
+- **Luz compartilhada no ponto**: sol = produto das transmitâncias de todos
+  os membros (raios paralelos, exato); fogo k atenuado pelo cache de k e, nos
+  demais, pela transmitância até k (o cache guarda, além de sol e fogo
+  próprio, a transmitância até o fogo VIZINHO dominante) ou pela do céu.
+  Fatorado como céu × correções: O(N) por passo.
+- O cache de luz de quem está num grupo cobre TODAS as células (a fumaça da
+  vizinha pode estar onde esta está vazia); sozinha, pula as vazias. A
+  consulta de luz é separada da de densidade — juntas, criavam uma aresta
+  reta na face dos blocos macro.
+- `boxFade`: a fumaça tardia encosta no teto do domínio da simulação e fica
+  cortada reta; uma faixa de 20% no teto afina antes do corte, com a MESMA
+  função no cache e na marcha.
+- Dither de meio LSB nos valores de 8 bits do bake (curvas de nível na
+  superfície do fogo).
+- Duas variantes do shader conjunto (até 4 e até 8 membros): a pressão de
+  registradores dos arrays por membro custa ~25% no de 8. Grupo maior que 8
+  vira pedaços de 4 em ordem de profundidade (aproximado, e barato).
+
+Custo (alta): cenário de 5 pequenas + 1 grande, 14 ms conjunta contra 11,6 ms
+uma por vez. Barragem extrema de 15 gigantes interpenetradas: 49 ms contra
+25 ms. `inst.params.joint = 1` reproduz a composição antiga pra comparar;
+`inst.params.debug` (1 fogo · 2 sol · 3 atenuações · 4 nº de membros) mostra
+os termos da luz.
+
 ## 4g. Configuração gráfica
 
 `js/settings.js` é a fonte única: esquema das opções (com o que cada uma
