@@ -409,6 +409,43 @@ A cena recebe até 8 luzes de instância como pontuais sem sombra volumétrica
 sombrear); as explosões SIMULADAS ao vivo mantêm o caminho completo com
 sombra marchada.
 
+## 4f1. Vetores de movimento no bake
+
+O bake guarda 56 quadros em 6 s, densos no começo (~6 ms) e esparsos no fim
+(~180 ms). Entre dois quadros a fumaça anda 1.3–2.2 células do bake 64³ na
+média (p90 ~3.2, medido no campo de velocidade do solver). A mistura parada
+entre quadros funde duas posições (o detalhe "pulsa" na taxa do bake) e as
+instâncias pequenas nem misturavam: pulavam de quadro (~5.5 quadros/s na fase
+tardia).
+
+- **Gravação**: a textura de combustível (meia resolução) virou RGBA8 —
+  r = combustível, gba = velocidade do solver (±40 m/s, 8 bits com sinal).
+  Sem unidade de textura nova; +~10% de memória.
+- **Reprodução** (flipbook com vetores de movimento, em 3D):
+  `A = quadro0(p − v·a·Δt)`, `B = quadro1(p + v·(1−a)·Δt)`, `mix(A, B, a)`.
+  Uma velocidade só (a do quadro de baixo, fatia z mais próxima: 1 leitura).
+- **Validação objetiva** (deixar-um-de-fora: interpolar o quadro f a partir
+  de f−1 e f+1 e comparar com o f real, num intervalo 2× o do bake): erro da
+  densidade 1.15–2× menor que a mistura parada e 2.5–3.6× menor que pular de
+  quadro; velocidade única erra menos que v0/v1 separadas. Na CPU, o
+  deslocamento que minimiza o erro entre quadros é s ≈ 1 × v·Δt — a
+  velocidade gravada prevê o movimento.
+- **Pulo de espaço vazio**: máximo do macro dos dois quadros (antes só o de
+  baixo: o conteúdo do quadro seguinte era pulado onde a fumaça se expandia).
+  Com o macro dilatado 1 bloco, cobre deslocamentos até 8 células/intervalo.
+- **Cache de luz**: mistura entre os dois quadros sem vetor (é grosso e a luz
+  varia devagar); antes usava o quadro arredondado e a sombra interna pulava.
+- **Ruído de detalhe que anda com a fumaça**: advectado pela velocidade em
+  duas fases defasadas de meio período (flow map de Vlachos, Portal 2 /
+  SIGGRAPH 2010; o papel dos "dual rest fields" do Houdini), cada fase
+  regenerada com outro deslocamento quando o peso dela é zero (Neyret 2003),
+  soma normalizada pela variância. Período 0.5 s (`inst.params.flowPeriod`).
+- **Custo** (preset alta, 1056×669, mediana de rodadas alternadas contra a
+  versão anterior): 12 explosões 58.9 → 74.0 ms (+26%). `inst.params.mvScale`
+  = 0 desliga só o deslocamento (depuração).
+- Armadilha de medição: "nitidez" por gradiente de imagem engana — a mistura
+  parada de duas posições cria bordas duplicadas e conta como MAIS detalhe.
+
 ## 4f2. Explosões sobrepostas: marcha conjunta
 
 Antes cada instância era marchada sozinha e o resultado inteiro composto na

@@ -28,10 +28,14 @@ export const SOOT_SCALE = 4.0;   // faixa representável de fuligem
 export const DUST_SCALE = 2.5;
 export const TEMP_SCALE = 1.6;
 export const FUEL_SCALE = 1.0;
+// Velocidade do solver gravada por quadro (vetores de movimento do bake):
+// ±VEL_MAX m/s em 8 bits com sinal = degraus de 0.31 m/s, que no maior
+// intervalo entre quadros (~0.18 s) dão 3 cm de erro de deslocamento.
+export const VEL_MAX = 40.0;
 // GLSL não aceita float*int, e `${4.0}` vira "4" em JS. Literais explícitos.
 const F = (x) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 const SOOT_F = F(SOOT_SCALE), DUST_F = F(DUST_SCALE), TEMP_F = F(TEMP_SCALE);
-const FUEL_F = F(FUEL_SCALE);
+const FUEL_F = F(FUEL_SCALE), VEL_F = F(VEL_MAX);
 
 export class ExplosionBake {
   /**
@@ -87,16 +91,23 @@ export class ExplosionBake {
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-    // COMBUSTÍVEL em meia resolução, uma camada por quadro. É o que marca a
-    // frente de chama: o render ao vivo dá +150% de brilho onde ainda há
-    // combustível queimando, e sem este canal a instância saía com o fogo
-    // chapado. É um multiplicador suave, então 32³ basta (32 KB por quadro).
+    // COMBUSTÍVEL + VELOCIDADE em meia resolução, uma camada por quadro.
+    // r: combustível — marca a frente de chama: o render ao vivo dá +150% de
+    //    brilho onde ainda há combustível queimando, e sem este canal a
+    //    instância saía com o fogo chapado.
+    // gba: velocidade do solver (m/s, ±VEL_MAX) — os vetores de movimento do
+    //    bake. Entre dois quadros a fumaça anda 1.3–2.2 células (p90 ~3.2, medido
+    //    no bake 64³); misturar os quadros parados funde duas posições e o
+    //    detalhe "pulsa" na taxa do bake. Com a velocidade, cada quadro é
+    //    deslocado até o instante pedido antes da mistura — o flipbook com
+    //    vetores de movimento dos jogos, em 3D.
+    // Os dois campos são suaves, então meia resolução basta (128 KB/quadro em 32³).
     this.fuelGrid = new VolumeGrid(Math.max(16, res >> 1), domainSize);
     this.fuelTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.fuelTex);
-    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.R8,
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8,
                   this.fuelGrid.atlasW, this.fuelGrid.atlasH, this.layers, 0,
-                  gl.RED, gl.UNSIGNED_BYTE, null);
+                  gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -224,7 +235,7 @@ void main(){
 }`, 'bakeDownsample');
   }
 
-  /** combustível: média na pegada de cada voxel da grade de meia resolução */
+  /** combustível + velocidade: média na pegada de cada voxel da grade de meia resolução */
   _fuelShader(srcGrid) {
     const gl = this.gl;
     const ratio = srcGrid.nx / this.fuelGrid.nx;
@@ -232,19 +243,25 @@ void main(){
     return new Shader(gl, FS_VS,
       `#version 300 es\nprecision highp float;\nin vec2 vUV;\n` + COMMON
       + srcGrid.glsl('S') + this.fuelGrid.glsl('U') + `
-uniform sampler2D uFields;
+uniform sampler2D uFields, uVel;
 out vec4 oCol;
 #define N ${N}
 #define RATIO ${F(ratio)}
 void main(){
   vec3 bv = floor(fragToVoxelU(gl_FragCoord.xy));
   float s = 0.0;
+  vec3 v = vec3(0.0);
   for (int z = 0; z < N; z++)
     for (int y = 0; y < N; y++)
-      for (int x = 0; x < N; x++)
-        s += sampleVolS(uFields, (bv + (vec3(x, y, z) + 0.5) / float(N)) * RATIO).b;
-  // gamma: o combustível relevante pra chama fica entre 0.02 e 0.35
-  oCol = vec4(sqrt(saturate(s / float(N * N * N) / ${FUEL_F})), 0.0, 0.0, 1.0);
+      for (int x = 0; x < N; x++){
+        vec3 sp = (bv + (vec3(x, y, z) + 0.5) / float(N)) * RATIO;
+        s += sampleVolS(uFields, sp).b;
+        v += sampleVolS(uVel, sp).xyz;
+      }
+  float inv = 1.0 / float(N * N * N);
+  // gamma no combustível: o relevante pra chama fica entre 0.02 e 0.35
+  oCol = vec4(sqrt(saturate(s * inv / ${FUEL_F})),
+              clamp(v * inv / ${VEL_F}, -1.0, 1.0) * 0.5 + 0.5);
 }`, 'bakeFuel');
   }
 
@@ -409,7 +426,8 @@ void main(){
     gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, this.fuelTex, 0, layer);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
     gl.viewport(0, 0, this.fuelGrid.atlasW, this.fuelGrid.atlasH);
-    J.shFuel.use().set('uDomainOrigin', fluid.domainOrigin).tex('uFields', fluid.fields.read.tex);
+    J.shFuel.use().set('uDomainOrigin', fluid.domainOrigin)
+      .tex('uFields', fluid.fields.read.tex).tex('uVel', fluid.vel.read.tex);
     drawFS(gl);
   }
 
@@ -468,19 +486,17 @@ void main(){
     this.bounds = out;
     return out;
   }
-  get fuelLayerBytes() { return this.fuelGrid.atlasW * this.fuelGrid.atlasH; }
+  get fuelLayerBytes() { return this.fuelGrid.atlasW * this.fuelGrid.atlasH * 4; }
 
-  /** lê o combustível das camadas [from, to) — R8 só sai como RGBA */
+  /** lê combustível + velocidade das camadas [from, to) */
   readFuelLayers(from, to, out) {
     const gl = this.gl, { atlasW, atlasH } = this.fuelGrid;
-    const tmp = new Uint8Array(atlasW * atlasH * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this._fbo);
     for (let l = from; l < to; l++) {
       gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, this.fuelTex, 0, l);
       gl.readBuffer(gl.COLOR_ATTACHMENT0);
-      gl.readPixels(0, 0, atlasW, atlasH, gl.RGBA, gl.UNSIGNED_BYTE, tmp);
-      const o = l * this.fuelLayerBytes;
-      for (let i = 0, n = atlasW * atlasH; i < n; i++) out[o + i] = tmp[i * 4];
+      gl.readPixels(0, 0, atlasW, atlasH, gl.RGBA, gl.UNSIGNED_BYTE,
+                    out, l * this.fuelLayerBytes);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
@@ -502,7 +518,8 @@ void main(){
   pack(voxels, fuel, meta = {}) {
     if (!this.bounds) this.computeBounds(voxels);
     const head = new TextEncoder().encode(JSON.stringify({
-      ...meta, bounds: Array.from(this.bounds, (v) => +v.toFixed(2)), res: this.grid.nx, fuelRes: this.fuelGrid.nx, frames: this.frames,
+      ...meta, bounds: Array.from(this.bounds, (v) => +v.toFixed(2)), res: this.grid.nx, fuelRes: this.fuelGrid.nx,
+      fuelFmt: 'rgba-vel', velMax: VEL_MAX, frames: this.frames,
       variants: this.variants, duration: this.duration, curve: this.curve,
     }));
     const headLen = (head.length + 3) & ~3;
@@ -533,7 +550,8 @@ void main(){
     this.lightPos.set(new Float32Array(buf.slice(off, off + fl).buffer));
     this.lightCol.set(new Float32Array(buf.slice(off + fl, off + 2 * fl).buffer));
     const nv = this.layers * this.layerBytes, nf = this.layers * this.fuelLayerBytes;
-    if (meta.fuelRes !== this.fuelGrid.nx || buf.length - off - 2 * fl !== nv + nf) {
+    if (meta.fuelRes !== this.fuelGrid.nx || meta.fuelFmt !== 'rgba-vel' || meta.velMax !== VEL_MAX
+        || buf.length - off - 2 * fl !== nv + nf) {
       throw new Error('bake: tamanho inválido');
     }
     const vox = buf.subarray(off + 2 * fl, off + 2 * fl + nv);
@@ -549,7 +567,7 @@ void main(){
                      this.layers, gl.RGBA, gl.UNSIGNED_BYTE, vox);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.fuelTex);
     gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, 0, this.fuelGrid.atlasW, this.fuelGrid.atlasH,
-                     this.layers, gl.RED, gl.UNSIGNED_BYTE, fuel);
+                     this.layers, gl.RGBA, gl.UNSIGNED_BYTE, fuel);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.disable(gl.BLEND);
     gl.disable(gl.DEPTH_TEST);
@@ -561,15 +579,30 @@ void main(){
     return meta;
   }
 
-  /** prelude do combustível (grade de 32³ com sufixo próprio) */
+  /**
+   * prelude do combustível + velocidade (grade de meia resolução com sufixo
+   * próprio). Requer o prelude da grade assada 'B' antes (bakeVel converte
+   * a coordenada de voxel de B).
+   */
   fuelGlsl(s = 'U') {
     return this.fuelGrid.glsl(s) + `
 uniform sampler2DArray uBakeFuel${s};
-float fuelLayer${s}(vec3 p, float layer){
+vec4 fuelTexel${s}(vec3 p, float layer){
   float zc = clamp(p.z, 0.5, GRID${s}.z - 0.5);
   float z0 = floor(zc - 0.5), fz = zc - 0.5 - z0;
-  return mix(texture(uBakeFuel${s}, vec3(tileUV${s}(p.xy, z0), layer)).r,
-             texture(uBakeFuel${s}, vec3(tileUV${s}(p.xy, z0 + 1.0), layer)).r, fz);
+  return mix(texture(uBakeFuel${s}, vec3(tileUV${s}(p.xy, z0), layer)),
+             texture(uBakeFuel${s}, vec3(tileUV${s}(p.xy, z0 + 1.0), layer)), fz);
+}
+float fuelLayer${s}(vec3 p, float layer){ return fuelTexel${s}(p, layer).r; }
+// Velocidade (m/s, espaço local) na coordenada de voxel da grade ASSADA B.
+// Uma leitura só: bilinear na fatia z mais próxima. A velocidade de meia
+// resolução é suave, e no teste de deixar-um-de-fora (interpolar o quadro f
+// a partir de f−1 e f+1 e comparar com o f real) a fatia mais próxima custa
+// ~2% de erro a mais que a trilinear, pela metade das leituras.
+vec3 bakeVel(vec3 voxB, float layer){
+  vec3 p = voxB * (GRID${s} / GRIDB);
+  float z = clamp(floor(p.z), 0.0, GRID${s}.z - 1.0);
+  return (texture(uBakeFuel${s}, vec3(tileUV${s}(p.xy, z), layer)).gba * 2.0 - 1.0) * ${VEL_F};
 }
 // combustível no ponto LOCAL lp, no quadro contínuo (base da variante já somada)
 float sampleFuel${s}(vec3 lp, float frame, float frames, float base){
@@ -590,6 +623,11 @@ float sampleFuel${s}(vec3 lp, float frame, float frames, float base){
     return this.grid.glsl(g) + this.macroGrid.glsl(m) + `
 uniform sampler2DArray uBake${g};
 uniform float uBake${g}Frames;   // quadro contínuo vem pronto da CPU
+
+// tempo (s de sequência) de um quadro contínuo — mesma curva de timeOfFrame()
+float bakeTimeOf${g}(float f){
+  return ${F(this.duration)} * pow(clamp(f / ${F(this.frames - 1)}, 0.0, 1.0), ${F(this.curve)});
+}
 
 // Uma camada = um quadro, e cada camada é o mesmo atlas achatado do resto do
 // projeto. Amostrar custa 4 taps: 2 pro lerp em Z, ×2 pro lerp TEMPORAL.

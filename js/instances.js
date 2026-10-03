@@ -37,18 +37,75 @@ float boxFade(vec3 vb){
   return top * side;
 }
 
-// Camada(s) do bake → (fuligem, temperatura, poeira, céu). O dither de meio
-// LSB quebra as curvas de nível dos 8 bits: em superfície de fogo lisa a
-// temperatura quantizada em degraus de 0.6% aparecia como contornos.
-vec4 bakeAt(vec3 voxel, float frame, float base, float lerpT, float dith){
-  float f0 = floor(frame);
-  vec4 q = sampleBakeLayerB(voxel, base + f0);
-  if (lerpT > 0.5){
-    float f1 = min(f0 + 1.0, uBakeBFrames - 1.0);
-    q = mix(q, sampleBakeLayerB(voxel, base + f1), frame - f0);
-  }
+// Quadro contínuo → os dois quadros assados em volta, a fração entre eles e
+// k = intervalo de tempo entre eles em células por (m/s): deslocamento = v·k.
+struct BakeT { float f0, f1, a, k; };
+uniform float uMVScale;   // depuração: 0 = mistura parada (sem vetores de movimento)
+BakeT bakeTime(float frame){
+  BakeT b;
+  b.f0 = floor(frame);
+  b.f1 = min(b.f0 + 1.0, uBakeBFrames - 1.0);
+  b.a = frame - b.f0;
+  b.k = (bakeTimeOfB(b.f1) - bakeTimeOfB(b.f0)) * INV_CELLB * uMVScale;
+  return b;
+}
+
+// Interpolação COM MOVIMENTO entre os quadros (flipbook com vetores de
+// movimento, em 3D): o quadro de baixo é levado pra frente até o instante
+// pedido e o de cima é trazido pra trás, e só então se misturam. Sem isso a
+// mistura parada fundia duas posições da fumaça (ela anda 1–3 células por
+// intervalo) e o detalhe pulsava na taxa do bake.
+//   A = quadro0(p − v·a·Δt)   B = quadro1(p + v·(1−a)·Δt)   mix(A, B, a)
+// Uma velocidade só (a do quadro de baixo) pros dois lados: no teste de
+// deixar-um-de-fora ela erra MENOS que v0/v1 separadas (A e B andam pelos
+// mesmos vetores e se alinham melhor) e custa metade das leituras.
+// O dither de meio LSB quebra as curvas de nível dos 8 bits: em superfície de
+// fogo lisa a temperatura quantizada em degraus de 0.6% aparecia como contornos.
+vec4 bakeAtMV(vec3 voxel, BakeT b, float base, vec3 v, float dith){
+  vec4 A = sampleBakeLayerB(voxel - v * (b.a * b.k), base + b.f0);
+  vec4 B = sampleBakeLayerB(voxel + v * ((1.0 - b.a) * b.k), base + b.f1);
+  vec4 q = mix(A, B, b.a);
   q.rgb = max(q.rgb + dith, 0.0);
   return vec4(q.r * q.r * ${SOOT_F}, q.g * ${TEMP_F}, q.b * q.b * ${DUST_F}, q.a);
+}
+// mesma coisa lendo a velocidade no próprio ponto (quem não tem ruído)
+vec4 bakeAt(vec3 voxel, float frame, float base, float dith){
+  BakeT b = bakeTime(frame);
+  return bakeAtMV(voxel, b, base, bakeVel(voxel, base + b.f0), dith);
+}
+
+// Ocupação macro pra pular espaço vazio: o MÁXIMO dos dois quadros. O
+// conteúdo num instante intermediário está no segmento entre as posições dos
+// dois quadros, e com o macro dilatado 1 bloco isso fica coberto pra
+// deslocamentos até 2 blocos (8 células) por intervalo — o medido é ≤ 5.
+float bakeMacro2(vec3 lp, BakeT b, float base){
+  vec3 pm = worldToVoxelAtM(lp, vec3(0.0));
+  return max(bakeMacroAtM(pm, base + b.f0), bakeMacroAtM(pm, base + b.f1));
+}
+
+`;
+const FLOW_NOISE = `
+// Ruído de detalhe que ANDA com a fumaça: advectado pela velocidade em duas
+// fases defasadas de meio período, que se revezam (flow map de Vlachos,
+// Portal 2 / SIGGRAPH 2010; em volume é o papel dos "dual rest fields" do
+// Houdini). Cada fase recomeça quando o peso dela é zero, com outro
+// deslocamento (Neyret 2003: textura regenerada), então o padrão não estica
+// sem limite nem se repete. Soma normalizada pela variância: no cruzamento as
+// duas fases a 50% não perdem contraste.
+vec3 flowNoise(vec3 lp, vec3 vel, float tSeq, float seed){
+  float ph = tSeq / uFlowPeriod;
+  vec3 r = vec3(0.0);
+  float w2 = 0.0;
+  for (int k = 0; k < 2; k++){
+    float pk = ph + 0.5 * float(k);
+    float c = floor(pk), tk = pk - c;
+    float w = 1.0 - abs(2.0 * tk - 1.0);
+    vec3 off = vec3(seed * 7.3, seed * 5.1, seed * 3.1) + hash33(vec3(c, float(k), seed)) * 17.0;
+    vec3 fp = (lp - vel * (tk * uFlowPeriod)) * uDetailScale + off;
+    r += w * (texture(uNoise, fp).xyz * 2.0 - 1.0);
+    w2 += w * w;
+  }
+  return r * inversesqrt(max(w2, 1e-4));
 }
 `;
 const MAX_STEPS = 160;   // a marcha conjunta atravessa várias caixas no mesmo raio
@@ -106,6 +163,10 @@ export class BlastInstances {
       emissionGain: 0.62, emissionCurve: 0.44, tempScale: 0.92,
       phaseG: 0.42, phaseBack: 0.22, phaseMix: 0.32,
       steps: 56, stepsMin: 16, refArea: 0.16, detailAmp: 0.42, detailScale: 0.85, detailDens: 0.34,
+      // período (s) das duas fases do ruído advectado: mais longo estica mais
+      // o detalhe nas regiões de cisalhamento, mais curto deixa o revezamento
+      // das fases mais frequente
+      flowPeriod: 0.5,
       erode: 0.042, skyGain: 1.1, fireGain: 1.0,
       // Intensidade da luz por instância relativa à simulação. Era 0.5 (pra
       // barragem não estourar), e o chão em volta da explosão do clique ficava
@@ -149,7 +210,7 @@ in vec2 vUV;
     }
     this.lcFbo = gl.createFramebuffer();
     const LCP = this.lcGrid.glsl('C');
-    this.shLight = new Shader(gl, FS_VS, HEAD + COMMON + bake.glsl() + LCP + BAKE_HELPERS + `
+    this.shLight = new Shader(gl, FS_VS, HEAD + COMMON + bake.glsl() + bake.fuelGlsl('U') + LCP + BAKE_HELPERS + `
 uniform vec3 uSunDirL, uFireL, uNbL;
 uniform float uHasNb, uFull;
 uniform float uInstScale, uInstFrame, uSootExt, uDustExt, uErodeMean;
@@ -165,14 +226,20 @@ vec2 rayBoxL(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax){
 
 
 // mesma extinção EFETIVA do render (erosão média), como em effExtinction()
+// O cache é grosso (48³, ~0.8 m) e a luz varia devagar: aqui basta a mistura
+// entre os dois quadros, sem vetor de movimento — continua sem pular de
+// quadro e custa 2 leituras a menos por passo da marcha de luz.
 float extAt(vec3 lp){
   vec3 vb = worldToVoxelAtB(lp, vec3(0.0));
-  vec4 f = sampleBake4B(vb, uInstFrame) * vec4(vec3(boxFade(vb)), 1.0);
+  BakeT b = bakeTime(uInstFrame);
+  vec4 q = mix(sampleBakeLayerB(vb, uVariantBaseB + b.f0), sampleBakeLayerB(vb, uVariantBaseB + b.f1), b.a);
+  vec4 f = vec4(q.r * q.r * ${SOOT_F}, q.g * ${TEMP_F}, q.b * q.b * ${DUST_F}, q.a)
+         * vec4(vec3(boxFade(vb)), 1.0);
   float r = max(f.r - uErodeMean / (1.0 + f.r * 9.0), 0.0);
   float a = max(f.b - uErodeMean * 0.7 / (1.0 + f.b * 9.0), 0.0);
   return uSootExt * r + uDustExt * a;
 }
-float macroLayer(){ return uVariantBaseB + floor(uInstFrame); }
+float macroOcc(vec3 lp){ return bakeMacro2(lp, bakeTime(uInstFrame), uVariantBaseB); }
 // transmitância de lp até maxDist na direção dir (espaço local; tau em metros)
 float march(vec3 lp, vec3 dir, float maxDist, int steps, float tauCap){
   vec2 hit = rayBoxL(lp, dir, BASE_MINB, BASE_MINB + DOMAIN_SIZEB);
@@ -184,7 +251,7 @@ float march(vec3 lp, vec3 dir, float maxDist, int steps, float tauCap){
   for (int i = 0; i < 48; i++){
     if (t >= hit.y) break;
     vec3 p = lp + dir * t;
-    if (bakeMacroAtM(worldToVoxelAtM(p, vec3(0.0)), macroLayer()) < 0.004){
+    if (macroOcc(p) < 0.004){
       t += bakeMacroExitM(p, dir) + 1e-3;
       continue;
     }
@@ -202,7 +269,7 @@ void main(){
   // fumaça de uma VIZINHA pode estar exatamente ali e precisa da sombra e da
   // luz do fogo desta — com o atalho ela recebia o fogo inteiro e virava
   // algodão branco, com uma aresta reta na face dos blocos.
-  if (uFull < 0.5 && bakeMacroAtM(worldToVoxelAtM(lp, vec3(0.0)), macroLayer()) < 0.004){
+  if (uFull < 0.5 && macroOcc(lp) < 0.004){
     oCol = vec4(1.0); return;
   }
   vec3 tf = uFireL - lp;
@@ -234,8 +301,9 @@ uniform vec3 uSootColor, uDustColor;
 uniform float uEmissionGain, uEmissionCurve, uTempScale;
 uniform float uPhaseG, uPhaseBack, uPhaseMix, uSunOcclude;
 uniform float uDetailAmp, uDetailScale, uDetailDens, uErode;
-uniform float uSkyGain, uFireGain, uJitter, uTimeAnim;
+uniform float uSkyGain, uFireGain, uJitter, uFlowPeriod;
 uniform int uSteps;
+${FLOW_NOISE}
 
 layout(location=0) out vec4 oCol;
 layout(location=1) out vec4 oAux;
@@ -251,14 +319,14 @@ vec2 rayBoxI(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax){
 // mundo → espaço local da instância (desfaz posição e escala)
 vec3 toLocal(vec3 w){ return (w - uInstPos) / uInstScale; }
 
-vec4 sampleInst(vec3 w, float dith){
+vec4 sampleInst(vec3 w, BakeT bt, float tSeq, float dith){
   vec3 lp = toLocal(w);
-  // ruído no espaço LOCAL e deslocado pela seed: duas instâncias da mesma
-  // sequência não ficam idênticas
-  vec3 fp = lp * uDetailScale + vec3(uInstSeed * 7.3, -uTimeAnim * 0.035, uInstSeed * 3.1);
-  vec3 n = texture(uNoise, fp).xyz * 2.0 - 1.0;
+  vec3 vel = bakeVel(worldToVoxelAtB(lp, vec3(0.0)), uVariantBaseB + bt.f0);
+  // ruído no espaço LOCAL, deslocado pela seed (duas instâncias da mesma
+  // sequência não ficam idênticas) e levado pela velocidade da fumaça
+  vec3 n = flowNoise(lp, vel, tSeq, uInstSeed);
   vec3 voxel = worldToVoxelAtB(lp + n * uDetailAmp, vec3(0.0));
-  vec4 f = bakeAt(voxel, uInstFrame, uVariantBaseB, uTemporalLerpB, dith);
+  vec4 f = bakeAtMV(voxel, bt, uVariantBaseB, vel, dith);
   float nm = (n.x + n.y + n.z) * 0.577;
   f.rb *= (1.0 + uDetailDens * nm) * boxFade(voxel);
   float er = uErode * (0.5 - 0.5 * nm);
@@ -294,9 +362,9 @@ void main(){
   float phSun = phaseDual(cosSun, uPhaseG, uPhaseBack, uPhaseMix);
   float phIso = 1.0 / (4.0 * PI);
   vec3 keyCol = envKeyColor(), skyCol = envSkyUp();
-  // o macro é por camada: sem a base da variante, as variantes 1 e 2 pulavam
-  // espaço pelo macro da variante 0 e perdiam pedaços da fumaça
-  float macroLayer = uVariantBaseB + floor(uInstFrame);
+  // quadros em volta, fração e intervalo — iguais pro raio inteiro
+  BakeT bt = bakeTime(uInstFrame);
+  float tSeq = bakeTimeOfB(uInstFrame);
 
   vec3 L = vec3(0.0);
   // transmitância por oitava de espalhamento múltiplo (como no render ao vivo)
@@ -312,14 +380,16 @@ void main(){
     // A caixa tem 38m mas a bola de fogo ocupa uma fração dela na maior
     // parte da sequência. Sem isto a marcha gasta quase todos os passos no
     // nada: medido 11ms por instância, contra menos de 1ms com o salto.
+    // o macro é por camada: sem a base da variante, as variantes 1 e 2 pulavam
+    // espaço pelo macro da variante 0 e perdiam pedaços da fumaça
     vec3 lpw = toLocal(w);
-    if (bakeMacroAtM(worldToVoxelAtM(lpw, vec3(0.0)), macroLayer) < 0.004){
+    if (bakeMacro2(lpw, bt, uVariantBaseB) < 0.004){
       t += (bakeMacroExitM(lpw, rd) + 1e-3) * uInstScale;
       continue;
     }
 
     float dith = (ignoise(gl_FragCoord.xy + float(i) * vec2(5.588, 3.17)) - 0.5) / 255.0;
-    vec4 f = sampleInst(w, dith);
+    vec4 f = sampleInst(w, bt, tSeq, dith);
     if (f.r + f.b > 1e-4){
       float sigSoot = uSootExt * f.r, sigDust = uDustExt * f.b;
       float sigT = sigSoot + sigDust;
@@ -412,7 +482,7 @@ uniform float uNear;
 uniform int uCount;
 uniform vec4 uMPos[MJ];     // posição.xyz, escala
 uniform vec4 uMFrm[MJ];     // quadro contínuo, base da variante, seed, camada do cache (<0 = sem)
-uniform vec4 uMFire[MJ];    // luz do fogo: posição.xyz | interpolação temporal (0/1)
+uniform vec4 uMFire[MJ];    // luz do fogo: posição.xyz | livre
 uniform vec4 uMFireC[MJ];   // cor da luz do fogo | passo de marcha (m)
 uniform float uMNb[MJ];     // índice (no grupo) do vizinho dominante do membro, ou -1
 uniform vec4 uMBoxA[MJ], uMBoxB[MJ];   // caixa justa no mundo (mín, máx)
@@ -425,8 +495,8 @@ uniform vec3 uSootColor, uDustColor;
 uniform float uEmissionGain, uEmissionCurve, uTempScale;
 uniform float uPhaseG, uPhaseBack, uPhaseMix, uSunOcclude;
 uniform float uDetailAmp, uDetailScale, uDetailDens, uErode;
-uniform float uSkyGain, uFireGain, uJitter, uTimeAnim;
-
+uniform float uSkyGain, uFireGain, uJitter, uFlowPeriod;
+${FLOW_NOISE}
 layout(location=0) out vec4 oCol;
 layout(location=1) out vec4 oAux;
 
@@ -444,10 +514,11 @@ vec2 rayBoxI(vec3 ro, vec3 rd, vec3 bmin, vec3 bmax){
 // instâncias da mesma sequência não ficam idênticas)
 vec4 sampleMember(int m, vec3 lp, float dith){
   vec4 F = uMFrm[m];
-  vec3 fp = lp * uDetailScale + vec3(F.z * 7.3, -uTimeAnim * 0.035, F.z * 3.1);
-  vec3 n = texture(uNoise, fp).xyz * 2.0 - 1.0;
+  BakeT bt = bakeTime(F.x);
+  vec3 vel = bakeVel(worldToVoxelAtB(lp, vec3(0.0)), F.y + bt.f0);
+  vec3 n = flowNoise(lp, vel, bakeTimeOfB(F.x), F.z);
   vec3 vp = worldToVoxelAtB(lp + n * uDetailAmp, vec3(0.0));
-  vec4 f = bakeAt(vp, F.x, F.y, uMFire[m].w, dith);
+  vec4 f = bakeAtMV(vp, bt, F.y, vel, dith);
   float nm = (n.x + n.y + n.z) * 0.577;
   f.rb *= (1.0 + uDetailDens * nm) * boxFade(vp);
   float er = uErode * (0.5 - 0.5 * nm);
@@ -532,7 +603,7 @@ void main(){
       inK[m] = true;
       vec4 P = uMPos[m], F = uMFrm[m];
       vec3 lp = (w - P.xyz) / P.w;
-      if (bakeMacroAtM(worldToVoxelAtM(lp, vec3(0.0)), F.y + floor(F.x)) < 0.004){
+      if (bakeMacro2(lp, bakeTime(F.x), F.y) < 0.004){
         skip = min(skip, (bakeMacroExitM(lp, rd) + 1e-3) * P.w);
         continue;
       }
@@ -909,10 +980,7 @@ void main(){
     gl.viewport(0, 0, this.lcGrid.atlasW, this.lcGrid.atlasH);
     const sh = this.shLight.use();
     sh.set('uSunDirL', keyDir).set('uSootExt', P.sootExt).set('uDustExt', P.dustExt)
-      .set('uErodeMean', P.erode * 0.5).set('uBakeBFrames', B.frames)
-      // um quadro só: a luz varia devagar e a interpolação temporal dobrava
-      // o número de leituras por passo da marcha
-      .set('uTemporalLerpB', 0);
+      .set('uErodeMean', P.erode * 0.5).set('uBakeBFrames', B.frames).set('uMVScale', P.mvScale ?? 1);
     sh.seti('uSunSteps', P.lightSteps).seti('uFireSteps', P.fireSteps);
     // luz de todos (pra achar o vizinho dominante de cada um, só no grupo)
     const lightMap = new Map(this.list.map((o) => [o, this.lightOf(o)]));
@@ -937,7 +1005,10 @@ void main(){
       }
       gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, this.lcTex, 0, k);
       sh._unit = 0;
-      sh.set('uInstScale', o.scale).set('uInstFrame', Math.round(B.frameOfTime(o.t)))
+      // quadro CONTÍNUO, com a mesma interpolação com movimento do render:
+      // arredondado, a sombra interna pulava entre quadros enquanto a fumaça
+      // já se movia lisa
+      sh.set('uInstScale', o.scale).set('uInstFrame', B.frameOfTime(o.t))
         .set('uVariantBaseB', (o.variant || 0) * B.frames)
         .set('uFireL', [(L.pos[0] - o.pos[0]) / o.scale, L.pos[1] / o.scale,
                         (L.pos[2] - o.pos[2]) / o.scale]);
@@ -954,7 +1025,7 @@ void main(){
     const gl = this.gl, P = this.params, B = this.bake;
     sh.set('uInvViewProj', cam.invViewProj).set('uCamPos', cam.pos)
       .set('uKeyDir', env.keyDir).set('uNear', cam.near)
-      .set('uJitter', env.frameJitter).set('uTimeAnim', env.time)
+      .set('uJitter', env.frameJitter).set('uFlowPeriod', P.flowPeriod).set('uMVScale', P.mvScale ?? 1)
       .set('uSootExt', P.sootExt).set('uDustExt', P.dustExt)
       .set('uSootAlbedo', P.sootAlbedo).set('uDustAlbedo', P.dustAlbedo)
       .set('uSootColor', P.sootColor).set('uDustColor', P.dustColor)
@@ -982,8 +1053,11 @@ void main(){
     const P = this.params;
     const frac = (r[2] * r[3]) / screenArea;
     const lod = Math.sqrt(Math.min(frac / P.refArea, 1));
-    return { frac, steps: Math.max(P.stepsMin, Math.round(P.steps * lod)),
-             lerp: frac > P.refArea * 0.25 ? 1 : 0 };
+    // Toda instância interpola entre quadros (com movimento). Antes as
+    // pequenas na tela pulavam de quadro em quadro pra economizar leituras —
+    // ~5.5 quadros/s de animação na fase tardia, justamente o caso comum
+    // numa câmera de RTS.
+    return { frac, steps: Math.max(P.stepsMin, Math.round(P.steps * lod)) };
   }
 
   /**
@@ -1033,8 +1107,7 @@ void main(){
         const lod = this._lod(r, screenArea);
         const L = this.lightOf(o);
         sh.seti('uSteps', lod.steps);
-        sh.set('uTemporalLerpB', lod.lerp)
-          .set('uInstPos', o.pos).set('uInstScale', o.scale)
+        sh.set('uInstPos', o.pos).set('uInstScale', o.scale)
           .set('uBoxMinW', box.min).set('uBoxMaxW', box.max)
           .set('uInstFrame', B.frameOfTime(o.t)).set('uInstSeed', o.seed)
           .set('uVariantBaseB', (o.variant || 0) * B.frames)
@@ -1065,7 +1138,7 @@ void main(){
         mPos.set([o.pos[0], o.pos[1], o.pos[2], o.scale], m * 4);
         mBoxA.set(box.min, m * 4); mBoxB.set(box.max, m * 4);
         mFrm.set([B.frameOfTime(o.t), (o.variant || 0) * B.frames, o.seed, o.lcSlot ?? -1], m * 4);
-        mFire.set([L.pos[0], L.pos[1], L.pos[2], lod.lerp], m * 4);
+        mFire.set([L.pos[0], L.pos[1], L.pos[2], 0], m * 4);
         // passo do membro pela caixa justa: o mesmo número de passos de uma
         // instância sozinha atravessando-a
         mFireC.set([L.color[0] * kVol, L.color[1] * kVol, L.color[2] * kVol,

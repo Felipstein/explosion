@@ -14,11 +14,11 @@
 
 const KEY = 'explosao.settings.v1';
 
-// VRAM da sequência assada: RGBA8 + macro R8 (res/4) + combustível R8 (res/2),
-// 56 quadros × 3 variantes
+// VRAM da sequência assada: RGBA8 + macro R8 (res/4) + combustível e
+// velocidade RGBA8 (res/2), 56 quadros × 3 variantes
 export function bakeVramMB(res) {
   const layers = 56 * 3;
-  const vox = res ** 3 * 4 + (res >> 2) ** 3 + (res >> 1) ** 3;
+  const vox = res ** 3 * 4 + (res >> 2) ** 3 + (res >> 1) ** 3 * 4;
   return Math.round((vox * layers) / (1024 * 1024));
 }
 

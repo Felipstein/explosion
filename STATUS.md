@@ -449,6 +449,17 @@ Em aberto, visto nos testes:
 - Os 4 primeiros quadros de uma explosão perto são o clarão branco (ataque
   da adaptação 0.08 s).
 
+## Item 3 — vetores de movimento no bake (03/10) — tag v5-vetores-movimento
+
+Aprovado pelo usuário. Detalhes em
+ARCHITECTURE.md §4f1. Velocidade gravada no bake, interpolação com movimento
+em todas as instâncias (as pequenas não pulam mais de quadro), macro dos dois
+quadros, cache de luz interpolado, ruído de detalhe advectado. +26% no cenário
+de 12 explosões. Assets das 4 resoluções re-assados no formato novo.
+
+Visto nos testes e NÃO tratado: uma linha horizontal cortando a fumaça na
+altura do horizonte (composição/névoa sobre o volume).
+
 ## Ainda não construído
 
 - SSAO — o MRT de normal + fração-de-ambiente já existe em `sceneT.texs[1]`
