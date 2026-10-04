@@ -1,9 +1,12 @@
 # Restaurar a sessão do Mac no Windows
 
-Este arquivo é pro Claude Code que o Felipe abrir no Windows depois de clonar
-o repositório. O Felipe vai pedir pra você seguir estas instruções. **Execute
-os passos você mesmo (PowerShell)**; ele só precisa reiniciar o Claude no
-final.
+Este arquivo é pro Claude Code que o Felipe abrir no Windows (app Claude
+Desktop, aba Code, na pasta deste repositório) depois de clonar. O Felipe vai
+pedir pra você seguir estas instruções. **Execute os passos 1 e 2 você
+mesmo**; no passo 3 ele abre a sessão restaurada no próprio app.
+
+Os comandos estão em PowerShell. Se o seu terminal for o bash do Git, rode-os
+com `powershell -NoProfile -Command "..."` ou faça o equivalente em bash.
 
 O zip `sessao/sessao-claude-explosion.zip` traz a sessão inteira do Mac:
 - a conversa, `7fab7fca-b804-45c4-8302-972a750d5b27.jsonl`;
@@ -26,8 +29,9 @@ todo o contexto.
    Get-ChildItem "$env:USERPROFILE\.claude\projects" | Sort-Object LastWriteTime -Descending | Select-Object -First 5 Name, LastWriteTime
    ```
 
-   Use a que corresponde ao caminho atual (`(Get-Location).Path`). Guarde
-   numa variável:
+   Use a que corresponde ao caminho atual (`(Get-Location).Path`). Na
+   dúvida, a certa é a que contém o `.jsonl` da sua própria sessão atual (o
+   mais recente). Guarde numa variável:
 
    ```powershell
    $dest = Join-Path "$env:USERPROFILE\.claude\projects" ((Get-Location).Path -replace '[^A-Za-z0-9]', '-')
@@ -44,16 +48,26 @@ todo o contexto.
    Get-ChildItem $dest   # deve listar 7fab7fca-...jsonl, a pasta 7fab7fca-... e memory
    ```
 
-3. **Pedir pro Felipe** fechar esta sessão e, no PowerShell, na pasta do
-   projeto, rodar:
+3. **Dizer pro Felipe abrir a sessão restaurada no app**, nesta ordem
+   (documentado em https://code.claude.com/docs/en/desktop, "Coming from the
+   CLI?"):
 
-   ```powershell
-   claude --resume 7fab7fca-b804-45c4-8302-972a750d5b27
-   ```
+   - **No próprio app:** na aba Code, começar uma sessão nova nesta mesma
+     pasta e digitar `/resume`. Na lista, escolher a sessão longa
+     ("Explosão volumétrica…", id `7fab7fca-…`).
+   - **Se ela não aparecer na lista:** no PowerShell, na pasta do projeto,
+     rodar o comando abaixo. Ele abre a sessão direto no app de desktop.
 
-   Se não encontrar, `claude --resume` sem nada abre a lista; a sessão é a
-   mais longa ("Explosão volumétrica…"). Isso é no terminal; o app de
-   desktop pode não listar sessões trazidas de outra máquina.
+     ```powershell
+     claude --desktop --resume 7fab7fca-b804-45c4-8302-972a750d5b27
+     ```
+
+   - **Último recurso:** `claude --resume 7fab7fca-b804-45c4-8302-972a750d5b27`
+     no terminal e, já dentro dela, digitar `/desktop` pra levar pro app.
+
+   Trazer uma sessão de OUTRA máquina não está na documentação, mas o arquivo
+   é uma transcrição comum na pasta certa. Se nada disso a encontrar,
+   confira se o `.jsonl` está na pasta `$dest` do passo 1.
 
 ## Depois de retomar (pra mim, o Claude restaurado)
 
