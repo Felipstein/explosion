@@ -1,4 +1,23 @@
-# Estado atual — 02/10/2026
+# Estado atual — 03/10/2026
+
+**DECISÃO (03/10/2026): migrar pra Unreal Engine.** Este commit (tag
+`v6-fumaca-interacao`) é a referência final do WebGL. Os últimos problemas —
+fumaça "dura", fogo que muda na troca gravação → grade, explosão que não reage
+nos primeiros 3 s — vêm de limites do WebGL (sem compute shader, grade grossa,
+sem composição de volumes que se interpenetram, explosão como gravação). Na
+Unreal: Niagara Fluids (simulação por explosão, reage a objetos),
+Heterogeneous Volumes (composição correta), Sparse Volume Textures (gravações
+de volume deformáveis), TSR, MegaLights/VSM. O que leva daqui: os números
+calibrados, as lições (ARCHITECTURE.md) e os vídeos/imagens como alvo visual
+(em `captures/`, fora do git: `aviao_por_tras.mp4`, `aviao_missil_lado.mp4`,
+`noite_troca*.jpg`; o app desta tag regenera qualquer um).
+Próximos passos: documento de migração (no que cada sistema vira, quais
+números, quais referências) e projeto Unreal com captura automática (Python
++ render por linha de comando) pra continuar testando quadro a quadro.
+
+---
+
+# Histórico — até 02/10/2026
 
 Rodar: `python3 -m http.server 8129` na raiz e abrir http://localhost:8129
 (ou o preview `explosion` do `.claude/launch.json`).
@@ -458,7 +477,77 @@ quadros, cache de luz interpolado, ruído de detalhe advectado. +26% no cenário
 de 12 explosões. Assets das 4 resoluções re-assados no formato novo.
 
 Visto nos testes e NÃO tratado: uma linha horizontal cortando a fumaça na
-altura do horizonte (composição/névoa sobre o volume).
+altura do horizonte. Medido em 03/10: a transmitância da fumaça é contínua
+na linha; o que muda é o fundo (céu claro × chão escuro) visto através da
+fumaça semitransparente — é físico.
+
+## Itens 4b + 4c — fumaça no campo e o que passa por ela (03/10)
+
+Detalhes em ARCHITECTURE.md §4f3 e §4f4. O vento (4a) foi descartado pelo
+usuário. Não commitado: aguardando aprovação.
+
+- Fumaça no campo (`js/battlesmoke.js`, opção "Fumaça que reage",
+  ligada em média/alta/ultra): grade de velocidade de 2 m + fumaça de 1 m,
+  transporte conservativo, entrega das explosões em 3.2–3.5 s. Massa medida
+  conservada; a nuvem para a ~36 m, se abre e some em ~15 s.
+  ~5 ms por quadro na alta enquanto há fumaça.
+- Passagem (`js/movers.js`, botões avião / míssil / disparo, teclas a/m/d):
+  esteira de vórtices do avião, rastro branco e luz do míssil, túnel do
+  projétil, explosão empurrando a fumaça. `scene.js` ganhou malhas
+  dinâmicas, pintura (id 4) e emissivo (id 5).
+- Nenhum arquivo do hash do bake mudou: os assets continuam valendo.
+
+Rev. 2 (03/10, noite), depois do teste do usuário:
+- Fumaça que ficava minutos atrapalhava a jogatina → agora some em ~15 s,
+  desfazendo-se pelas bordas (dissipação + erosão), e o campo limpo custa
+  zero.
+- "A fumaça é dura": medido e corrigido (ARCHITECTURE.md §4f3, "Ar que não
+  é duro"): pluma em canal próprio, MacCormack + vorticity confinement,
+  freio do escoamento 6 → 15 s, perturbadores que somam em vez de
+  sobrescrever, jato dos motores limitado pelo empuxo.
+- Vídeos em `captures/aviao_por_tras.mp4` e `captures/aviao_missil_lado.mp4`.
+- A fumaça preta dos primeiros ~3 s é a gravação: não reage. Algo que a
+  atravessa depois de 2.8 s força a troca e ela reage.
+
+Em aberto, visto nos testes:
+- O brilho vermelho que resta em 3.2–3.4 s fica um pouco mais fraco na
+  grade (ela fecha os vãos entre os lóbulos por onde ele aparece).
+- O disparo de tanque é discreto (é o físico — ver §4f4).
+- A fumaça a 1 m é mais macia que a da explosão (0.6 m) de perto; de
+  distância de RTS não aparece. Na Unreal: grade esparsa mais fina.
+- Pra explosão reagir desde o começo: deformar a gravação pelo vento da
+  grade em vez de trocá-la (não feito).
+
+## Fogo que "reacendia" na troca (03/10, noite)
+
+Relatado pelo usuário com prints (à noite): na hora em que a fumaça passa pra
+grade o vermelho voltava forte e depois apagava de vez. Reproduzido: a
+janela de mistura (as duas versões no mesmo lugar, uma tapando a outra)
+apagava o brilho de repente e ele voltava quando a gravação sumia; e a grade
+esfriava 4× mais rápido que a gravação. Agora a troca é instantânea aos 3.3 s
+e o calor esfria no ritmo da gravação (ARCHITECTURE.md §4f3, "Entrega").
+Testado de noite e de dia, também com o avião antecipando a troca. Resta: na
+troca a textura fica um pouco mais macia e os fiapos que pendem somem (grade
+de 1 m).
+
+**Veredito do usuário (03/10): não foi suficiente.** Com a troca instantânea
+a mudança de estado ficou MAIS perceptível: o brilho muda e a subida fica
+lenta de repente (a pluma herdada passa a desacelerar em 1.2 s no canal da
+pluma, enquanto a gravação ainda subia). É o limite de trocar uma gravação
+de 0.6 m por uma grade de 1–2 m no meio da animação. Decidido migrar pra
+Unreal Engine (ver abaixo) em vez de insistir aqui.
+
+## Câmera: rolagem pelo botão direito, estilo C&C Generals (03/10)
+
+Pedido do usuário (navegar como no Zero Hour); o resto da câmera ficou igual.
+Botão direito arrastado: a câmera anda na direção do cursor em relação ao
+ponto onde o botão desceu, mais rápido quanto mais longe — a fórmula do
+`LookAtXlat.cpp` do código liberado pela EA (velocidade = fator·distância +
+mínimo; a âncora acompanha o cursor quando ele passa de meia tela). Em
+alturas de tela por segundo, então vale igual em qualquer zoom: zona morta de
+2% da meia altura, ~0.6 tela/s a um quarto da meia altura, ~2 telas/s a meia
+tela. Não sofre a câmera lenta (`[`). Indicador: âncora + seta até o cursor.
+Clique direito parado não detona mais nem abre menu. `Camera.scrollRMB`.
 
 ## Ainda não construído
 

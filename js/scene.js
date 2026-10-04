@@ -47,6 +47,7 @@ const CUBE_FACES = [
   [[0, 1, 0], [0, 0, 1]], [[0, -1, 0], [0, 0, -1]],
   [[0, 0, 1], [0, -1, 0]], [[0, 0, -1], [0, -1, 0]],
 ];
+const MAX_MOVER_PARTS = 128;
 const CUBE_SIZE = 512, CUBE_NEAR = 0.05, CUBE_FAR = 160.0;
 class CubeShadow {
   constructor(gl, size = CUBE_SIZE) {
@@ -113,6 +114,11 @@ export class Scene {
     this.meshBoxes = new Mesh(gl, boxMesh(), L.boxes);
     this.meshCyls = new Mesh(gl, cylinderMesh(22), L.cyls);
     this.meshGround = new Mesh(gl, planeMesh(1400, 1), L.ground);
+    // o que passa pelo campo (aviões, mísseis, projéteis): instâncias
+    // reescritas a cada quadro (ver movers.js)
+    this.meshMovBoxes = new Mesh(gl, boxMesh(), new Float32Array(16 * MAX_MOVER_PARTS));
+    this.meshMovCyls = new Mesh(gl, cylinderMesh(14), new Float32Array(16 * MAX_MOVER_PARTS));
+    this.meshMovBoxes.instCount = this.meshMovCyls.instCount = 0;
     // textura 1×1 vazia pros slots de explosão ao vivo sem ninguém (ver render)
     this._emptyTex = createTexture(gl, 1, 1, {
       internalFormat: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE,
@@ -248,6 +254,7 @@ uniform int uInstLightCount;
 #define MAX_INST_SHADOW 4
 uniform vec4 uInstShX[MAX_INST_SHADOW];     // posição.xyz, escala
 uniform float uInstShF[MAX_INST_SHADOW];    // quadro (já com base da variante)
+uniform float uInstShK[MAX_INST_SHADOW];    // fração da fumaça que ainda é da explosão (o resto foi entregue)
 uniform int uInstShId[MAX_INST_SHADOW];
 uniform int uInstLightId[MAX_INST_LIGHTS];
 uniform int uInstShCount;
@@ -305,6 +312,7 @@ float detailLOD(vec3 w, float freq){
 
 // campo de altura do chão: 2 oitavas + 1 rachadura. Chamado 3× por pixel
 // (valor + 2 derivadas), então cada snoise aqui custa 3×.
+vec3 gEmit = vec3(0.0);   // radiância própria (escape de míssil, traçante)
 void material(out vec3 alb, out float rough, out float metal, out vec3 N, out float ao){
   int id = int(vB.w + 0.5);
   vec3 w = vWP;
@@ -379,6 +387,17 @@ void material(out vec3 alb, out float rough, out float metal, out vec3 N, out fl
                        + b * (fbm((w + b * e) * 6.0, 2, 2.0, 0.5) - n0)) * amp / e);
     }
     ao = mix(0.75, 1.0, saturate(vLP.y * 1.6 + 0.25));
+  } else if (id == 4){
+    // ---- pintura militar fosca (avião, míssil) --------------------------
+    float n = mix(0.5, fbm(w * 1.3 + vSeed, 3, 2.2, 0.5) * 0.5 + 0.5, detailLOD(w, 1.3));
+    alb = vC.rgb * (0.85 + 0.3 * n);
+    metal = 0.15;
+    rough = mix(vC.w - 0.08, vC.w + 0.08, n);
+  } else if (id == 5){
+    // ---- emissivo: chama do motor, traçante (vC.rgb = radiância) --------
+    alb = vec3(0.0);
+    rough = 1.0;
+    gEmit = vC.rgb;
   } else if (id == 3){
     // ---- aço escuro / tubos --------------------------------------------
     float n = mix(0.5, fbm(w * 3.4 + vSeed, 3, 2.2, 0.5) * 0.5 + 0.5, detailLOD(w, 3.4));
@@ -558,7 +577,7 @@ void main(){
     for (int i = 0; i < MAX_INST_SHADOW; i++){
       if (i >= uInstShCount) break;
       sv *= bakeShadow(vWP + N * 0.05, uKeyDir, 140.0, uInstShX[i], uInstShF[i],
-                       uSootExt, uDustExt, 3.0);
+                       uSootExt * uInstShK[i], uDustExt * uInstShK[i], 3.0);
     }
     direct += brdf(N, V, uKeyDir, alb, rough, metal) * keyCol * sm * sv;
   }
@@ -620,7 +639,7 @@ void main(){
       if (uInstLightOcc < 0.5 || j >= uInstShCount) break;
       if (uInstShId[j] == uInstLightId[i]) continue;
       iv *= bakeShadow(vWP + N * 0.05, Ld, dist * 0.90, uInstShX[j], uInstShF[j],
-                       uSootExt * uFireOcclude, uDustExt * uFireOcclude, 1.4);
+                       uSootExt * uFireOcclude * uInstShK[j], uDustExt * uFireOcclude * uInstShK[j], 1.4);
     }
     // sombra dos props pra esta luz, se ela levou um dos cubos neste quadro
     float ish = 1.0; int ik = -1;
@@ -643,7 +662,7 @@ void main(){
   vec3 ambient = ambientIBL(N, V, alb, rough, metal,
                             envSkyUp() * uAmbient, envSkyDn() * uAmbient, ao);
 
-  vec3 col = direct + ambient;
+  vec3 col = direct + ambient + gEmit;
 
   // ---- névoa de altura analítica, cor = céu naquela direção ------------
   vec3 d = vWP - uCamPos;
@@ -788,6 +807,7 @@ void main(){
     this.shDepth.use().set('uVP', sm.vp);
     this.meshBoxes.draw();
     this.meshCyls.draw();
+    this._drawMovers();
     gl.cullFace(gl.BACK);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
@@ -823,6 +843,7 @@ void main(){
         sh.set('uVP', cube.vp);
         this.meshBoxes.draw();
         this.meshCyls.draw();
+        this._drawMovers();
         // o chão não precisa projetar: nada fica embaixo dele
       }
       out.push({ pos: L.pos, radius: L.radius, kind: L.kind, idx: L.idx });
@@ -831,6 +852,28 @@ void main(){
     gl.cullFace(gl.BACK);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return out;
+  }
+
+  /**
+   * Instâncias dos objetos em movimento deste quadro (mesmo formato do
+   * layout: 16 floats por peça).
+   */
+  setMovers(boxes, nBoxes, cyls, nCyls) {
+    const gl = this.gl;
+    const put = (mesh, data, n) => {
+      mesh.instCount = Math.min(n, MAX_MOVER_PARTS);
+      if (!mesh.instCount) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.instBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, data, 0, mesh.instCount * 16);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    };
+    put(this.meshMovBoxes, boxes, nBoxes);
+    put(this.meshMovCyls, cyls, nCyls);
+  }
+
+  _drawMovers() {
+    if (this.meshMovBoxes.instCount) this.meshMovBoxes.draw();
+    if (this.meshMovCyls.instCount) this.meshMovCyls.draw();
   }
 
   render(cam, env) {
@@ -949,11 +992,14 @@ void main(){
     const ns = Math.min(SC.length, 4);
     s.seti('uInstShCount', ns);
     if (ns) {
-      const xf = new Float32Array(16), fr = new Float32Array(4), sid = new Int32Array(4);
+      const xf = new Float32Array(16), fr = new Float32Array(4), kk = new Float32Array(4);
+      const sid = new Int32Array(4);
       for (let i = 0; i < ns; i++) {
-        xf.set(SC[i].xform, i * 4); fr[i] = SC[i].frame; sid[i] = SC[i].idx ?? -2;
+        xf.set(SC[i].xform, i * 4); fr[i] = SC[i].frame; kk[i] = SC[i].keep ?? 1;
+        sid[i] = SC[i].idx ?? -2;
       }
       gl2.uniform4fv(s.loc('uInstShX[0]'), xf);
+      gl2.uniform1fv(s.loc('uInstShK[0]'), kk);
       gl2.uniform1fv(s.loc('uInstShF[0]'), fr);
       gl2.uniform1iv(s.loc('uInstShId[0]'), sid);
     }
@@ -974,6 +1020,7 @@ void main(){
     this.meshGround.draw();
     this.meshBoxes.draw();
     this.meshCyls.draw();
+    this._drawMovers();
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.DEPTH_TEST);
   }

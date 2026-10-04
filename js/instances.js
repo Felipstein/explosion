@@ -213,7 +213,7 @@ in vec2 vUV;
     this.shLight = new Shader(gl, FS_VS, HEAD + COMMON + bake.glsl() + bake.fuelGlsl('U') + LCP + BAKE_HELPERS + `
 uniform vec3 uSunDirL, uFireL, uNbL;
 uniform float uHasNb, uFull;
-uniform float uInstScale, uInstFrame, uSootExt, uDustExt, uErodeMean;
+uniform float uInstScale, uInstFrame, uSootExt, uDustExt, uErodeMean, uInstKeep;
 uniform int uSunSteps, uFireSteps;
 out vec4 oCol;
 
@@ -237,7 +237,7 @@ float extAt(vec3 lp){
          * vec4(vec3(boxFade(vb)), 1.0);
   float r = max(f.r - uErodeMean / (1.0 + f.r * 9.0), 0.0);
   float a = max(f.b - uErodeMean * 0.7 / (1.0 + f.b * 9.0), 0.0);
-  return uSootExt * r + uDustExt * a;
+  return (uSootExt * r + uDustExt * a) * uInstKeep;
 }
 float macroOcc(vec3 lp){ return bakeMacro2(lp, bakeTime(uInstFrame), uVariantBaseB); }
 // transmitância de lp até maxDist na direção dir (espaço local; tau em metros)
@@ -295,6 +295,7 @@ uniform mat4 uInvViewProj;
 uniform vec3 uCamPos, uKeyDir;
 uniform vec3 uInstPos, uFirePos, uFireColor;
 uniform float uInstScale, uInstFrame, uInstSeed, uNear;
+uniform float uInstKeep;           // fração da fumaça ainda desta explosão (o resto já está na grade da batalha)
 uniform vec3 uBoxMinW, uBoxMaxW;   // caixa JUSTA no mundo (onde a fumaça existe)
 uniform float uSootExt, uDustExt, uSootAlbedo, uDustAlbedo;
 uniform vec3 uSootColor, uDustColor;
@@ -328,7 +329,7 @@ vec4 sampleInst(vec3 w, BakeT bt, float tSeq, float dith){
   vec3 voxel = worldToVoxelAtB(lp + n * uDetailAmp, vec3(0.0));
   vec4 f = bakeAtMV(voxel, bt, uVariantBaseB, vel, dith);
   float nm = (n.x + n.y + n.z) * 0.577;
-  f.rb *= (1.0 + uDetailDens * nm) * boxFade(voxel);
+  f.rb *= (1.0 + uDetailDens * nm) * boxFade(voxel) * uInstKeep;
   float er = uErode * (0.5 - 0.5 * nm);
   f.r = max(f.r - er / (1.0 + f.r * 9.0), 0.0);
   f.b = max(f.b - er * 0.7 / (1.0 + f.b * 9.0), 0.0);
@@ -482,7 +483,7 @@ uniform float uNear;
 uniform int uCount;
 uniform vec4 uMPos[MJ];     // posição.xyz, escala
 uniform vec4 uMFrm[MJ];     // quadro contínuo, base da variante, seed, camada do cache (<0 = sem)
-uniform vec4 uMFire[MJ];    // luz do fogo: posição.xyz | livre
+uniform vec4 uMFire[MJ];    // luz do fogo: posição.xyz | fração da fumaça ainda da explosão
 uniform vec4 uMFireC[MJ];   // cor da luz do fogo | passo de marcha (m)
 uniform float uMNb[MJ];     // índice (no grupo) do vizinho dominante do membro, ou -1
 uniform vec4 uMBoxA[MJ], uMBoxB[MJ];   // caixa justa no mundo (mín, máx)
@@ -520,7 +521,7 @@ vec4 sampleMember(int m, vec3 lp, float dith){
   vec3 vp = worldToVoxelAtB(lp + n * uDetailAmp, vec3(0.0));
   vec4 f = bakeAtMV(vp, bt, F.y, vel, dith);
   float nm = (n.x + n.y + n.z) * 0.577;
-  f.rb *= (1.0 + uDetailDens * nm) * boxFade(vp);
+  f.rb *= (1.0 + uDetailDens * nm) * boxFade(vp) * uMFire[m].w;
   float er = uErode * (0.5 - 0.5 * nm);
   f.r = max(f.r - er / (1.0 + f.r * 9.0), 0.0);
   f.b = max(f.b - er * 0.7 / (1.0 + f.b * 9.0), 0.0);
@@ -902,12 +903,14 @@ void main(){
         const dx = o.pos[0] - cam.pos[0], dz = o.pos[2] - cam.pos[2];
         return { o, idx, d: dx * dx + dz * dz };
       })
+      .filter(({ o }) => !o.handed)
       .sort((a, b) => a.d - b.d)
       .slice(0, max)
       .map(({ o, idx }) => ({
         idx,
         xform: [o.pos[0], o.pos[1], o.pos[2], o.scale],
         frame: (o.variant || 0) * this.bake.frames + this.bake.frameOfTime(o.t),
+        keep: 1 - (o.handW || 0),
       }));
   }
 
@@ -920,6 +923,7 @@ void main(){
   _groups(cam, w, h) {
     const vis = [];
     for (const o of this.list) {
+      if (o.handed) continue;     // a fumaça já é da grade da batalha
       const box = this._box(o);
       const r = this._screenRect(o, cam, w, h, box);
       if (!r) continue;
@@ -1008,7 +1012,7 @@ void main(){
       // quadro CONTÍNUO, com a mesma interpolação com movimento do render:
       // arredondado, a sombra interna pulava entre quadros enquanto a fumaça
       // já se movia lisa
-      sh.set('uInstScale', o.scale).set('uInstFrame', B.frameOfTime(o.t))
+      sh.set('uInstScale', o.scale).set('uInstFrame', B.frameOfTime(o.t)).set('uInstKeep', 1 - (o.handW || 0))
         .set('uVariantBaseB', (o.variant || 0) * B.frames)
         .set('uFireL', [(L.pos[0] - o.pos[0]) / o.scale, L.pos[1] / o.scale,
                         (L.pos[2] - o.pos[2]) / o.scale]);
@@ -1107,7 +1111,7 @@ void main(){
         const lod = this._lod(r, screenArea);
         const L = this.lightOf(o);
         sh.seti('uSteps', lod.steps);
-        sh.set('uInstPos', o.pos).set('uInstScale', o.scale)
+        sh.set('uInstPos', o.pos).set('uInstKeep', 1 - (o.handW || 0)).set('uInstScale', o.scale)
           .set('uBoxMinW', box.min).set('uBoxMaxW', box.max)
           .set('uInstFrame', B.frameOfTime(o.t)).set('uInstSeed', o.seed)
           .set('uVariantBaseB', (o.variant || 0) * B.frames)
@@ -1138,7 +1142,7 @@ void main(){
         mPos.set([o.pos[0], o.pos[1], o.pos[2], o.scale], m * 4);
         mBoxA.set(box.min, m * 4); mBoxB.set(box.max, m * 4);
         mFrm.set([B.frameOfTime(o.t), (o.variant || 0) * B.frames, o.seed, o.lcSlot ?? -1], m * 4);
-        mFire.set([L.pos[0], L.pos[1], L.pos[2], 0], m * 4);
+        mFire.set([L.pos[0], L.pos[1], L.pos[2], 1 - (o.handW || 0)], m * 4);
         // passo do membro pela caixa justa: o mesmo número de passos de uma
         // instância sozinha atravessando-a
         mFireC.set([L.color[0] * kVol, L.color[1] * kVol, L.color[2] * kVol,

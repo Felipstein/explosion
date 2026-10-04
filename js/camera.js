@@ -18,6 +18,16 @@ const SHOT = [
   [13.00, 64.0, -1.45, 0.242, 22.0, 0.600],
 ];
 
+// Rolagem pelo botão direito arrastado, a do C&C Generals / Zero Hour
+// (LookAtXlat.cpp no código que a EA liberou em 2025): a câmera anda na
+// direção do cursor em relação ao ponto onde o botão desceu, com velocidade
+// = fator·distância + um mínimo. Aqui em "alturas de tela por segundo", pra
+// valer igual em qualquer zoom e resolução.
+const RMB_DEAD = 0.02;   // fração da meia altura da tela: tremida da mão não rola
+const RMB_MIN = 0.15;    // velocidade mínima fora da zona morta (telas/s)
+const RMB_GAIN = 2.0;    // por meia altura de tela de afastamento (telas/s)
+const MAP_HALF = 500;    // m: o centro da câmera fica sobre o chão
+
 function sampleShot(t) {
   let i = 0;
   while (i < SHOT.length - 2 && t > SHOT[i + 1][0]) i++;
@@ -71,6 +81,26 @@ export class Camera {
     this.dist = clamp(this.dist * Math.pow(1.0012, d), 8, 220);
   }
   panY(d) { this.mode = 'free'; this.targetY = clamp(this.targetY + d, 0, 30); }
+
+  /**
+   * Rolagem RTS (botão direito arrastado).
+   * @param ox, oy cursor menos âncora, em meias alturas de tela (y pra baixo)
+   * @param dt     tempo REAL: a câmera lenta da simulação não a freia
+   */
+  scrollRMB(ox, oy, dt) {
+    const r = Math.hypot(ox, oy);
+    if (r < RMB_DEAD || !(dt > 0)) return;
+    this.mode = 'free';
+    // altura de chão enquadrada no alvo, ~2·dist·tan(fov/2)
+    const view = 2 * this.dist * Math.tan(this.fov * 0.5);
+    const step = (RMB_MIN + RMB_GAIN * (r - RMB_DEAD)) * view * Math.min(dt, 0.1) / r;
+    // frente horizontal (da câmera pro alvo) e direita
+    const fx = -Math.cos(this.azim), fz = -Math.sin(this.azim);
+    const rx = -fz, rz = fx;
+    // cursor à direita → anda pra direita; abaixo da âncora → recua
+    this.center[0] = clamp(this.center[0] + (rx * ox - fx * oy) * step, -MAP_HALF, MAP_HALF);
+    this.center[2] = clamp(this.center[2] + (rz * ox - fz * oy) * step, -MAP_HALF, MAP_HALF);
+  }
 
   update(aspect, dt, shotTime) {
     // dt NUNCA negativo nem absurdo: o shake é multiplicado por exp(-dt·k), e

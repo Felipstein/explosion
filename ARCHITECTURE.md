@@ -486,6 +486,126 @@ uma por vez. Barragem extrema de 15 gigantes interpenetradas: 49 ms contra
 `inst.params.debug` (1 fogo · 2 sol · 3 atenuações · 4 nº de membros) mostra
 os termos da luz.
 
+## 4f3. Fumaça no campo (`js/battlesmoke.js`)
+
+A sequência assada dura ~6 s numa caixa de 38 m e a fumaça sai pelo teto
+(91% da massa na faixa do teto aos 4.3 s), onde era apagada — cortada reta.
+Um fluido barato cobre 96 × 64 × 96 m em volta da origem e recebe a fumaça
+de cada explosão: ela sobe, para, se abre e se desfaz de forma natural, e
+REAGE ao que passa por ela.
+
+**Duração é decisão de jogo.** A primeira versão deixava a fumaça pairar por
+minutos (física, sem vento) e atrapalhava a jogatina: numa câmera de RTS a
+nuvem a ~36 m fica entre a câmera e as unidades. Agora ela é densa até
+~10 s e vira fiapos até ~15 s: dissipação de 10 s (o parâmetro que
+Houdini/EmberGen chamam assim) + erosão absoluta pelo ruído, que come
+primeiro o que está ralo — a nuvem se desfaz pelas bordas em vez de
+esmaecer por igual. Abaixo de 15% de uma explosão o campo é zerado e o
+passo e o render param (custo zero com o campo limpo).
+
+- **Duas grades** (o truque clássico pra detalhe barato: a velocidade é
+  suave, a fumaça não). Velocidade, pressão e luz a 2 m (48×32×48), grade
+  DESLOCADA (MAC, Harlow & Welch 1965) — na colocada com diferença central a
+  projeção deixava divergência célula a célula e a fumaça sumia. Fumaça a
+  1 m (96×64×96, float32: o half-float zerava a borda rarefeita).
+- **Transporte conservativo**: volumes finitos com reconstrução MUSCL
+  (limitador monotonized central, van Leer) pela velocidade grossa
+  interpolada no centro de cada face fina — massa conservada exatamente
+  (medido: o que sai é só a dissipação programada). O upwind puro difundia
+  ~|u|·h/2 e borrava a nuvem logo depois da entrega. 2 subpassos.
+- **Física da nuvem**: empuxo do calor que sobrou (resfria em 5 s) e a
+  subida herdada da explosão vivem num canal próprio da velocidade (a
+  PLUMA, `vel.a`, na face y), que desacelera em 1.2 s como uma térmica que
+  mistura ar (Morton–Taylor–Turner): a nuvem para por volta de 36 m. O resto
+  é o ESCOAMENTO (xyz), que só perde força em 15 s. Turbulência curl com
+  redemoinhos do tamanho da nuvem (~10 m), vertical a metade da horizontal
+  (σ_w ≈ 0.5·σ_u, Panofsky & Dutton), calibrada pela dispersão de um sopro
+  em atmosfera neutra (Pasquill–Gifford D): σ horizontal 6.6 → 8.7 → 9.6 →
+  10.5 m em 4/7/10/15 s, centro parado.
+- **Ar que não é "duro"** (03/10, queixa do usuário: o avião mexia a
+  fumaça, mas ela parecia mais forte que ele). Medido no par de vórtices de
+  uma asa: perdia metade da força em 0.7 s, contra dezenas de segundos de
+  verdade. Quatro causas, quatro correções:
+  1. um freio único na vertical (pra nuvem parar de subir) matava metade da
+     rotação → a pluma ganhou canal próprio;
+  2. a advecção semi-Lagrangiana numa grade de 2 m borrava a velocidade →
+     MacCormack de uma passada com limitador (Selle et al. 2008) + vorticity
+     confinement leve (Fedkiw, Stam & Jensen 2001, ε = 0.5; com 2 o ar parado
+     ficava agitado demais);
+  3. o freio geral do escoamento era 6 s → 15 s, com a forçante da
+     turbulência à metade (mesma agitação de fundo, σᵤ ≈ 0.4 m/s);
+  4. perturbadores que SOBRESCREVIAM a velocidade apagavam os vórtices →
+     esteira somada; corpo e jato mexem só na componente ao longo do voo.
+  Resultado: o par guarda 69% da circulação aos 8 s (antes 36% com o freio
+  de 6 s, e metade em 0.7 s no começo); a nuvem se abre ao meio e as
+  metades se enrolam pra fora e pra baixo, como quando um avião corta uma
+  nuvem.
+- **Entrega** (`_handoff`): de UMA VEZ aos 3.3 s da sequência, antes do
+  corte no teto (fuligem e poeira pela média de 8 subamostras, calor pelo
+  PICO — a emissão é convexa em T — e a velocidade assada, a subida no canal
+  da pluma). Já foi uma janela de mistura (3.2–3.5 s): as duas versões
+  ficavam visíveis no mesmo lugar e, como duas nuvens que se interpenetram
+  só podem ser compostas uma inteira na frente da outra, a cópia tapava o
+  brilho da gravação — à noite o fogo apagava de repente e reacendia
+  (relatado pelo usuário com prints, reproduzido). O calor esfria em 5 s,
+  o ritmo da gravação nesse trecho (medido: T média 0.244 → 0.193 de 3.3 a
+  4.5 s); com 1.2 s o brilho morria logo depois da troca. O empuxo caiu de
+  38 pra 13 pra o mesmo impulso total (a nuvem continua parando a ~35 m).
+  Algo que atravessa a explosão a partir de 2.8 s antecipa a troca.
+  Entregue, a instância não é mais marchada: o custo da fumaça tardia é fixo.
+  Na troca a textura fica um pouco mais macia (grade de 1 m contra 0.6 m da
+  gravação) e os fiapos finos que pendem da nuvem somem.
+- **Render**: meia resolução no alvo do volume, em dois trechos separados
+  pela profundidade que as explosões gravaram no aux (o de trás somado por
+  trás delas, o da frente por cima). Passo de 1 m dentro da fumaça, vazio
+  pulado pelo macro 4³. MESMO sombreamento das instâncias (parâmetros
+  delas, 3 oitavas de espalhamento múltiplo, transmitância marchada até o sol
+  numa grade de luz de 2 m, céu) e o mesmo ruído de detalhe advectado em
+  duas fases — na entrega as duas ficam quase idênticas. O deslocamento do
+  ruído pela velocidade é limitado a 1.5 m (sem limite ele esticava em risco
+  na esteira; com 0.7 m o detalhe ficava parado e a fumaça corria por baixo
+  dele). Três espécies: fuligem, poeira e fumaça de motor de foguete
+  (branca).
+- **Custo** (alta, 983×597): ~5 ms com fumaça (passo ~1.9, render ~3.1),
+  zero com o campo limpo. A versão de uma grade de 1 m custava 10–15 ms.
+
+## 4f4. O que atravessa a fumaça (`js/movers.js`)
+
+Avião de ataque, míssil terra-ar e disparo de tanque (botões "Passagem pela
+fumaça", teclas a / m / d), atravessando a fumaça da última explosão na altura
+em que ela está (lida do macro). Cada um vira, por quadro, um perturbador do
+fluido com o modelo do que faz no ar:
+
+- **Avião** (20 t, 16 m, 140 m/s): o corpo arrasta o ar ao longo do voo e
+  abre um túnel; a asa deixa o par de vórtices de ponta de asa (Lamb–Oseen,
+  Γ = W/(ρ·U·b0) ≈ 91 m²/s, b0 = π/4·b), SOMADO ao escoamento existente só
+  na fatia que a asa cruzou naquele quadro (cada ponto recebe o par uma
+  vez). O par sopra pra baixo entre os vórtices (~4 m/s medido; 4.6 na
+  teoria) e enrola a fumaça. Núcleo de 2 m (o real tem ~0.8 m; é o menor
+  que a grade resolve).
+- **Jato dos motores** (avião: 2 × 40 kN; míssil: ~10 kN): a componente ao
+  longo do eixo segue o perfil de um jato redondo que se abre (meia-largura
+  ~0.1·x) — a menor entre a velocidade de saída e a que a conservação de
+  quantidade de movimento permite (empuxo/velocidade por metro de
+  trajetória, espalhado na seção): ~9 m/s a 40 m, ~0.8 m/s a 150 m. Sem esse
+  limite, e sem deixar o ar desacelerar conforme o jato se abre, a nuvem
+  inteira virava um risco soprado pra trás.
+- **Míssil** (80 → 450 m/s): o jato e a fumaça branca do propelente (Al₂O₃,
+  albedo 0.93) num canal próprio, rastro nascendo com ~2.5 m (com uma célula
+  de largura ele saía pontilhado); a chama ilumina o rastro (0.3% da luz de
+  pico de uma explosão de tanque).
+- **Disparo** (1000 m/s, traçante): o choque e a esteira abrem um tubo de
+  ~2 m que a turbulência fecha. Físico e, por isso, discreto: numa nuvem de
+  20 m de espessura, vista de lado, um tubo de 2 m tira 10% do caminho óptico.
+- **Explosões**: a expansão empurra a fumaça antiga (fonte de divergência,
+  ∇·u = S numa bola de 9 m por 0.15 s). Algo que atravessa uma explosão
+  ainda na sequência assada a partir de 2.8 s força a entrega dela na hora,
+  pra ela também reagir. Antes disso não: a troca apagaria o brilho e a
+  subida da bola de fogo.
+
+A geometria é de blocos, só pra ver o que passou. Enquanto houver algo se
+movendo o mapa de sombra do sol (normalmente cacheado) é refeito por quadro.
+
 ## 4g. Configuração gráfica
 
 `js/settings.js` é a fonte única: esquema das opções (com o que cada uma

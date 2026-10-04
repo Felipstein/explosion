@@ -10,6 +10,8 @@ import { VolumeRenderer } from './volumeRender.js';
 import { Post } from './post.js';
 import { SSAO } from './ssao.js';
 import { ShadowDenoise } from './shadowdenoise.js';
+import { BattleSmoke } from './battlesmoke.js';
+import { Movers } from './movers.js';
 import { ExplosionBake } from './bake.js';
 import { BlastInstances, MAGNITUDES, magnitudeOf } from './instances.js';
 import { InstanceSparks } from './sparks.js';
@@ -189,6 +191,7 @@ class App {
       filter: gl.NEAREST, data: new Uint8Array([255, 255, 255, 255]),
     });
     this.sparks = new InstanceSparks(gl, this.bbTex);
+    this.movers = new Movers();
     this.ae = new AutoExposure(gl);
     // Bake + cena + instâncias. O bake sobrevive à troca de qualidade da
     // simulação ao vivo; só a opção "detalhe das explosões" o recria. NADA
@@ -504,6 +507,9 @@ class App {
     this._instScope = trackGL(gl, () => {
       this.inst = new BlastInstances(gl, this.bake, this.bbTex,
                                      this.pool.slots[0].fluid.noiseTex);
+      // fumaça que fica: lê o bake (formato depende da resolução), então
+      // nasce e morre junto com as instâncias
+      this.battle = new BattleSmoke(gl, this.bake, this.pool.slots[0].fluid.noiseTex, this.bbTex);
     });
     if (keep) Object.assign(this.inst, keep);
     this.thumbs = null;
@@ -689,12 +695,15 @@ class App {
       if (this.onDetonate) this.onDetonate(groundPos);
       return;
     }
+    this._lastBlastPos = [groundPos[0], 0, groundPos[2]];
     const o = this.inst.spawn([groundPos[0], 0, groundPos[2]], {
       magnitude: opts.magnitude || this.selectedBlast || 'tanque',
       seed: Math.random(),
     });
     // faíscas nascem no centro da bola de fogo (a mesma altura da ao vivo)
     this.sparks.spawn([groundPos[0], 1.85 * o.scale, groundPos[2]], o.scale);
+    // a expansão empurra a fumaça antiga em volta
+    if (this.settings.battleSmoke) this.battle.addBlast([groundPos[0], 2.0 * o.scale, groundPos[2]], o.scale);
     this.cam.kick(Math.min(1.2, 0.5 * o.scale + 0.35));
     this._kicked = true;
     if (this.onDetonate) this.onDetonate(groundPos);
@@ -705,10 +714,12 @@ class App {
     let down = false, lx = 0, ly = 0;
     let dragDist = 0;
     c.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;          // o direito é a rolagem (abaixo)
       down = true; lx = e.clientX; ly = e.clientY; dragDist = 0;
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointerup', (e) => {
+      if (!down || e.button !== 0) return;
       down = false;
       c.releasePointerCapture(e.pointerId);
       // clique curto detona; arrasto orbita
@@ -724,6 +735,53 @@ class App {
       lx = e.clientX; ly = e.clientY;
     });
     c.addEventListener('wheel', (e) => { e.preventDefault(); this.cam.zoom(e.deltaY); }, { passive: false });
+
+    // ---- rolagem do C&C Generals / Zero Hour: botão direito arrastado ----
+    // A âncora é onde o botão desceu; o quadro anda na direção do cursor,
+    // mais rápido quanto mais longe (Camera.scrollRMB). Como no jogo, a
+    // âncora é arrastada junto quando o cursor passa de meia tela dela.
+    // Eventos de MOUSE (não pointer): com o esquerdo já apertado, o direito
+    // não gera pointerdown.
+    const rmb = this.rmb = { on: false, ax: 0, ay: 0, x: 0, y: 0 };
+    const ind = document.getElementById('rmb');
+    const drawRmb = () => {
+      if (!ind) return;
+      const dx = rmb.x - rmb.ax, dy = rmb.y - rmb.ay, len = Math.hypot(dx, dy);
+      ind.querySelector('circle').setAttribute('cx', rmb.ax);
+      ind.querySelector('circle').setAttribute('cy', rmb.ay);
+      const line = ind.querySelector('line'), head = ind.querySelector('path');
+      if (len < 8) { line.setAttribute('visibility', 'hidden'); head.setAttribute('visibility', 'hidden'); return; }
+      const ux = dx / len, uy = dy / len;
+      line.setAttribute('visibility', 'visible'); head.setAttribute('visibility', 'visible');
+      line.setAttribute('x1', rmb.ax + ux * 8); line.setAttribute('y1', rmb.ay + uy * 8);
+      line.setAttribute('x2', rmb.x); line.setAttribute('y2', rmb.y);
+      // ponta de seta no cursor, apontando pra onde a câmera anda
+      const px = -uy, py = ux, b = 11, w = 6;
+      head.setAttribute('d', `M${rmb.x - ux * b + px * w},${rmb.y - uy * b + py * w}`
+        + `L${rmb.x},${rmb.y}L${rmb.x - ux * b - px * w},${rmb.y - uy * b - py * w}`);
+    };
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('mousedown', (e) => {
+      if (e.button !== 2) return;
+      e.preventDefault();
+      Object.assign(rmb, { on: true, ax: e.clientX, ay: e.clientY, x: e.clientX, y: e.clientY });
+      document.body.classList.add('rmb');
+      drawRmb();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!rmb.on) return;
+      rmb.x = e.clientX; rmb.y = e.clientY;
+      const mx = c.clientWidth / 2, my = c.clientHeight / 2;
+      rmb.ax = clamp(rmb.ax, rmb.x - mx, rmb.x + mx);
+      rmb.ay = clamp(rmb.ay, rmb.y - my, rmb.y + my);
+      drawRmb();
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button !== 2 || !rmb.on) return;
+      rmb.on = false;
+      document.body.classList.remove('rmb');
+    });
+    window.addEventListener('blur', () => { rmb.on = false; document.body.classList.remove('rmb'); });
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
@@ -738,10 +796,33 @@ class App {
       else if (k === ',') this.setTimeOfDay(this.env.timeOfDay - 1 / 6);
       else if (k === '.') this.setTimeOfDay(this.env.timeOfDay + 1 / 6);
       else if (k === 't') this.env.autoCycle = !this.env.autoCycle;
+      else if (k === 'a') this.spawnMover('plane');
+      else if (k === 'm') this.spawnMover('missile');
+      else if (k === 'd') this.spawnMover('shell');
       else if (['1', '2', '3', '4'].includes(k)) {
         this.setQuality(['baixa', 'media', 'alta', 'ultra'][+k - 1]);
       }
     });
+  }
+
+  /**
+   * Teste da interação com a fumaça: avião, míssil ou disparo de tanque
+   * atravessando a fumaça da última explosão, cruzando a tela da esquerda
+   * pra direita.
+   */
+  spawnMover(kind) {
+    const tgt = this._lastBlastPos || [this.cam.center[0], 0, this.cam.center[2]];
+    const fx = this.cam.center[0] - this.cam.pos[0], fz = this.cam.center[2] - this.cam.pos[2];
+    const l = Math.hypot(fx, fz) || 1;
+    // passa pela altura onde a fumaça está; se ali só há uma explosão ainda
+    // na fase assada, pelo meio dela
+    let h = this.settings.battleSmoke ? this.battle.smokeHeightAt(tgt[0], tgt[2]) : null;
+    if (h === null) {
+      const o = this.inst.list.filter((q) => !q.handed
+        && Math.hypot(q.pos[0] - tgt[0], q.pos[2] - tgt[2]) < 20).pop();
+      if (o) h = 18 * o.scale;
+    }
+    return this.movers.spawn(kind, tgt, [-fz / l, 0, fx / l], h);   // direita da câmera
   }
 
   /** aplica um preset inteiro (baixa/media/alta/ultra) */
@@ -925,6 +1006,11 @@ class App {
     if (!this._kicked && t > 0.03) { this.cam.kick(1.0); this._kicked = true; }
     if (env.autoReplay && t > env.replayAfter) this.detonate();
 
+    // rolagem pelo botão direito, em tempo real (a câmera lenta não a freia)
+    if (this.rmb && this.rmb.on) {
+      const h = Math.max(this.canvas.clientHeight * 0.5, 1);
+      this.cam.scrollRMB((this.rmb.x - this.rmb.ax) / h, (this.rmb.y - this.rmb.ay) / h, realDt);
+    }
     this.cam.update(this.rw / this.rh, realDt, t);
 
     if (env.autoCycle) this.setTimeOfDay(env.timeOfDay + realDt * env.cycleSpeed);
@@ -943,6 +1029,24 @@ class App {
     // só as mais próximas entram na iluminação da cena, que é N² em sombras.
     if (dt > 0) this.inst.update(dt);
     if (dt > 0 && !this.skip.particles) this.sparks.step(dt);
+    // o que atravessa o campo (avião, míssil, disparo): anda e empurra a
+    // fumaça (os perturbadores são consumidos pelo passo da batalha logo abaixo)
+    const battleOn = this.settings.battleSmoke && !this.skip.battle;
+    this.movers.update(dt, battleOn ? this.battle : null);
+    this.scene.setMovers(this.movers.boxes, this.movers.nBoxes, this.movers.cyls, this.movers.nCyls);
+    {
+      // o mapa de sombra do sol é cacheado; enquanto algo se move, refaz
+      const n = this.movers.nBoxes + this.movers.nCyls;
+      if (n || this._movParts) this.scene.renderSunShadow(this.keyDir);
+      this._movParts = n;
+    }
+    // ---- 1b. fumaça que fica: entrega das explosões + fluido do campo ----
+    if (battleOn) {
+      prof.begin('batalha');
+      this.battle.noiseTex = this.pool.slots[0].fluid.noiseTex;   // o sim pode ter sido recriado
+      this.battle.step(dt, this.inst, { keyDir: this.keyDir }, this.inst.params);
+      prof.end();
+    }
     const blasts = this.pool.sortedFor(this.cam.pos);
     const shaded = blasts.slice(0, MAX_SHADED);
     const lead = blasts[0];
@@ -1071,6 +1175,12 @@ class App {
       }, this.sceneT.depthTex, this.vol.halfW, this.vol.halfH);
       gl2.disable(gl2.BLEND);
       gl2.bindFramebuffer(gl2.FRAMEBUFFER, null);
+    }
+    // fumaça que fica: na frente e atrás das explosões, no mesmo alvo
+    if (!this.skip.volume && this.settings.battleSmoke && !this.skip.battle) {
+      this.battle.render(this.cam, {
+        keyDir: this.keyDir, envLut: this.atmo.envLut.tex, frameJitter: jitter,
+      }, this.vol.volTarget, this.vol.halfDepth.tex, instLights.concat(this.movers.lights), this.inst.params);
     }
     prof.end();
 
@@ -1213,6 +1323,9 @@ cycleBtn.addEventListener('click', () => {
   syncTimeUI(app.env.timeOfDay);
 });
 for (const b of qBtns) b.addEventListener('click', () => app.setQuality(b.dataset.q));
+for (const b of document.querySelectorAll('#movrow .btn[data-mov]')) {
+  b.addEventListener('click', () => app.spawnMover(b.dataset.mov));
+}
 app.selectedBlast = app.selectedBlast || 'tanque';
 buildCards(app.thumbs);
 app.onTime = syncTimeUI;

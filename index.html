@@ -137,6 +137,10 @@
   #mark{position:fixed;z-index:15;width:46px;height:46px;margin:-23px 0 0 -23px;
         pointer-events:none;opacity:0}
   #mark.go{animation:ping .7s ease-out}
+  /* rolagem pelo botão direito (C&C Generals): âncora + seta até o cursor */
+  #rmb{position:fixed;inset:0;width:100%;height:100%;z-index:16;pointer-events:none;display:none}
+  body.rmb #rmb{display:block}
+  body.rmb #gl{cursor:none}
   @keyframes ping{
     0%{opacity:1;transform:scale(.35)}
     70%{opacity:.55}
@@ -198,12 +202,25 @@
   <path d="M24 2v9M24 37v9M2 24h9M37 24h9" opacity=".9"/>
 </svg>
 
+<svg id="rmb" aria-hidden="true"><g fill="none" stroke="#ffb347" stroke-width="1.8"
+  stroke-linecap="round" stroke-linejoin="round"><circle r="6" opacity=".9"/>
+  <line opacity=".55" stroke-dasharray="2 5"/><path/></g></svg>
+
 <aside id="hud">
   <div class="brandbar"><b>ARSENAL</b><span id="hudFps">—</span></div>
 
   <div class="panel">
     <div class="sec-title">Armamento<span id="armStatus"></span></div>
     <div class="cards building" id="cards"></div>
+  </div>
+
+  <div class="panel">
+    <div class="sec-title">Passagem pela fumaça</div>
+    <div class="btnrow" id="movrow">
+      <button class="btn" data-mov="plane" title="avião de ataque a 140 m/s pela fumaça da última explosão (tecla a)">avião</button>
+      <button class="btn" data-mov="missile" title="míssil terra-ar subindo pela fumaça (tecla m)">míssil</button>
+      <button class="btn" data-mov="shell" title="disparo de tanque a 1000 m/s pela fumaça (tecla d)">disparo</button>
+    </div>
   </div>
 
   <div class="panel">
@@ -240,7 +257,7 @@
     </div>
   </div>
 
-  <div class="foot"><b>CLIQUE NO TERRENO</b> para detonar<br>arraste para orbitar · scroll zoom</div>
+  <div class="foot"><b>CLIQUE NO TERRENO</b> para detonar<br>arraste para orbitar · scroll zoom<br>botão direito arrastado: rolar o mapa</div>
 </aside>
 
 <!-- gaveta de configuração gráfica (montada a partir de settings.js) -->

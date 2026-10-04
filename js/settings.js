@@ -37,6 +37,9 @@ export const SCHEMA = [
     { id: 'instSteps', label: 'Precisão do volume', apply: 'live',
       hint: 'passos de raymarch das explosões do clique (o LOD reduz nas pequenas)',
       options: [[32, 'baixa'], [44, 'média'], [56, 'alta'], [72, 'ultra']] },
+    { id: 'battleSmoke', label: 'Fumaça que reage', apply: 'live',
+      hint: 'a fumaça das explosões passa pra uma simulação do campo: sobe, se desfaz em ~15 s e reage a aviões, mísseis, tiros e explosões',
+      options: [[false, 'off'], [true, 'on']] },
     { id: 'sparks', label: 'Faíscas', apply: 'live',
       options: [[0, 'off'], [0.25, '25%'], [0.5, '50%'], [1, '100%']] },
     { id: 'liveSim', label: 'Simulação ao vivo (espaço)', apply: 'rebuild',
@@ -89,25 +92,25 @@ export const ITEMS = Object.fromEntries(SCHEMA.flatMap((g) => g.items).map((it) 
 
 export const PRESETS = {
   baixa: {
-    bakeRes: 48, lightCache: 0, msOctaves: 1, instSteps: 32, sparks: 0.25, liveSim: 64,
+    battleSmoke: false, bakeRes: 48, lightCache: 0, msOctaves: 1, instSteps: 32, sparks: 0.25, liveSim: 64,
     renderScale: 0.67, volScale: 0.5, dynamicRes: true, targetFps: 60,
     ao: 0, fireShadows: 0, instShadows: 0, smokeBlocksLight: false, instLights: 4, lightGain: 1,
     bloom: true, grain: false, chromatic: false, autoExposure: true, flash: true,
   },
   media: {
-    bakeRes: 64, lightCache: 2, msOctaves: 2, instSteps: 44, sparks: 0.5, liveSim: 96,
+    battleSmoke: true, bakeRes: 64, lightCache: 2, msOctaves: 2, instSteps: 44, sparks: 0.5, liveSim: 96,
     renderScale: 0.8, volScale: 0.6, dynamicRes: true, targetFps: 60,
     ao: 0.55, fireShadows: 1, instShadows: 2, smokeBlocksLight: false, instLights: 4, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   alta: {
-    bakeRes: 64, lightCache: 6, msOctaves: 3, instSteps: 56, sparks: 1, liveSim: 128,
+    battleSmoke: true, bakeRes: 64, lightCache: 6, msOctaves: 3, instSteps: 56, sparks: 1, liveSim: 128,
     renderScale: 0.88, volScale: 0.72, dynamicRes: true, targetFps: 60,
     ao: 0.8, fireShadows: 2, instShadows: 4, smokeBlocksLight: false, instLights: 8, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
   },
   ultra: {
-    bakeRes: 96, lightCache: 8, msOctaves: 3, instSteps: 72, sparks: 1, liveSim: 160,
+    battleSmoke: true, bakeRes: 96, lightCache: 8, msOctaves: 3, instSteps: 72, sparks: 1, liveSim: 160,
     renderScale: 1, volScale: 1, dynamicRes: true, targetFps: 60,
     ao: 1, fireShadows: 2, instShadows: 4, smokeBlocksLight: true, instLights: 8, lightGain: 1,
     bloom: true, grain: true, chromatic: true, autoExposure: true, flash: true,
