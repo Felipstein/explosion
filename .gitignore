@@ -20,3 +20,7 @@ WorldForge/Saved/
 WorldForge/DerivedDataCache/
 WorldForge/.vs/
 WorldForge/*.sln
+# fatia de qualidade: assets CC0 importados (centenas de MB) e o nível que usa
+# eles — refeitos por WorldForge/Tools/fetch_assets.py + forge.ps1 slice
+WorldForge/Content/Slice/
+WorldForge/Content/Maps/Slice_Desert.umap

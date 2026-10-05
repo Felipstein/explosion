@@ -4,11 +4,33 @@
 	"Category": "",
 	"Description": "WorldForge: gerador de mundos procedural pro RTS (terreno, água, bases, recursos, florestas)",
 	"Modules": [
-		{ "Name": "WorldForge", "Type": "Runtime", "LoadingPhase": "Default" }
+		{
+			"Name": "WorldForge",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "WorldForgeEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
+		}
 	],
 	"Plugins": [
-		{ "Name": "PythonScriptPlugin", "Enabled": true },
-		{ "Name": "EditorScriptingUtilities", "Enabled": true },
-		{ "Name": "ProceduralMeshComponent", "Enabled": true }
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		},
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
+		}
 	]
 }

@@ -681,10 +681,12 @@ namespace
 		}
 		for (int32 Rot = 0; Rot < Sym.K; ++Rot)
 		{
+			TArray<FVector2f>& Line = M.Tracks.AddDefaulted_GetRef();
 			for (int32 C : Path)
 			{
 				const FIntPoint Q = Sym.RotIdx(FIntPoint(C % NL, C / NL), Rot, NL);
 				PathMask[LIdx(Q.X, Q.Y)] = 1;
+				Line.Add(LPos(Q.X, Q.Y));
 			}
 			for (int32 C : Fords)
 			{
@@ -750,6 +752,7 @@ namespace
 		RampMask.SetNumZeroed(NL * NL);
 		PathMask.SetNumZeroed(NL * NL);
 		Ramps.Reset();
+		M.Tracks.Reset();
 		const FIntPoint S0 = LCellOf(StartPos[0]);
 		const int32 Start0 = LIdx(S0.X, S0.Y);
 

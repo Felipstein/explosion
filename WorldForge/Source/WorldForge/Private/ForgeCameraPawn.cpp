@@ -6,6 +6,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Engine/World.h"
 #include "WorldForgeTerrain.h"
 
 AForgeCameraPawn::AForgeCameraPawn()
@@ -23,7 +24,11 @@ float AForgeCameraPawn::GroundAt(FVector2f P) const
 {
 	if (!Terrain || !Terrain->GetMap())
 	{
-		return 0.0f;
+		// mapa feito no editor (a fatia): o chão é o Landscape, pela colisão
+		FHitResult Hit;
+		const FVector A(P.X * 100.0, P.Y * 100.0, 1e6), B(P.X * 100.0, P.Y * 100.0, -1e6);
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(ForgeGround), false, this);
+		return GetWorld() && GetWorld()->LineTraceSingleByChannel(Hit, A, B, ECC_Visibility, Q) ? float(Hit.ImpactPoint.Z / 100.0) : 0.0f;
 	}
 	const FWorldMap& M = *Terrain->GetMap();
 	return FMath::Max(M.HeightAt(P), M.WaterLevel);

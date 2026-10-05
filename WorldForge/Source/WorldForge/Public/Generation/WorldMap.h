@@ -105,6 +105,8 @@ struct WORLDFORGE_API FWorldMap
 	TArray<FWorldStart> Starts;
 	TArray<FWorldResource> Resources;
 	TArray<FWorldProp> Props;
+	/** Trilhas esculpidas (base → centro, flancos, ligações), como linhas de pontos (m). */
+	TArray<TArray<FVector2f>> Tracks;
 
 	/** Tempos por etapa (ms) e resultado das verificações, pro painel e o log. */
 	TArray<TPair<FString, double>> Timings;

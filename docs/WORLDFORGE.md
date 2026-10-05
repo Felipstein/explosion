@@ -231,3 +231,52 @@ de Core, então é o mesmo código que o jogo pode usar.
 - **Rampas:** saem sempre alinhadas aos eixos.
 - **Jogadores:** só 2 e 4 por enquanto. 3, 6 e 8 pedem mapa circular ou
   espelho.
+
+## 5. Fatia de qualidade: deserto (05/10/2026, em andamento)
+
+Prova de que o WorldForge chega a imagem AAA: um recorte de 252 m do mapa
+gerado vira um nível de verdade na Unreal (`/Game/Maps/Slice_Desert`).
+
+```
+python WorldForge\Tools\fetch_assets.py              # baixa os assets CC0 (~630 MB, fora do git)
+powershell -File WorldForge\Tools\forge.ps1 slice     # monta o nível (Tools/build_slice.py)
+powershell -File WorldForge\Tools\forge.ps1 view -Map Slice_Desert [-Folder f]   # abre (ou fotografa + passeio)
+python WorldForge\Tools\make_motion.py captures\worldforge\f      # passeio em WebP animado
+```
+
+**O que entra:**
+- **Assets:** CC0 do Poly Haven, a coleção Namaqualand (deserto real escaneado
+  na África do Sul: superfícies, rochas, paredões, arbustos e capim da mesma
+  região), mais o decalque de marca de pneu do ambientCG. Os Megascans no Fab
+  são pagos desde 2025 (fora uma seleção grátis) e a licença não é livre.
+- **Terreno:** Landscape da Unreal criado do gerador pela função de editor
+  `WorldForgeEditor/WorldForgeEditorLib`. Tem 0,5 m por quad e 5 camadas
+  (areia, cascalho, terra, rocha, terra rachada) pintadas pelas máscaras.
+  - A areia usa duas fotos: a aérea de 45 m pra longe e a de 2,5 m pra perto.
+  - Por cima, uma variação larga de tom contra a repetição.
+  - A rocha é triplanar.
+  - Cada canal (cor, normal, rugosidade, oclusão) tem a própria mistura pela
+    altura.
+- **Espalhamento:** rochas, pedras, pedregulhos, capim, arbustos, galhos e
+  paredões escaneados (Nanite nas rochas), pelas posições e máscaras do
+  gerador. Os paredões vão nos cortes de platô, virados pra baixo da encosta.
+- **Marcas de pneu:** decalques em dupla ao longo das trilhas que o gerador
+  abriu.
+- **Luz:**
+  - sol a 20° (sombra legível pro RTS);
+  - poeira na atmosfera (Mie);
+  - exposição travada, exposição local, sombra dura no contato.
+
+**Armadilhas que custaram tempo:**
+- O `LandscapeLayerBlend` em "atributos de material" falha em combinações de
+  camadas na 5.8. A causa real era o `ComponentMask`, que nasce com R e G
+  ligados: um "só R" virava 2 canais.
+- A normal da foto do decalque deixava a marca preta (A/B), então ela ficou
+  de fora.
+- No decalque, a caixa fica ao longo da trilha com o Y local, mas a foto entra
+  girada 90°. Medido com um decalque de teste colorido pelas coordenadas.
+- A primeira abertura compila shaders e mostra o quadriculado: o teste espera
+  terminar antes de fotografar.
+
+**Medido:** 50 ms (20 qps) na qualidade máxima a 1600×900 na GTX 1660.
+

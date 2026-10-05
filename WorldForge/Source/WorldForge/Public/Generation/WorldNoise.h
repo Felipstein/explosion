@@ -59,14 +59,14 @@ namespace WorldNoise
 	 * gradiente sorteado em ângulo contínuo pelo hash (menos viés de eixo que
 	 * a tabela de 8/12 direções). Saída aproximadamente em [-1, 1].
 	 */
-	float Gradient(float X, float Y, uint32 Seed);
+	WORLDFORGE_API float Gradient(float X, float Y, uint32 Seed);
 
 	/**
 	 * Soma fractal (fBm): oitavas de frequência ×2 e amplitude ×Gain, cada uma
 	 * girada ~37° (quebra o alinhamento da grade de todas caírem juntas).
 	 * Normalizada pela soma das amplitudes: fica em ~[-1, 1].
 	 */
-	float Fbm(float X, float Y, uint32 Seed, int32 Octaves, float Gain = 0.5f);
+	WORLDFORGE_API float Fbm(float X, float Y, uint32 Seed, int32 Octaves, float Gain = 0.5f);
 
 	/**
 	 * Multifractal "ridged" (Musgrave, Texturing & Modeling cap. 16): 1 − |ruído|
@@ -74,5 +74,5 @@ namespace WorldNoise
 	 * então os detalhes se concentram nas cristas (vales lisos, picos ásperos).
 	 * Saída em ~[0, 1].
 	 */
-	float Ridged(float X, float Y, uint32 Seed, int32 Octaves, float Gain = 0.5f);
+	WORLDFORGE_API float Ridged(float X, float Y, uint32 Seed, int32 Octaves, float Gain = 0.5f);
 }

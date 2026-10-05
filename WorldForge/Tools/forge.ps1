@@ -5,6 +5,8 @@
 #   forge.ps1 build                  # texturas do chão + materiais + mapa (sem abrir o editor)
 #   forge.ps1 view [low|medium|high|epic|cine]   # abre o gerador (padrão: cine, o máximo)
 #   forge.ps1 editor                 # abre o editor no projeto
+#   forge.ps1 slice                  # monta a fatia de qualidade (deserto; antes: python Tools\fetch_assets.py)
+#   forge.ps1 view -Map Slice_Desert [-Folder f]   # abre (ou testa) outro mapa
 #
 # Teste automático (gera, fotografa vistas fixas, salva os dados e fecha):
 #   forge.ps1 view -Folder teste1 -Seeds 1,2,3 [-Players 4] [-Size 1536] [-Biome 1]
@@ -21,6 +23,7 @@ param(
   [int]$Biome = -1,
   [string]$Cvars = '',
   [switch]$UITest,
+  [string]$Map = 'Forge',
   [string]$Extra = ''      # argumentos extras pro app (ex.: '-WaterScatter=0.01,0.02,0.02')
 )
 $ErrorActionPreference = 'Stop'
@@ -55,6 +58,7 @@ switch ($Command) {
   'setup' { Compile; Build }
   'compile' { Compile }
   'build' { Build }
+  'slice' { RunUnrealPython 'Tools\build_slice.py' }
   'py' { RunUnrealPython $Target }
   'editor' { Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList "`"$Project`"" }
   'view' {
@@ -62,7 +66,7 @@ switch ($Command) {
     $levels = @{ low = '0'; medium = '1'; high = '2'; epic = '3'; cine = 'cine' }
     $q = if ($Target) { $levels[$Target] } else { 'cine' }
     if ($Cvars) { $q += ', ' + $Cvars }
-    $a = @("`"$Project`"", '/Game/Maps/Forge', '-game', '-windowed', '-ResX=1600', '-ResY=900',
+    $a = @("`"$Project`"", "/Game/Maps/$Map", '-game', '-windowed', '-ResX=1600', '-ResY=900',
            "-ExecCmds=`"Scalability $q`"", '-nosplash')
     if ($Players) { $a += "-Players=$Players" }
     if ($Size) { $a += "-Size=$Size" }
