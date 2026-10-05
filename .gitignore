@@ -12,3 +12,11 @@ BlastLab/Saved/
 BlastLab/DerivedDataCache/
 BlastLab/.vs/
 BlastLab/*.sln
+
+# WorldForge (Unreal): o mesmo — o que a engine ou as ferramentas regeneram
+WorldForge/Binaries/
+WorldForge/Intermediate/
+WorldForge/Saved/
+WorldForge/DerivedDataCache/
+WorldForge/.vs/
+WorldForge/*.sln

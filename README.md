@@ -13,6 +13,9 @@ BlastLab/                  o simulador (Unreal Engine 5.8)
   Tools/                   ferramentas pra montar, testar e criar explosões
   Config/                  configuração do projeto
   Content/                 assets (todos gerados pelas Tools)
+WorldForge/                o criador de mundos do RTS (Unreal Engine 5.8): docs/WORLDFORGE.md
+  Source/WorldForge/       Generation/ (o gerador, só Core) + terreno, câmera RTS, painel
+  Tools/                   forge.ps1 (compilar, montar, abrir, testar), texturas, materiais
 reference/webgl/           o simulador WebGL original (referência visual aprovada)
 docs/                      estado, plano de migração, arquitetura
 captures/                  renders e testes (fora do git)
@@ -28,6 +31,9 @@ powershell -File BlastLab\Tools\blast.ps1 setup        # compila e monta tudo do
 powershell -File BlastLab\Tools\blast.ps1 view         # abre o simulador (gráfico máximo)
 powershell -File BlastLab\Tools\blast.ps1 editor       # abre o editor da Unreal
 ```
+
+Criador de mundos: `WorldForge\WorldForge.cmd` (ou `powershell -File
+WorldForge\Tools\forge.ps1 setup` na primeira vez). Detalhes em `docs/WORLDFORGE.md`.
 
 Referência WebGL: `python reference\webgl\devserver.py 8129` e abrir
 http://localhost:8129.
@@ -53,3 +59,4 @@ http://localhost:8129.
 - `docs/STATUS.md`: onde estamos e o histórico.
 - `docs/MIGRACAO.md`: WebGL → Unreal, sistema por sistema, números calibrados.
 - `docs/ARCHITECTURE.md`: como cada sistema do WebGL funciona, com as referências.
+- `docs/WORLDFORGE.md`: o criador de mundos (pesquisa, proposta, como gera, medições).

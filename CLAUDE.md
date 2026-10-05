@@ -14,6 +14,10 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   GTX 1660). `BlastLab/Tools/blast.ps1` faz tudo pela linha de comando
   (montar, renderizar, abrir, medir). Tudo do `Content/` é gerado pelas
   ferramentas: mude o script, não o asset.
+- `WorldForge/`: o **criador de mundos** do RTS (Unreal 5.8, pedido de
+  05/10/2026): gerador por semente + app com painel. `Tools/forge.ps1` faz
+  tudo (setup, view, teste `-Folder`/`-UITest`). Contexto em `docs/WORLDFORGE.md`.
+  A meta é uma ferramenta moderna nível AAA, não um clone do WorldBuilder.
 - `reference/webgl/`: o simulador **WebGL** original, congelado na tag
   `v6-fumaca-interacao`. É a referência visual aprovada. Não mexer no JS.
 - `docs/`: leia nesta ordem quando precisar de contexto:
