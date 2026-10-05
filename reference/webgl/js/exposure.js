@@ -85,16 +85,17 @@ void main(){
     this.shAdapt = new Shader(gl, FS_VS, HEAD + COMMON + `
 uniform sampler2D uMeter, uPrev, uEnvLut;
 uniform float uLevel, uTarget, uDt, uAttack, uRelease, uP, uEnable;
-uniform float uExpDay, uMaxEV;
+uniform float uExpDay, uMaxEV, uExtraEV;
 out vec4 oCol;
 void main(){
   float m = textureLod(uMeter, vec2(0.5), uLevel).r;
   float M = pow(max(m, 0.0), 1.0 / uP);
   // Quanto ela pode fechar: de dia 0.5 EV; à noite, até a exposição do dia
   // (+0.5) — uma cena iluminada pelo fogo está tão clara quanto o dia, e é
-  // assim que o olho adaptado a ela a veria.
+  // assim que o olho adaptado a ela a veria. uExtraEV: a bomba nuclear (ver
+  // main.js); 0 pra todo o resto.
   float expo = texelFetch(uEnvLut, ivec2(4, 0), 0).r;
-  float uMinF = exp2(-clamp(0.5 + log2(max(expo, 1e-6) / uExpDay), 0.5, uMaxEV));
+  float uMinF = exp2(-(clamp(0.5 + log2(max(expo, 1e-6) / uExpDay), 0.5, uMaxEV) + uExtraEV));
   float target = uEnable > 0.5 ? clamp(uTarget / max(M, 1e-4), uMinF, 1.0) : 1.0;
   float prev = texelFetch(uPrev, ivec2(0), 0).r;
   if (!(prev > 0.0 && prev <= 1.0)) prev = 1.0;     // primeiro quadro / NaN
@@ -134,7 +135,7 @@ void main(){
       .set('uDt', Math.max(dt, 0))
       .set('uAttack', P.aeAttack).set('uRelease', P.aeRelease)
       .set('uP', P.aePower).set('uEnable', P.autoExposure === false ? 0 : 1)
-      .set('uExpDay', P.aeExpDay).set('uMaxEV', P.aeMaxEV)
+      .set('uExpDay', P.aeExpDay).set('uMaxEV', P.aeMaxEV).set('uExtraEV', P.aeExtraEV || 0)
       .tex('uMeter', this.meter).tex('uPrev', this.adapt.read.tex).tex('uEnvLut', envLut);
     drawFS(gl);
     this.adapt.swap();

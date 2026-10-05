@@ -136,7 +136,45 @@ export const MAGNITUDES = [
   { id: 'tanque',   nome: 'Carga Pesada', yield: 1.00, meta: 'HE · alto rendimento' },
   { id: 'deposito', nome: 'Paiol',        yield: 4.00, meta: 'detonação secundária' },
   { id: 'aereo',    nome: 'Ataque Aéreo', yield: 11.0, meta: 'bomba de demolição' },
+  // Bomba nuclear tática. Rendimento 729 = 9³ → escala 9: a coluna assada
+  // (~38 m na Carga Pesada) vira ~340 m e a sequência de 6 s dura ~54 s.
+  // Na unidade do arsenal (granada 0.05 = 1 kg de TNT, logo 1 = 20 kg),
+  // 729 ≈ 15 t: a ordem do W54 do Davy Crockett (10–20 t; o Little Feller I,
+  // Nevada 1962, deu 18 t). A nuvem dele subiu a ~3,4 km — uma bola de fogo
+  // nuclear é muito mais quente e sobe muito mais que a química de mesmo
+  // rendimento —, mas aqui ela segue a escala W^(1/3) da sequência química:
+  // 340 m é o que ainda cabe enquadrado numa câmera de RTS (zoom até 800 m,
+  // ver ZOOM_RTS em camera.js).
+  // O que a sequência química não tem (clarão de duas máximas, anel de
+  // poeira da onda de choque, ar iluminado, tranco atrasado) está em
+  // lights() e em nuclear.js.
+  { id: 'nuclear',  nome: 'Bomba Nuclear', yield: 729, meta: 'nuclear tática · ~15 t', nuclear: true },
 ];
+
+/**
+ * Pulso térmico de uma detonação nuclear, normalizado (1 = pico da segunda
+ * máxima), no tempo da SEQUÊNCIA (o mesmo relógio W^(1/3) do resto).
+ *
+ * Glasstone & Dolan ("The Effects of Nuclear Weapons", 1977, cap. VII): o
+ * clarão tem DUAS máximas. A primeira dura menos de 1 ms — a bola de fogo
+ * ainda é vista através da frente de choque —, cai quando o ar chocado fica
+ * opaco e a esconde, e a segunda, quando ele volta a ficar transparente,
+ * carrega quase toda a energia térmica. Aproximação comum da curva
+ * normalizada da segunda: P/Pmax = 2x²/(1+x⁴), x = t/t_max (nessa forma
+ * ~90% da energia chega até x = 10).
+ *
+ * t_max real = 0.0417·W^0.44 s (W em kt): ~6.5 ms pra 15 t, menos que um
+ * quadro. Aqui t_max = 12 ms de sequência (~0.11 s na tela na escala 9): o
+ * clarão fica claro por uns décimos e o rabo some em ~1 s, quando a luz da
+ * bola de fogo assada já assumiu. A primeira máxima vira um quadro de
+ * estalo (τ = 2 ms de sequência ≈ 18 ms na tela) antes do mínimo.
+ */
+export const NUKE_FLASH = { tMax: 0.012, spikeTau: 0.002, spike: 1.5 };
+export function nuclearFlash(tSeq) {
+  if (!(tSeq >= 0)) return 0;
+  const x = tSeq / NUKE_FLASH.tMax, x2 = x * x;
+  return NUKE_FLASH.spike * Math.exp(-tSeq / NUKE_FLASH.spikeTau) + 2 * x2 / (1 + x2 * x2);
+}
 
 export function magnitudeOf(id) {
   const m = MAGNITUDES.find((x) => x.id === id) || MAGNITUDES[2];
@@ -175,6 +213,9 @@ export class BlastInstances {
       // aglomerado muito denso soma de verdade.
       lightScale: 1.0,
       crowdKeep: 0.35,    // fração da luz das vizinhas que ainda soma (ver lights())
+      // clarão nuclear relativo ao químico na mesma escala (ver lights()):
+      // pico = flashGain·s²·8 → ~100× o sol do meio-dia no chão a 300 m
+      nukeFlashGain: 8.0,
       sunOcclude: 1.8,
       // mesmos do render ao vivo (VOL_DEFAULTS)
       flameBoost: 1.5,
@@ -749,6 +790,13 @@ void main(){
       variant: (Math.random() * Math.max(1, this.bake.variantsReady)) | 0,
       mag: M.id,
     };
+    if (M.nuclear) {
+      // A fumaça no campo cobre 96 × 64 × 96 m em volta da origem: entregar
+      // uma nuvem de 340 m cortaria quase tudo. A sequência assada toca até o
+      // fim, como a de uma explosão fora da grade (BattleSmoke._handoff).
+      o.outside = true;
+      o.nuclear = true;
+    }
     this.list.push(o);
     this.scorches.push({ x: pos[0], z: pos[2], r: 5.2 * M.scale, age: 0 });
     if (this.scorches.length > this.maxScorch) this.scorches.shift();
@@ -864,7 +912,21 @@ void main(){
       // assada subir. Ilumina a cena inteira por um instante — o "clarão" que
       // a câmera vê antes de a exposição reagir.
       const fg = this.params.flashGain || 0;
-      if (fg > 0 && o.t < 8 * this.params.flashTau) {
+      if (o.nuclear) {
+        // Clarão nuclear: duas máximas (nuclearFlash) e bem mais forte que o
+        // químico. A arma nuclear solta ~35% do rendimento como radiação
+        // térmica, quase toda nesse pulso; a 300 m de 15 t isso dá ~280× a
+        // irradiância do sol (35% de 63 GJ em ~70 ms sobre 4πd²). O ganho
+        // põe o chão a 300 m em ~100× o sol do meio-dia no pico — branco
+        // total mesmo de dia, por uns décimos de segundo — e a exposição
+        // automática fecha atrás. Cor de ~6000 K: na segunda máxima a
+        // superfície da bola de fogo está perto da temperatura do Sol.
+        if (fg > 0 && o.t < 40 * NUKE_FLASH.tMax) {
+          const k = fg * this.params.nukeFlashGain * o.scale * o.scale * nuclearFlash(o.t);
+          L.color[0] += k; L.color[1] += k * 0.94; L.color[2] += k * 0.86;
+        }
+        L.nuclear = true;
+      } else if (fg > 0 && o.t < 8 * this.params.flashTau) {
         const k = fg * o.scale * o.scale * Math.exp(-o.t / this.params.flashTau);
         L.color[0] += k; L.color[1] += k * 0.86; L.color[2] += k * 0.64;
       }
@@ -1052,6 +1114,31 @@ void main(){
       .tex('uEnvLut', env.envLut).tex('uNoise', this.noiseTex, gl.TEXTURE_3D);
   }
 
+  /**
+   * Cor da nuvem nuclear. A fumaça assada é de explosivo químico: o TNT tem
+   * pouco oxigênio e o carbono que sobra vira fuligem preta (albedo 0.30).
+   * A nuvem nuclear quase não tem fuligem: logo depois da bola de fogo ela é
+   * vermelho-acastanhada (ácido nitroso e óxidos de nitrogênio formados no
+   * ar quente) e, quando esfria e o vapor condensa, fica branca como uma
+   * nuvem comum (Glasstone & Dolan 1977, cap. II). Mesma densidade, outro
+   * meio: albedo e cor mudam com o tempo de sequência. A emissão é
+   * proporcional à absorção (σ·(1−albedo), Kirchhoff), então o ganho é
+   * compensado pra bola de fogo brilhar igual.
+   * (Só o caminho de instância sozinha; num grupo marchado junto com outras
+   * explosões ela usa a fuligem padrão.)
+   */
+  _nukeLook(o) {
+    const P = this.params;
+    const k = Math.min(Math.max((o.t - 1.0) / 1.8, 0), 1), w = k * k * (3 - 2 * k);
+    const brown = [0.66, 0.46, 0.34], white = [0.80, 0.79, 0.77];
+    const albedo = 0.48 + (0.70 - 0.48) * w;
+    return {
+      color: brown.map((c, i) => c + (white[i] - c) * w),
+      albedo,
+      emit: (1 - P.sootAlbedo) / (1 - albedo),
+    };
+  }
+
   /** LOD por área em tela: passos e interpolação temporal */
   _lod(r, screenArea) {
     const P = this.params;
@@ -1120,7 +1207,16 @@ void main(){
           // lightScale — esse fator só existe pra luz na cena
           .set('uFireColor', L.color.map((c) => c * kVol))
           .set('uLightSlot', o.lcSlot ?? -1);
+        const nk = o.nuclear ? this._nukeLook(o) : null;
+        if (nk) {
+          sh.set('uSootColor', nk.color).set('uSootAlbedo', nk.albedo)
+            .set('uEmissionGain', P.emissionGain * nk.emit);
+        }
         drawFS(gl);
+        if (nk) {
+          sh.set('uSootColor', P.sootColor).set('uSootAlbedo', P.sootAlbedo)
+            .set('uEmissionGain', P.emissionGain);
+        }
         drawn++;
         continue;
       }

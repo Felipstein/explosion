@@ -2,4 +2,13 @@
 captures/
 .DS_Store
 __pycache__/
-tools/.purkinje-data/
+reference/webgl/tools/.purkinje-data/
+
+# BlastLab (Unreal): tudo que a engine ou as ferramentas regeneram
+# (compilação, cache de shaders, logs, dados intermediários das Tools)
+BlastLab/Binaries/
+BlastLab/Intermediate/
+BlastLab/Saved/
+BlastLab/DerivedDataCache/
+BlastLab/.vs/
+BlastLab/*.sln

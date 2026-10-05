@@ -1,4 +1,72 @@
-# Estado atual — 03/10/2026
+# Estado atual — 04/10/2026: BlastLab, o simulador no Unreal Engine 5.8
+
+Repositório reorganizado: o simulador é o projeto `BlastLab/` (Unreal 5.8,
+Windows 11, GTX 1660), o WebGL foi pra `reference/webgl/` (intacto) e os
+documentos pra `docs/`. Mapa e comandos no `README.md`. Tudo do `Content/` é
+gerado pelas ferramentas e testado por render de linha de comando:
+
+```
+powershell -File BlastLab\Tools\blast.ps1 setup                    # compila e monta tudo do zero
+powershell -File BlastLab\Tools\blast.ps1 view                     # abre o simulador (gráfico máximo)
+powershell -File BlastLab\Tools\blast.ps1 render Seq_Explosion     # quadros em captures\ue\
+  ... -Folder <nome> -Cvars 'r.X=0'   (A/B)    ... -ProfileGpu   (GPU na qualidade de jogo → Tools\gpu_profile.py)
+python BlastLab\Tools\compare.py <saida.jpg> <pasta> [<pasta>]      # folha WebGL × Unreal
+```
+
+O que já está no Unreal (fases 0–2 do `MIGRACAO.md`):
+
+- **Laço de teste**: build C++ (módulos `BlastLab` e `BlastLabEditor`),
+  scripts Python no commandlet, Movie Render Queue por linha de comando,
+  janela do simulador com teste automático (`view -Folder`).
+- **Cena**: layout do WebGL, chão rachado, sol de 128 000 lux, Sky
+  Atmosphere, exposição física (EV100), tonemap do WebGL portado como
+  material de pós-processo.
+- **Explosão**: a gravação r96 do WebGL num Sparse Volume Texture tocado num
+  Heterogeneous Volume (ator `ExplosionVolume`):
+  - leitura trilinear como no WebGL (`r.HeterogeneousVolumes.StochasticFiltering=0`;
+    o padrão cúbico estocástico borrava e granulava);
+  - ruído de detalhe do WebGL (flow noise de duas fases, modulação, erosão
+    das bordas finas), que devolveu a borda escura da bola de fogo;
+  - transição contínua entre os quadros gravados com vetores de movimento
+    (componente `FrameBlend`): o volume da Unreal mostrava um quadro
+    por vez e a fumaça andava aos pulos (aspereza do movimento 1.33 → 0.07).
+    Velocidade em meia precisão numa faixa de 8 voxels em volta da fumaça —
+    em 8 bits o "zero" era −40 m/s e as bordas que avançam deixavam um fantasma;
+  - caixa marchada justa por quadro: o volume marcha a caixa inteira voxel a
+    voxel sem pular o vazio; encolher a caixa pra fumaça (união do quadro e do
+    seguinte) cortou o custo de 15.5 ms pra 1.5–4.3 ms (720p, qualidade
+    Épico de jogo, GTX 1660), imagem igual;
+  - duas luzes do fogo animadas pela curva gravada (cenário com sombra +
+    dentro do volume).
+
+Medições que valem lembrar:
+- O Movie Render Queue sobe tudo pra Cinematic (volume em resolução cheia,
+  1024 passos): 55 ms por explosão. O preset de perfil mede na qualidade de
+  jogo. Nas predefinições da Epic o volume é desligado em Baixo/Médio.
+- O pipeline de pré-sombreamento (`r.HeterogeneousVolumes.Preshading=1`)
+  derruba o motor na 5.8.
+- Cena sem explosão: ~15 ms de GPU a 720p (TSR 3 ms, Lumen ~5 ms).
+
+- Janela ao vivo (`view`): ~13 qps no gráfico máximo a 1600×900 na 1660.
+
+Em aberto, nesta ordem:
+- **O simulador de verdade** (pedido de 04/10): painel como o do WebGL
+  (arsenal, hora do dia, tempo/pausa, qualidade), explosão onde clicar,
+  câmera RTS. Levantamento do painel do WebGL feito (main.js/index.html).
+- **Exposição ao vivo**: na janela ao vivo a exposição automática da Unreal
+  fecha até o limite no clarão e demora a voltar (a cena fica escura); nos
+  renders não aparece. Portar a exposição do WebGL (exposure.js).
+- A nuvem some depois de ~5 s: a gravação acaba no teto da caixa de 38 m e
+  no WebGL a fumaça passava pra grade do campo. Plano: um sistema só (gravação
+  mais longa/alta, ou continuação), sem troca de representação.
+- Bola de fogo de 0.4–0.8 s um pouco menos saturada que no WebGL (mediana de
+  saturação 0.51 × 0.58); o miolo bate.
+- Noite, interação (avião, míssil, disparo), presets e desempenho com várias
+  explosões.
+
+---
+
+# Decisão — 03/10/2026
 
 **DECISÃO (03/10/2026): migrar pra Unreal Engine.** Este commit (tag
 `v6-fumaca-interacao`) é a referência final do WebGL. Os últimos problemas —

@@ -1,5 +1,8 @@
 # Explosão volumétrica — arquitetura e algoritmos
 
+> Documento do simulador WebGL, hoje em `reference/webgl/`: os caminhos `js/...`,
+> `index.html` e `tools/...` abaixo são relativos a essa pasta.
+
 Renderizador WebGL2 sem dependências. Simulação de fluido Euleriana 3D na GPU,
 renderizada por raymarching volumétrico com espalhamento múltiplo, iluminando
 uma cena PBR rasterizada.

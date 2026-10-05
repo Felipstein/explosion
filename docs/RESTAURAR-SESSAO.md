@@ -5,7 +5,7 @@ o repositório. O Felipe vai pedir pra você seguir estas instruções. **Execut
 os passos você mesmo (PowerShell)**; ele só precisa reiniciar o Claude no
 final.
 
-O zip `sessao/sessao-claude-explosion.zip` traz a sessão inteira do Mac:
+O zip `docs/sessao/sessao-claude-explosion.zip` traz a sessão inteira do Mac:
 - a conversa, `7fab7fca-b804-45c4-8302-972a750d5b27.jsonl`;
 - a pasta de mesmo nome, com os resultados guardados das ferramentas;
 - as memórias do projeto, `memory/`.
@@ -39,7 +39,7 @@ todo o contexto.
    ```powershell
    $tmp = Join-Path $env:TEMP "sessao-explosion"
    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-   Expand-Archive -Path "sessao\sessao-claude-explosion.zip" -DestinationPath $tmp
+   Expand-Archive -Path "docs\sessao\sessao-claude-explosion.zip" -DestinationPath $tmp
    Copy-Item "$tmp\-Users-felipe-explosion\*" $dest -Recurse -Force
    Get-ChildItem $dest   # deve listar 7fab7fca-...jsonl, a pasta 7fab7fca-... e memory
    ```
@@ -61,7 +61,7 @@ todo o contexto.
   projeto está no Windows: usar os caminhos novos, e `python` em vez de
   `python3`.
 - Não continuar esta mesma sessão no Mac (as duas divergiriam).
-- Próximo passo combinado: `MIGRACAO.md`, fase 0. Primeiro descobrir a
+- Próximo passo combinado (na época): `docs/MIGRACAO.md`, fase 0. Primeiro descobrir a
   versão da Unreal instalada; depois montar o laço de captura automática pra
   eu ver os quadros.
 - As regras de trabalho continuam as do `CLAUDE.md`. Commit só com o

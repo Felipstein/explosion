@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "BlastLab: simulador de explosões volumétricas (referência WebGL em reference/webgl)",
+	"Modules": [
+		{ "Name": "BlastLab", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "BlastLabEditor", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
+	],
+	"Plugins": [
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "EditorScriptingUtilities", "Enabled": true },
+		{ "Name": "SequencerScripting", "Enabled": true },
+		{ "Name": "MovieRenderPipeline", "Enabled": true },
+		{ "Name": "NiagaraFluids", "Enabled": true },
+		{ "Name": "NiagaraSimCaching", "Enabled": true },
+		{ "Name": "InterchangeOpenVDB", "Enabled": true }
+	]
+}

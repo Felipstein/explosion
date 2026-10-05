@@ -3,11 +3,14 @@
 
 - GET: serve os arquivos com no-store (o http.server padrão deixa o navegador
   reusar módulos ES do cache, e edição de shader parece "não pegar").
-- POST /save?name=X.png: grava o corpo em captures/X.png. Permite inspecionar
-  o render sem depender da janela do app estar visível.
+- POST /save?name=X.png: grava o corpo em captures/X.png (na raiz do
+  repositório). Permite inspecionar o render sem depender da janela do app
+  estar visível.
 - POST /asset?name=bake/<hash>.bin: grava o bake da explosão como asset em
   assets/bake/. A próxima carga baixa o arquivo em vez de simular. Assets
   com outro hash (de uma versão anterior do solver) são apagados.
+
+Serve a pasta deste arquivo (reference/webgl/), de onde quer que seja rodado.
 """
 import os
 import re
@@ -15,7 +18,8 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-CAPTURES = 'captures'
+AQUI = os.path.dirname(os.path.abspath(__file__))
+CAPTURES = os.path.abspath(os.path.join(AQUI, '..', '..', 'captures'))
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -80,5 +84,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8129
+    os.chdir(AQUI)
     print(f'dev server em http://localhost:{port} (no-cache, POST /save, POST /asset)')
     ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()

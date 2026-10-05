@@ -15,10 +15,11 @@ import { Movers } from './movers.js';
 import { ExplosionBake } from './bake.js';
 import { BlastInstances, MAGNITUDES, magnitudeOf } from './instances.js';
 import { InstanceSparks } from './sparks.js';
+import { NuclearFX } from './nuclear.js';
 import { AutoExposure } from './exposure.js';
 import { loadSettings, saveSettings, matchPreset, PRESETS, PRESET_NAMES, ITEMS, SCHEMA,
          bakeVramMB } from './settings.js';
-import { Camera } from './camera.js';
+import { Camera, ZOOM_RTS } from './camera.js';
 import { buildBlackbodyLUT, uploadBlackbodyLUT } from './blackbody.js';
 import { Atmosphere } from './atmosphere.js';
 import { sunPosition, moonPosition, EXPOSURE_BASE, EXPOSURE_REF, EXPOSURE_ALPHA,
@@ -191,6 +192,10 @@ class App {
       filter: gl.NEAREST, data: new Uint8Array([255, 255, 255, 255]),
     });
     this.sparks = new InstanceSparks(gl, this.bbTex);
+    // o que só a bomba nuclear tem: anel de poeira da onda de choque, ar
+    // iluminado e o tranco atrasado (nuclear.js). Compilado no boot: no
+    // Windows (ANGLE) compilar no primeiro clique travaria o clarão.
+    this.nuke = new NuclearFX(gl);
     this.movers = new Movers();
     this.ae = new AutoExposure(gl);
     // Bake + cena + instâncias. O bake sobrevive à troca de qualidade da
@@ -210,8 +215,11 @@ class App {
   // ---- bake: asset em cache, ou simulação incremental ---------------------
 
   async _bakeKey() {
+    // quebras de linha normalizadas: o Git no Windows entrega os arquivos com
+    // CRLF, e o mesmo código daria outro hash (e assaria tudo de novo)
     const src = await Promise.all(BAKE_SOURCES.map((f) =>
-      fetch(new URL(`./${f}`, import.meta.url)).then((r) => r.text())));
+      fetch(new URL(`./${f}`, import.meta.url)).then((r) => r.text())
+        .then((t) => t.replace(/\r\n/g, '\n'))));
     const P = {};
     for (const k of BAKE_LIGHT_PARAMS) P[k] = this.vol.params[k];
     return hash53(src.join('\n') + JSON.stringify({
@@ -678,7 +686,9 @@ class App {
     // clique ali punha a explosão a trilhões de metros. Fora do alcance,
     // o clique simplesmente não detona.
     const dx = hit[0] - this.cam.pos[0], dz = hit[2] - this.cam.pos[2];
-    if (!Number.isFinite(hit[0]) || dx * dx + dz * dz > this.env.maxClickRange ** 2) return null;
+    // além do zoom de RTS (vista da bomba nuclear) o alcance cresce junto
+    const range = this.env.maxClickRange * Math.max(1, this.cam.dist / ZOOM_RTS);
+    if (!Number.isFinite(hit[0]) || dx * dx + dz * dz > range ** 2) return null;
     return hit;
   }
 
@@ -704,7 +714,13 @@ class App {
     this.sparks.spawn([groundPos[0], 1.85 * o.scale, groundPos[2]], o.scale);
     // a expansão empurra a fumaça antiga em volta
     if (this.settings.battleSmoke) this.battle.addBlast([groundPos[0], 2.0 * o.scale, groundPos[2]], o.scale);
-    this.cam.kick(Math.min(1.2, 0.5 * o.scale + 0.35));
+    if (o.nuclear) {
+      // nada de tranco agora: a luz chega antes, o choque leva d/c até a
+      // câmera — quem o dá é a NuclearFX quando a frente passa por ela
+      this.nuke.spawn(o.pos, o.scale);
+    } else {
+      this.cam.kick(Math.min(1.2, 0.5 * o.scale + 0.35));
+    }
     this._kicked = true;
     if (this.onDetonate) this.onDetonate(groundPos);
   }
@@ -1028,6 +1044,8 @@ class App {
     // Todas são renderizadas (o ray-box descarta as fora do caminho na hora);
     // só as mais próximas entram na iluminação da cena, que é N² em sombras.
     if (dt > 0) this.inst.update(dt);
+    // onda de choque da bomba nuclear (e o tranco quando ela chega na câmera)
+    if (dt > 0) this.nuke.update(dt, this.cam);
     if (dt > 0 && !this.skip.particles) this.sparks.step(dt);
     // o que atravessa o campo (avião, míssil, disparo): anda e empurra a
     // fumaça (os perturbadores são consumidos pelo passo da batalha logo abaixo)
@@ -1182,6 +1200,13 @@ class App {
         keyDir: this.keyDir, envLut: this.atmo.envLut.tex, frameJitter: jitter,
       }, this.vol.volTarget, this.vol.halfDepth.tex, instLights.concat(this.movers.lights), this.inst.params);
     }
+    // anel de poeira da bomba nuclear, por trás do que já está no alvo
+    if (!this.skip.volume && this.nuke.active) {
+      this.nuke.drawDust(this.cam, {
+        keyDir: this.keyDir, envLut: this.atmo.envLut.tex, frameJitter: jitter,
+      }, this.vol.volTarget, this.vol.halfDepth.tex, this.pool.slots[0].fluid.noiseTex,
+      instLights, this.inst.params);
+    }
     prof.end();
 
     prof.begin('composite');
@@ -1195,9 +1220,26 @@ class App {
         aoFloor: env.aoFloor, aoDebug: env.aoDebug,
         fireL0: this.sceneT.texs[2], fireL1: this.sceneT.texs[3], fireMask: this._fireMask,
       });
+    // a névoa iluminada pelo clarão e pela bola de fogo nuclear (só ela)
+    if (!this.skip.volume) {
+      this.nuke.drawAir(this.cam, {
+        fogDensity: env.fogDensity, fogFalloff: env.fogFalloff, frameJitter: jitter,
+      }, this.compT, this.sceneT.depthTex, this.vol.volTarget, instLights);
+    }
     prof.end();
 
     // ---- 5b. adaptação de exposição às explosões ------------------------
+    // Bomba nuclear: a trava de 0.5 EV de dia existe pra câmera não bombear a
+    // cada explosão de uma batalha; uma bomba nuclear é um evento só, e uma
+    // câmera de verdade fecha vários stops pra ela (nas filmagens dos testes o
+    // céu escurece em volta da bola de fogo). O alcance extra segue a luz da
+    // bomba: 1 EV por dobra acima de 2000 (~1/6 do pico da bola de fogo
+    // nuclear; o Ataque Aéreo inteiro não passa de ~750), até 4; zero sem ela.
+    {
+      let nk = 0;
+      for (const L of instLights) if (L.nuclear) nk = Math.max(nk, L.power);
+      env.aeExtraEV = Math.min(4, Math.max(0, Math.log2(Math.max(nk, 1) / 2000)));
+    }
     if (!this.skip.ae && env.autoExposure !== false) {
       // Quanto ela pode fechar acompanha a escuridão do ambiente: de dia a
       // bola de fogo quase não estoura e fechar a cena inteira a cada

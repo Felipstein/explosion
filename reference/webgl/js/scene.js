@@ -113,7 +113,9 @@ export class Scene {
     const L = buildLayout(seed);
     this.meshBoxes = new Mesh(gl, boxMesh(), L.boxes);
     this.meshCyls = new Mesh(gl, cylinderMesh(22), L.cyls);
-    this.meshGround = new Mesh(gl, planeMesh(1400, 1), L.ground);
+    // ±20 km: com o zoom da bomba nuclear (camera.js, ZOOM_RTS) o topo da tela
+    // enxerga o chão a vários km; com 1.4 km aparecia a borda do plano
+    this.meshGround = new Mesh(gl, planeMesh(40000, 1), L.ground);
     // o que passa pelo campo (aviões, mísseis, projéteis): instâncias
     // reescritas a cada quadro (ver movers.js)
     this.meshMovBoxes = new Mesh(gl, boxMesh(), new Float32Array(16 * MAX_MOVER_PARTS));

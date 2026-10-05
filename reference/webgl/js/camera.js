@@ -28,6 +28,16 @@ const RMB_MIN = 0.15;    // velocidade mínima fora da zona morta (telas/s)
 const RMB_GAIN = 2.0;    // por meia altura de tela de afastamento (telas/s)
 const MAP_HALF = 500;    // m: o centro da câmera fica sobre o chão
 
+// Zoom. Até ZOOM_RTS tudo é exatamente como sempre foi (enquadramento de
+// RTS, planos de recorte 0.12–900 m). Além dele, até ZOOM_MAX, é a vista da
+// bomba nuclear: a coluna dela tem ~340 m e, com o alvo no chão, o topo só
+// entraria no quadro a ~1.2 km. Então, afastando, o alvo SOBE junto (metade
+// do que a câmera recua) até o meio da coluna, ~175 m — a ~600 m a coluna
+// inteira cabe no fov vertical de 33° —, e os planos de recorte acompanham.
+export const ZOOM_RTS = 220;
+const ZOOM_MAX = 800;
+const ZOOM_LIFT = 0.5, LIFT_MAX = 175;
+
 function sampleShot(t) {
   let i = 0;
   while (i < SHOT.length - 2 && t > SHOT[i + 1][0]) i++;
@@ -62,12 +72,28 @@ export class Camera {
     this.elev = 0.36;
     this.targetY = 2.0;
     this.shake = 0;
+    this.quakeAmp = 0;            // tranco angular (rad), ver quake()
+    this._quakeT = 0;
     this._t = 0;
   }
 
   kick(amount) {
     if (!Number.isFinite(amount)) return;
     this.shake = Math.min(Math.max(this.shake, amount), 1.5);
+  }
+
+  /**
+   * Tranco ANGULAR da onda de choque de uma bomba nuclear. O kick() desloca
+   * a câmera em centímetros: certo pra uma explosão a 50 m, invisível com a
+   * câmera a 500 m. Aqui a vista gira (amplitude em radianos): o tranco de
+   * uma câmera no tripé quando o choque chega, como nas filmagens dos
+   * testes — um solavanco seco (a fase começa fora do zero) e um tremor de
+   * 4–12 Hz que morre em ~1 s.
+   */
+  quake(amp) {
+    if (!Number.isFinite(amp) || amp <= 0) return;
+    if (amp > this.quakeAmp) this._quakeT = 0;
+    this.quakeAmp = Math.min(Math.max(this.quakeAmp, amp), 0.05);
   }
 
   orbit(dx, dy) {
@@ -78,7 +104,7 @@ export class Camera {
   }
   zoom(d) {
     this.mode = 'free';
-    this.dist = clamp(this.dist * Math.pow(1.0012, d), 8, 220);
+    this.dist = clamp(this.dist * Math.pow(1.0012, d), 8, ZOOM_MAX);
   }
   panY(d) { this.mode = 'free'; this.targetY = clamp(this.targetY + d, 0, 30); }
 
@@ -118,6 +144,8 @@ export class Camera {
       this.dist = d; this.azim = a; this.elev = e; this.targetY = y;
     } else {
       fov = 0.58;
+      // além do zoom de RTS o alvo sobe junto (ver ZOOM_RTS)
+      ty += Math.min(ZOOM_LIFT * Math.max(0, dist - ZOOM_RTS), LIFT_MAX);
     }
 
     // ruído de câmera na mão: soma de senos incomensuráveis (sem repetição
@@ -142,6 +170,18 @@ export class Camera {
       fov *= 1.0 + sh * 0.012;
     }
 
+    // tranco angular da bomba nuclear (quake): decai em ~0.8 s
+    this.quakeAmp *= Math.exp(-dt / 0.8);
+    if (!Number.isFinite(this.quakeAmp) || this.quakeAmp < 1e-5) this.quakeAmp = 0;
+    const qa = this.frozen ? 0 : this.quakeAmp;
+    if (qa > 0) {
+      this._quakeT += dt;
+      const q = this._quakeT * Math.PI * 2;
+      azim += qa * (Math.sin(q * 4.3 + 1.1) * 0.6 + Math.sin(q * 9.7 + 0.3) * 0.3 + Math.sin(q * 12.1 + 2.0) * 0.1);
+      elev += qa * (Math.sin(q * 5.1 + 0.4) * 0.6 + Math.sin(q * 8.3 + 2.6) * 0.3 + Math.sin(q * 11.3 + 1.2) * 0.1);
+      fov *= 1.0 + qa * 1.5;
+    }
+
     const ce = Math.cos(elev), se = Math.sin(elev);
     v3.set(this.target, this.center[0] + shx * 0.4, ty + shy * 0.4,
                         this.center[2] + shz * 0.4);
@@ -163,6 +203,18 @@ export class Camera {
     }
 
     this.fov = fov;
+    if (dist > ZOOM_RTS) {
+      // Vista da bomba nuclear: o topo da tela enxerga o chão a vários km. O
+      // far vai até onde o raio do topo da tela cruza o chão (com folga, até
+      // 16 km); o near cresce na mesma proporção do zoom pra profundidade de
+      // 24 bits continuar com a mesma precisão de perto.
+      const down = elev - fov * 0.5;
+      this.near = 0.12 * dist / ZOOM_RTS;
+      this.far = clamp(1.2 * this.pos[1] / Math.tan(Math.max(down, 0.02)), 900, 16000);
+    } else {
+      this.near = 0.12;
+      this.far = 900;
+    }
     m4.lookAt(this.view, this.pos, this.target, [0, 1, 0]);
     m4.perspective(this.proj, fov, aspect, this.near, this.far);
     m4.mul(this.viewProj, this.proj, this.view);

@@ -1,5 +1,8 @@
 # Migração WebGL → Unreal Engine
 
+> O simulador no Unreal é o `BlastLab/`; o WebGL está em `reference/webgl/`
+> (caminhos `js/...` abaixo são relativos a ele). Estado atual: `docs/STATUS.md`.
+
 Decidida em 03/10/2026. Referência visual e técnica: tag `v6-fumaca-interacao`
 deste repositório. Este documento diz **no que cada sistema vira na Unreal**,
 **quais números levar** e **o que aprendemos**. Não é código: na Unreal, a
