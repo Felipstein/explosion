@@ -1,4 +1,190 @@
-# Estado atual — 04/10/2026: BlastLab, o simulador no Unreal Engine 5.8
+# Estado atual — 06/10/2026: a explosão reage ao que passa, sem trocar de fumaça
+
+**Decisão (06/10, depois do teste do Felipe):** a "entrega" do WebGL (aos 3.3 s
+a explosão gravada virava fumaça do fluido do campo) saiu. Ela se via: a
+qualidade caía (grade de 1 m contra os ~0.4 m da gravação), a cor mudava, o
+movimento ficava lento, a nuvem ficava ~15 s presa no ar, e antes dela o avião e
+o míssil não mexiam na explosão. O `STATUS` já dizia "um sistema só, sem troca de
+representação"; o porte de 05/10 tinha copiado o desenho do WebGL.
+
+Agora a explosão gravada toca do começo ao fim (sobe e some, ~5 s na Carga
+Pesada) e REAGE o tempo todo: o fluido do campo só calcula o vento do que
+passa (avião, míssil, disparo, as outras explosões), e esse vento deforma a
+própria gravação. Ela é lida no ponto y = x − D(x), o mapa característico
+(Tessendorf & Pelfrey; o "rest field" do Houdini; Neyret 2003), com
+∂D/∂t + ((u_gravada + u_vento)·∇)D = u_vento, numa grade de 64³ sobre o domínio
+de cada explosão atravessada (até 4 de uma vez; `BattleSmoke.usf MainWarp`).
+O túnel do corpo do avião e do projétil é um recorte à parte que fica aberto
+~1.5 s e fecha das bordas pro meio no último segundo (ver "o B-2 passa e a
+fumaça volta" abaixo), e a fumaça espalhada fica mais rala pelo det(I − ∇D). Sem
+nada passando, D = 0 e a gravação sai exatamente como é. Segunda opinião (agente,
+06/10): a técnica é a do cinema; nos jogos o mais perto é o recorte que fecha
+da fumaça do CS2 (sem fluido). A velocidade gravada vai em 32³ por quadro
+(`Tools/export_bake_velocity.py`), junto com a altura média da fuligem de cada
+quadro (a mira do avião e do míssil, adiantada pelo tempo que eles levam pra
+chegar). O rastro do míssil continua sendo fumaça própria do campo. No ar limpo
+o campo não tem mais turbulência ambiente (ela mexeria nas explosões, que já
+têm a delas).
+
+O vento que deforma é calculado no próprio ponto da explosão, não na grade
+de 2 m do campo (que borrava o giro dos vórtices em menos de 1 s e o efeito
+quase não aparecia de cima): a esteira do avião é um par de linhas de vórtice
+que fica no caminho, desce a w0 = Γ/(2π·b0) e quase não perde força até
+~b0/w0 (Holzäpfel 2003, o modelo de duas fases da separação de aeroporto); o
+jato dos motores, o arrasto do corpo e o pulso das outras explosões com os
+mesmos perfis do fluido. O túnel recortado abre primeiro onde o ruído de detalhe
+é ralo (borda rasgada, a erosão do Nubis).
+
+Bloom: o do WebGL é na radiância antes da exposição (limiar 1.7 absoluto) e
+soma 7 níveis de 0.052; o porte tinha o limiar relativo à exposição e 0.052 no
+total. Agora o limiar segue a exposição a cada quadro (BlastLabEnvironment) e a
+força/raios vêm da pirâmide do WebGL (`build_scene.py bloom_stages`). O fogo de
+dia e de noite não mudou (quase não passa do limiar, como no WebGL). O traçante
+ganhou um brilho próprio (`M_Glow`, calibrado pelo halo medido no WebGL), porque
+o bloom da Unreal vem depois do TSR, que apagava a linha fina; "Has Pixel
+Animation"/"Responsive AA" nos materiais dele. Projéteis ficam pra outra sessão
+(06/10): o rastro do míssil "em contas" não é a deposição (corrigida, fatias que
+se encaixam) e segue aberto.
+
+Custo (06/10, com um jogo do WorldForge aberto ao mesmo tempo): 10.6 ms antes,
+15.2 ms no meio da explosão com o avião passando (13.6 ms antes, sem passagem).
+
+Bombardeiro pesado (botão B-2, tecla B): asa voadora classe B-2 Spirit, 52.4 m
+de envergadura, ~150 t, passagem baixa a 130 m/s, quatro F118 (308 kN). A
+esteira é Γ ≈ 225 m²/s (2.5× a do A-10), o par a 41 m; a asa varre uma placa
+da envergadura inteira (disturbador tipo 3) e corta a nuvem como uma lâmina. Na
+Carga Pesada o par passa por fora da nuvem (ela só leva a pancada do meio, ~3.5
+m/s pra baixo); no Ataque Aéreo os vórtices passam por dentro e a puxam em duas
+cortinas enroladas. O |D| máximo agora é em m locais (8 m na escala da Carga
+Pesada, cresce com a explosão): em m do mundo ele limitava a nuvem de 80 m a
+10% de deformação.
+
+**"O B-2 passa e a fumaça volta ao lugar" (06/10, quadro a quadro).** O corte
+da asa fechava em ~0.3 s. Decisão do Felipe: estilo jogo, o corte fica 2–3 s
+(como os buracos na fumaça do CS2). Duas causas, medidas:
+1. O recorte decaía como e^−t/τ: começava a fechar já no primeiro quadro. Agora
+   cada ponto guarda quanto tempo falta pra fechar (o miolo nasce com 2.5 s, a
+   borda com menos, pelo perfil do corte) e fica inteiro até faltar 1 s: o
+   buraco encolhe das bordas pro meio (`CarveLife`/`CarveClose` em
+   `BattleSmokeSim.cpp`). Sem a mistura (ν) de antes.
+2. O transporte semi-lagrangiano com leitura linear borrava o campo a cada
+   quadro (difusão numérica). Medido na GPU (o máximo e a contagem de células
+   do recorte, lidos de volta): o pico caía 2.4× mais rápido que o prazo e o
+   corte virava uma névoa rala em 30% da grade; aos 0.6 s só 284 células
+   continuavam inteiras. Com a Catmull–Rom tricúbica presa entre os 8 vizinhos
+   (Fedkiw, Stam & Jensen 2001, interpolação cúbica monotônica contra a
+   dissipação numérica), o pico segue o prazo e ~7000 células continuam
+   inteiras aos 0.6 s. Vale pra D também (a fumaça empurrada não volta aos poucos).
+
+Quadro a quadro depois (lado, RTS e vídeo `captures/ue/_b2_fin_rts.gif`): o
+corte do B-2 fica visível até a nuvem sumir (~4.5 s); o A-10 tira ~20% da
+nuvem aos 3.4–3.7 s (antes ~10%, mesma história, câmera de RTS), consequência
+de o corte durar mais; o míssil e o disparo não mudaram. Custo: a deformação
+tem contagem própria de GPU agora (`GPU/BattleSmokeWarp`, e o fluido do campo
+`GPU/BattleSmoke`): 0.17 ms por explosão deformada (mediana, p95 0.18), com a
+leitura cúbica; o fluido do campo 1.4 ms enquanto roda. `Tools/gpu_profile.py`
+lia o cabeçalho do começo do CSV e jogava fora as linhas com estatísticas que
+aparecem no meio da captura (a Unreal grava o cabeçalho completo no fim): corrigido.
+
+Como achar: `-WarpDebug=3` desenha só a fumaça DENTRO do corte. A velocidade
+gravada leva o corte junto com a nuvem certo (verificado fora da Unreal:
+85% de uma fatia de fumaça continua na fumaça 0.6 s depois). Na Carga
+Pesada a nuvem já sai pelo topo do domínio gravado a partir de ~3.2 s (some
+~75% da fuligem até 4.9 s): passando tarde, o corte tem pouca nuvem pra
+aparecer.
+
+# 05/10/2026 (tarde): avião/míssil/disparo, otimização e a luz dos volumes
+
+Medido contra o WebGL na mesma câmera e instantes (`captures/webglpass/`,
+folhas `captures/ue/cmp_pass60_*`, `_ab_*`, `cmp_fire_*3`). Teste automático
+agora com a mesma história em todo A/B (`-AutoSeed`, padrão 1) e passo fixo
+(`view -GameArgs '-benchmark -fps=60'`), passagens em instantes da gravação
+(`-AutoPass=plane:4.5,missile:7,shell:9`).
+
+- **Noite sem estourar**: emissão = a do WebGL (sem o 2.54× de antes), a luz
+  do fogo de dentro com sombra no volume e o teto de sombra dele (`FireFill`).
+  Dia e noite batem com os quadros do WebGL ao mesmo custo.
+- **Otimização como nos jogos** (o papel do Significance Manager): fora da
+  tela a explosão não é desenhada (o relógio dela segue); detalhe por quanto da
+  tela ela ocupa, com histerese; só as 3 maiores na tela com detalhe máximo; a
+  luz do fogo alcança até onde vale 1% do ambiente e só faz sombra quando se
+  vê. Com 8 Cargas Pesadas: atrás da câmera 26.9 → 14.5 ms, longe 22.8 → 14.6,
+  na frente 43 → 33.5 (sem travadas novas: o pedido de quadro da Sparse Volume
+  Texture fica sempre no mip 0).
+- **A fumaça que fica no campo** (substituída em 06/10 pela deformação, acima) (`BattleSmokeSubsystem`, `Shaders/Private/BattleSmoke.usf`):
+  o fluido do `battlesmoke.js` em compute shaders (fumaça em 1 m, velocidade
+  em 2 m, MAC, MUSCL, MacCormack, confinamento de vórtice, Jacobi), desenhado
+  pelo mesmo Heterogeneous Volume. A explosão passa pra ele aos 3.3 s (2.8 s se
+  algo a atravessa) e a fumaça paira ~15 s. Sem buraco na troca (o material
+  compila na abertura, com a caixa na frente da câmera). Custo: 10.3 → 13.6 ms
+  no meio da explosão.
+- **Avião, míssil e disparo** (`ABlastLabMover`, porte do `movers.js`): botões
+  do painel e teclas A/M/D; cruzam a tela da esquerda pra direita pela fumaça
+  da última explosão, na altura média da fuligem (lida da GPU; o meio da caixa
+  punha o avião por baixo da nuvem, por causa da poeira rente ao chão). O
+  avião abre um túnel e o par de vórtices das asas puxa a fumaça em dois tubos;
+  o míssil deixa o rastro de propelente e ilumina a fumaça perto do bocal; o
+  disparo abre um túnel fino. Batem com o WebGL nas mesmas passagens.
+- **Espalhamento múltiplo nos volumes** (oitavas de Wrenninge et al. 2013,
+  como o WebGL): o volume da Unreal só faz a oitava 0, e o lado à sombra da
+  fumaça saía 8× mais escuro que o WebGL (o rastro do míssil quase preto).
+  Agora as oitavas 1–2 que não dependem da sombra entram como emissão nos dois
+  materiais (explosão e campo, pra não ter salto na troca): o mais escuro da
+  nuvem bate (0.015–0.019 contra 0.013–0.016). A luz do céu nos volumes vem
+  do Lumen a 0.175 (a normalização do céu do WebGL): as sombras ganham o tom
+  azulado dele. A bola de fogo de dia e de noite não mudou.
+- **Sem desfoque de movimento** (o WebGL não tem; na câmera de cima ele borrava
+  o mapa e o avião). **Traçante** com espessura mínima de 3 pixels do render e
+  a radiância dividida na mesma proporção: com 0.14 m ele tinha 1.5 pixel e o
+  TSR (que pesa por 1/(1 + brilho) contra vagalumes) o apagava a um pontilhado.
+
+Diferenças conhecidas:
+- O traçante tem menos halo que o do WebGL (o bloom pega menos dele).
+- A fumaça tardia (> 8 s) sai mais rala que a do WebGL e, rala, deixa o azul do
+  céu passar.
+- O custo em tempo real das passagens ainda não foi medido: a medição de 05/10
+  foi com dois jogos do WorldForge abertos dividindo a GPU.
+
+# 05/10/2026: o simulador e a hora do dia como no WebGL
+
+O simulador existe (`blast.ps1 view [baixa|media|alta|ultra]`): painel do
+WebGL (arsenal de 6 armas, hora do dia com presets e ciclo, pausa/câmera
+lenta, qualidade), clique no chão detona, câmera RTS do `camera.js`. Presets:
+baixa = Médio@50%, média = Alto@58%, alta = Épico@67%, ultra = Cinematic@100%
+(alta ~65 qps no meio de uma explosão na 1660, medido sem outro Unreal aberto).
+
+Hora do dia, medida contra o WebGL na mesma câmera (`captures/webglrts_*`,
+`webglcam_*`; folhas `captures/ue/cmp_*`):
+
+- **Exposição = a do WebGL**, hora a hora: EV100 = log2(128 000 / expo)
+  (`webgl_time_of_day.json`). A versão anterior usava a exposição "do
+  fotômetro" (sunny 16) e escurecia tudo 1.8 stop; as cores do chão e dos
+  objetos voltaram às do WebGL (a "refletância física" só compensava aquilo).
+- **O céu aprovado do WebGL tem um desvio**: na LUT de multi-espalhamento os
+  raios que descem atravessam a Terra (raySphere devolve a raiz de saída), o
+  que dá ~4× o espalhamento múltiplo de Hillaire e um céu ~1 stop mais claro.
+  A Sky Atmosphere da Unreal bate com o Hillaire correto; o céu do WebGL é
+  reproduzido com `MultiScatteringFactor` por hora (`Tools/sky_ms_table.py`).
+- **Névoa com a cor do WebGL** (`Tools/webgl_fog.json`, lida da GPU dele): o céu
+  abaixo do horizonte, quase neutro à noite, magenta no poente, mais o lobo
+  laranja do lado do sol (névoa direcional da Unreal). É daí o roxo/laranja.
+- **Abóbada do céu** (`M_Sky`, material de céu): estrelas, Via Láctea, airglow
+  e a lua com mares e halo, portados do `glsl.js`, fora da captura da luz
+  ambiente (o halo virava luz pontual no Lumen e manchava o chão).
+- **Adaptação às explosões**: o histograma da Unreal medindo a tela toda fechava
+  a câmera no céu de poente e no halo da lua. Agora uma máscara (`M_ExposureMask`,
+  desenhada pelo C++ a cada quadro) deixa só o chão até 700 m, como o medidor do
+  WebGL; média dos 50–98% mais claros, limiar 0.18·2^2.5. Em repouso a exposição
+  é exatamente a da hora; o tanque à noite fecha 3.4–5 stops (WebGL 4.7) e o
+  quanto pode fechar segue o WebGL (~1 stop de dia, até 8 à noite).
+- **Bug antigo do chão**: a máscara da rugosidade pegava o vermelho do albedo
+  (a máscara nasce com r e g ligados): o chão era quase espelho e refletia o
+  céu no rasante. Corrigido; o chão distante bate com o WebGL (±0.4 stop).
+- `blast.ps1 compile` ignora o Live Coding de outro UnrealEditor aberto
+  (`-NoHotReloadFromIDE`); `view -GameArgs '-AELow=.. -AEHigh=.. -AEBias=..'`
+  calibra a medição sem remontar o mapa.
+
+# 04/10/2026: BlastLab, o simulador no Unreal Engine 5.8
 
 Repositório reorganizado: o simulador é o projeto `BlastLab/` (Unreal 5.8,
 Windows 11, GTX 1660), o WebGL foi pra `reference/webgl/` (intacto) e os

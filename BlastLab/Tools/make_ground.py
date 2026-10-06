@@ -1,9 +1,10 @@
 """Textura do chão: porte do _bakeGround do WebGL (reference/webgl/js/scene.js) pra numpy.
 
 Mesmo campo de altura (grão em fbm periódico + duas famílias de rachaduras),
-mesma tileabilidade (o hash é feito no reticulado mod período). Diferença: o
-albedo sai em refletância física (solo nu ~0.17, rachadura escura), porque na
-Unreal a exposição é física; o WebGL guardava um albedo de 6% escalado.
+mesma tileabilidade (o hash é feito no reticulado mod período) e o mesmo
+albedo (terra escura, ~6%; o WebGL guarda ×6 na textura e divide no shader,
+aqui vai direto em sRGB). Uma versão anterior levava a 17% ("solo nu") e
+escurecia a exposição pra compensar, o que apagava o céu (build_scene.py).
 
 Rodar com o Python do sistema (precisa de numpy e pillow):
   python BlastLab/Tools/make_ground.py
@@ -68,8 +69,8 @@ def main():
     g01 = grit * 0.5 + 0.5
     cracks = np.clip(cr + cr2 * 0.7, 0, 1)
 
-    # refletância: média do WebGL (0.058) levada a solo nu (0.17), mesma variação
-    base = np.array([0.058, 0.055, 0.052]) * (0.17 / 0.058)
+    # refletância do WebGL (scene.js _bakeGround)
+    base = np.array([0.058, 0.055, 0.052])
     alb = base[None, None, :] * (0.80 + 0.40 * g01)[..., None] * (1 - cracks * 0.70)[..., None]
     rough = 0.90 - 0.16 * g01
 

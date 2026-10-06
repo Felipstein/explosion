@@ -38,6 +38,22 @@ WorldForge\Tools\forge.ps1 setup` na primeira vez). Detalhes em `docs/WORLDFORGE
 Referência WebGL: `python reference\webgl\devserver.py 8129` e abrir
 http://localhost:8129.
 
+### No simulador
+
+| Ação | O quê |
+|---|---|
+| clique no terreno | detona a arma escolhida no painel |
+| botão esquerdo arrastado | orbita a câmera |
+| roda | zoom (8–800 m) |
+| botão direito arrastado | rola o mapa (estilo C&C Generals) |
+| `P` | pausa · `[` `]` câmera lenta/rápida · `\` volta a 1× |
+| `,` `.` | hora do dia −/+10 min · `T` ciclo automático |
+| `1`–`4` | qualidade baixa/média/alta/ultra · `H` esconde o painel · espaço detona no centro |
+| `A` `M` `D` `B` | passa avião (A-10), míssil, disparo ou o bombardeiro B-2 pela última explosão |
+
+Na primeira abertura o painel mostra "preparando": a Unreal está compilando os
+shaders das explosões (das próximas vezes é rápido).
+
 ## Ferramentas (`BlastLab/Tools`)
 
 | Comando / script | O que faz |
@@ -45,8 +61,8 @@ http://localhost:8129.
 | `blast.ps1 setup` | compila o C++ e monta o campo de teste e a explosão |
 | `blast.ps1 compile` | compila os módulos C++ |
 | `blast.ps1 build-scene` | monta o campo de teste (cenário, sol, céu, exposição, tonemap) |
-| `blast.ps1 build-explosion` | converte a explosão gravada e põe no campo, com sequência e luzes |
-| `blast.ps1 view [low\|medium\|high\|epic\|cine]` | abre o simulador; `-Folder x` faz o teste automático (telas + qps) |
+| `blast.ps1 build-explosion` | converte a explosão gravada e põe no campo, com sequência e luzes; a fumaça do campo e os materiais do avião/míssil/disparo (`build_movers.py`) |
+| `blast.ps1 view [baixa\|media\|alta\|ultra]` | abre o simulador; `-Folder x` faz o teste automático (telas + qps); `-GameArgs '-AutoPass=plane:4.5 -benchmark -fps=60'` passa avião/míssil/disparo em passo fixo |
 | `blast.ps1 render <Seq>` | renderiza uma sequência em `captures/ue/`; `-Folder`, `-Cvars` pra A/B; `-ProfileGpu` mede a GPU |
 | `convert_bake.py` | explosão gravada no WebGL → quadros pro volume da Unreal |
 | `make_ground.py`, `make_noise.py` | texturas do chão e do ruído de detalhe |

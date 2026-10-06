@@ -7,6 +7,6 @@ public class BlastLabEditorTarget : TargetRules
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-		ExtraModuleNames.AddRange(new string[] { "BlastLab", "BlastLabEditor" });
+		ExtraModuleNames.AddRange(new string[] { "BlastLabShaders", "BlastLab", "BlastLabEditor" });
 	}
 }

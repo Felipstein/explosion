@@ -113,3 +113,34 @@ UVolumeTexture* UBlastLabEditorLib::CreateVolumeTexture(const FString& File, con
 	Package->MarkPackageDirty();
 	return Texture;
 }
+
+UVolumeTexture* UBlastLabEditorLib::CreateVolumeTextureHalf(const FString& File, const FString& AssetPath,
+	FIntVector Resolution, FString& Error)
+{
+	const int64 NumVoxels = int64(Resolution.X) * Resolution.Y * Resolution.Z;
+	TArray64<uint8> Data;
+	if (NumVoxels <= 0 || !FFileHelper::LoadFileToArray(Data, *File) || Data.Num() != NumVoxels * 8)
+	{
+		Error = FString::Printf(TEXT("arquivo ausente ou com tamanho errado: %s"), *File);
+		return nullptr;
+	}
+	const FString Name = FPackageName::GetLongPackageAssetName(AssetPath);
+	UPackage* Package = CreatePackage(*AssetPath);
+	UVolumeTexture* Texture = FindObject<UVolumeTexture>(Package, *Name);
+	if (!Texture)
+	{
+		Texture = NewObject<UVolumeTexture>(Package, *Name, RF_Public | RF_Standalone);
+		FAssetRegistryModule::AssetCreated(Texture);
+	}
+	Texture->PreEditChange(nullptr);
+	Texture->Source.Init(Resolution.X, Resolution.Y, Resolution.Z, 1, TSF_RGBA16F, Data.GetData());
+	Texture->SRGB = false;
+	Texture->CompressionSettings = TC_HDR;                       // RGBA16F sem compressão
+	Texture->MipGenSettings = TMGS_NoMipmaps;
+	Texture->AddressMode = TA_Clamp;
+	Texture->LODGroup = TEXTUREGROUP_World;
+	Texture->NeverStream = true;                                 // o compute shader lê inteira
+	Texture->PostEditChange();
+	Package->MarkPackageDirty();
+	return Texture;
+}

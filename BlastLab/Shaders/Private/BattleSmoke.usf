@@ -1,0 +1,812 @@
+// ---------------------------------------------------------------------------
+// BattleSmoke.usf — a fumaça que FICA no campo (porte de
+// reference/webgl/js/battlesmoke.js).
+//
+// Um fluido barato (Stam 1999, "Stable Fluids") em duas resoluções, o truque
+// clássico pra ter detalhe barato (a velocidade é suave, a fumaça não):
+//   - VELOCIDADE, pressão e divergência numa grade grossa (2 m), deslocada
+//     (MAC, Harlow & Welch 1965): o texel (i,j,k) guarda u na face i+½, v na
+//     face j+½ e w na face k+½. O canal w guarda a SUBIDA PRÓPRIA DA PLUMA (na
+//     face k+½): o empuxo do calor e a subida herdada da explosão, que
+//     desaceleram como uma térmica (riseTau); xyz é o escoamento.
+//   - FUMAÇA numa grade fina (1 m), transportada por volumes finitos (MUSCL,
+//     van Leer 1979) pela velocidade grossa interpolada nas faces finas:
+//     x = fuligem, y = calor, z = poeira, w = fumaça de motor (Al₂O₃).
+// Eixos da Unreal (z pra cima, metros); no WebGL a vertical era y.
+// ---------------------------------------------------------------------------
+
+#include "/Engine/Public/Platform.ush"
+
+// ---- grades -------------------------------------------------------------------
+int3 FineDim;          // células da fumaça (96, 96, 64)
+int3 VelDim;           // células da velocidade (48, 48, 32)
+float FineCell;        // m
+float VelCell;         // m
+float3 DomainMin;      // m, canto do domínio no mundo
+
+float Dt;
+float Time;
+
+// ---- forças (battlesmoke.js BATTLE_DEFAULTS) ------------------------------------
+// (uma declaração por linha: o leitor de parâmetros da Unreal não separa vírgulas)
+float Buoyancy;
+float SootWeight;
+float Turb;
+float TurbScale;
+float TurbRate;
+float TurbV;
+float VelKeep;
+float RiseKeep;
+float UMax;
+float Vorticity;
+float4 Keep;           // decaimento por canal neste subpasso
+
+// ---- o que atravessa o campo (movers.js) ------------------------------------
+#define MAXD 8
+int DisturbCount;
+float4 DA[MAXD];       // posição atual.xyz, raio (m)
+float4 DB[MAXD];       // posição anterior.xyz, tipo (1 corpo · 2 projétil · 4 esteira de asa · 5 fumaça de motor · 6 jato)
+float4 DC[MAXD];       // velocidade do objeto.xyz (m/s), intensidade / circulação / (empuxo / velocidade / ρ)
+float4 DD[MAXD];       // eixo "direita" da asa.xyz, envergadura efetiva b0 · no jato: x = velocidade de saída, w = bocal
+
+// ---- explosões empurrando a fumaça antiga (fonte de divergência) -------------
+int BlastCount;
+float4 Blast[4];       // posição.xyz, raio
+float4 BlastSrc;       // fonte (1/s) de cada uma
+
+// ---- deformação de uma explosão gravada (MainWarp) ------------------------------
+float4 WarpFoot;       // pé da explosão no mundo (m).xyz, escala
+float4 WarpFrames;     // fatia z do quadro de baixo e do de cima na velocidade gravada, fração, resolução dela
+float WarpAtlasDepth;  // fatias z da velocidade gravada (resolução × quadros)
+float WarpDomain;      // aresta do domínio gravado (m locais)
+int3 WarpDim;          // células da grade de D (cobre o domínio gravado)
+float WarpCarveLife;   // quanto tempo o miolo do corte fica (s do mundo)
+float WarpCarveClose;  // nos últimos WarpCarveClose s ele fecha
+int WarpDebug;         // 0 normal · 1 só o recorte · 2 só a deformação · 3 só a fumaça dentro do corte
+float WarpMax;         // |D| máximo (m locais)
+
+// ---- esteiras de avião (WakeVelocity) ------------------------------------------
+#define MAXW 2
+int WakeCount;
+float4 WakeA[MAXW];    // início do caminho (m).xyz, instante em que o avião passou ali (s, relógio do campo)
+float4 WakeB[MAXW];    // direção do voo.xyz, velocidade (m/s)
+float4 WakeC[MAXW];    // "direita" da asa.xyz, envergadura efetiva b0 (m)
+float4 WakeD[MAXW];    // circulação Γ0 (m²/s), descida w0 (m/s), núcleo (m), comprimento já voado (m)
+
+// ---- recortes e saída ----------------------------------------------------------
+float BoundsThreshold;
+
+Texture3D<float4> VelIn;
+Texture3D<float4> FldIn;
+Texture3D<float4> CurlIn;
+Texture3D<float4> PressIn;
+Texture3D<float4> DivIn;
+Texture3D<float4> Noise;
+Texture3D<float4> WarpIn;
+Texture3D<float4> BakeVel;
+SamplerState LinearClamp;
+SamplerState LinearWrap;
+
+RWTexture3D<float4> VelOut;
+RWTexture3D<float4> FldOut;
+RWTexture3D<float4> CurlOut;
+RWTexture3D<float4> PressOut;
+RWTexture3D<float4> DivOut;
+RWTexture3D<float4> OutTex;
+RWTexture3D<float4> WarpOut;
+RWBuffer<uint> Bounds;          // min.xyz, max.xyz das células com fumaça, Σ fuligem, Σ fuligem·altura
+
+// ---- acesso -------------------------------------------------------------------
+// coordenada de voxel: o centro da célula i está em i + 0.5
+float4 SampleVel(float3 p) { return VelIn.SampleLevel(LinearClamp, p / float3(VelDim), 0); }
+float4 SampleFld(float3 p) { return FldIn.SampleLevel(LinearClamp, p / float3(FineDim), 0); }
+float4 FetchVel(int3 v) { return VelIn.Load(int4(clamp(v, 0, VelDim - 1), 0)); }
+float4 FetchFld(int3 v) { return FldIn.Load(int4(clamp(v, 0, FineDim - 1), 0)); }
+float4 FetchCurl(int3 v) { return CurlIn.Load(int4(clamp(v, 0, VelDim - 1), 0)); }
+float3 VelVoxelToWorld(float3 p) { return DomainMin + p * VelCell; }
+float3 WorldToVelVoxel(float3 w) { return (w - DomainMin) / VelCell; }
+float3 FineVoxelToWorld(float3 p) { return DomainMin + p * FineCell; }
+float3 WorldToFineVoxel(float3 w) { return (w - DomainMin) / FineCell; }
+bool Outside(int3 v, int3 dim) { return any(v < 0) || any(v >= dim); }
+
+// velocidade física TOTAL no ponto p (voxel grosso): faces + a pluma na vertical
+float3 VelAt(float3 p)
+{
+	float4 sz = SampleVel(p - float3(0.0, 0.0, 0.5));
+	return float3(SampleVel(p - float3(0.5, 0.0, 0.0)).x, SampleVel(p - float3(0.0, 0.5, 0.0)).y, sz.z + sz.w);
+}
+
+// componente c da velocidade grossa na posição de MUNDO w (a face fica meia célula antes do centro)
+float VelComp(float3 w, int c)
+{
+	float3 o = 0;
+	o[c] = 0.5;
+	float4 s = SampleVel(WorldToVelVoxel(w) - o);
+	return c == 2 ? s.z + s.w : s[c];
+}
+
+float3 Hash33(float3 p)
+{
+	p = float3(dot(p, float3(127.1, 311.7, 74.7)), dot(p, float3(269.5, 183.3, 246.1)), dot(p, float3(113.5, 271.9, 124.6)));
+	return frac(sin(p) * 43758.5453123) * 2.0 - 1.0;
+}
+
+float SegDist(float3 w, float3 a, float3 b, out float3 c)
+{
+	float3 ab = b - a;
+	float l2 = dot(ab, ab);
+	float s = l2 > 1e-6 ? saturate(dot(w - a, ab) / l2) : 0.0;
+	c = a + ab * s;
+	return length(w - c);
+}
+
+// Distância à placa que uma asa voadora varre num quadro: o trecho b→a do
+// centro dela, aberto pros lados até ±hs ao longo de right. Devolve também o
+// ponto mais perto no eixo (pra direção).
+float SlabDist(float3 w, float3 b, float3 a, float3 right, float hs, out float3 c)
+{
+	SegDist(w, b, a, c);
+	float3 o = w - c;
+	float s = clamp(dot(o, right), -hs, hs);
+	return length(o - right * s);
+}
+
+// vórtice de Lamb–Oseen em volta do eixo dir que passa por o
+float3 LambOseen(float3 w, float3 o, float3 dir, float gamma, float rc)
+{
+	float3 r = w - o;
+	r -= dir * dot(r, dir);
+	float rr = length(r);
+	if (rr < 1e-3) return 0;
+	float ut = gamma / (6.2831853 * rr) * (1.0 - exp(-rr * rr / (rc * rc)));
+	return cross(dir, r / rr) * ut;
+}
+
+// ---- 1. advecção da velocidade -------------------------------------------------
+// Cada componente a partir da PRÓPRIA face (a pluma junto com a vertical).
+// MacCormack numa passada (Selle et al. 2008) com limitador: a semi-Lagrangiana
+// pura numa grade de 2 m borrava a velocidade a cada passo (um vórtice de asa
+// sem freio perdia metade da força em 2 s, medido no WebGL).
+float2 CompAt(float3 p, int c)
+{
+	float3 o = 0;
+	o[c] = 0.5;
+	float4 s = SampleVel(p - o);
+	return float2(s[c], s.w);
+}
+
+float2 AdvectFace(float3 pf, int c)
+{
+	float3 back = pf - VelAt(pf) * (Dt / VelCell);
+	float2 hat = CompAt(back, c);
+	float3 fwd = back + VelAt(back) * (Dt / VelCell);
+	float2 v = hat + 0.5 * (CompAt(pf, c) - CompAt(fwd, c));
+	float3 o = 0;
+	o[c] = 0.5;
+	int3 b = int3(floor(back - o - 0.5));
+	float2 mn = 1e20, mx = -1e20;
+	[unroll] for (int k = 0; k < 8; k++)
+	{
+		float4 s = FetchVel(b + int3(k & 1, (k >> 1) & 1, (k >> 2) & 1));
+		float2 q = float2(s[c], s.w);
+		mn = min(mn, q);
+		mx = max(mx, q);
+	}
+	return clamp(v, mn, mx);
+}
+
+[numthreads(4, 4, 4)]
+void MainAdvectVel(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	float3 p = float3(id) + 0.5;
+	float2 vz = AdvectFace(p + float3(0.0, 0.0, 0.5), 2);
+	VelOut[id] = float4(AdvectFace(p + float3(0.5, 0.0, 0.0), 0).x, AdvectFace(p + float3(0.0, 0.5, 0.0), 1).x, vz.x, vz.y);
+}
+
+// ---- 2. vorticidade no centro de cada célula: xyz = ω, w = |ω| ------------------
+float3 CellVel(int3 v)
+{
+	float4 c = FetchVel(v), zm = FetchVel(v - int3(0, 0, 1));
+	return 0.5 * float3(c.x + FetchVel(v - int3(1, 0, 0)).x,
+	                    c.y + FetchVel(v - int3(0, 1, 0)).y,
+	                    c.z + c.w + zm.z + zm.w);
+}
+
+[numthreads(4, 4, 4)]
+void MainCurl(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	int3 v = int3(id);
+	float3 xp = CellVel(v + int3(1, 0, 0)), xm = CellVel(v - int3(1, 0, 0));
+	float3 yp = CellVel(v + int3(0, 1, 0)), ym = CellVel(v - int3(0, 1, 0));
+	float3 zp = CellVel(v + int3(0, 0, 1)), zm = CellVel(v - int3(0, 0, 1));
+	float3 w = 0.5 / VelCell * float3((yp.z - ym.z) - (zp.y - zm.y),
+	                                  (zp.x - zm.x) - (xp.z - xm.z),
+	                                  (xp.y - xm.y) - (yp.x - ym.x));
+	CurlOut[id] = float4(w, length(w));
+}
+
+// ---- 3. forças: empuxo, turbulência, confinamento e o que passa --------------
+// Vorticity confinement (Fedkiw, Stam & Jensen 2001): f = ε·h·(N × ω)
+float3 Confine(int3 v)
+{
+	float3 wc = FetchCurl(v).xyz;
+	float3 eta = float3(FetchCurl(v + int3(1, 0, 0)).w - FetchCurl(v - int3(1, 0, 0)).w,
+	                    FetchCurl(v + int3(0, 1, 0)).w - FetchCurl(v - int3(0, 1, 0)).w,
+	                    FetchCurl(v + int3(0, 0, 1)).w - FetchCurl(v - int3(0, 0, 1)).w);
+	return Vorticity * VelCell * cross(eta / (length(eta) + 1e-6), wc);
+}
+
+// velocidade nova na face c (posição pf, entre as células v e v + e_c): xyz escoamento, w pluma
+float4 Forced(float3 pf, int3 v, int c)
+{
+	float4 sz = SampleVel(pf - float3(0.0, 0.0, 0.5));
+	float3 um = float3(SampleVel(pf - float3(0.5, 0.0, 0.0)).x, SampleVel(pf - float3(0.0, 0.5, 0.0)).y, sz.z);
+	float pl = sz.w;
+	float3 w = VelVoxelToWorld(pf);
+	float4 f = SampleFld(WorldToFineVoxel(w));
+
+	// empuxo: o calor que sobrou da explosão sobe (é a pluma); fuligem pesa
+	pl += (Buoyancy * f.y - SootWeight * f.x) * Dt;
+
+	// Turbulência atmosférica: turbilhões de ~10 m, só onde há fumaça própria do
+	// campo (o rastro do míssil); a vertical metade da horizontal (σ_w ≈ 0.5·σ_u,
+	// Panofsky & Dutton 1984). No ar limpo ela não sopra: este vento também
+	// deforma as explosões gravadas (MainWarp), que já têm a turbulência delas,
+	// e o que as deve mexer é só o que passa. (No WebGL havia 35% dela no ar
+	// limpo, pra fumaça entregue, que não existe mais.)
+	float act = smoothstep(0.002, 0.05, f.x + f.z + f.w);
+	float3 np = w * TurbScale + float3(0.6, 0.4, -1.0) * (Time * TurbRate);
+	float3 turb = Noise.SampleLevel(LinearWrap, np, 0).xyz * 2.0 - 1.0;
+	float3 turb2 = Noise.SampleLevel(LinearWrap, np * 2.3 + 0.41, 0).xyz * 2.0 - 1.0;
+	um += (turb + 0.5 * turb2) * float3(1.0, 1.0, TurbV) * Turb * act * Dt;
+
+	if (Vorticity > 0.0)
+	{
+		int3 e = 0;
+		e[c] = 1;
+		um += 0.5 * (Confine(v) + Confine(v + e)) * Dt;
+	}
+
+	for (int i = 0; i < DisturbCount; i++)
+	{
+		float4 A = DA[i], B = DB[i], C = DC[i], D = DD[i];
+		float3 cp;
+		float d = SegDist(w, B.xyz, A.xyz, cp);
+		int kind = int(B.w + 0.5);
+		float3 seg = A.xyz - B.xyz;
+		float len = length(seg);
+		float3 dir = len > 1e-4 ? seg / len : float3(1.0, 0.0, 0.0);
+		// asa voadora: o mesmo corpo, varrendo uma placa da envergadura (tipo 3)
+		if (kind == 3) { d = SlabDist(w, B.xyz, A.xyz, D.xyz, D.w, cp); kind = 1; }
+		if (kind == 1)
+		{
+			// corpo: o ar perto é arrastado ao longo do voo até uma fração C.w da
+			// velocidade dele; a projeção faz o resto contornar. Só a componente
+			// AO LONGO do voo: o que gira em volta (esteira) não é apagado.
+			float k = smoothstep(A.w * 1.6, A.w * 0.5, d);
+			um += dir * max(C.w * length(C.xyz) - dot(um, dir), 0.0) * k;
+		}
+		else if (kind == 4)
+		{
+			// esteira de asa: dois vórtices de ponta de asa, sentidos opostos,
+			// SOMADOS ao que já existe, só na fatia que a asa cruzou neste quadro
+			float sAlong = len > 1e-4 ? dot(w - B.xyz, dir) / len : -1.0;
+			float nearK = smoothstep(D.w * 1.4, D.w * 0.6, d);
+			if (nearK > 0.0 && sAlong > 0.0 && sAlong <= 1.0)
+			{
+				float3 v1 = LambOseen(w, cp + D.xyz * (D.w * 0.5), dir, C.w, A.w);
+				float3 v2 = LambOseen(w, cp - D.xyz * (D.w * 0.5), dir, -C.w, A.w);
+				um += (v1 + v2) * nearK;
+			}
+		}
+		else if (kind == 2)
+		{
+			// projétil: o choque e a esteira turbulenta reviram um tubo em volta
+			float k = smoothstep(A.w * 2.0, A.w * 0.4, d) * C.w;
+			if (k > 0.0)
+			{
+				float3 rnd = Hash33(floor(cp * 0.6) + 17.0);
+				float3 sw = LambOseen(w, cp, dir, (rnd.x > 0.0 ? 1.0 : -1.0) * 30.0, A.w);
+				um += (sw + rnd * 7.0) * k;
+			}
+		}
+		else if (kind == 6)
+		{
+			// Jato de motor (bocal A até o fim da região, B): meia-largura ~0.1·x
+			// (Pope §5); no eixo, a menor entre a velocidade de saída e a que a
+			// conservação de quantidade de movimento permite. Só a componente ao
+			// longo do eixo: os vórtices das asas não são apagados.
+			float x = length(A.xyz - cp);
+			float Dn = D.w;
+			float b = 0.5 * Dn + 0.1 * x;
+			float dU = min(D.x, C.w * 1.386 / (3.14159 * b * b));
+			float k = exp(-0.693 * d * d / (b * b)) * step(d, 1.5 * b);
+			float ax = dot(um, -dir);
+			um -= dir * (lerp(ax, dU, k) - ax);
+		}
+	}
+
+	um *= VelKeep;
+	pl *= RiseKeep * VelKeep;
+	um = clamp(um, -UMax, UMax);
+	pl = clamp(pl, -UMax - um.z, UMax - um.z);
+	return float4(um, pl);
+}
+
+[numthreads(4, 4, 4)]
+void MainForces(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	int3 v = int3(id);
+	float3 p = float3(id) + 0.5;
+	float4 fz = Forced(p + float3(0.0, 0.0, 0.5), v, 2);
+	VelOut[id] = float4(Forced(p + float3(0.5, 0.0, 0.0), v, 0).x, Forced(p + float3(0.0, 0.5, 0.0), v, 1).y, fz.z, fz.w);
+}
+
+// ---- 4. divergência (com as explosões como fonte de expansão) -----------------
+[numthreads(4, 4, 4)]
+void MainDiv(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	int3 v = int3(id);
+	float4 c4 = FetchVel(v);
+	float3 c = float3(c4.x, c4.y, c4.z + c4.w);
+	// faces −½: nas abertas o ar de fora tem a mesma velocidade; o chão é sólido
+	float ux = v.x > 0 ? FetchVel(v - int3(1, 0, 0)).x : c.x;
+	float uy = v.y > 0 ? FetchVel(v - int3(0, 1, 0)).y : c.y;
+	float4 zm = FetchVel(v - int3(0, 0, 1));
+	float uz = v.z > 0 ? zm.z + zm.w : 0.0;
+	float div = ((c.x - ux) + (c.y - uy) + (c.z - uz)) / VelCell;
+	float3 w = VelVoxelToWorld(float3(v) + 0.5);
+	float src = 0.0;
+	for (int i = 0; i < BlastCount; i++)
+	{
+		float r = length(w - Blast[i].xyz);
+		src += BlastSrc[i] * smoothstep(Blast[i].w, Blast[i].w * 0.25, r);
+	}
+	DivOut[id] = float4(div - src, 0, 0, 0);
+}
+
+// ---- 5. pressão (Jacobi): p = 0 nas faces abertas, Neumann no chão ------------
+float PAt(int3 v, float pc)
+{
+	if (v.z < 0) return pc;
+	if (Outside(v, VelDim)) return 0.0;
+	return PressIn.Load(int4(v, 0)).x;
+}
+
+[numthreads(4, 4, 4)]
+void MainPressure(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	int3 v = int3(id);
+	float pc = PressIn.Load(int4(v, 0)).x;
+	float s = PAt(v + int3(1, 0, 0), pc) + PAt(v - int3(1, 0, 0), pc)
+	        + PAt(v + int3(0, 1, 0), pc) + PAt(v - int3(0, 1, 0), pc)
+	        + PAt(v + int3(0, 0, 1), pc) + PAt(v - int3(0, 0, 1), pc);
+	float d = DivIn.Load(int4(v, 0)).x;
+	PressOut[id] = float4((s - d * VelCell * VelCell) / 6.0, 0, 0, 0);
+}
+
+[numthreads(4, 4, 4)]
+void MainProject(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	int3 v = int3(id);
+	float pc = PressIn.Load(int4(v, 0)).x;
+	float3 grad = float3(PAt(v + int3(1, 0, 0), pc) - pc, PAt(v + int3(0, 1, 0), pc) - pc, PAt(v + int3(0, 0, 1), pc) - pc) / VelCell;
+	float4 cur = FetchVel(v);
+	// a correção vai toda pro escoamento; a pluma segue como está
+	VelOut[id] = float4(cur.xyz - grad, cur.w);
+}
+
+// ---- 6. transporte da fumaça (volumes finitos, MUSCL) ---------------------------
+// O que sai de uma célula entra na vizinha: a fumaça se conserva. A velocidade
+// de cada face FINA é a grossa interpolada no centro dela. Valor na face com
+// inclinação limitada (limitador "monotonized central"). Estável com
+// |u|·Δt/h < ⅓ por eixo (daí os subpassos).
+float4 Rho(int3 v)
+{
+	if (Outside(v, FineDim)) return 0;          // ar limpo pelas faces abertas
+	return FldIn.Load(int4(v, 0));
+}
+
+float4 McSlope(float4 a, float4 b)
+{
+	return sign(a) * min(min(2.0 * abs(a), 2.0 * abs(b)), 0.5 * abs(a + b)) * step(0.0, a * b);
+}
+
+float4 Flux(float un, float4 LL, float4 L, float4 R, float4 RR)
+{
+	float k = 0.5 * (1.0 - abs(un) * Dt / FineCell);
+	return un * (un > 0.0 ? L + k * McSlope(L - LL, R - L) : R - k * McSlope(R - L, RR - R));
+}
+
+float UN(float3 pf, int c) { return VelComp(FineVoxelToWorld(pf), c); }
+
+[numthreads(4, 4, 4)]
+void MainAdvectField(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= FineDim)) return;
+	int3 v = int3(id);
+	float3 p = float3(v) + 0.5;
+	float4 c = FldIn.Load(int4(v, 0));
+	float4 xp = Rho(v + int3(1, 0, 0)), xm = Rho(v - int3(1, 0, 0));
+	float4 yp = Rho(v + int3(0, 1, 0)), ym = Rho(v - int3(0, 1, 0));
+	float4 zp = Rho(v + int3(0, 0, 1)), zm = Rho(v - int3(0, 0, 1));
+	// ar limpo em volta (a maior parte do campo): pula as leituras da velocidade
+	float4 any7 = c + xp + xm + yp + ym + zp + zm;
+	if (any7.x + any7.y + any7.z + any7.w < 1e-6)
+	{
+		FldOut[id] = 0;
+		return;
+	}
+	float uxp = UN(p + float3(0.5, 0.0, 0.0), 0), uxm = UN(p - float3(0.5, 0.0, 0.0), 0);
+	float uyp = UN(p + float3(0.0, 0.5, 0.0), 1), uym = UN(p - float3(0.0, 0.5, 0.0), 1);
+	float uzp = UN(p + float3(0.0, 0.0, 0.5), 2);
+	float uzm = v.z > 0 ? UN(p - float3(0.0, 0.0, 0.5), 2) : 0.0;     // chão sólido
+	float4 xp2 = Rho(v + int3(2, 0, 0)), xm2 = Rho(v - int3(2, 0, 0));
+	float4 yp2 = Rho(v + int3(0, 2, 0)), ym2 = Rho(v - int3(0, 2, 0));
+	float4 zp2 = Rho(v + int3(0, 0, 2)), zm2 = Rho(v - int3(0, 0, 2));
+	float4 net = Flux(uxp, xm, c, xp, xp2) - Flux(uxm, xm2, xm, c, xp)
+	           + Flux(uyp, ym, c, yp, yp2) - Flux(uym, ym2, ym, c, yp)
+	           + Flux(uzp, zm, c, zp, zp2) - Flux(uzm, zm2, zm, c, zp);
+	FldOut[id] = max(c - net * (Dt / FineCell), 0.0) * Keep;
+}
+
+// ---- 7. campos: túnel de projétil, corpo e fumaça de escape --------------------
+[numthreads(4, 4, 4)]
+void MainFieldsFx(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= FineDim)) return;
+	float4 f = FldIn.Load(int4(id, 0));
+	float3 w = FineVoxelToWorld(float3(id) + 0.5);
+	for (int i = 0; i < DisturbCount; i++)
+	{
+		float4 A = DA[i], B = DB[i], C = DC[i], Dd = DD[i];
+		int kind = int(B.w + 0.5);
+		float3 cp;
+		float d = SegDist(w, B.xyz, A.xyz, cp);
+		if (kind == 3) { d = SlabDist(w, B.xyz, A.xyz, Dd.xyz, Dd.w, cp); kind = 1; }
+		if (kind == 2)
+		{
+			// o choque e a esteira varrem um tubo de ~2 m: a fumaça de dentro sai do caminho
+			float k = smoothstep(A.w * 1.3, A.w * 0.3, d) * C.w * 0.95;
+			f.xzw *= 1.0 - k;
+		}
+		else if (kind == 1)
+		{
+			// corpo: o volume varrido fica sem fumaça (empurrada mais rápido do que a grade de 2 m move)
+			float k = smoothstep(A.w * 1.2, A.w * 0.3, d) * 0.7;
+			f.xzw *= 1.0 - k;
+		}
+		else if (kind == 5)
+		{
+			// Fumaça do propelente sólido (óxido de alumínio): canal próprio, branco.
+			// Cada quadro deposita uma FATIA do trecho varrido (0 ≤ projeção < L,
+			// distância ao eixo), sem as tampas redondas da cápsula: as fatias de
+			// quadros seguidos se encaixam. Com as tampas, cada junção levava o
+			// dobro e o rastro saía em contas, uma por quadro (05–06/10).
+			float3 ab = A.xyz - B.xyz;
+			float l2 = dot(ab, ab);
+			float sp = dot(w - B.xyz, ab);
+			if (l2 < 1e-6 || sp < 0.0 || sp >= l2) continue;
+			float dAxis = length(w - (B.xyz + ab * (sp / l2)));
+			float k = smoothstep(A.w * 1.4, A.w * 0.3, dAxis);
+			f.w += k * C.w * 1.6;
+			f.y = max(f.y, k * 0.35);
+		}
+	}
+	FldOut[id] = f;
+}
+
+// ---- 8. a deformação das explosões gravadas pelo que passa ----------------------
+// A explosão gravada não reage a nada (é uma gravação). Em vez de trocá-la por
+// esta fumaça (a "entrega" do WebGL, que se via: outra grade, outra cor, outro
+// movimento), ela é lida num ponto deslocado: y = x − D(x), o mapa
+// característico (Tessendorf & Pelfrey, "The Characteristic Map for Fast and
+// Efficient VFX Fluid Simulations"; o "rest field" do Houdini). D vive numa
+// grade sobre o domínio gravado, em m LOCAIS (antes da escala da explosão), e
+// obedece a
+//     ∂D/∂t + ((u_b(x − D) + u_d)·∇)D = u_d
+// u_b é a velocidade gravada (D anda junto com a nuvem que sobe), u_d o vento do
+// que passa e das outras explosões (PassVelocity). Sem nada passando, D = 0 e a
+// gravação sai exatamente como é. Um mapa só leva fumaça de um lugar pra outro:
+// o túnel que o corpo do avião e o projétil abrem é um recorte à parte (C, quanto
+// tempo falta pra ele fechar), que fecha das bordas pro meio.
+
+// célula da grade de D (centro em i + 0.5) → m locais desde o pé (o domínio gravado é [−½, ½]² × [0, 1] da aresta)
+float3 WarpCellToLocal(float3 p)
+{
+	return (p / float3(WarpDim) - float3(0.5, 0.5, 0.0)) * WarpDomain;
+}
+
+// velocidade gravada (m/s) no ponto local lp, entre os dois quadros do instante;
+// cada quadro é uma fatia de R em z, lida sem vazar pra fatia do vizinho
+float3 BakeVelocityAt(float3 lp)
+{
+	float3 uvw = lp / WarpDomain + float3(0.5, 0.5, 0.0);
+	if (any(uvw < 0.0) || any(uvw > 1.0)) return 0;
+	float R = WarpFrames.w;
+	float z = clamp(uvw.z * R, 0.5, R - 0.5);
+	float3 a = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.x + z) / WarpAtlasDepth), 0).xyz;
+	float3 b = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.y + z) / WarpAtlasDepth), 0).xyz;
+	return lerp(a, b, WarpFrames.z);
+}
+
+// Esteira de um avião (WakeA..D): o par de vórtices de ponta de asa que ele
+// deixa no caminho. Cada ponto do caminho nasceu quando o avião passou ali; daí o
+// par desce sozinho a w0 = Γ/(2π·b0) e quase não perde força na fase de difusão,
+// até ~t0 = b0/w0, e depois decai (Holzäpfel 2003, "Probabilistic two-phase wake
+// vortex decay and transport model", o modelo dos sistemas de separação de
+// aeroporto). Núcleo de Lamb–Oseen de ~0.05·b0. Calculado aqui, no ponto, e não
+// na grade de 2 m do campo, que borrava o giro em menos de 1 s.
+float3 WakeVelocity(float3 w)
+{
+	float3 u = 0;
+	for (int i = 0; i < WakeCount; i++)
+	{
+		float3 dir = WakeB[i].xyz;
+		float s = dot(w - WakeA[i].xyz, dir);
+		if (s < 0.0 || s > WakeD[i].w) continue;
+		float age = Time - (WakeA[i].w + s / WakeB[i].w);
+		if (age < 0.0) continue;
+		float b0 = WakeC[i].w;
+		float t0 = b0 / max(WakeD[i].y, 1e-3);
+		float gamma = WakeD[i].x * (age < t0 ? 1.0 : exp(-(age - t0) / t0));
+		float3 c = WakeA[i].xyz + dir * s - float3(0.0, 0.0, WakeD[i].y * age);
+		// "direita" orientada pra que o par sopre pra baixo entre os vórtices
+		u += LambOseen(w, c + WakeC[i].xyz * (b0 * 0.5), dir, gamma, WakeD[i].z);
+		u += LambOseen(w, c - WakeC[i].xyz * (b0 * 0.5), dir, -gamma, WakeD[i].z);
+	}
+	return u;
+}
+
+// O vento do que passa no ponto w (m/s do mundo), no próprio ponto em vez da
+// grade de 2 m: a esteira do avião, o jato dos motores, o arrasto do corpo e o
+// pulso das outras explosões. A turbulência própria da explosão já está na gravação.
+float3 PassVelocity(float3 w, out float3 uJet)
+{
+	float3 u = WakeVelocity(w);
+	uJet = 0;
+	for (int i = 0; i < DisturbCount; i++)
+	{
+		float4 A = DA[i], B = DB[i], C = DC[i], D = DD[i];
+		int kind = int(B.w + 0.5);
+		float3 cp;
+		float d = SegDist(w, B.xyz, A.xyz, cp);
+		float3 seg = A.xyz - B.xyz;
+		float len = length(seg);
+		float3 dir = len > 1e-4 ? seg / len : float3(1.0, 0.0, 0.0);
+		if (kind == 3) { d = SlabDist(w, B.xyz, A.xyz, D.xyz, D.w, cp); kind = 1; }
+		if (kind == 1)
+		{
+			// corpo: o ar perto é arrastado ao longo do voo (a mesma fração do campo, C.w)
+			u += dir * (C.w * length(C.xyz) * smoothstep(A.w * 1.6, A.w * 0.5, d));
+		}
+		else if (kind == 6)
+		{
+			// jato (o mesmo perfil do campo, Forced): meia-largura 0.5·bocal + 0.1·x
+			// (Pope §5), no eixo a menor entre a velocidade de saída e a que a
+			// quantidade de movimento do empuxo permite
+			float x = length(A.xyz - cp);
+			float b = 0.5 * D.w + 0.1 * x;
+			float dU = min(D.x, C.w * 1.386 / (3.14159 * b * b));
+			uJet -= dir * (dU * exp(-0.693 * d * d / (b * b)) * step(d, 1.5 * b));
+		}
+	}
+	// o pulso das outras explosões: fonte de volume numa bola de raio R (S·r/3
+	// dentro, S·R³/(3r²) fora), o mesmo que o campo resolve pela pressão
+	for (int j = 0; j < BlastCount; j++)
+	{
+		float3 r3 = w - Blast[j].xyz;
+		float r = max(length(r3), 1e-3);
+		float R = Blast[j].w;
+		float ur = BlastSrc[j] * (r < R ? r / 3.0 : R * R * R / (3.0 * r * r));
+		u += r3 / r * ur;
+	}
+	return u;
+}
+
+// Leitura do estado da deformação no ponto p (em células, centros em i + ½) por
+// Catmull–Rom tricúbica presa entre os 8 vizinhos (monotônica): o transporte
+// semi-lagrangiano com a leitura linear borra o campo a cada quadro (difusão
+// numérica ~c(1−c)·h²/2Δt, ~1 m²/s aqui), e o corte da asa (3 células de miolo)
+// virava uma névoa rala em ~0.5 s (06/10, medido na GPU: o pico caía 2.4× mais
+// rápido que o prazo e a névoa cobria 30% da grade). Fedkiw, Stam & Jensen,
+// "Visual Simulation of Smoke" (SIGGRAPH 2001), §4: interpolação cúbica
+// monotônica contra a dissipação numérica.
+float4 WarpSampleCubic(float3 p)
+{
+	float3 q = p - 0.5;
+	int3 i0 = int3(floor(q));
+	float3 f = q - float3(i0);
+	// pesos de Catmull–Rom pros vizinhos −1, 0, 1, 2 em cada eixo
+	float4 wx = float4(f.x * (-0.5 + f.x * (1.0 - 0.5 * f.x)), 1.0 + f.x * f.x * (-2.5 + 1.5 * f.x), f.x * (0.5 + f.x * (2.0 - 1.5 * f.x)), f.x * f.x * (-0.5 + 0.5 * f.x));
+	float4 wy = float4(f.y * (-0.5 + f.y * (1.0 - 0.5 * f.y)), 1.0 + f.y * f.y * (-2.5 + 1.5 * f.y), f.y * (0.5 + f.y * (2.0 - 1.5 * f.y)), f.y * f.y * (-0.5 + 0.5 * f.y));
+	float4 wz = float4(f.z * (-0.5 + f.z * (1.0 - 0.5 * f.z)), 1.0 + f.z * f.z * (-2.5 + 1.5 * f.z), f.z * (0.5 + f.z * (2.0 - 1.5 * f.z)), f.z * f.z * (-0.5 + 0.5 * f.z));
+	float4 sum = 0.0, lo = 1e30, hi = -1e30;
+	[unroll] for (int z = 0; z < 4; z++)
+	[unroll] for (int y = 0; y < 4; y++)
+	[unroll] for (int x = 0; x < 4; x++)
+	{
+		float4 v = WarpIn.Load(int4(clamp(i0 + int3(x, y, z) - 1, 0, WarpDim - 1), 0));
+		sum += v * (wx[x] * wy[y] * wz[z]);
+		if (x == 1 || x == 2) if (y == 1 || y == 2) if (z == 1 || z == 2) { lo = min(lo, v); hi = max(hi, v); }
+	}
+	return clamp(sum, lo, hi);
+}
+
+[numthreads(4, 4, 4)]
+void MainWarp(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= WarpDim)) return;
+	float3 lp = WarpCellToLocal(float3(id) + 0.5);
+	float4 s = WarpIn.Load(int4(id, 0));
+	float S = WarpFoot.w;
+	// o vento do que passa (m/s do mundo); o jato à parte
+	float3 w = WarpFoot.xyz + lp * S;
+	float3 uJet;
+	float3 ud = PassVelocity(w, uJet);
+	// A fumaça daqui veio de lp − D na gravação: anda com a velocidade gravada de
+	// lá mais o vento. Em m locais por segundo do mundo: a explosão de escala S
+	// tem S× o tamanho e dura S× mais, então a velocidade gravada vale como está
+	// e as duas se dividem por S. O jato empurra a fumaça (entra em D) mas não
+	// leva o mapa nem o recorte junto: o ar dele é que é o limpo, e o recorte
+	// marca onde ele passou. Levando, o jato de um bombardeiro (~170 m/s) varria
+	// pra fora da nuvem, em 0.2 s, o corte que a asa tinha acabado de abrir, e a
+	// fumaça gravada reaparecia no lugar (06/10, quadro a quadro).
+	float3 u = (BakeVelocityAt(lp - s.xyz) + ud) / S;
+	ud += uJet;
+	float3 cell = WarpDomain / float3(WarpDim);
+	float3 back = (float3(id) + 0.5) - u * Dt / cell;
+	float4 prev = WarpSampleCubic(back);
+	// A deformação D não é suavizada: a média de "de onde a fumaça veio" não é a
+	// média da fumaça, e suavizar D trazia de volta pra origem a fumaça que o
+	// jato tinha empurrado (06/10, quadro a quadro).
+	float3 D = prev.xyz + ud / S * Dt;
+	// além disso o ponto já cai no ar limpo em volta da nuvem
+	float L = length(D);
+	if (L > WarpMax) D *= WarpMax / L;
+	// O recorte guarda quanto tempo falta pra ele fechar (s): o miolo nasce com
+	// WarpCarveLife e a borda com menos (o perfil do corte), então o buraco
+	// fecha das bordas pro meio, como os da fumaça do CS2. Com um decaimento
+	// e^−t/τ ele começava a fechar já no primeiro quadro.
+	float C = max(prev.w - Dt, 0.0);
+	// Túnel do corpo do avião e do projétil, no trecho varrido neste quadro (os
+	// recortes do battlesmoke.js FieldsFx); a asa voadora varre uma placa (tipo 3)
+	for (int i = 0; i < DisturbCount; i++)
+	{
+		int kind = int(DB[i].w + 0.5);
+		float3 cp;
+		if (kind == 1 || kind == 2 || kind == 3)
+		{
+			float d = kind == 3 ? SlabDist(w, DB[i].xyz, DA[i].xyz, DD[i].xyz, DD[i].w, cp) : SegDist(w, DB[i].xyz, DA[i].xyz, cp);
+			float r = DA[i].w;
+			float k = kind == 2 ? smoothstep(r * 1.3, r * 0.3, d) * DC[i].w * 0.95 : smoothstep(r * 1.2, r * 0.3, d);
+			C = max(C, k * WarpCarveLife);
+		}
+		else if (kind == 6)
+		{
+			// O jato abre um corredor de ar limpo: perto do bocal ele é o ar do
+			// motor; mais longe já arrastou o ar (e a fumaça) de volta. Jato
+			// redondo: ṁ(x)/ṁ0 ≈ 0.32·x/d (Pope, Turbulent Flows §5), então a
+			// fração de ar do motor é 1/(1 + 0.32·x/d), na meia-largura do jato.
+			float d = SegDist(w, DB[i].xyz, DA[i].xyz, cp);
+			float x = length(DA[i].xyz - cp);
+			float Dn = DD[i].w;
+			float b = 0.5 * Dn + 0.1 * x;
+			float clean = 1.0 / (1.0 + 0.32 * x / max(Dn, 0.1));
+			C = max(C, WarpCarveLife * clean * exp(-0.693 * d * d / (b * b)));
+		}
+	}
+	WarpOut[id] = float4(D, C);
+}
+
+float3 WarpAt(int3 v)
+{
+	return WarpIn.Load(int4(clamp(v, 0, WarpDim - 1), 0)).xyz;
+}
+
+// Pro material: D e a fração que saiu. A fumaça espalhada pra fora fica mais
+// rala na mesma proporção em que o volume cresceu: densidade × det(I − ∇D) (≤ 1).
+[numthreads(4, 4, 4)]
+void MainWarpRender(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= WarpDim)) return;
+	int3 v = int3(id);
+	float4 s = WarpIn.Load(int4(v, 0));
+	float3 cell = WarpDomain / float3(WarpDim);
+	float3x3 J;
+	[unroll] for (int c = 0; c < 3; c++)
+	{
+		int3 e = 0;
+		e[c] = 1;
+		int3 hi = min(v + e, WarpDim - 1), lo = max(v - e, 0);
+		float3 dD = (WarpAt(hi) - WarpAt(lo)) / max(float(hi[c] - lo[c]) * cell[c], 1e-4);
+		// coluna c de I − ∇D
+		J[0][c] = (c == 0 ? 1.0 : 0.0) - dD.x;
+		J[1][c] = (c == 1 ? 1.0 : 0.0) - dD.y;
+		J[2][c] = (c == 2 ? 1.0 : 0.0) - dD.z;
+	}
+	// a fração recortada: inteira enquanto falta mais que WarpCarveClose
+	float carve = saturate(s.w / WarpCarveClose);
+	float keep = (1.0 - carve) * saturate(determinant(J));
+	// depuração (-WarpDebug=1: só o recorte · 2: só a deformação, sem recorte nem jacobiano · 3: só a fumaça dentro do corte)
+	if (WarpDebug == 1) { OutTex[id] = float4(0, 0, 0, carve); return; }
+	if (WarpDebug == 3) { OutTex[id] = float4(0, 0, 0, 1.0 - carve); return; }
+	if (WarpDebug == 2) { OutTex[id] = float4(s.xyz, 0); return; }
+	OutTex[id] = float4(s.xyz, 1.0 - keep);
+}
+
+// ---- 9. saída pro material e o recorte da fumaça --------------------------------
+// a soma da fuligem do grupo vai pro buffer de uma vez (uma operação atômica por grupo, não por célula)
+groupshared uint GsSoot;
+groupshared uint GsSootZ;
+
+[numthreads(4, 4, 4)]
+void MainCopyField(uint3 id : SV_DispatchThreadID, uint gi : SV_GroupIndex)
+{
+	if (gi == 0)
+	{
+		GsSoot = 0;
+		GsSootZ = 0;
+	}
+	GroupMemoryBarrierWithGroupSync();
+	bool bIn = all(int3(id) < FineDim);
+	float4 f = bIn ? FldIn.Load(int4(id, 0)) : 0;
+	if (bIn)
+	{
+		OutTex[id] = f;
+		// caixa das células com fumaça visível (o volume marcha só ela)
+		if (f.x + f.z + f.w > BoundsThreshold)
+		{
+			InterlockedMin(Bounds[0], id.x);
+			InterlockedMin(Bounds[1], id.y);
+			InterlockedMin(Bounds[2], id.z);
+			InterlockedMax(Bounds[3], id.x);
+			InterlockedMax(Bounds[4], id.y);
+			InterlockedMax(Bounds[5], id.z);
+		}
+	}
+	// Altura média da fuligem (o avião e o míssil passam por ela; battlesmoke.js
+	// smokeHeightAt). Em ponto fixo de 1/32: o miolo de uma explosão soma ~10⁵ e
+	// ×altura cabe em 32 bits com dezenas delas no campo.
+	uint q = uint(f.x * 32.0 + 0.5);
+	if (q > 0)
+	{
+		InterlockedAdd(GsSoot, q);
+		InterlockedAdd(GsSootZ, q * id.z);
+	}
+	GroupMemoryBarrierWithGroupSync();
+	if (gi == 0 && GsSoot > 0)
+	{
+		InterlockedAdd(Bounds[6], GsSoot);
+		InterlockedAdd(Bounds[7], GsSootZ);
+	}
+}
+
+[numthreads(4, 4, 4)]
+void MainCopyVel(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int3(id) >= VelDim)) return;
+	float4 c = FetchVel(int3(id));
+	// velocidade no centro da célula (pro ruído de detalhe do material andar com a fumaça)
+	OutTex[id] = float4(VelAt(float3(id) + 0.5), 0.0);
+}
+
+[numthreads(64, 1, 1)]
+void MainResetBounds(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x < 3) Bounds[id.x] = 0xffffffff;
+	else if (id.x < 8) Bounds[id.x] = 0;
+}
+
+[numthreads(4, 4, 4)]
+void MainClear(uint3 id : SV_DispatchThreadID)
+{
+	if (all(int3(id) < FineDim)) FldOut[id] = 0;
+	if (all(int3(id) < VelDim)) { VelOut[id] = 0; PressOut[id] = 0; }
+}

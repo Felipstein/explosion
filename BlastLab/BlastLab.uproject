@@ -4,6 +4,7 @@
 	"Category": "",
 	"Description": "BlastLab: simulador de explosões volumétricas (referência WebGL em reference/webgl)",
 	"Modules": [
+		{ "Name": "BlastLabShaders", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
 		{ "Name": "BlastLab", "Type": "Runtime", "LoadingPhase": "Default" },
 		{ "Name": "BlastLabEditor", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
 	],

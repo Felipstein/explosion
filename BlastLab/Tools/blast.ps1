@@ -3,9 +3,10 @@
 #   blast.ps1 setup                      # compila o C++ e monta tudo do zero (campo de teste + explosão)
 #   blast.ps1 compile                    # compila os módulos C++ (BlastLab, BlastLabEditor)
 #   blast.ps1 build-scene                # monta o campo de teste (sem abrir o editor)
-#   blast.ps1 build-explosion            # converte a explosão gravada e põe no campo (depois de build-scene)
+#   blast.ps1 build-explosion            # converte a explosão gravada e põe no campo (depois de build-scene);
+#                                        # e os materiais do avião/míssil/disparo (build_movers.py)
 #   blast.ps1 render Seq_Explosion       # renderiza uma sequência em captures\ue\ (visual máximo)
-#   blast.ps1 view [low|medium|high|epic|cine]   # abre o simulador (padrão: cine, o máximo)
+#   blast.ps1 view [baixa|media|alta|ultra]      # abre o simulador (padrão: alta)
 #   blast.ps1 editor                     # abre o editor no projeto
 #   blast.ps1 py Tools\x.py              # roda um script Python da Unreal sem abrir o editor
 #
@@ -20,7 +21,10 @@ param(
   [string]$Target = '',
   [string]$Cvars = '',
   [string]$Folder = '',
-  [switch]$ProfileGpu
+  [switch]$ProfileGpu,
+  [string]$Hour = '',     # view: começa nessa hora do dia (ex.: 22.5)
+  [string]$Cam = '',      # view: câmera fixa dist,azim,elev,alvoY,fovV (ex.: a das referências do WebGL)
+  [string]$GameArgs = ''  # view: argumentos extras do jogo (ex.: '-AELow=60 -AEHigh=98 -AEBias=1')
 )
 $ErrorActionPreference = 'Stop'
 $UE = 'C:\Program Files\Epic Games\UE_5.8\Engine'
@@ -47,7 +51,9 @@ function Prepare([string]$output, [string]$tool) {
 }
 
 function Compile {
-  & (Join-Path $UE 'Build\BatchFiles\Build.bat') BlastLabEditor Win64 Development "-Project=$Project" -WaitMutex -NoHotReload |
+  # -NoHotReloadFromIDE: o Live Coding de QUALQUER UnrealEditor.exe aberto (outro
+  # projeto também) trava o build; as DLLs do BlastLab não estão carregadas nele
+  & (Join-Path $UE 'Build\BatchFiles\Build.bat') BlastLabEditor Win64 Development "-Project=$Project" -WaitMutex -NoHotReload -NoHotReloadFromIDE |
     Select-String 'error|Result' | ForEach-Object { $_.Line }
   if ($LASTEXITCODE -ne 0) { Write-Error 'compile failed'; exit 1 }
 }
@@ -58,9 +64,11 @@ function BuildScene {
 }
 
 function BuildExplosion {
-  Prepare 'Intermediate\BakeRaw\r96_v0\meta.json' 'convert_bake.py'
+  Prepare 'Intermediate\BakeRaw\r96_v2\meta.json' 'convert_bake.py'    # as 3 variantes
   Prepare 'Intermediate\Noise\curl_noise_64.bgra' 'make_noise.py'
+  Prepare 'Intermediate\BakeVelocity\velocity.json' 'export_bake_velocity.py'   # o vento do que passa deforma a explosão
   RunUnrealPython 'Tools\build_explosion.py'
+  RunUnrealPython 'Tools\build_movers.py'                              # avião, míssil, disparo
 }
 
 switch ($Command) {
@@ -101,18 +109,23 @@ switch ($Command) {
   }
   'editor' { Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList "`"$Project`"" }
   'view' {
-    $q = if ($Target) { $Target } else { 'cine' }
-    if ($Cvars) { $q += ', ' + $Cvars }       # comandos extras: view epic -Cvars 'r.X 1'
+    # preset do painel: baixa | media | alta | ultra (padrão alta)
+    $q = if ($Target) { $Target } else { 'alta' }
     $a = @("`"$Project`"", '/Game/Maps/TestRange', '-game', '-windowed', '-ResX=1600', '-ResY=900',
-           "-ExecCmds=`"Scalability $q`"", '-nosplash')
+           "-Quality=$q", '-nosplash')
+    if ($Cvars) { $a += "-ExecCmds=`"$Cvars`"" }        # comandos extras: view alta -Cvars 'r.X 1, r.Y 0'
+    if ($Hour) { $a += "-TimeOfDay=$Hour" }
+    if ($Cam) { $a += "-Cam=$Cam" }
+    if ($GameArgs) { $a += $GameArgs -split '\s+' }
     if ($Folder) {
       $dest = Join-Path $Captures $Folder
       if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
       New-Item -ItemType Directory -Force $dest | Out-Null
       $log = Join-Path $Captures "$Folder.log"
-      $a += "-DemoCapture=$dest", "-abslog=$log", '-unattended'
+      $a += "-AutoTest=$dest", "-abslog=$log", '-unattended'
+      if ($ProfileGpu) { $a += '-csvGpuStats', '-AutoProfile' }   # tempos de GPU durante a explosão → Tools\gpu_profile.py --live
       Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a -Wait
-      Select-String -Path $log -Pattern 'DEMO' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
+      Select-String -Path $log -Pattern 'AUTOTEST|Error' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
     } else {
       Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a
     }

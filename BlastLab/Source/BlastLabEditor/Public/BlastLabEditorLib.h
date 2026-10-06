@@ -41,4 +41,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BlastLab")
 	static UVolumeTexture* CreateVolumeTexture(const FString& File, const FString& AssetPath,
 		FIntVector Resolution, FString& Error);
+
+	/**
+	 * Uma textura de volume RGBA de meia precisão, sem compressão nem mip, presa
+	 * nas bordas, a partir de um arquivo bruto RGBA16F na ordem densa. Usada pros
+	 * velocidade gravada da explosão (Tools/export_bake_velocity.py), que a deformação pelo que passa lê.
+	 * Se o asset já existe, o conteúdo é trocado (o mapa pode estar aberto).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BlastLab")
+	static UVolumeTexture* CreateVolumeTextureHalf(const FString& File, const FString& AssetPath,
+		FIntVector Resolution, FString& Error);
 };

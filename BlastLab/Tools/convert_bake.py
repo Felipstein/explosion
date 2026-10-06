@@ -32,7 +32,7 @@ O que fica zero exato nos dois atributos é o que deixa o volume esparso
   com sinal, zero é parado de verdade — em 8 bits sem sinal o byte zero era
   −40 m/s em cada eixo.
 
-Rodar: python BlastLab/Tools/convert_bake.py [res] [variante]
+Rodar: python BlastLab/Tools/convert_bake.py [res] [variante]   (sem variante: todas)
 """
 import glob
 import gzip
@@ -128,7 +128,7 @@ VELOCITY_BAND = 8
 
 def main():
     res = int(sys.argv[1]) if len(sys.argv) > 1 else 96
-    variant = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    variant = int(sys.argv[2]) if len(sys.argv) > 2 else None
     found = glob.glob(os.path.join(BAKES, 'r%d-*.bin' % res))
     if not found:
         sys.exit('não achei %s/r%d-*.bin' % (BAKES, res))
@@ -155,7 +155,11 @@ def main():
     vox0 = off
     fuel0 = off + layers * per_layer
     assert fuel0 + layers * per_layer_f == len(data), 'tamanho inesperado'
+    for v in ([variant] if variant is not None else range(variants)):
+        convert(found[0], meta, data, n, nf, frames, light_pos, light_color, per_layer, per_layer_f, vox0, fuel0, res, v)
 
+
+def convert(source, meta, data, n, nf, frames, light_pos, light_color, per_layer, per_layer_f, vox0, fuel0, res, variant):
     out = os.path.join(PROJECT, 'Intermediate', 'BakeRaw', 'r%d_v%d' % (res, variant))
     os.makedirs(out, exist_ok=True)
     factor = n // nf
@@ -208,7 +212,7 @@ def main():
 
     variant_layers = slice(variant * frames, (variant + 1) * frames)
     info = {
-        'source': os.path.relpath(found[0], REPO).replace('\\', '/'),
+        'source': os.path.relpath(source, REPO).replace('\\', '/'),
         'resolution': [n, n, n],
         'domain_m': domain_m,
         'frames': frames, 'variant': variant, 'duration_s': meta['duration'], 'curve': meta['curve'],
