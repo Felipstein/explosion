@@ -5,7 +5,9 @@
 
 class ALandscape;
 class ULandscapeLayerInfoObject;
+class UMaterial;
 class UMaterialInterface;
+class USkeletalMesh;
 class UStaticMesh;
 
 /** Uma categoria de espalhamento na fatia (rochas grandes, seixos, tufos...). */
@@ -37,24 +39,41 @@ public:
 	 * @param CenterM          centro do recorte no mapa gerado (m)
 	 * @param Components       componentes por lado (cada um com QuadsPerComponent quads)
 	 * @param QuadSizeM        tamanho de um quad (m); o gerador tem 2 m, o recorte reamostra
-	 * @param LayerInfos       as camadas do material, nesta ordem: Sand, Gravel, Dirt, Rock, Cracked
+	 * @param LayerInfos       as camadas, por papel: base, manchas, trilha, rocha, molhado — e,
+	 *                         com 6, o asfalto (estrada ao longo da trilha mais longa)
+	 * @param RoadWidthM       largura da pista (m); só vale com a 6ª camada
 	 * @return o Landscape (o nível ainda não foi salvo) ou nullptr com Error
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static ALandscape* BuildSliceLandscape(int32 Seed, int32 Players, int32 Biome, float MapSize, FVector2D CenterM,
 		int32 Components, int32 QuadsPerComponent, float QuadSizeM, UMaterialInterface* Material,
-		const TArray<ULandscapeLayerInfoObject*>& LayerInfos, FString& Error);
+		const TArray<ULandscapeLayerInfoObject*>& LayerInfos, float RoadWidthM, FString& Error);
 
 	/**
 	 * Espalhamento no mesmo recorte (coordenadas do nível, cm), a partir das
 	 * máscaras do gerador: Kind = "RockLarge", "RockSmall", "Pebble", "Tuft",
-	 * "Shrub", "Branch", "Cliff" (malhas de paredão nos cortes do terreno,
+	 * "Shrub", "Branch", "Tree" (as árvores do gerador em grupos: mata
+	 * fechada; Spacing = raio do grupo), "Forest" (bosques com borda e clareiras,
+	 * pela vegetação do gerador e uma mancha larga; Spacing = grade), "Undergrowth" e "Deadwood"
+	 * (sub-bosque e madeira morta dentro da mata), "Cliff" (malhas de paredão nos cortes do terreno,
 	 * viradas pra baixo da encosta). Spacing = distância média entre
 	 * instâncias (m); SinkM afunda no chão (× escala); YawOffset gira a malha
 	 * (o "frente" de cada modelo). Determinístico.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static FWorldForgeScatter SliceScatter(FName Kind, float SpacingM, float ScaleMin, float ScaleMax, float SinkM = 0.0f, float YawOffset = 0.0f);
+
+	/** Linha central da estrada no recorte (cm, com a cota do asfalto), a cada StepM metros. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static TArray<FVector> SliceRoad(float StepM);
+
+	/** Distância (cm) de um ponto do nível (cm) até a linha central da estrada (1e9 sem estrada). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceRoadDistance(FVector2D PointCm);
+
+	/** Metros até a ponta mais perto da estrada (onde o asfalto se desfaz), num ponto perto dela (cm). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceRoadEndDistance(FVector2D PointCm);
 
 	/** Pontos das trilhas no recorte (cm), na ordem, pra marcas de pneu. */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
@@ -74,11 +93,34 @@ public:
 	static AActor* SpawnGroupActor(const FString& Label);
 
 	/**
-	 * Um componente instanciado (salvo com o nível) no ator, com as instâncias
-	 * dadas (coordenadas do nível). CullDistanceM 0 = sem corte.
+	 * Componentes instanciados (salvos com o nível) no ator, um por bloco de
+	 * 64 m, com as instâncias dadas (coordenadas do nível). CullDistanceM 0 = sem corte. Materials
+	 * troca os materiais da malha só neste componente (por espaço; vazio = os
+	 * da malha): a mesma malha serve a fatias com tons diferentes.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
-	static bool AddInstances(AActor* Actor, UStaticMesh* Mesh, const TArray<FTransform>& Transforms, bool bCastShadow, float CullDistanceM);
+	static bool AddInstances(AActor* Actor, UStaticMesh* Mesh, const TArray<FTransform>& Transforms, bool bCastShadow, float CullDistanceM,
+		const TArray<UMaterialInterface*>& Materials);
+
+	/**
+	 * Árvore do Procedural Vegetation Editor (malha esquelética Nanite cujos
+	 * raminhos e folhas são uma "assembly": peças instanciadas nos ossos) →
+	 * malha estática instanciável, na pose de referência. Com bBakeParts as
+	 * peças viram geometria da malha; sem, a malha estática guarda a assembly
+	 * (precisa de r.Nanite.Foliage ou r.Nanite.AllowAssemblies no projeto).
+	 * As peças estáticas vêm das cópias que o exportador do PVE deixa ao lado
+	 * das esqueléticas ("SKM_X" → "X").
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static UStaticMesh* VegetationToStaticMesh(USkeletalMesh* Source, const FString& AssetPath, bool bBakeParts);
+
+	/**
+	 * Neve num material que usa "material attributes" (o mestre das árvores do
+	 * PVE, já duplicado pro projeto): a cor e a rugosidade de saída viram neve
+	 * no que olha pra cima, pelo parâmetro escalar "Snow" (0 = sem neve).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool AddSnowToMaterial(UMaterial* Material);
 
 	/** Dá nome à camada de um LandscapeLayerInfoObject (a propriedade é só leitura no Python). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
@@ -91,4 +133,16 @@ public:
 	/** Altura do chão no recorte (cm) num ponto do nível (cm). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceHeightAt(FVector2D PointCm);
+
+	/**
+	 * Os controles do painel do app (JSON que o "Ver em qualidade real" grava):
+	 * daí em diante BuildSliceLandscape e SuggestSliceCenter geram com eles, no
+	 * lugar da semente/bioma/tamanho que recebem. Devolve bioma e tamanho do mapa.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool LoadWorldSettings(const FString& JsonPath, int32& OutBiome, float& OutMapSize);
+
+	/** Cota d'água do mapa gerado (cm, no nível); muito negativa se o mapa não tem água. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceWaterLevel();
 };

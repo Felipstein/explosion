@@ -280,3 +280,355 @@ python WorldForge\Tools\make_motion.py captures\worldforge\f      # passeio em W
 
 **Medido:** 50 ms (20 qps) na qualidade máxima a 1600×900 na GTX 1660.
 
+## 6. Mais fatias: floresta, neve e estrada (05/10/2026, sem baixar nada novo)
+
+Pedido da noite: fatias exemplares de floresta e neve, e chão de rua igual à
+arte conceitual (asfalto rachado, faixa pintada, acostamento de terra). Sem
+downloads novos (só os assets CC0 já aprovados + o que vem com a Unreal +
+texturas geradas por código).
+
+```
+python WorldForge\Tools\make_slice_textures.py                 # rachaduras, neve, gelo, folhiço, grama
+powershell -File WorldForge\Tools\forge.ps1 slice [desert,snow,forest]   # padrão: as três (~15 min)
+powershell -File WorldForge\Tools\forge.ps1 view -Map Slice_Forest [-Folder f]   # Slice_Desert, Slice_Snow, Slice_Forest
+```
+
+**Referências olhadas (capturas da Steam):**
+- Company of Heroes 3, deserto: areia lisa com sombra larga das dunas, rocha
+  vermelha, manchas escuras de mato. A areia não é granulada vista do alto.
+- Company of Heroes 2, inverno: neve muito clara com sombra azulada, estrada
+  de neve pisada virando lama cinza-marrom, pinheiros escuros com neve em
+  cima, rio congelado cinza com rachaduras.
+- Manor Lords (Unreal): campo de grama densa, trilha de terra, a borda da
+  mata como um bloco escuro, névoa de distância.
+
+**O que mudou no pipeline:**
+- `build_slice.py` monta qualquer fatia (`SLICE=desert,snow,forest`). Cada
+  fatia tem materiais, camadas e mestres próprios. A mesma malha serve às
+  três, porque o material entra só no componente instanciado. Refazer uma não
+  estraga as outras.
+- **Árvores:** as amostras do Procedural Vegetation Editor que vêm com a 5.8
+  (um pinheiro de ~22 m, uma árvore de folha larga de ~11 m e um arbusto).
+  - Elas vêm como malha esquelética Nanite. O tronco é uma malha, e os
+    raminhos e folhas são uma "assembly" (centenas de peças instanciadas nos
+    ossos).
+  - `VegetationToStaticMesh` converte isso pra malha estática na pose de
+    referência e mantém a assembly. Exemplo: a de folha larga tem 206 mil
+    triângulos de tronco e 801 raminhos instanciados.
+  - Precisa de `r.Nanite.Foliage=1` (Nanite Foliage, experimental na 5.7+).
+    Sem isso a Unreal desenha só o tronco. Ligar recompila todos os shaders
+    uma vez.
+  - As árvores da amostra de PCG (PCG_Pine etc.) foram descartadas: são
+    bonecos de 200 triângulos sem textura.
+- **Neve nas árvores:** cópia do mestre de folhagem do PVE
+  (`AddSnowToMaterial`). A cor e a rugosidade viram neve no que olha pra cima,
+  pela normal do vértice, com falhas em manchas de ~3 m. É a técnica de
+  "neve por cima" do `WorldAlignedBlend` da própria Unreal.
+  - Nas rochas, o mestre `M_ScanRock` ganhou o mesmo parâmetro `Snow`.
+  - A camada de neve do Nanite não serve: a "overlay material" não roda em
+    malha Nanite (`NaniteResources.cpp` nem lê).
+- **Bosques:** o espalhamento `Forest` usa a vegetação do gerador mais uma
+  mancha larga de ~60 m. Sai mata com borda e clareira, fora de trilha, rocha,
+  água e encosta.
+- **Estrada (deserto):** a trilha mais longa vira pista aplainada. Tem:
+  - borda gasta, buracos e acostamento de terra e cascalho;
+  - a textura `asphalt_04` com uma máscara de rachaduras gerada: couro de
+    jacaré e trincas longitudinais e transversais (os defeitos do manual de
+    pavimento da FHWA), terra dentro da trinca, remendos e areia soprada;
+  - faixas em decalque: tracejado central de 3 m a cada 12 m (a proporção
+    10 ft/30 ft do MUTCD) e bordas contínuas. A tinta falha onde a pista
+    rachou.
+- **Texturas geradas** (`make_slice_textures.py`, periódicas):
+  - neve com ondulação de vento e brilho de cristal;
+  - gelo de lago;
+  - folhiço de folhas secas sobrepostas com gravetos;
+  - grama baixa em traços.
+  São o melhor sem download; scan de verdade é melhor (lista no fim).
+
+**Resultado (fotos e passeio em `captures/worldforge/<fatia>_final/`, `sheet.png` e `motion.webp`):**
+- **Neve:** a melhor das três. Pinheiros com neve nos galhos, neve lisa com
+  ondulação fina de vento, sombra longa azulada do sol de 18°, barro cinza nos
+  trechos pisados. Perto do Company of Heroes 2. Falta lago congelado nesta
+  fatia (o recorte escolhido não tem água) e trilha pisada contínua.
+- **Floresta:** as árvores são o ponto alto: copa cheia de folhas de verdade,
+  sombra salpicada no chão e folhiço marrom embaixo da mata.
+  - O chão aberto ainda é o fraco: grama gerada por código, que de cima lê
+    como gramado.
+  - A copa é escura perto do Manor Lords.
+  - Contra o sol, o chão rasante clareia demais.
+- **Deserto com estrada:** asfalto escuro com rachadura fina, faixa de borda
+  contínua, tracejado central e acostamento de areia, ao longo da trilha do
+  gerador. Lê como estrada de verdade da câmera de RTS.
+  - Está mais limpo que a arte conceitual. Falta buraco grande, areia
+    cobrindo trechos e couro de jacaré largo. Pra isso servem os scans de
+    asfalto quebrado da lista.
+
+**Medido** (qualidade máxima, 1600×900, GTX 1660; com um editor do BlastLab
+aberto em paralelo, então é o pior caso):
+
+| Fatia | Tempo de quadro |
+|---|---|
+| Deserto | 49 ms (20 qps) |
+| Neve | 62 ms (16 qps) |
+| Floresta | 70 ms (14 qps) |
+
+Uma rodada da floresta deu 124 ms com o BlastLab rodando junto. O custo novo
+é a folhagem Nanite mascarada: centenas de árvores com milhares de raminhos
+cada.
+
+**Armadilhas desta rodada:**
+- `unreal.Rotator(a, b, c)` no Python é (roll, pitch, yaw), não (pitch, yaw,
+  roll). Os decalques saíam atravessados: faixa da estrada virou "faixa de
+  estacionamento" e as marcas de pneu viraram tracinhos. Agora vai por nome
+  (`pitch=-90, yaw=...`). O Z local fica ao longo da linha, e o shader tira o
+  U do Z (`DeferredDecal.usf`, `DecalVector.zyx`).
+- O anel em volta da câmera no deserto vinha da troca da areia de perto pela
+  aérea, pela distância. Em movimento ele andava junto. Agora as duas fotos
+  vão misturadas sempre.
+- A ondulação de duna (6 m) na neve, com sol baixo, virava "caixa de ovo".
+  Agora as dunas são só do deserto.
+- Fotos automáticas com alguém mexendo no PC: o mouse mexia a câmera. Agora
+  a câmera fica presa durante a captura (`bLocked`).
+- Passeio: o 1º quadro saía borrado pelo salto da vista anterior. Agora a
+  câmera para no começo e espera.
+
+**Downloads (CC0, Poly Haven; aprovados e baixados em 06/10/2026, 686 MB):**
+
+| Pra quê | Asset | Tamanho |
+|---|---|---|
+| floresta: folhiço | `forest_leaves_02` (textura 4k) | 19 MB |
+| floresta: chão de mata | `forest_ground_04` | 50 MB |
+| floresta: folhas e terra | `leaves_forest_ground` | 54 MB |
+| floresta: barro de mata | `mud_forest` | 53 MB |
+| floresta: grama com folhas | `leafy_grass` | 65 MB |
+| floresta: trilha | `grass_path_2` | 22 MB |
+| floresta: samambaia | `fern_02` (modelo 2k) | 3 MB |
+| floresta: arbustos | `shrub_01`, `shrub_02` | 15 MB |
+| floresta: tocos, tronco caído | `tree_stump_01`, `dead_tree_trunk` | 30 MB |
+| floresta: pedra com musgo | `rock_moss_set_01`, `moss_01` | 8 MB |
+| neve: neve de verdade | `snow_02`, `snow_04` | 61 MB |
+| neve: vista aérea | `snow_field_aerial` | 20 MB |
+| neve: estrada com neve | `asphalt_snow` | 64 MB |
+| rua: asfalto quebrado | `road_damaged`, `road_damaged_2` | 91 MB |
+| rua: asfalto gasto | `worn_asphalt` | 56 MB |
+| rua: asfalto visto do alto | `aerial_asphalt_01` | 26 MB |
+| rua: mureta, poste de luz, poste | `concrete_road_barrier`, `street_lamp_01`, `modular_electricity_poles` | 34 MB |
+
+Os pinheiros escaneados (`fir_tree_01` 249 MB e `pine_tree_01` 649 MB)
+ficaram de fora: o pinheiro do PVE já serve. Tamanhos lidos da API do Poly
+Haven em 05/10/2026.
+
+Ficaram de fora depois de importar:
+- `moss_01`: tufos de 1–3 cm, pequenos demais pra câmera de RTS.
+- `modular_electricity_poles`: é um kit de peças (parafuso, conector,
+  fusível) sem o poste.
+- `street_lamp_01`: poste de luz na estrada do deserto não combina.
+
+**Assets novos nas fatias (06/10), na escala real de cada foto (API `/info`
+do Poly Haven):**
+- **Floresta:**
+  - chão: `leafy_grass` (2 m), `forest_leaves_02` (3 m), `forest_ground_04`
+    (3,15 m), `mud_forest` (2,35 m);
+  - plantas e madeira: samambaias, arbustos de 1–2 m, mudas, tocos e
+    troncos caídos (`Undergrowth` e `Deadwood`, dentro da mata);
+  - rochas: com musgo (`rock_moss_set_01`).
+- **Neve:**
+  - chão: `snow_02` (2 m) e uma estrada de `asphalt_snow` com neve soprada;
+  - rochas com musgo e madeira morta, com neve por cima;
+  - a escolha do recorte agora prefere ter um lago (o rio congelado).
+- **Deserto:** asfalto `road_damaged_2` com a foto aérea `aerial_asphalt_01`
+  por cima contra a repetição, e muretas de concreto na beira da estrada (uma
+  tombada).
+
+**Cor medida, não chutada** (média linear da foto, `PIL`):
+- A neve do Poly Haven tem albedo 0,39. Neve fresca reflete 0,8–0,9, então a
+  foto entra ×2,1, com a neve gerada (0,82) por cima contra a repetição.
+- A aérea `snow_field_aerial` é neve com barro (0,26) e deixava tudo bege.
+  Saiu.
+- A grama `leafy_grass` é palha na média (0,32/0,24/0,10). Entra puxada pro
+  verde, com a grama gerada por cima.
+
+**Armadilhas:**
+- `snow_04` é foto de sulcos de pneu paralelos. Colada no terreno, alinhada ao
+  mundo e não à estrada, as listras cruzavam o acostamento na diagonal e
+  pareciam dentes. Saiu.
+- Montando várias fatias seguidas, a escolha do recorte de uma usava o bioma e
+  a estrada da anterior (variáveis globais do C++). O deserto caiu no lugar da
+  neve. `SuggestSliceCenter` agora zera tudo.
+- A borda do asfalto tinha 0,45 m de transição, menos que o espaçamento do
+  terreno (0,5 m). Agora são 1,2 m.
+- As pontas da estrada terminavam num "toco" redondo. Agora o asfalto se
+  desfaz em buracos e terra nos últimos 45 m, sem tinta nos últimos 40 m.
+
+## 7. "Ver em qualidade real": o mapa inteiro no acabamento (06/10/2026)
+
+O botão no painel do gerador monta **o mapa inteiro** (não só um pedaço) com
+o acabamento das fatias, usando exatamente os controles do painel, e abre
+quando termina.
+
+- O app grava os controles em `Saved/WorldForge/world_settings.json` e
+  chama o editor sem janela (`UnrealEditor-Cmd`, `build_slice.py` com
+  `SLICE=world`). O app continua usável enquanto monta.
+- `LoadWorldSettings` faz o `BuildSliceLandscape` gerar com esses controles.
+  O terreno tem 16×16 componentes de 127 quads (2033² vértices, ~0,5 m no
+  mapa de 1 km). Espalhamento, decalques e estrada são os da fatia do bioma.
+- O resultado é `/Game/Maps/World_Full`, com "← Voltar ao gerador" no canto.
+  Ele volta com os mesmos controles (`?resume`). Na 1ª abertura de materiais
+  novos aparece "preparando os materiais".
+- **Medido:**
+  - Monta em ~2 minutos (deserto 107 s, neve 117 s).
+  - Roda como a fatia, porque a Unreal só desenha o que está perto da câmera:
+    deserto 20 qps (51 ms), neve 16 qps (63 ms).
+  - O deserto tem 840 rochas, 200 mil pedras, 145 mil seixos, 212 mil
+    touceiras, 2.400 paredões e 1.900 marcas de pneu.
+- Pra montar o mapa inteiro rápido, a distância até a estrada usa uma grade
+  de 8 m com os trechos próximos. Sem ela: 4 milhões de vértices × mil trechos
+  de estrada.
+- Teste de ponta a ponta sem clicar: `-ForgeRealQuality` dispara o mesmo
+  caminho do botão quando o 1º mapa aparece. Com `-ForgeCapture`, o mapa
+  montado tira as fotos, e `-ForgeBack` volta pro gerador.
+
+```
+powershell -File WorldForge\Tools\forge.ps1 view -Folder rq -Biome 2 -Extra '-Seed=7 -ForgeRealQuality -ForgeBack -ForgeNoMotion'
+```
+
+**Falta:**
+- As áreas de recurso do gerador aparecem como discos de terra no deserto.
+  Precisam de objeto de recurso ou de borda que conte história.
+- A estrada é uma só, na trilha mais longa. Faltam a rede (base a base) e os
+  cruzamentos.
+- As medições com outro editor da Unreal aberto (o BlastLab) saem 2–3× piores.
+  Medir sempre com a máquina livre.
+
+
+
+## 8. Desempenho e árvores iguais no rascunho e na qualidade real (06/10/2026)
+
+**Medido antes de mexer** (`-ForgeProfile -csvGpuStats` + `Tools/gpu_profile.py`,
+floresta, vista média, placa livre):
+- Quadro de 73 ms (14 qps) no modo cine.
+- Iluminação global (Lumen, *screen probe gather*): 46 ms. Era 62% do
+  quadro.
+- Sombras 8,5 ms, TSR 5,6 ms e as árvores e rochas (Nanite) só 4,3 ms. As
+  árvores já simplificam de longe: o PVE as deixa com
+  `ShapePreservation = Voxelize`, o Nanite Foliage da 5.7+ que troca a copa
+  distante por voxels.
+
+**Por quê:** o cine da Unreal é modo de filme (`BaseScalability.ini`). Ele faz
+4× mais pontos de amostra (`DownsampleFactor` 8 contra 16) e 4× mais raios por
+ponto (`TracingOctahedronResolution` 16 contra 8) que o épico, ou seja 16× mais
+raios. Da câmera de RTS a imagem é a mesma (A/B em
+`captures/worldforge/forest_cine_vs_epic.png`).
+
+**O que mudou:**
+- **Ultra = épico.** Era o padrão do app (`forge.ps1 view`) e passou a ser o
+  "Ultra" do painel (Baixa/Média/Alta/Ultra = níveis 0–3 da Unreal). O cine
+  fica pra foto e vídeo.
+- **O miúdo sai da iluminação global e do campo de distância.** Capim, seixo,
+  galho, muda e tudo que tem distância de corte ficam com
+  `bAffectDistanceFieldLighting` e `bAffectDynamicIndirectLighting` desligados.
+  O campo de distância custava ~5 ms por quadro.
+- **Resultado, floresta:** de 73 para 29–34 ms (30–34 qps). A variação vem de
+  outro programa usando a placa. O mapa inteiro de floresta (2.100 árvores)
+  roda a 43 qps.
+- Medir sem o gravador: os tempos de GPU por passe fazem a CPU esperar a placa
+  e somam ~8 ms. Ele serve pra ver a divisão, não o total.
+
+**Árvores iguais nos dois lados (pedido de 06/10):** a qualidade real tinha
+muito mais árvores que o painel. Eu espalhava as árvores por conta própria e
+ignorava as do gerador e o controle "Florestas". Agora:
+- Há uma regra só em `Generation/WorldTrees.h`:
+  - o tipo vem do bioma e do sorteio do gerador (a floresta temperada mistura
+    folha larga e pinheiro);
+  - o tamanho vem da malha real medida × a escala base × a escala do gerador.
+- **Qualidade real:** `TreeBroadleaf` / `TreeConifer` são exatamente as
+  árvores do gerador (posição, giro, tamanho), simétricas como o gerador as
+  pôs. O folhiço, o sub-bosque e a madeira morta seguem a cobertura das copas
+  delas. O folhiço fica só onde a mata fecha, sem disco laranja em árvore
+  solta.
+- **Rascunho (o app):** desenha as árvores de verdade (`/Game/Slice/Trees`)
+  com o Nanite mais grosso (`r.Nanite.MaxPixelsPerEdge` 4, só no gerador, de
+  volta a 1 no mapa em qualidade real). Sem as árvores montadas, usa as
+  simples em código esticadas pro mesmo tamanho.
+- Comparação com a mesma semente e a mesma câmera:
+  `captures/worldforge/gen_vs_real_f42.png`. São as mesmas árvores no mesmo
+  lugar.
+- As fatias de exemplo usam os controles do painel por JSON (como o botão): a
+  floresta com "Florestas" 0,85 e a neve com 0,7.
+
+**Teste de qualidade (F2), refeito em 06/10:**
+- A 1ª versão não servia: a câmera de teste desenha o que **ela** vê, sempre
+  completo. A Unreal decide o que descartar **por câmera, a cada quadro**, e
+  o que a câmera principal descartou não aparecia nela.
+- Agora o F2 testa cada bloco da cena contra a vista principal:
+  - fora do campo de visão, ou além da distância de corte × `r.ViewDistanceScale`
+    do preset, o bloco é escondido nos quadros (`HiddenComponents`);
+  - de costas pro ponto, o chão, as árvores e as pedras somem do quadro;
+  - o mapa pequeno pinta os blocos de terreno: verde se desenhados, cinza se não.
+- Pra isso as instâncias (árvores, pedras, capim) ficam em **blocos de 64 m**
+  (`AddInstances`), como a vegetação e o PCG da Unreal particionam. A câmera
+  descarta o bloco inteiro de uma vez. A floresta tem 564 blocos e ficou nos
+  mesmos 34 qps.
+- O quadro amarelo mostra **quantos pixels a sua câmera gasta naquele ponto**,
+  ampliados: 480×270 a 30 m, 60×33 a 350 m. É por isso que a Unreal pode
+  simplificar de longe sem ninguém notar.
+- As câmeras de teste guardavam a própria iluminação global e estouravam a
+  memória de vídeo da 1660 (1,2 GB acima, 4 qps). Agora vão sem Lumen nem
+  reflexos, e a câmera do mapa pequeno fotografa 2 s e se desliga: 23 qps com
+  o F2 ligado.
+
+**Mapas guardados e prévias guardadas:**
+- O painel tem uma lista de mapas: um clique carrega os controles.
+  - Ela começa com os 3 de exemplo (deserto semente 3, neve 5, floresta 42).
+  - "Guardar este mapa na lista" acrescenta o atual.
+  - Fica em `Saved/WorldForge/maps.json`.
+- Cada prévia em qualidade real fica guardada em
+  `/Game/Maps/Worlds/W_<chave>`.
+  - A chave é a impressão digital (MD5) dos controles + do script de
+    acabamento + `PipelineVersion`, o mesmo esquema do cache de shaders da
+    Unreal.
+  - Mesmos controles: abre na hora (testado: 1ª vez 110 s de montagem, 2ª vez
+    direto).
+  - Mudou qualquer controle (testado com a semente) ou o acabamento: a chave
+    muda e monta de novo.
+  - Guarda as 12 mais novas, ~100 MB cada.
+  - Ao mudar o gerador ou as regras do C++, subir `PipelineVersion` em
+    `WorldForgeGameMode.cpp`.
+
+**Tela feia depois do F2 (06/10): era o atalho da Unreal.**
+- Nas versões de desenvolvimento a Unreal liga F1–F5 a modos de depuração
+  (`BaseInput.ini`, `DebugExecBindings`): F1 wireframe, F2 **unlit** (sem sol
+  nem sombra; a exposição sobe e a água e os cristais estouram em branco), F3
+  lit, F4 e F5.
+- O log da sessão dele mostra `Set new viewmode: Unlit` no mesmo instante do
+  F2.
+- `Config/DefaultInput.ini` tira esses cinco atalhos. O teste do painel tem
+  agora um passo `key_f2`: aperta F2 e confere que o modo de visão continua
+  "lit" e que o teste abriu. 16 de 16 passos.
+- Lição: tecla nova → conferir as `DebugExecBindings` da Unreal antes.
+
+**E a memória (achado à parte, também real):**
+- Com o mapa inteiro aberto, a memória de vídeo do WorldForge fica em ~2,2 GB
+  dos ~4,7 GB que o Windows dá pra ele. O F2 soma ~200 MB.
+- Com o BlastLab aberto junto (a 1660 tem 6 GB pros dois), o limite cai.
+  O F2 com a câmera longe passou dele: 1,9 GB "estourados".
+- Aí o Windows joga parte da memória de vídeo pra memória comum e ela não
+  volta ao desligar o F2. O quadro foi de 36 ms a 68 ms e a imagem degradou.
+  Reproduzido em `captures/worldforge/f2_repro2`. Sozinho, o mesmo caminho não
+  estoura.
+- O F2 passou a fotografar 5× por segundo, não a cada quadro.
+- Regra: medir e testar com um editor da Unreal por vez.
+
+**O quadro "pixelado" do F2 não é a redução da Unreal:**
+- É a sua tela ampliada: de longe, aquele pedaço ocupa poucos pixels.
+- A Unreal reduz outra coisa:
+  - **triângulos:** o Nanite mantém ~1 triângulo por pixel; de perto um galho
+    tem centenas, de longe uma árvore inteira tem poucos, e a folhagem vira
+    voxels;
+  - **resolução das texturas:** os mipmaps; de longe vem a versão pequena.
+  Os dois somem dentro do mesmo pixel, por isso ninguém percebe.
+- **F3** mostra isso na tela grande: os grupos de triângulos do Nanite
+  (`r.Nanite.Visualize Clusters`, cada cor ~128 triângulos). O modo
+  "Triangles" lia pior: os triângulos ficam do tamanho de um pixel em qualquer
+  distância, e é justamente essa a ideia do Nanite.
+- O chão (Landscape) aparece preto no F3 porque ainda não é Nanite.

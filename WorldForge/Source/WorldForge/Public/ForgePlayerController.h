@@ -19,7 +19,11 @@ public:
 	virtual void PlayerTick(float DeltaTime) override;
 
 	TSharedPtr<SForgePanel> GetPanel() const { return Panel; }
+	/** Liga/desliga o modo teste de qualidade no ponto que a câmera olha (F2). */
+	void ToggleDebugView();
 
 private:
 	TSharedPtr<SForgePanel> Panel;
+	UPROPERTY()
+	TObjectPtr<class AForgeDebugView> DebugView;   // F2: modo teste de qualidade
 };

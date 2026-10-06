@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
+#include "Scalability.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Input/SSlider.h"
@@ -179,6 +180,21 @@ void SForgePanel::Construct(const FArguments& InArgs)
 					SAssignNew(Stats, STextBlock).Font(Font(9)).ColorAndOpacity(FSlateColor(TextDim)).AutoWrapText(true)
 					.Text(LOCTEXT("Generating", "gerando..."))
 				]
+				// ---- qualidade gráfica: os 4 presets (Ultra = épico da Unreal; o cine é
+				// modo de filme, ~2,5× mais caro pela mesma imagem de cima) ----
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 2)
+				[
+					Choice(TEXT("Quality"), LOCTEXT("Quality", "Qualidade"),
+						{ { LOCTEXT("QLow", "Baixa"), 0 }, { LOCTEXT("QMed", "Média"), 1 }, { LOCTEXT("QHigh", "Alta"), 2 }, { LOCTEXT("QUltra", "Ultra"), 3 } },
+						[]() { return Scalability::GetQualityLevels().GetSingleQualityLevel(); },
+						[this](int32 V)
+						{
+							if (GameMode.IsValid() && GEngine)
+							{
+								GEngine->Exec(GameMode->GetWorld(), *FString::Printf(TEXT("Scalability %d"), V));
+							}
+						})
+				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 2)
 				[
 					Choice(TEXT("Overlay"), LOCTEXT("Overlay", "Mostrar"),
@@ -216,14 +232,89 @@ void SForgePanel::Construct(const FArguments& InArgs)
 						SAssignNew(SaveStatus, STextBlock).Font(Font(8)).ColorAndOpacity(FSlateColor(TextDim)).AutoWrapText(true)
 					]
 				]
+				// ---- mapas guardados: um clique carrega os controles (e a prévia, se já existe) ----
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 2)
+				[
+					SNew(STextBlock).Text(LOCTEXT("SavedTitle", "Mapas guardados")).Font(Font(10, TEXT("Bold")))
+				]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SAssignNew(SavedList, SVerticalBox)
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 2, 0, 2)
+				[
+					SNew(SButton)
+					.ButtonColorAndOpacity(ButtonIdle)
+					.OnClicked_Lambda([this]()
+					{
+						if (GameMode.IsValid())
+						{
+							GameMode->AddSavedMap();
+							RefreshSavedMaps();
+						}
+						return FReply::Handled();
+					})
+					[
+						SNew(STextBlock).Text(LOCTEXT("AddSaved", "Guardar este mapa na lista")).Font(Font(9))
+					]
+				]
+				// ---- o mapa inteiro no acabamento das fatias (outro processo; abre sozinho) ----
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 6, 0, 2)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						SNew(SButton)
+						.ButtonColorAndOpacity(Accent)
+						.ToolTipText(LOCTEXT("RealTip", "Monta este mapa inteiro com terreno, rochas, árvores e luz de verdade e abre quando terminar (alguns minutos)"))
+						.IsEnabled_Lambda([this]()
+						{
+							double T;
+							return !GameMode.IsValid() || GameMode->GetRealQualityState(T) != 1;
+						})
+						.OnClicked_Lambda([this]()
+						{
+							if (GameMode.IsValid())
+							{
+								GameMode->StartRealQuality();
+							}
+							return FReply::Handled();
+						})
+						[
+							SNew(STextBlock).Text(LOCTEXT("Real", "Ver em qualidade real")).Font(Font(10))
+						]
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8, 0, 0, 0)
+					[
+						SNew(STextBlock).Font(Font(8)).ColorAndOpacity(FSlateColor(TextDim)).AutoWrapText(true)
+						.Text_Lambda([this]()
+						{
+							double T = 0.0;
+							const int32 State = GameMode.IsValid() ? GameMode->GetRealQualityState(T) : 0;
+							const FText Clock = FText::FromString(FString::Printf(TEXT("%d:%02d"), int32(T) / 60, int32(T) % 60));
+							if (State == 0 && GameMode.IsValid() && AWorldForgeGameMode::HasPreview(GameMode->GetSettings()))
+							{
+								return LOCTEXT("RealCached", "prévia pronta: abre na hora");
+							}
+							switch (State)
+							{
+							case 1: return FText::Format(LOCTEXT("RealBuilding", "montando o mapa inteiro... {0} (pode continuar mexendo)"), Clock);
+							case 2: return FText::Format(LOCTEXT("RealDone", "pronto em {0}, abrindo"), Clock);
+							case -1: return LOCTEXT("RealFail", "não montou (log em Saved/WorldForge/world_build.log)");
+							default: return FText::GetEmpty();
+							}
+						})
+					]
+				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 10, 0, 0)
 				[
 					SNew(STextBlock).Font(Font(8)).ColorAndOpacity(FSlateColor(TextDim)).AutoWrapText(true)
-					.Text(LOCTEXT("Help", "WASD / borda da tela: andar · botão direito arrastado: rolar o mapa (como no C&C) · botão do meio, Q/E: girar e inclinar · 2 cliques na roda: volta o ângulo · roda: zoom · Home: mapa todo · F1: esconder o painel"))
+					.Text(LOCTEXT("Help", "WASD / borda da tela: andar · botão direito arrastado: rolar o mapa (como no C&C) · botão do meio, Q/E: girar e inclinar · 2 cliques na roda: volta o ângulo · roda: zoom · Home: mapa todo · F1: esconder o painel · F2: teste de qualidade (câmera perto do chão + mapa com o que a câmera vê) · F3: grupos de triângulos (o detalhe que a Unreal usa)"))
 				]
 			]
 		]
 	];
+	RefreshSavedMaps();
 	TestTargets.Add(TEXT("Dice"), DiceButton);
 	TestTargets.Add(TEXT("Minimap"), MinimapBorder);
 	OnMapShown();
@@ -315,6 +406,38 @@ TSharedRef<SWidget> SForgePanel::SliderRow(const FString& Id, const FText& Label
 		];
 	TestTargets.Add(TEXT("Slider_") + Id, Slider);
 	return Row;
+}
+
+void SForgePanel::RefreshSavedMaps()
+{
+	if (!SavedList.IsValid() || !GameMode.IsValid())
+	{
+		return;
+	}
+	SavedList->ClearChildren();
+	const TArray<AWorldForgeGameMode::FSavedMap>& Maps = GameMode->GetSavedMaps();
+	for (int32 I = 0; I < Maps.Num(); ++I)
+	{
+		const FWorldGenSettings S = Maps[I].Settings;
+		// exemplo: o mundo montado à mão (pedaço de 250 m); os outros: a prévia guardada do mapa inteiro
+		const bool bExample = AWorldForgeGameMode::PreviewMapOf(S).StartsWith(TEXT("/Game/Maps/Slice_"));
+		const FString Label = Maps[I].Name + (bExample ? TEXT("   · mundo pronto") : AWorldForgeGameMode::HasPreview(S) ? TEXT("   · prévia pronta") : TEXT(""));
+		SavedList->AddSlot().AutoHeight().Padding(0, 1)
+		[
+			SNew(SButton)
+			.ButtonColorAndOpacity(FLinearColor(0.10f, 0.11f, 0.12f))
+			.ContentPadding(FMargin(6, 3))
+			.OnClicked_Lambda([this, S]()
+			{
+				Edit = S;
+				Regenerate();
+				return FReply::Handled();
+			})
+			[
+				SNew(STextBlock).Text(FText::FromString(Label)).Font(FCoreStyle::GetDefaultFontStyle("Regular", 9))
+			]
+		];
+	}
 }
 
 void SForgePanel::Regenerate()

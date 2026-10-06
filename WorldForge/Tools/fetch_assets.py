@@ -1,8 +1,8 @@
-"""Baixa os assets da fatia de deserto (licença CC0) das APIs públicas.
+"""Baixa os assets das fatias (licença CC0) das APIs públicas.
 
 Rodar com o Python do sistema:
   python WorldForge/Tools/fetch_assets.py
-Vai pra WorldForge/Intermediate/Assets/<id>/ (fora do git: são ~660 MB, e o
+Vai pra WorldForge/Intermediate/Assets/<id>/ (fora do git: são ~1,3 GB, e o
 script baixa de novo em qualquer PC). Confere o md5 que o Poly Haven informa
 e pula o que já está baixado.
 
@@ -34,6 +34,21 @@ SURFACES = {
     'mud_cracked_dry_03': '4k',   # terra rachada
     'asphalt_04': '4k',           # asfalto gasto
     'cliff_side': '4k',           # paredão (Namaqualand)
+    # fatias de floresta, neve e rua (aprovadas em 05/10/2026, ~670 MB com os modelos abaixo)
+    'forest_leaves_02': '4k',     # folhiço
+    'forest_ground_04': '4k',     # chão de mata
+    'leaves_forest_ground': '4k', # folhas e terra
+    'mud_forest': '4k',           # barro de mata
+    'leafy_grass': '4k',          # grama com folhas
+    'grass_path_2': '4k',         # trilha na grama
+    'snow_02': '4k',              # neve
+    'snow_04': '4k',              # neve pisada
+    'snow_field_aerial': '4k',    # neve vista do alto
+    'asphalt_snow': '4k',         # estrada com neve
+    'road_damaged': '4k',         # asfalto quebrado
+    'road_damaged_2': '4k',       # asfalto quebrado (buracos)
+    'worn_asphalt': '4k',         # asfalto gasto
+    'aerial_asphalt_01': '4k',    # asfalto visto do alto
 }
 SURFACE_MAPS = ('Diffuse', 'nor_dx', 'arm', 'Displacement')
 
@@ -46,6 +61,10 @@ MODELS = {
     'namaqualand_boulders_01': '2k', 'namaqualand_rocks_01': '2k', 'namaqualand_stones_01': '2k',
     'wild_rooibos_bush': '4k', 'searsia_lucida': '2k',
     'grass_medium_01': '2k', 'grass_medium_02': '4k', 'dry_branches_medium_01': '2k',
+    # floresta e beira de estrada (05/10/2026)
+    'fern_02': '2k', 'shrub_01': '2k', 'shrub_02': '2k', 'tree_stump_01': '2k', 'dead_tree_trunk': '2k',
+    'rock_moss_set_01': '2k', 'moss_01': '2k',
+    'concrete_road_barrier': '2k', 'street_lamp_01': '2k', 'modular_electricity_poles': '2k',
 }
 MODEL_MAPS = ('Diffuse', 'nor_dx', 'arm')
 EXTRA_MAPS = ('alpha', 'mask', 'translucency', 'dry_diff')   # quando existem (plantas)

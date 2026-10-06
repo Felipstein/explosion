@@ -44,6 +44,7 @@ public:
 	void SetView(FVector2f FocusM, float YawDeg, float PitchDeg, float DistanceM);
 
 	FVector2f GetFocus() const { return Focus; }
+	float GetFocusZ() const { return FocusZ; }
 	float GetDistance() const { return Distance; }
 	float GetYaw() const { return Yaw; }
 	float GetPitch() const { return Pitch; }
@@ -55,6 +56,8 @@ public:
 	TFunction<bool()> IsOverUI;
 	/** Andar com o mouse na borda da tela (o teste automático desliga). */
 	bool EdgePan = true;
+	/** Câmera presa: ignora mouse e teclado (as fotos automáticas, com alguém usando o PC). */
+	bool bLocked = false;
 
 	// ângulos e distâncias da câmera (graus, metros)
 	static constexpr float DefaultPitch = 58.0f;   // graus abaixo do horizonte (a vista inicial)

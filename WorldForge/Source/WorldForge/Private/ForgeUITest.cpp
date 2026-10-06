@@ -1,4 +1,6 @@
 #include "ForgeUITest.h"
+#include "ForgeDebugView.h"
+#include "EngineUtils.h"
 
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
@@ -226,6 +228,25 @@ void FForgeUITest::Build()
 			Key(EKeys::W, false);
 			const float D = Pawn()->GetFocus().X - FocusBefore.X;
 			return D > 20.0f ? FString() : FString::Printf(TEXT("andou só %.1f m"), D);
+		}, 1.0f });
+	// F2 liga o teste de qualidade e NÃO troca o modo de visão da Unreal (o atalho
+	// de depuração dela, "viewmode unlit", vinha junto: tela sem sol nem sombra)
+	Steps.Add({ TEXT("key_f2"), [this]()
+		{
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::F2, true);
+			Key(EKeys::F2, false);
+		}, Always,
+		[this, GM]() -> FString
+		{
+			const UGameViewportClient* VC = GEngine ? GEngine->GameViewport : nullptr;
+			const int32 Mode = VC ? VC->ViewModeIndex : -1;
+			bool bDebug = false;
+			for (TActorIterator<AForgeDebugView> It(GM()->GetWorld()); It; ++It) bDebug = true;
+			Key(EKeys::F2, true);   // fecha de novo
+			Key(EKeys::F2, false);
+			if (Mode != VMI_Lit) return FString::Printf(TEXT("o modo de visão mudou pra %d (o atalho da Unreal ainda está ativo)"), Mode);
+			return bDebug ? FString() : TEXT("o teste de qualidade não abriu");
 		}, 1.0f });
 	// roda do mouse no meio da tela: aproxima
 	Steps.Add({ TEXT("wheel_zoom"), [this, Remember]()

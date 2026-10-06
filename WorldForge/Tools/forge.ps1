@@ -1,11 +1,13 @@
-# WorldForge: atalhos do gerador de mundos (rodar de qualquer pasta).
+﻿# WorldForge: atalhos do gerador de mundos (rodar de qualquer pasta).
 #
 #   forge.ps1 setup                  # compila o C++ e monta tudo do zero (texturas, materiais, mapa)
 #   forge.ps1 compile                # compila o módulo C++
 #   forge.ps1 build                  # texturas do chão + materiais + mapa (sem abrir o editor)
-#   forge.ps1 view [low|medium|high|epic|cine]   # abre o gerador (padrão: cine, o máximo)
+#   forge.ps1 view [low|medium|high|epic|cine]   # abre o gerador (padrão: epic, o "ultra" do jogo;
+#                                    # cine é o modo de filme: 16× mais raios de luz, só pra foto e vídeo)
 #   forge.ps1 editor                 # abre o editor no projeto
-#   forge.ps1 slice                  # monta a fatia de qualidade (deserto; antes: python Tools\fetch_assets.py)
+#   forge.ps1 slice [desert,snow,forest]   # monta as fatias de qualidade (padrão: as três; antes:
+#                                    # python Tools\fetch_assets.py e python Tools\make_slice_textures.py)
 #   forge.ps1 view -Map Slice_Desert [-Folder f]   # abre (ou testa) outro mapa
 #
 # Teste automático (gera, fotografa vistas fixas, salva os dados e fecha):
@@ -58,13 +60,17 @@ switch ($Command) {
   'setup' { Compile; Build }
   'compile' { Compile }
   'build' { Build }
-  'slice' { RunUnrealPython 'Tools\build_slice.py' }
+  'slice' {
+    $env:SLICE = if ($Target) { $Target } else { 'desert,snow,forest' }
+    RunUnrealPython 'Tools\build_slice.py'
+  }
   'py' { RunUnrealPython $Target }
   'editor' { Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList "`"$Project`"" }
   'view' {
     # o comando Scalability só aceita número (0–3) ou cine
     $levels = @{ low = '0'; medium = '1'; high = '2'; epic = '3'; cine = 'cine' }
-    $q = if ($Target) { $levels[$Target] } else { 'cine' }
+    # padrão épico: o cine dava a mesma imagem a 14 qps (contra 34) na floresta (perfil de 06/10)
+    $q = if ($Target) { $levels[$Target] } else { '3' }
     if ($Cvars) { $q += ', ' + $Cvars }
     $a = @("`"$Project`"", "/Game/Maps/$Map", '-game', '-windowed', '-ResX=1600', '-ResY=900',
            "-ExecCmds=`"Scalability $q`"", '-nosplash')

@@ -11,7 +11,7 @@ public class WorldForge : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"InputCore", "Slate", "SlateCore", "ProceduralMeshComponent",
-			"MeshDescription", "StaticMeshDescription", "ImageWrapper", "Json", "RenderCore"
+			"MeshDescription", "StaticMeshDescription", "ImageWrapper", "Json", "RenderCore", "RHI"
 		});
 	}
 }

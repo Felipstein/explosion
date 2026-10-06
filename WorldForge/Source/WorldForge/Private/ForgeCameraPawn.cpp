@@ -138,7 +138,7 @@ void AForgeCameraPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	APlayerController* PC = GetController<APlayerController>();
-	if (!PC)
+	if (!PC || bLocked)
 	{
 		return;
 	}

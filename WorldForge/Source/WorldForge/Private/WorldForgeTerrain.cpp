@@ -1,5 +1,7 @@
 #include "WorldForgeTerrain.h"
 
+#include "Generation/WorldTrees.h"
+
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -336,9 +338,22 @@ void AWorldForgeTerrain::BuildProps()
 		T.Append({ Tint.R, Tint.G, Tint.B });
 	};
 
-	// no deserto as "árvores" ficam mais secas; no inverno, pinheiros escuros
+	// Árvores: o tipo e o tamanho da regra única (WorldTrees.h), os mesmos da
+	// qualidade real. Com as árvores de verdade já montadas (/Game/Slice/Trees,
+	// pelas fatias), elas mesmas — o app desenha o Nanite bem mais grosso
+	// (r.Nanite.MaxPixelsPerEdge, AWorldForgeGameMode); sem elas, as simples
+	// em código, esticadas pro mesmo tamanho.
 	const bool bDesert = M.Settings.Biome == EWorldBiome::Desert;
 	const bool bWinter = M.Settings.Biome == EWorldBiome::Winter;
+	UStaticMesh* RealTree[2] = {
+		LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Slice/Trees/SM_broadleaf.SM_broadleaf"), nullptr, LOAD_NoWarn | LOAD_Quiet),
+		LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Slice/Trees/SM_conifer.SM_conifer"), nullptr, LOAD_NoWarn | LOAD_Quiet) };
+	TMap<UStaticMesh*, TArray<FTransform>> RealXforms;
+	auto ProxySize = [](UStaticMesh* Mesh)
+	{
+		const FBoxSphereBounds B = Mesh->GetBounds();
+		return FVector2f((B.Origin.Z + B.BoxExtent.Z) / 100.0f, 2.0f * FMath::Max(B.BoxExtent.X, B.BoxExtent.Y) / 100.0f);
+	};
 	for (const FWorldProp& P : M.Props)
 	{
 		const FVector Loc(P.Pos.X * 100.0, P.Pos.Y * 100.0, P.Z * 100.0);
@@ -346,10 +361,20 @@ void AWorldForgeTerrain::BuildProps()
 		const float Var = 0.85f + 0.3f * (P.Variant % 7) / 6.0f;
 		if (P.Type == EWorldPropType::Tree)
 		{
-			const bool bConifer = bWinter || (P.Variant & 8);
+			const WorldTrees::EKind Kind = WorldTrees::KindOf(M.Settings.Biome, P.Variant);
+			const float Scale = WorldTrees::ScaleOf(P, M.Settings.Biome);
+			UStaticMesh* Real = Kind == WorldTrees::EKind::Shrub ? nullptr : RealTree[Kind == WorldTrees::EKind::Conifer ? 1 : 0];
+			if (Real)
+			{
+				RealXforms.FindOrAdd(Real).Add(FTransform(FRotator(0, P.Yaw, 0), Loc, FVector(Scale)));
+				continue;
+			}
+			UStaticMesh* Proxy = MeshOf(Kind == WorldTrees::EKind::Conifer ? EKind::Conifer : EKind::Broadleaf, P.Variant);
+			const FVector2f Want = WorldTrees::MeshSize(Kind) * Scale, Have = ProxySize(Proxy);
+			const float SXY = Want.Y / FMath::Max(Have.Y, 0.1f), SZ = Want.X / FMath::Max(Have.X, 0.1f);
 			FLinearColor Tint(Var, Var, Var);
 			if (bDesert) Tint = FLinearColor(1.6f * Var, 1.25f * Var, 0.8f * Var);
-			Add(MeshOf(bConifer ? EKind::Conifer : EKind::Broadleaf, P.Variant), X, Tint);
+			Add(Proxy, FTransform(FRotator(0, P.Yaw, 0), Loc, FVector(SXY, SXY, SZ)), Tint);
 		}
 		else
 		{
@@ -391,6 +416,31 @@ void AWorldForgeTerrain::BuildProps()
 			C->SetCustomDataValue(K, 2, T[3 * K + 2]);
 		}
 		C->MarkRenderStateDirty();
+	}
+	for (auto& Pair : RealXforms)
+	{
+		UHierarchicalInstancedStaticMeshComponent* C = NewObject<UHierarchicalInstancedStaticMeshComponent>(this, NAME_None, RF_Transient);
+		C->SetupAttachment(Root);
+		C->SetStaticMesh(Pair.Key);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(true);
+		if (bWinter)
+		{
+			// os materiais com neve que a fatia de neve deixou (MI_..._Snow)
+			const TArray<FStaticMaterial>& Mats = Pair.Key->GetStaticMaterials();
+			for (int32 I = 0; I < Mats.Num(); ++I)
+			{
+				if (!Mats[I].MaterialInterface) continue;
+				const FString Name = Mats[I].MaterialInterface->GetName() + TEXT("_Snow");
+				if (UMaterialInterface* Snow = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/Slice/Trees/%s.%s"), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+				{
+					C->SetMaterial(I, Snow);
+				}
+			}
+		}
+		C->RegisterComponent();
+		C->AddInstances(Pair.Value, false, true, false);
+		PropComponents.Add(C);
 	}
 }
 

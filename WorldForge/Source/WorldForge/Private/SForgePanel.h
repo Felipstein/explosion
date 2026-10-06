@@ -44,6 +44,8 @@ private:
 	TSharedRef<SWidget> Choice(const FString& Id, const FText& Label, TArray<TPair<FText, int32>> Options, TFunction<int32()> Get, TFunction<void(int32)> Set);
 	TSharedRef<SWidget> SliderRow(const FString& Id, const FText& Label, float FWorldGenSettings::* Field);
 	void Regenerate();
+	/** A lista de mapas guardados (refeita quando muda). */
+	void RefreshSavedMaps();
 	void OnMapShown();
 	FReply OnMinimapClick(const FGeometry& Geometry, const FPointerEvent& Event);
 
@@ -52,6 +54,7 @@ private:
 	TSharedPtr<SEditableTextBox> SeedBox;
 	TSharedPtr<STextBlock> Stats;
 	TSharedPtr<STextBlock> SaveStatus;
+	TSharedPtr<class SVerticalBox> SavedList;
 	FSlateBrush MinimapBrush;
 	FSliderStyle SliderStyle;
 	FSlateRoundedBoxBrush Background = FSlateRoundedBoxBrush(FLinearColor(0.012f, 0.016f, 0.02f, 0.86f), 10.0f);
