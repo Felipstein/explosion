@@ -73,6 +73,14 @@ struct FWorldResource
 	int32 Owner = -1;        // jogador mais próximo, −1 = disputado (meio do mapa)
 };
 
+/** Papel de uma trilha do gerador (a rede de estradas segue isto). */
+enum class EWorldTrack : uint8
+{
+	Main = 0,      // base → centro (o caminho principal de cada jogador)
+	Flank = 1,     // rota alternativa base → centro, longe da principal
+	Link = 2,      // ligação extra (bases que não se alcançavam, platôs ilhados)
+};
+
 /** Passabilidade por célula (unidades de chão). */
 enum class EWorldPass : uint8
 {
@@ -103,10 +111,13 @@ struct WORLDFORGE_API FWorldMap
 	TArray<int8> Territory;
 
 	TArray<FWorldStart> Starts;
+	float BaseRadius = 50.0f;                  // m, o platô de cada base
 	TArray<FWorldResource> Resources;
 	TArray<FWorldProp> Props;
 	/** Trilhas esculpidas (base → centro, flancos, ligações), como linhas de pontos (m). */
 	TArray<TArray<FVector2f>> Tracks;
+	/** O papel de cada trilha (mesma ordem de Tracks). */
+	TArray<EWorldTrack> TrackKinds;
 
 	/** Tempos por etapa (ms) e resultado das verificações, pro painel e o log. */
 	TArray<TPair<FString, double>> Timings;

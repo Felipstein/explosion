@@ -43,7 +43,7 @@ SLICES = {
         'map': '/Game/Maps/Slice_Desert', 'seed': 3, 'biome': 1, 'road': 7.5,
         'layers': [
             ('plain', 'Sand', 'sandy_gravel_02', 2.5, (1.0, 1.0, 1.0), {'far': ('aerial_beach_01', 45.0, (1.32, 1.02, 0.72))}),
-            ('plain', 'Gravel', 'gravelly_sand', 2.5, (0.95, 0.95, 0.95), None),
+            ('plain', 'Gravel', 'gravelly_sand', 2.5, (1.04, 1.0, 0.96), None),   # perto da areia: mancha, não sujeira
             ('plain', 'Dirt', 'dry_ground_01', 4.0, (1.18, 0.98, 0.78), None),
             ('rock', 'Rock', 'cliff_side', 3.6, (0.95, 0.95, 0.95), None),
             ('plain', 'Cracked', 'mud_cracked_dry_03', 3.0, (0.72, 0.68, 0.64), None),
@@ -112,7 +112,10 @@ SLICES = {
             # a foto de grama é palha na média (linear 0,32/0,24/0,10, medido): puxa pro
             # verde; a grama gerada (×2) por cima contra a repetição de 2 m
             ('plain', 'Grass', 'leafy_grass', 2.0, (0.45, 0.72, 0.55),
-             {'far': ('gen_moss', 9.0, (2.2, 2.0, 2.4)), 'hue': ((0.9, 1.0, 0.85), (1.2, 1.08, 0.75), 70.0)}),
+             # manchas de ~70 m entre verde mais escuro e capim seco amarelado: no mapa
+             # inteiro, da câmera de jogo (190 m, sem touceiras), o 0,9–1,2 de antes
+             # deixava o gramado de um verde só (06/10)
+             {'far': ('gen_moss', 9.0, (2.2, 2.0, 2.4)), 'hue': ((0.82, 0.97, 0.8), (1.32, 1.14, 0.66), 70.0)}),
             ('plain', 'Litter', 'forest_leaves_02', 3.0, (0.72, 0.68, 0.58), None),   # folhas de outono: menos laranja
             ('plain', 'Trail', 'forest_ground_04', 3.15, (1.0, 1.0, 1.0), None),
             ('rock', 'Rock', 'cliff_side', 3.6, (0.75, 0.78, 0.75), 0.75),   # o paredão laranja do deserto vira granito
@@ -343,10 +346,16 @@ def ground_material(name, S, specs, cracks):
 
     def rock_layer(lname, s, tile_m, tint, desat=None):
         diff = triplanar(s['diff'], tile_m)
+        # a mesma rocha numa escala 2,7× maior, meio a meio: o estrato do ladrilho
+        # de 3,6 m repetia em listras paralelas regulares na parede (06/10)
+        diff2 = triplanar(s['diff'], tile_m * 2.7)
+        mixd = g.node(unreal.MaterialExpressionLinearInterpolate, -350, const_alpha=0.5)
+        g.link(diff, 'XYZ Texture', mixd, 'A')
+        g.link(diff2, 'XYZ Texture', mixd, 'B')
         nor = triplanar(s['nor'], tile_m, normal=True)
         arm = triplanar(s['arm'], tile_m)
         disp = triplanar(s['disp'], tile_m)
-        base = g.mul(g.mul(diff, 'XYZ Texture', g.const3(tint, -300), '', -200), '', macro, '', 0)
+        base = g.mul(g.mul(mixd, '', g.const3(tint, -300), '', -200), '', macro, '', 0)
         if desat:
             base = g.custom('return lerp(C, dot(C, float3(0.3, 0.59, 0.11)).xxx, %f);' % desat, [('C', base, '')], F3, 100)
         return {'name': lname, 'base': (base, ''), 'nor': (nor, 'XYZ Texture'), 'rough': (g.mask(arm, 'XYZ Texture', 'g'), ''),
@@ -509,38 +518,92 @@ def tree(key):
     return mesh
 
 
-_SNOW_MASTER = []
+def tree_fade(key):
+    """Cópia da árvore que nunca vira voxels (forma "área"): o voxel do Nanite só
+    desenha com o material padrão, e o recorte perto do cursor não vale nele. O
+    jogo troca pra ela só as árvores perto do cursor (ForgeTreeFade). TREE_FADE=1
+    refaz só as cópias."""
+    path = DEST + '/Trees/SM_' + key + '_Fade'
+    if eal.does_asset_exist(path) and os.environ.get('TREES') != '1' and os.environ.get('TREE_FADE') != '1':
+        return unreal.load_asset(path)
+    mesh = lib.vegetation_to_static_mesh(unreal.load_asset(TREES[key]), path, os.environ.get('TREE_BAKE') == '1', True)
+    eal.save_loaded_asset(mesh, False)
+    return mesh
 
 
-def snow_materials(mesh, amount):
-    """Os materiais da árvore com neve: cópias das instâncias do PVE apontando
-    pra uma cópia do mestre delas com o parâmetro Snow (AddSnowToMaterial).
-    Criados uma vez e reaproveitados: apagar não dá enquanto a fatia de neve ou
-    uma prévia usa (a montagem do mapa inteiro de neve falhava por isso, 06/10)."""
-    if not _SNOW_MASTER:
-        dst = DEST + '/Trees/MA_Foliage_Trees_Snow'
+_MASTERS = {}
+
+
+def fade_collection():
+    """A coleção que o jogo atualiza com a câmera e o ponto do chão sob o cursor
+    (ForgeCameraPawn::UpdateTreeFade): a árvore some em volta do cursor."""
+    path = DEST + '/Trees/MPC_TreeFade'
+    if eal.does_asset_exist(path):
+        return unreal.load_asset(path)
+    mpc = asset_tools.create_asset('MPC_TreeFade', DEST + '/Trees', unreal.MaterialParameterCollection,
+                                   unreal.MaterialParameterCollectionFactoryNew())
+    params = []
+    for name in ('TreeFadeCamera', 'TreeFadeCursor'):
+        v = unreal.CollectionVectorParameter()
+        v.set_editor_property('parameter_name', name)
+        v.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 0))   # raio 0: desligado
+        params.append(v)
+    mpc.set_editor_property('vector_parameters', params)
+    eal.save_loaded_asset(mpc)
+    return mpc
+
+
+def tree_master(snow):
+    """Cópia do mestre de folhagem do PVE com a árvore transparente perto do
+    cursor (AddOcclusionFadeToMaterial) e, na neve, a neve por cima. Criada uma
+    vez e reaproveitada (apagar não dá enquanto um mapa usa)."""
+    key = 'snow' if snow else 'fade'
+    if key not in _MASTERS:
+        # nome com versão: o mestre não pode ser apagado enquanto um mapa usa, então
+        # uma mudança na transparência (ou na neve) ganha um mestre novo
+        ver = '5' if snow else '4'
+        dst = DEST + '/Trees/' + ('MA_Foliage_Trees_Snow' if snow else 'MA_Foliage_Trees_Fade') + ver
         if eal.does_asset_exist(dst):
             m = unreal.load_asset(dst)
         else:
             m = eal.duplicate_asset('/ProceduralVegetationEditor/SampleAssets/Materials/MasterMaterials/MA_Foliage_Trees', dst)
-            lib.add_snow_to_material(m)
+            if snow:
+                lib.add_snow_to_material(m)
+            lib.add_occlusion_fade_to_material(m, fade_collection())
             eal.save_loaded_asset(m)
-        _SNOW_MASTER.append(m)
+        _MASTERS[key] = m
+    return _MASTERS[key]
+
+
+def tree_materials(mesh, snow=0.0):
+    """Os materiais da árvore apontando pro mestre com a transparência (e a neve).
+    Só grava se criou ou mudou: o gerador aberto usa estes materiais nas árvores
+    e o Windows trava o arquivo (a montagem falhava ao regravar)."""
+    master = tree_master(snow > 0)
+    blend = unreal.BlendMode.BLEND_OPAQUE if os.environ.get('TREE_OPAQUE') == '1' else unreal.BlendMode.BLEND_MASKED
     out = []
     for sm in mesh.get_editor_property('static_materials'):
         mi = sm.material_interface
-        dst = DEST + '/Trees/' + mi.get_name() + '_Snow'
-        # só grava se criou ou mudou: o gerador aberto no bioma neve usa estes
-        # materiais nas árvores e o Windows trava o arquivo (falhava ao regravar)
+        dst = DEST + '/Trees/' + mi.get_name() + ('_Snow' if snow > 0 else '_WF')
         if eal.does_asset_exist(dst):
             c = unreal.load_asset(dst)
-            same = c.get_editor_property('parent') == _SNOW_MASTER[0] and                 abs(mel.get_material_instance_scalar_parameter_value(c, 'Snow') - amount) < 1e-4
+            same = c.get_editor_property('parent') == master and \
+                c.get_editor_property('base_property_overrides').get_editor_property('blend_mode') == blend and \
+                (snow <= 0 or abs(mel.get_material_instance_scalar_parameter_value(c, 'Snow') - snow) < 1e-4)
         else:
             c, same = eal.duplicate_asset(mi.get_path_name(), dst), False
         if not same:
-            mel.set_material_instance_parent(c, _SNOW_MASTER[0])
-            mel.set_material_instance_scalar_parameter_value(c, 'Snow', amount)
-            eal.save_loaded_asset(c)
+            mel.set_material_instance_parent(c, master)
+            # os do PVE forçam "opaco" (folhas de geometria); a transparência perto
+            # do cursor precisa do "masked"
+            o = c.get_editor_property('base_property_overrides')
+            o.set_editor_property('override_blend_mode', True)
+            o.set_editor_property('blend_mode', blend)
+            c.set_editor_property('base_property_overrides', o)
+            mel.update_material_instance(c)
+            if snow > 0:
+                mel.set_material_instance_scalar_parameter_value(c, 'Snow', snow)
+            eal.save_loaded_asset(c, False)   # trocar o pai não marca o pacote como sujo
         out.append(c)
     return out
 
@@ -665,10 +728,25 @@ def models(aid, sname, pattern='', **kw):
     return out
 
 
+def runs(pts):
+    """Os trechos de uma lista de pontos do C++ separada por (0,0,-1e9)."""
+    out, cur = [], []
+    for p in list(pts) + [unreal.Vector(0, 0, -1e9)]:
+        if p.z < -1e8:
+            if cur:
+                out.append(cur)
+            cur = []
+        else:
+            cur.append(p)
+    return out
+
+
 def roadside(meshes, road_half_m):
     """Beira de estrada: dois trechos com muretas de concreto (barreira de posto
-    de controle), uma tombada; contam história sem fechar a pista."""
-    pts = lib.slice_road(1.0)
+    de controle), uma tombada; contam história sem fechar a pista. No trecho
+    mais longo de asfalto, fora dos entroncamentos."""
+    rs = runs(lib.slice_road(1.0, True))
+    pts = max(rs, key=len) if rs else []
     if len(pts) < 40 or not meshes.get('barriers'):
         return
     mesh, mats = meshes['barriers'][0]
@@ -790,27 +868,24 @@ def decals_along(points, material, half_len_cm, half_width_cm, offsets_cm, every
 
 
 def tire_tracks(decal_mat):
-    pts = lib.slice_tracks(1.6)
-    n, line = 0, []
-    for p in list(pts) + [unreal.Vector(0, 0, -1e9)]:
-        if p.z < -1e8:
-            # bitola de ~1,8 m; fora da pista de asfalto (lá a marca é a da tinta)
-            n += decals_along(line, decal_mat, 90.0, 24.0, (-90.0, 90.0), skip_road=True)
-            line = []
-        else:
-            line.append(p)
+    """Marcas de pneu nas estradas de terra (bitola de ~1,8 m); fora do asfalto."""
+    n = 0
+    for line in runs(lib.slice_tracks(2.0)):
+        n += decals_along(line, decal_mat, 100.0, 24.0, (-90.0, 90.0), skip_road=True)
     log('tire track decals', n)
 
 
 def road_paint(paint_mat, road_half_m):
-    # sem tinta nos 40 m das pontas da estrada: lá o asfalto se desfaz em terra (C++, DesertWeights)
-    pts = [p for p in lib.slice_road(1.0) if lib.slice_road_end_distance(unreal.Vector2D(p.x, p.y)) > 40.0]
-    if len(pts) < 3:
-        return
-    # tracejado central (3 m pintados a cada 12 m) e faixas de borda contínuas
-    n = decals_along(pts, paint_mat, 150.0, 7.0, (0.0,), every=1, dash=(1, 12))
+    """Tracejado central (3 m pintados a cada 12 m) e faixas de borda contínuas,
+    por trecho de asfalto: sem tinta nos entroncamentos nem nas pontas que se
+    desfazem em terra (C++, SliceRoad com bMarksOnly)."""
+    n = 0
     edge = (road_half_m - 0.35) * 100.0
-    n += decals_along(pts, paint_mat, 110.0, 6.0, (-edge, edge), every=2)
+    for pts in runs(lib.slice_road(1.0, True)):
+        if len(pts) < 3:
+            continue
+        n += decals_along(pts, paint_mat, 150.0, 7.0, (0.0,), every=1, dash=(1, 12))
+        n += decals_along(pts, paint_mat, 110.0, 6.0, (-edge, edge), every=2)
     log('road paint decals', n)
 
 
@@ -834,18 +909,20 @@ def scatter(cfg, meshes):
     group = lib.spawn_group_actor('Scatter')
     for kind, spacing, (smin, smax), key, cull in cfg['scatter']:
         variants = meshes[key]
-        xs = lib.slice_scatter(kind, spacing, smin, smax, 0.0, 0.0).transforms
-        buckets = [[] for _ in variants]
-        for i, x in enumerate(xs):
-            buckets[(i * 2654435761) % len(variants)].append(x)
-        for (mesh, mats), b in zip(variants, buckets):
-            if b:
-                lib.add_instances(group, mesh, b, True, cull, mats)
-        log('scatter', kind, len(xs))
+        # o C++ sorteia a malha de cada lugar e assenta pela caixa dela (pedras:
+        # base medida, inclinação da encosta, enterradas; SliceScatterMeshes)
+        per = lib.slice_scatter_meshes(kind, spacing, smin, smax, [m for m, _ in variants], 0.0)
+        n = 0
+        for (mesh, mats), sc in zip(variants, per):
+            if sc.transforms:
+                lib.add_instances(group, mesh, sc.transforms, True, cull, mats)
+                n += len(sc.transforms)
+        log('scatter', kind, n)
     if cfg.get('cliffs'):
-        # paredões escaneados cobrindo os cortes do terreno
-        for (mesh, mats), spacing, sink in ((meshes['cliffs'][0], 9.0, 1.5), (meshes['cliffs'][1], 13.0, 2.0)):
-            xs = lib.slice_scatter('Cliff', spacing, 0.9, 1.25, sink, 0.0).transforms
+        # paredões escaneados cobrindo os cortes do terreno: em pé ao longo da
+        # parede, costas na encosta, altura pelo desnível (C++)
+        for (mesh, mats), spacing in ((meshes['cliffs'][0], 9.0), (meshes['cliffs'][1], 13.0)):
+            xs = lib.slice_scatter_meshes('Cliff', spacing, 0.9, 1.25, [mesh], 0.0)[0].transforms
             lib.add_instances(group, mesh, xs, True, 0, mats)
             log('scatter Cliff', mesh.get_name(), len(xs))
 
@@ -899,8 +976,9 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
         meshes['tufts_green'] = [model('grass_medium_01', tag, plant=True, nanite=True, green=True),
                                  model('grass_medium_02', tag, plant=True, nanite=True, green=True)]
         broad, shrub = tree('broadleaf'), tree('shrub')
-        meshes['broadleaf'] = [(broad, [])]
-        meshes['conifers_green'] = [(tree('conifer'), [])]
+        tree_fade('broadleaf'), tree_fade('conifer')
+        meshes['broadleaf'] = [(broad, tree_materials(broad))]
+        meshes['conifers_green'] = [(tree('conifer'), tree_materials(tree('conifer')))]
         meshes['shrubs_green'] = [(shrub, [])] + models('shrub_02', tag, '_LOD0', plant=True)
         meshes['ferns'] = models('fern_02', tag, plant=True)
         meshes['sprouts'] = models('shrub_01', tag, '_LOD0', plant=True)
@@ -909,7 +987,8 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
         meshes['deadwood'] = [model('tree_stump_01', tag, snow=snow), model('dead_tree_trunk', tag, snow=snow)]
     if sname == 'snow':
         conifer = tree('conifer')
-        meshes['conifers'] = [(conifer, snow_materials(conifer, snow))]
+        tree_fade('conifer')
+        meshes['conifers'] = [(conifer, tree_materials(conifer, snow))]
     if sname == 'desert':
         meshes['barriers'] = models('concrete_road_barrier', tag, '_LOD0')
     layers = [layer_info(tag, s[1]) for s in layer_specs]
@@ -923,11 +1002,11 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
                                                ground, layers, cfg['road'])
     if err:
         log('landscape error:', err)
-    road = lib.slice_road(1.0)
-    if road:
+    for road in runs(lib.slice_road(1.0)):
         mid = road[len(road) // 2]
-        log('road middle m %.0f %.0f' % (mid.x / 100.0, mid.y / 100.0))   # pra vista da estrada nas fotos
-        log('road ends m %.0f %.0f / %.0f %.0f' % (road[0].x / 100.0, road[0].y / 100.0, road[-1].x / 100.0, road[-1].y / 100.0))
+        # pra vista da estrada nas fotos
+        log('road run %d m: middle %.0f %.0f, ends %.0f %.0f / %.0f %.0f' % (len(road), mid.x / 100.0, mid.y / 100.0,
+            road[0].x / 100.0, road[0].y / 100.0, road[-1].x / 100.0, road[-1].y / 100.0))
     scatter(cfg, meshes)
     tire_tracks(decal)
     if cfg['road'] > 0 and cfg.get('paint', True):

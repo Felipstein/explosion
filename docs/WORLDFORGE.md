@@ -631,4 +631,298 @@ ignorava as do gerador e o controle "Florestas". Agora:
   (`r.Nanite.Visualize Clusters`, cada cor ~128 triângulos). O modo
   "Triangles" lia pior: os triângulos ficam do tamanho de um pixel em qualquer
   distância, e é justamente essa a ideia do Nanite.
-- O chão (Landscape) aparece preto no F3 porque ainda não é Nanite.
+- O chão (Landscape) aparecia preto no F3 porque não era Nanite; desde 06/10
+  é (seção 9).
+
+## 9. Árvore transparente, rede de estradas e o mapa inteiro com cara de fatia (06/10/2026)
+
+**Árvore transparente perto do cursor (estilo Company of Heroes):**
+- A copa entre a câmera e o ponto do chão sob o cursor some, num cilindro em
+  volta dessa linha (raio 5–14 m, cresce com a distância da câmera). Some em
+  pontilhado que muda a cada quadro (o TSR suaviza). A sombra fica no chão.
+- Material: `AddOcclusionFadeToMaterial` (C++) na cópia do mestre do PVE
+  (`MA_Foliage_Trees_Fade4`, neve `_Snow5`). A câmera e o cursor vêm da
+  coleção `MPC_TreeFade`, que `ForgeCameraPawn::UpdateTreeFade` atualiza.
+- **Dois achados:**
+  - Os materiais das árvores do PVE são **opacos** (as folhas são geometria),
+    e o opaco ignora o recorte. As cópias do WorldForge ligam "masked".
+    Custo medido: ~0,05 ms.
+  - De longe o Nanite desenha a árvore em **voxels**, e o voxel só compila
+    com o material padrão (`NaniteCullRaster.cpp`), então o recorte não vale
+    ali. Solução (`ForgeTreeFade`): só as árvores perto da linha saem do bloco
+    delas e vão pra um componente "fantasma" com a cópia que nunca vira voxel
+    (`SM_x_Fade`, forma "área"). São 5–25 árvores por vez, ~0,1–0,2 ms.
+- Só no mapa em qualidade real. No gerador não: as árvores dele são
+  componentes hierárquicos enormes.
+- **Defeito antigo achado no caminho:** a neve das coníferas usava a normal do
+  vértice, e metade das agulhas (o lado de trás) ficava sem neve. A árvore só
+  era branca de longe, nos voxels; de perto ficava verde. Agora vale a normal
+  do lado que se vê (`TwoSidedSign`). Verdor medido: voxel 0,83 × triângulo
+  0,86 (antes 0,79 × 3,08).
+
+**Rede de estradas (no lugar do trecho único da trilha mais longa):**
+- Fontes: Galin et al. 2010 (rota no relevo, vizinhança de 16 direções),
+  Galin et al. 2011 (hierarquia e trechos absorvidos), Emilien et al. 2012
+  (ramal entra na estrada existente), Ghost Recon Wildlands GDC 2017 (mesmo
+  método em produção).
+- Tipos:
+  - **principal** de cada jogador (base → centro): asfalto no deserto
+    (7,5 m) e na neve (6 m), terra de 6 m na floresta;
+  - **flancos e ligações**: terra de 4,4 m (pista simples de estrada de
+    serviço, 3,5–4,5 m, Keller & Sherar 2003);
+  - **ramais**: cada campo de recurso longe da rede ganha um. É o caminho mais
+    barato na grade de 2 m (rampa acima de 12% fica cara, penhasco e água não
+    passam) até a estrada mais perto.
+- Trecho que repete uma estrada já feita é absorvido. Pontas que se encontram
+  viram uma estrada só: as duas principais formam uma rodovia contínua de base
+  a base pelo centro, e as de terra cruzam em X. Toda ponta acaba numa base
+  (o asfalto afina e se desfaz em 45 m na terra do platô), num campo ou num
+  cruzamento. No cruzamento, o asfalto manda.
+- A rede é do mapa inteiro, não do recorte: as fatias mostram o pedaço dela.
+- Cota: o asfalto suaviza o relevo em ±25 m (corta e aterra); a de terra
+  acompanha o relevo (±8 m: com ±25 m ela afundava num corte nas rampas). O
+  talude que passa de ~40° vira rocha (projetada dos três lados).
+- Pintura e muretas só fora dos cruzamentos e das pontas. As marcas de pneu
+  vão nas estradas de terra.
+- Mapas de teste (semente, bioma): deserto 3 → 0,9 km de asfalto + 1,6 km de
+  terra; floresta 42 → 3,2 km de terra; neve 5 → 1,0 + 1,8 km.
+
+**Mapa inteiro com cara de fatia (o que estava feio e o que mudou):**
+- **Campos de recurso e bases sem disco:** a borda é deformada por ruído
+  (domain warp, Quilez) em lóbulos do tamanho do campo (~9 m) e finos (~6 m).
+  Isso segue os campos do Age of Empires (grupos apertados de manchas) e a
+  borda de ≥ 4 m. Bases com lóbulos de ~22 m. O ruído é o simétrico: os
+  jogadores veem o mesmo.
+- **Rampas:** saiu o quadrado de terra. A estrada passa por elas.
+- **Paredões:** a listra laranja regular na parede era a textura de rocha
+  (`cliff_side`, estratos a cada 3,6 m). Agora:
+  - mistura duas escalas;
+  - a rocha escaneada cobre a parede: cada célula de 9–13 m põe o paredão no
+    ponto mais íngreme dela, e só onde há desnível de ≥ 1,8 m, com o tamanho
+    pelo desnível;
+  - antes, um ponto sorteado por célula errava a faixa do corte metade das
+    vezes; agora são ~6,4 mil paredões contra ~1,7 mil.
+- **Deserto:** as manchas largas de terra do gerador saíram do acabamento:
+  vistas de cima liam como sujeira. A variação agora é o cascalho ("pavimento
+  do deserto"): ~15% do chão em manchas de ~45 m com borda recortada em ~8 m,
+  e a cor perto da areia.
+- **Floresta:** manchas de ~70 m entre verde escuro e capim seco no gramado.
+  Antes, da câmera de jogo (sem touceiras a 190 m), o campo era de um verde
+  só.
+- Desempenho (deserto inteiro, vista de jogo a 190 m, placa livre): 22–24 ms
+  por quadro.
+
+**Os 4 presets (Baixa/Média/Alta/Ultra), medidos em 06/10:**
+- Condições:
+  - GTX 1660, 1600×900;
+  - mapa inteiro de floresta (2.100 árvores, 3,2 km de estrada), vista de jogo
+    a 190 m; gerador com a semente 42;
+  - duas rodadas intercaladas, vale a melhor;
+  - outros programas (Chrome, o app do Claude) ocupavam ~40% da placa: numa
+    placa vazia o número é menor; a ordem e as diferenças valem.
+
+| Preset | Mapa inteiro | Gerador | O que pesa |
+|---|---|---|---|
+| Baixa | 11,4 ms (88 qps) | ~13 ms | sombra mínima, sem iluminação global |
+| Média | 16,8 ms (60 qps) | 17,6 ms | sombras; Lumen leve |
+| Alta | 23,6 ms (42 qps) | 25,2 ms | Lumen 2,5 ms |
+| Ultra | 36,1 ms (28 qps) | 37,5 ms | Lumen (*screen probe gather*) 7,7–9 ms |
+
+- Folha com a mesma vista nos 4: `captures/worldforge/presets_sheet.jpg`.
+  - Alta e Ultra quase não se distinguem da câmera de RTS.
+  - A Média fica perto delas.
+- **A Baixa da Unreal desliga a sombra do sol**, e a mata e o relevo viravam
+  recorte de papel. `Config/DefaultScalability.ini` dá ao nível 0 de sombra os
+  valores do nível 1. Custo: +1,2 ms
+  (`captures/worldforge/low_shadow_ab.jpg`). Continua sendo o nível 0
+  inteiro: o painel e a volta da qualidade real leem o preset certo.
+- O "Alta mais lento que Ultra" da medição anterior não se repetiu com a placa
+  livre. Era o outro editor aberto disputando a placa.
+
+## 10. Mundos vivos: o plano (proposta de 07/10/2026, antes do código)
+
+Pedido do Felipe: `WorldForge/PEDIDO_MUNDOS_VIVOS.md` (vindo da sessão de arte),
+mais as ideias de `WorldForge/IDEIAS_DIRECAO_DE_ARTE.md`.
+
+**Como foi feito:**
+- três pesquisas independentes: relevo e água; camada humana; crítico de
+  jogabilidade de RTS;
+- um crítico que confrontou as três;
+- o estudo dos 195 mapas 1v1 do ranqueado do ZH;
+- as imagens-alvo da arte (`captures/concept/32_world_targets/`).
+
+**O que os dados dizem:**
+- **Os mapas que o povo joga são abertos.** Medido nos .map do ranqueado do ZH
+  (repositório GeneralsRankedMaps, leitor em `captures/reference/zh_maps.py`):
+
+  | Medida | Mediana | p90 |
+  |---|---|---|
+  | Penhasco | 3,6% | 6,5% |
+  | Água dentro do mapa | 1,8% | 10% |
+  | Relevo (desvio padrão) | 5,7 m | — |
+  | Árvores | 6,7 por hectare | — |
+  | Prédios civis | 8 | — |
+  | Poços de petróleo | 3 | — |
+
+  - Ponte aparece em só 21 dos 195 mapas.
+  - O mais jogado de 2023 (Snowy Drought, 5,6% das partidas) não tem água e
+    tem 3,8% de penhasco.
+  - O tamanho mediano do 1v1 é 671 × 792 m.
+- **Lição:** o miolo jogável fica aberto como o dos mapas competitivos. A
+  beleza AAA vem de três coisas:
+  - a **moldura** (mar, serra, dunas), fora da área de jogo;
+  - poucos **marcos** grandes;
+  - um **chão com motivo** (água, gravidade, vento, gente).
+- **Alvo de composição** (imagens do GPT): moldura → espinha → centro. Serra
+  e costa emolduram, o rio ou o vale atravessa, e a vila e as pontes ficam
+  onde a espinha cruza a estrada.
+
+**Por que hoje sai "gerado":**
+- `MakeLevels` faz o penhasco cortando um ruído por limiar, e cada parede é
+  uma curva de nível (as "minhocas").
+- As montanhas internas são os 10% mais altos de um ruído "ridged", que já
+  nasce como uma rede de cristas finas.
+- Todo degrau tem 7 m.
+- A água é um nível só.
+- A borda do mapa é um muro.
+
+**Decisão do Felipe (07/10): tudo é tipo e variação de mapa, nunca regra pra
+todo mapa.** "Minecraft não tem ravina em toda planície." O gerador sorteia um
+**tipo** (ou o jogador escolhe), e o tipo decide quais elementos existem e em
+que medida. Os eixos do sorteio:
+
+- **Borda:**
+  - nenhuma (planície até a borda);
+  - serra;
+  - dunas;
+  - mar de um lado;
+  - mar em dois lados;
+  - metade do mapa de mar;
+  - ilhas.
+- **Mar:**
+  - opcional e **jogável**, porque o jogo terá guerra naval;
+  - no tipo "ilhas", cada base fica numa ilha e só se chega de avião ou
+    barco;
+  - as conferências de jogo dependem do tipo: num mapa de ilhas não se exige
+    ligação por terra, e sim acesso por mar e ar igual pra todos.
+- **Relevo:**
+  - planície aberta;
+  - colinas;
+  - mesas e monólitos;
+  - cânion;
+  - serra interna;
+  - escarpa que divide.
+- **Água doce:** nenhuma; lago em bacia; rio; braço de mar (ria); delta.
+- **Marco:** nenhum, monólito, oásis, ruína, vila.
+- **Uso do solo, por bioma:**
+  - leitos secos e salinas no deserto;
+  - fazendas no temperado;
+  - petróleo e carcaças.
+- **Prédios:**
+  - entram como dado (posição, tamanho, guarnição) e aparecem como caixa
+    provisória;
+  - os modelos do Felipe substituem as caixas depois, sem mudar o lugar.
+
+Os números do ZH (penhasco ~4%, água ~2%) são o **ponto de partida dos tipos
+competitivos**, não teto pra todo mapa. Um tipo "ilhas" ou "metade de mar"
+tem metade de água por definição.
+
+**Simetria.** Nos mapas de 2 jogadores, a metade do jogador 2 é a do jogador 1
+**girada meia volta (180°)** em torno do centro: o mapa virado de cabeça pra
+baixo. A alternativa é o **espelho**, a metade refletida como num espelho,
+esquerda ↔ direita. A diferença importa por causa da câmera, que olha sempre do
+mesmo lado. No giro, um monólito "na frente" da base de um jogador fica "atrás"
+da base do outro. Decisão: manter o giro (casa com a luz, com os conceitos em
+diagonal e com 4 jogadores) e conferir a oclusão e a sombra por jogador. O
+espelho fica como opção de tipo (o rio no eixo).
+
+**Decisões técnicas (com o motivo):**
+- **Relevo por formas com corpo**, não por limiar.
+  - Fontes: arquétipos como os templates do Azgaar; campos com nome como o
+    Minecraft 1.18; formas com campo de distância.
+  - Os níveis discretos passam a ser os degraus das formas.
+  - Penhasco só existe no contorno de uma forma.
+  - Regras de corpo: raio inscrito ≥ 20 m, abertura com r = 12 m, compacidade
+    ≥ 0,25.
+  - A **cuesta** (platô com um lado em penhasco e o outro em encosta larga)
+    vira a rampa natural.
+- **Drenagem** com Priority-Flood (Barnes 2014) e D8 aplicados na forma
+  grande, antes dos degraus. Ela dá os wadis, a bacia central (oásis ou
+  salina) e os lagos em bacia.
+  - "Rio primeiro" puro (Génevaux 2013) falhou na prática (Red Blob 1724).
+  - Simulação de erosão (Cordonnier 2016) não serve nesta escala.
+- **Monólitos em três classes,** pela faixa de chão que a câmera real esconde
+  (0,3–1,1 × a altura):
+  - marco de 30–55 m só sobre chão não jogável;
+  - médio de 12–20 m com silhueta da unidade;
+  - pequeno abaixo de 6 m.
+- **Estradas e assentamentos no núcleo, em C++** (`GRoads` sai do editor),
+  pra o rascunho ficar igual à qualidade real.
+  - PCG no máximo pra vestir: no commandlet sem placa de vídeo ele não é
+    confiável.
+- **Prédio só com modelo.** Caixa provisória à vista seria reprovada. A vila
+  existe como dado (e camada de depuração) até haver modelos.
+
+**Invenção: planta de composição com contrato de câmera.**
+- O arquétipo do mapa diz: a borda, o marco, as formas grandes, as médias por
+  jogador e o % de chão aberto.
+- A ordem é marco → rotas (a curta pelo centro, a longa pelo flanco; Dormans
+  2010) → relevo. O gargalo vira um vão desenhado entre massas, e não um acaso.
+- Cada objeto alto tem pegada de oclusão (pela câmera real) e de sombra (pelo
+  sol do bioma). As duas caem em chão não jogável ou entram no orçamento do
+  jogador.
+- Boletim com consertos locais: encolher a massa, mover o monólito na órbita,
+  puxar o tom do chão. No máximo 2 passadas.
+- Nenhum gerador de RTS confere oclusão de visão.
+
+**Fases:**
+
+| Fase | O que se vê | Esforço / risco |
+|---|---|---|
+| 1. Tipos de mapa, borda viva e chão com motivo | O sorteio de tipo; a borda conforme o tipo (planície aberta, serra, dunas, costa) no lugar do muro; fim das minhocas (filtro de forma nos níveis, fim das cristas "ridged"); wadis pela drenagem; bacia com oásis ou salina; pedras assentadas com tálus | 1–1,5 semana / baixo |
+| 2. Relevo com corpo e marco | Arquétipos (AlUla primeiro): mesa, cuesta, monólito, serra; marco central icônico com ≥3 passagens de ≥2 tanques; contrato de câmera | ~2 semanas / médio |
+| 3. Gente sem prédio | Estradas no núcleo; muros, cercas, postes, oleoduto; campos em faixa e pivôs; poços de petróleo; carcaças nos gargalos; salinas | ~1,5 semana / baixo-médio |
+| 4. Água como tipo de mapa | Mar jogável (um lado, metade, ilhas), ria, rio no eixo, lago em bacia, com pontes e vaus | ~2 semanas / alto |
+| 5. Vilas e cidade | Como dado com caixa provisória; os modelos do Felipe substituem depois | — |
+| Depois | Mais formatos de mapa (ilha, península, vale entre serras, interior com lago, delta, cânion), pelo mesmo sistema de arquétipos | — |
+
+**Conferências automáticas (aceite):**
+- Área e relevo:
+  - penhasco ≤ 6%;
+  - água dentro da área jogável ≤ 10% nos tipos de terra (nos tipos de mar, pelo tipo);
+  - ≥ 70% passável;
+  - nenhum platô com raio inscrito < 20 m;
+  - 1–2 formas grandes, cada uma ≥ 3× a mediana das outras.
+- Caminhos:
+  - gargalos ≥ 2 tanques (12 m);
+  - 2ª rota com ≤ 50% de chão em comum e ≤ 1,3× o comprimento;
+  - recursos à mesma distância pelo caminho (±3%).
+- Câmera e cor:
+  - oclusão ≤ 3% do mapa e igual entre jogadores (±5%);
+  - cor das facções contra o chão: contraste 3:1 ou ΔE ≥ 20.
+- Água (por tipo): com terra entre as bases, sem pontes elas continuam ligadas e o rush fica ≤ 1,5×; no tipo ilhas, o acesso por mar e ar é igual pra todos.
+- Custo e tempo:
+  - rascunho ≤ 0,7–1,0 s;
+  - Ultra ≤ +1,5 ms por fase;
+  - folha lado a lado com as imagens-alvo e um vídeo em cada entrega.
+
+**Fontes principais:**
+- Relevo e mapas:
+  - [Minecraft, geração de mundo](https://minecraft.wiki/w/World_generation)
+  - [Azgaar, templates de relevo](https://github.com/Azgaar/Fantasy-Map-Generator/wiki/Heightmap-template-editor)
+  - [Red Blob, mapas poligonais](https://www.redblobgames.com/maps/polygon-map-generation/)
+  - [Red Blob, "rio primeiro" que falhou](https://www.redblobgames.com/x/1724-elevation-from-rivers)
+- Água:
+  - [Barnes 2014, Priority-Flood](https://arxiv.org/pdf/1511.04463)
+  - [Génevaux 2013](https://www.cs.purdue.edu/homes/bbenes/papers/Genevaux13ToG.pdf)
+- Estradas e vilas:
+  - [Galin 2010, estradas](https://perso.liris.cnrs.fr/egalin/Articles/2010-roads.pdf)
+  - [Emilien 2012, vilas](https://perso.liris.cnrs.fr/egalin/Articles/2012-villages.pdf)
+  - [Ghost Recon Wildlands no 80.lv](https://80.lv/articles/procedural-world-building-in-ghost-recon-wildlands/)
+- Jogabilidade:
+  - [OpenRA, gerador de mapas](https://github.com/OpenRA/OpenRA/blob/bleed/OpenRA.Mods.Common/Traits/World/ClassicMapGenerator.cs)
+  - [Togelius 2010](https://pure.itu.dk/en/publications/multiobjective-exploration-of-the-starcraft-map-space/)
+  - [Liapis 2013](https://mail.antoniosliapis.com/papers/generating_map_sketches_for_strategy_games.pdf)
+  - [mapas ranqueados do ZH](https://github.com/TheSuperHackers/GeneralsRankedMaps)
+  - [Locomotor.ini do ZH](https://github.com/TheSuperHackers/GeneralsGamePatch2/blob/main/GeneralsZH/Data/INI/Locomotor.ini)
+- Unreal: [Water Body](https://dev.epicgames.com/documentation/en-us/unreal-engine/water-body-actors-in-unreal-engine)

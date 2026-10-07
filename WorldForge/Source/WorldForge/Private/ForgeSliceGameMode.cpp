@@ -12,6 +12,8 @@
 #include "RHIGlobals.h"
 #include "RHIStats.h"
 #include "ShaderCompiler.h"
+#include "UObject/UObjectIterator.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "UnrealClient.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
@@ -182,7 +184,29 @@ void AForgeSliceGameMode::CaptureStep()
 		return;
 	}
 	Pawn->EdgePan = false;
-	Pawn->bLocked = true;   // o mouse de quem estiver no PC não mexe nas fotos
+	Pawn->bLocked = true;
+	// -ForgeFadeAt=x,y: o "cursor" da árvore transparente nesse ponto (m), pras fotos
+	FString FadeAt;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ForgeFadeAt="), FadeAt, false))
+	{
+		FString X, Y;
+		if (FadeAt == TEXT("focus")) Pawn->bFadeAtFocus = true;   // no ponto focado (o passeio)
+		else if (FadeAt == TEXT("center")) Pawn->bFadeAtCenter = true;   // raio do pixel do meio, como o mouse
+		else if (FadeAt.Split(TEXT(","), &X, &Y)) Pawn->FadePointOverride = FVector2f(FCString::Atof(*X), FCString::Atof(*Y));
+		static bool bLogged = false;
+		if (!bLogged)
+		{
+			bLogged = true;
+			for (TObjectIterator<UInstancedStaticMeshComponent> It; It; ++It)
+			{
+				if (It->GetWorld() == GetWorld() && It->GetStaticMesh() && It->GetStaticMesh()->GetName().StartsWith(TEXT("SM_")))
+				{
+					UE_LOG(LogTemp, Display, TEXT("FORGE tree fade material: %s -> %s"), *It->GetStaticMesh()->GetName(), It->GetMaterial(0) ? *It->GetMaterial(0)->GetPathName() : TEXT("none"));
+					break;
+				}
+			}
+		}
+	}   // o mouse de quem estiver no PC não mexe nas fotos
 	const int32 NumViews = Views.Num();
 	const int32 View = Step / 2;
 	if (View < NumViews)
@@ -222,6 +246,7 @@ void AForgeSliceGameMode::CaptureStep()
 			{
 				GEngine->Exec(GetWorld(), TEXT("rhi.DumpMemory"));
 				GEngine->Exec(GetWorld(), TEXT("rhi.DumpResourceMemory 60"));
+				GEngine->Exec(GetWorld(), TEXT("r.LumenScene.DumpStats 1"));   // fichas (cards) da iluminação global
 			}
 			FTextureMemoryStats Mem;
 			RHIGetTextureMemoryStats(Mem);

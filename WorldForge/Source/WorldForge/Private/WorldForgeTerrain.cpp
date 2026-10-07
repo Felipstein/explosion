@@ -424,14 +424,14 @@ void AWorldForgeTerrain::BuildProps()
 		C->SetStaticMesh(Pair.Key);
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		C->SetCastShadow(true);
-		if (bWinter)
 		{
-			// os materiais com neve que a fatia de neve deixou (MI_..._Snow)
+			// os materiais que as fatias deixaram: com neve no inverno (MI_..._Snow) e,
+			// nos outros, com a árvore transparente perto do cursor (MI_..._WF)
 			const TArray<FStaticMaterial>& Mats = Pair.Key->GetStaticMaterials();
 			for (int32 I = 0; I < Mats.Num(); ++I)
 			{
 				if (!Mats[I].MaterialInterface) continue;
-				const FString Name = Mats[I].MaterialInterface->GetName() + TEXT("_Snow");
+				const FString Name = Mats[I].MaterialInterface->GetName() + (bWinter ? TEXT("_Snow") : TEXT("_WF"));
 				if (UMaterialInterface* Snow = LoadObject<UMaterialInterface>(nullptr, *FString::Printf(TEXT("/Game/Slice/Trees/%s.%s"), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
 				{
 					C->SetMaterial(I, Snow);

@@ -1,4 +1,8 @@
 #include "ForgeCameraPawn.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "ForgeTreeFade.h"
 
 #include "Camera/CameraComponent.h"
 #include "Engine/GameViewportClient.h"
@@ -112,18 +116,97 @@ bool AForgeCameraPawn::ScreenRay(FVector2D Pixel, FVector& Origin, FVector& Dir)
 	return true;
 }
 
+void AForgeCameraPawn::UpdateTreeFade()
+{
+	// árvore transparente perto do cursor (o material lê TreeFadeCamera e
+	// TreeFadeCursor; o raio cresce com a distância da câmera: 5–14 m)
+	static TWeakObjectPtr<UMaterialParameterCollection> Fade;
+	if (!Fade.IsValid())
+	{
+		Fade = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/Slice/Trees/MPC_TreeFade.MPC_TreeFade"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		static bool bLogged = false;
+		if (!bLogged)
+		{
+			bLogged = true;
+			UE_LOG(LogTemp, Display, TEXT("FORGE tree fade collection: %s (%d parâmetros)"), Fade.IsValid() ? TEXT("ok") : TEXT("não achou"),
+				Fade.IsValid() ? Fade->VectorParameters.Num() : 0);
+		}
+		if (!Fade.IsValid()) return;
+	}
+	const APlayerController* PC = GetController<APlayerController>();
+	FVector Ground = FVector::ZeroVector;
+	const bool bOverUI = FSlateApplication::IsInitialized() && IsOverUI && IsOverUI();
+	bool bHit = false;
+	if (bFadeAtCenter)
+	{
+		// teste do caminho do mouse: o raio do pixel do meio da tela até o chão
+		FVector2D Size(0.0, 0.0);
+		if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
+		bHit = PixelGroundPoint(Size * 0.5, Ground);
+	}
+	else if (FadePointOverride.IsSet() || bFadeAtFocus)
+	{
+		// teste: o "cursor" num ponto fixo do chão (m) ou no centro da tela
+		const FVector2f F = bFadeAtFocus ? Focus : FadePointOverride.GetValue();
+		Ground = FVector(F.X, F.Y, GroundAt(F));
+		bHit = true;
+	}
+	else
+	{
+		bHit = !bLocked && !bOverUI && CursorGroundPoint(Ground);
+	}
+	const FVector Cam = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+	// no gerador não: as árvores dele são componentes hierárquicos enormes, sem a
+	// troca pela cópia sem voxels o recorte só pegaria as árvores de perto
+	const bool bGenerator = Terrain && Terrain->GetMap();
+	float RadiusCm = bHit && !bGenerator ? FMath::Clamp(0.06f * Distance, 5.0f, 14.0f) * 100.0f : 0.0f;
+	float ForceRadius = 0.0f;
+	const bool bFadeTest = FadePointOverride.IsSet() || bFadeAtFocus || bFadeAtCenter;
+	if (bFadeTest && FParse::Value(FCommandLine::Get(), TEXT("ForgeFadeRadius="), ForceRadius)) RadiusCm = ForceRadius * 100.0f;   // teste
+	if (!bGenerator)
+	{
+		if (!TreeFade)
+		{
+			TreeFade = NewObject<UForgeTreeFade>(this);
+		}
+		TreeFade->Update(GetWorld(), Cam, Ground * 100.0, RadiusCm);
+	}
+	UKismetMaterialLibrary::SetVectorParameterValue(this, Fade.Get(), TEXT("TreeFadeCamera"), FLinearColor(Cam.X, Cam.Y, Cam.Z, 0.0f));
+	UKismetMaterialLibrary::SetVectorParameterValue(this, Fade.Get(), TEXT("TreeFadeCursor"), FLinearColor(Ground.X * 100.0, Ground.Y * 100.0, Ground.Z * 100.0, RadiusCm));
+	if (bFadeTest && GFrameCounter % 30 == 0)
+	{
+		const FLinearColor Back = UKismetMaterialLibrary::GetVectorParameterValue(this, Fade.Get(), TEXT("TreeFadeCursor"));
+		UE_LOG(LogTemp, Display, TEXT("FORGE tree fade: camera (%.0f, %.0f, %.0f) cursor (%.0f, %.0f, %.0f) radius %.0f cm, %d árvores no fantasma (lido de volta: %s)"),
+			Cam.X, Cam.Y, Cam.Z, Ground.X * 100.0, Ground.Y * 100.0, Ground.Z * 100.0, RadiusCm, TreeFade ? TreeFade->NumFaded() : 0, *Back.ToString());
+	}
+}
+
 bool AForgeCameraPawn::CursorGroundPoint(FVector& OutPointM) const
 {
 	const APlayerController* PC = GetController<APlayerController>();
 	float MX, MY;
+	return PC && PC->GetMousePosition(MX, MY) && PixelGroundPoint(FVector2D(MX, MY), OutPointM);
+}
+
+bool AForgeCameraPawn::PixelGroundPoint(FVector2D Pixel, FVector& OutPointM) const
+{
 	FVector O, D;
-	if (!PC || !PC->GetMousePosition(MX, MY) || !ScreenRay(FVector2D(MX, MY), O, D))
+	if (!ScreenRay(Pixel, O, D))
 	{
 		return false;
 	}
 	if (Terrain && Terrain->GetMap())
 	{
 		return Terrain->RayHit(O, D, OutPointM);
+	}
+	// mapa feito no editor (fatia, mapa inteiro): o Landscape pela colisão
+	// (árvores e pedras não têm colisão, o raio passa por elas)
+	FHitResult Hit;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(ForgeCursor), false, this);
+	if (GetWorld() && GetWorld()->LineTraceSingleByChannel(Hit, O * 100.0, (O + D * 5000.0) * 100.0, ECC_Visibility, Q))
+	{
+		OutPointM = Hit.ImpactPoint / 100.0;
+		return true;
 	}
 	// sem terreno: o plano z = 0
 	if (D.Z > -1e-4)
@@ -138,6 +221,7 @@ void AForgeCameraPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	APlayerController* PC = GetController<APlayerController>();
+	UpdateTreeFade();
 	if (!PC || bLocked)
 	{
 		return;

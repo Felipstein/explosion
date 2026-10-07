@@ -32,6 +32,10 @@ public:
 	UPROPERTY(Transient)
 	TObjectPtr<AWorldForgeTerrain> Terrain;
 
+	/** As árvores perto do cursor trocadas pela cópia sem voxels (ForgeTreeFade.h). */
+	UPROPERTY(Transient)
+	TObjectPtr<class UForgeTreeFade> TreeFade;
+
 	/** Enquadra o mapa inteiro (chamado a cada mapa novo). */
 	void FrameWholeMap(bool bInstant);
 	/** Põe a câmera olhando um ponto (m), mantendo distância e ângulo. */
@@ -49,8 +53,17 @@ public:
 	float GetYaw() const { return Yaw; }
 	float GetPitch() const { return Pitch; }
 
+	/** Atualiza a árvore transparente perto do cursor (coleção MPC_TreeFade). */
+	void UpdateTreeFade();
+	/** Teste: o ponto do "cursor" (m) fixo, no lugar do mouse. */
+	TOptional<FVector2f> FadePointOverride;
+	bool bFadeAtFocus = false;
+	bool bFadeAtCenter = false;
+
 	/** Raio do mouse na tela contra o terreno (m). */
 	bool CursorGroundPoint(FVector& OutPointM) const;
+	/** Raio de um pixel da tela contra o terreno (m). */
+	bool PixelGroundPoint(FVector2D Pixel, FVector& OutPointM) const;
 
 	/** O painel diz se o mouse está em cima dele (aí o zoom e os cliques são dele). */
 	TFunction<bool()> IsOverUI;

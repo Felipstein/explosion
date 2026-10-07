@@ -40,8 +40,10 @@ public:
 	 * @param Components       componentes por lado (cada um com QuadsPerComponent quads)
 	 * @param QuadSizeM        tamanho de um quad (m); o gerador tem 2 m, o recorte reamostra
 	 * @param LayerInfos       as camadas, por papel: base, manchas, trilha, rocha, molhado — e,
-	 *                         com 6, o asfalto (estrada ao longo da trilha mais longa)
-	 * @param RoadWidthM       largura da pista (m); só vale com a 6ª camada
+	 *                         com 6, o asfalto (a estrada principal de cada jogador)
+	 * @param RoadWidthM       largura da estrada principal de asfalto (m); só vale com a 6ª
+	 *                         camada (sem ela, a principal é de terra). A rede de estradas
+	 *                         (principal, terra, ramais até os campos) é do mapa inteiro
 	 * @return o Landscape (o nível ainda não foi salvo) ou nullptr com Error
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
@@ -63,19 +65,37 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static FWorldForgeScatter SliceScatter(FName Kind, float SpacingM, float ScaleMin, float ScaleMax, float SinkM = 0.0f, float YawOffset = 0.0f);
 
-	/** Linha central da estrada no recorte (cm, com a cota do asfalto), a cada StepM metros. */
+	/**
+	 * O mesmo sorteio de SliceScatter, mas cada lugar vai pra uma das malhas
+	 * (sorteada) e é assentado pela caixa dela (o ponto de origem de peças de
+	 * conjunto fica longe da pedra). Uma lista de transformações por malha.
+	 * Pedras: chão medido em 7 pontos da base, inclinadas pela encosta, ~25%
+	 * enterradas; fora onde o chão é desnivelado demais. "Cliff": em pé, ao
+	 * longo da parede, face (+Y) morro abaixo, costas na encosta, altura pelo
+	 * desnível.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
-	static TArray<FVector> SliceRoad(float StepM);
+	static TArray<FWorldForgeScatter> SliceScatterMeshes(FName Kind, float SpacingM, float ScaleMin, float ScaleMax,
+		const TArray<UStaticMesh*>& Meshes, float SinkM = 0.0f);
 
-	/** Distância (cm) de um ponto do nível (cm) até a linha central da estrada (1e9 sem estrada). */
+	/**
+	 * Linhas centrais das estradas de asfalto no recorte (cm, com a cota do
+	 * asfalto), a cada StepM metros, com (0,0,−1e9) separando os trechos.
+	 * bMarksOnly: só onde cabe pintura e mureta (fora dos entroncamentos e
+	 * longe das pontas que se desfazem).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static TArray<FVector> SliceRoad(float StepM, bool bMarksOnly = false);
+
+	/** Distância (cm) de um ponto do nível (cm) até a linha central da estrada de asfalto mais perto (1e9 sem). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceRoadDistance(FVector2D PointCm);
 
-	/** Metros até a ponta mais perto da estrada (onde o asfalto se desfaz), num ponto perto dela (cm). */
+	/** Metros até a ponta mais perto do asfalto (onde ele se desfaz), num ponto perto dele (cm). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceRoadEndDistance(FVector2D PointCm);
 
-	/** Pontos das trilhas no recorte (cm), na ordem, pra marcas de pneu. */
+	/** Pontos das estradas de terra no recorte (cm, no chão), pra marcas de pneu; (0,0,−1e9) separa os trechos. */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static TArray<FVector> SliceTracks(float StepM);
 
@@ -109,10 +129,11 @@ public:
 	 * peças viram geometria da malha; sem, a malha estática guarda a assembly
 	 * (precisa de r.Nanite.Foliage ou r.Nanite.AllowAssemblies no projeto).
 	 * As peças estáticas vêm das cópias que o exportador do PVE deixa ao lado
-	 * das esqueléticas ("SKM_X" → "X").
+	 * das esqueléticas ("SKM_X" → "X"). bNoVoxels: a cópia que nunca vira
+	 * voxels de longe (forma "área"): o recorte perto do cursor não vale em voxel.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
-	static UStaticMesh* VegetationToStaticMesh(USkeletalMesh* Source, const FString& AssetPath, bool bBakeParts);
+	static UStaticMesh* VegetationToStaticMesh(USkeletalMesh* Source, const FString& AssetPath, bool bBakeParts, bool bNoVoxels = false);
 
 	/**
 	 * Neve num material que usa "material attributes" (o mestre das árvores do
@@ -121,6 +142,16 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static bool AddSnowToMaterial(UMaterial* Material);
+
+	/**
+	 * Árvore transparente perto do cursor (material com "material attributes"):
+	 * os pixels perto da linha câmera → ponto do chão sob o cursor somem em
+	 * pontilhado (o TSR suaviza), só entre a câmera e o ponto. A sombra fica
+	 * (ShadowPassSwitch). Câmera e cursor vêm da coleção MPC (TreeFadeCamera,
+	 * TreeFadeCursor com o raio em cm no w; raio 0 desliga), que o jogo atualiza.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool AddOcclusionFadeToMaterial(UMaterial* Material, class UMaterialParameterCollection* Collection);
 
 	/** Dá nome à camada de um LandscapeLayerInfoObject (a propriedade é só leitura no Python). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")

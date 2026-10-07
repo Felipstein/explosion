@@ -214,7 +214,7 @@ namespace
 	 * (WorldForgeEditorLib, WorldTrees.h) mudarem o mapa — o script de
 	 * acabamento já entra pelo próprio conteúdo.
 	 */
-	const TCHAR* PipelineVersion = TEXT("2026-10-06c");
+	const TCHAR* PipelineVersion = TEXT("2026-10-06e");   // d: estradas, campos, paredões, árvores transparentes; e: pedras assentadas
 
 	TSharedRef<FJsonObject> SettingsJson(const FWorldGenSettings& S)
 	{

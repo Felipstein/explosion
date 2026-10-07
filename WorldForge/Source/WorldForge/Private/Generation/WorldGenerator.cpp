@@ -238,7 +238,7 @@ namespace
 		void ForceBases();
 		void CarvePaths();
 		TArray<int32> CarveSearch(const TArray<int32>& Sources, const TArray<uint8>& IsTarget, const TArray<float>* Extra) const;
-		void CarveOrbit(const TArray<int32>& Path, float MinRampSpacing);
+		void CarveOrbit(const TArray<int32>& Path, float MinRampSpacing, EWorldTrack Kind);
 		TArray<float> Distances(const TArray<int32>& Sources, TArray<int8>* OutOwner, const TArray<int8>* SourceOwner) const;
 		TArray<uint8> Reach(int32 From) const;
 		void PlaceResources();
@@ -264,6 +264,7 @@ namespace
 		const FVector2f Dir(FMath::Cos(Sym.Axis), FMath::Sin(Sym.Axis));
 		const FVector2f P0 = Dir * ((Half - Inset) / FMath::Max(FMath::Abs(Dir.X), FMath::Abs(Dir.Y)));
 		BaseRadius = FMath::Clamp(0.055f * S.MapSize, 42.0f, 70.0f);
+		M.BaseRadius = BaseRadius;
 		StartPos.Reset();
 		for (int32 R = 0; R < Sym.K; ++R)
 		{
@@ -649,7 +650,7 @@ namespace
 		return TArray<int32>();
 	}
 
-	void FGen::CarveOrbit(const TArray<int32>& Path, float MinRampSpacing)
+	void FGen::CarveOrbit(const TArray<int32>& Path, float MinRampSpacing, EWorldTrack Kind)
 	{
 		// decide no caminho do jogador 1 e aplica a órbita inteira (simetria)
 		TArray<FRamp> NewRamps;
@@ -682,6 +683,7 @@ namespace
 		for (int32 Rot = 0; Rot < Sym.K; ++Rot)
 		{
 			TArray<FVector2f>& Line = M.Tracks.AddDefaulted_GetRef();
+			M.TrackKinds.Add(Kind);
 			for (int32 C : Path)
 			{
 				const FIntPoint Q = Sym.RotIdx(FIntPoint(C % NL, C / NL), Rot, NL);
@@ -753,6 +755,7 @@ namespace
 		PathMask.SetNumZeroed(NL * NL);
 		Ramps.Reset();
 		M.Tracks.Reset();
+		M.TrackKinds.Reset();
 		const FIntPoint S0 = LCellOf(StartPos[0]);
 		const int32 Start0 = LIdx(S0.X, S0.Y);
 
@@ -778,7 +781,7 @@ namespace
 
 		// caminho principal base → centro
 		const TArray<int32> Main = CarveSearch({ Start0 }, CenterTargets, nullptr);
-		CarveOrbit(Main, 24.0f);
+		CarveOrbit(Main, 24.0f, EWorldTrack::Main);
 
 		// flanco: outro caminho, longe do principal (rota alternativa, como os
 		// caminhos Center/Flank da IA do Generals)
@@ -801,7 +804,7 @@ namespace
 			const TArray<int32> Flank = CarveSearch({ Start0 }, CenterTargets, &Away);
 			if (Flank.Num() && Flank.Num() < Main.Num() * 2)
 			{
-				CarveOrbit(Flank, 48.0f);
+				CarveOrbit(Flank, 48.0f, EWorldTrack::Flank);
 			}
 		}
 
@@ -820,7 +823,7 @@ namespace
 			Target.SetNumZeroed(NL * NL);
 			const FIntPoint S1 = LCellOf(StartPos[1]);
 			Target[LIdx(S1.X, S1.Y)] = 1;
-			CarveOrbit(CarveSearch({ Start0 }, Target, nullptr), 24.0f);
+			CarveOrbit(CarveSearch({ Start0 }, Target, nullptr), 24.0f, EWorldTrack::Link);
 		}
 
 		// regiões grandes que ficaram ilhadas ganham rampa (platô inútil é desperdício de mapa)
@@ -854,7 +857,7 @@ namespace
 					if (Path.Num())
 					{
 						Algo::Reverse(Path);
-						CarveOrbit(Path, 24.0f);
+						CarveOrbit(Path, 24.0f, EWorldTrack::Link);
 						bCarved = true;
 					}
 				}
@@ -1216,6 +1219,9 @@ namespace
 		M.Territory.SetNumUninitialized(N * N);
 		auto Patches = [&](FVector2f Q, int32) { return Fbm(Q.X / 70.0f, Q.Y / 70.0f, SeedN, 4); };
 		auto Grain = [&](FVector2f Q, int32) { return Fbm(Q.X / 14.0f, Q.Y / 14.0f, SeedN + 3u, 3); };
+		auto Lobes = [&](FVector2f Q, int32) { return Fbm(Q.X / 6.0f, Q.Y / 6.0f, SeedN + 5u, 3); };
+		auto MidLobes = [&](FVector2f Q, int32) { return Fbm(Q.X / 9.0f, Q.Y / 9.0f, SeedN + 6u, 3); };
+		auto BigLobes = [&](FVector2f Q, int32) { return Fbm(Q.X / 22.0f, Q.Y / 22.0f, SeedN + 7u, 3); };
 		ParallelFor(N, [&](int32 J)
 		{
 			for (int32 I = 0; I < N; ++I)
@@ -1237,17 +1243,34 @@ namespace
 				// areia: a faixa da margem (o indicador de terra cai perto da água) e o fundo raso
 				const float Shore = 1.0f - FMath::SmoothStep(0.55f, 0.92f, SampleLogic(ShoreField, NL, U, W) + 0.12f * Fine);
 				float Sand = FMath::Max(Shore, 1.0f - FMath::SmoothStep(WaterSurface - 0.2f, WaterSurface + 0.6f, H));
+				// terra batida das bases e dos campos de recurso: sem disco perfeito.
+				// A borda é deformada por ruído (domain warp, Quilez "warp"), em
+				// lóbulos de ~6 m nos campos (o campo do Age of Empires é um grupo
+				// apertado de manchas) e de ~22 m nas bases, com transição de ~4 m
+				// (2 células da grade). O ruído é o simétrico: os jogadores veem o mesmo
 				float Dirt = 0.0f;
 				for (const FVector2f& St : StartPos)
 				{
-					Dirt = FMath::Max(Dirt, 1.0f - FMath::SmoothStep(BaseRadius - 4.0f, BaseRadius + 6.0f, FVector2f::Distance(P, St) + 6.0f * Fine));
+					const float D = FVector2f::Distance(P, St);
+					if (D > BaseRadius + 40.0f) continue;
+					const float Sh = D + 9.0f * Sym.Field(P, BigLobes, true) + 3.0f * Fine;
+					Dirt = FMath::Max(Dirt, 1.0f - FMath::SmoothStep(BaseRadius - 6.0f, BaseRadius + 2.0f, Sh));
 				}
 				const float Track = SampleLogic(TrackField, NL, U, W);
 				Dirt = FMath::Max(Dirt, 0.85f * FMath::SmoothStep(0.25f, 0.6f, Track + 0.25f * Fine));
-				Dirt = FMath::Max(Dirt, 0.8f * RampWeight[V]);
+				// (as rampas não ganham mais um quadrado de terra: a trilha passa por elas)
 				for (const FWorldResource& R : M.Resources)
 				{
-					Dirt = FMath::Max(Dirt, 0.9f * (1.0f - FMath::SmoothStep(R.Radius - 2.0f, R.Radius + 5.0f, FVector2f::Distance(P, R.Pos) + 3.0f * Fine)));
+					const float D = FVector2f::Distance(P, R.Pos) / R.Radius;
+					if (D > 2.4f) continue;
+					// lóbulos do tamanho do campo (~9 m, meio raio de fundo) e finos
+					// (~6 m) somados: de longe o campo não lê como disco (o ruído de
+					// 22 m é quase constante num campo de 11 m e só mexia o raio
+					// inteiro); e manchas soltas em volta, sem anel
+					const float Lb = Sym.Field(P, Lobes, true);
+					const float Sh = D + 0.55f * Sym.Field(P, MidLobes, true) + 0.2f * Lb + 0.1f * Fine;
+					Dirt = FMath::Max(Dirt, 0.9f * (1.0f - FMath::SmoothStep(0.7f, 1.05f, Sh)));
+					Dirt = FMath::Max(Dirt, 0.4f * (1.0f - FMath::SmoothStep(1.0f, 2.0f, D)) * FMath::SmoothStep(0.25f, 0.45f, Lb + 0.2f * Fine));
 				}
 				Dirt = FMath::Max(Dirt, 0.35f * FMath::SmoothStep(0.35f, 0.75f, Patch));   // manchas de terra no campo
 				// vegetação: onde a água corre e em manchas largas (campo verde × seco)
