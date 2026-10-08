@@ -62,8 +62,8 @@ struct FBattleSmokeWarp
 struct FBattleSmokeDisturber
 {
 	FVector4f A;   // posição atual (m).xyz, raio
-	FVector4f B;   // posição anterior.xyz, tipo (1 corpo · 2 projétil · 4 esteira · 5 fumaça de motor · 6 jato)
-	FVector4f C;   // velocidade.xyz (m/s), intensidade
+	FVector4f B;   // posição anterior.xyz, tipo (1 corpo · 2 projétil · 4 esteira · 5 fumaça de motor · 6 jato · 7 fogo contínuo)
+	FVector4f C;   // velocidade.xyz (m/s), intensidade · no fogo: x = calor (0–1), w = fuligem por segundo
 	FVector4f D;   // "direita" da asa.xyz, envergadura b0 · no jato: x = velocidade de saída, w = bocal
 };
 
@@ -96,6 +96,37 @@ struct FBattleSmokeStepInputs
 	FTextureRenderTargetResource* VelOut = nullptr;    // pro material: velocidade no centro (grossa)
 };
 
+/** Uma explosão gravada fazendo sombra no chão (BattleSmoke.usf MainShadow). */
+struct FSmokeShadowCaster
+{
+	FVector3f FootM = FVector3f::ZeroVector;
+	float Scale = 1.0f;
+	float Opacity = 1.0f;
+	float DomainLocalM = 38.0f;
+	int32 Frame0 = 0;
+	int32 Frame1 = 0;
+	float Alpha = 0.0f;
+	int32 VelocityResolution = 32;
+	int32 VelocityFrames = 1;
+	FTextureResource* Velocity = nullptr;           // ExplosionBake Velocity: a extinção no alfa
+};
+
+/**
+ * O mapa de sombra da fumaça: espessura óptica entre um plano horizontal e a
+ * luz principal, vista de cima, numa janela que segue a câmera. A light
+ * function do sol e da lua (M_SmokeShadowLF) lê.
+ */
+struct FSmokeShadowInputs
+{
+	TArray<FSmokeShadowCaster> Casters;
+	FVector2f OriginM = FVector2f::ZeroVector;      // canto do mapa no mundo
+	float TexelM = 0.5f;
+	float GroundZM = 0.0f;
+	FVector3f LightDir = FVector3f::UnitZ();        // pra a luz
+	int32 Res = 512;
+	FTextureRenderTargetResource* Out = nullptr;    // R32F, com UAV
+};
+
 class BLASTLABSHADERS_API FBattleSmokeSim
 {
 public:
@@ -104,6 +135,9 @@ public:
 
 	/** Um passo do fluido (render thread). */
 	void Step(FRDGBuilder& GraphBuilder, const FBattleSmokeStepInputs& In);
+
+	/** O mapa de sombra da fumaça das explosões (render thread, todo quadro com explosão). */
+	void RenderShadow(FRDGBuilder& GraphBuilder, const FSmokeShadowInputs& In);
 
 	/** Caixa ocupada (células finas, inclusiva), lida da GPU com alguns quadros de atraso. */
 	bool GetBounds(FIntVector& OutMin, FIntVector& OutMax) const;

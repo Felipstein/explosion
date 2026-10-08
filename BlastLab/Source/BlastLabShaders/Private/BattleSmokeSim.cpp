@@ -15,6 +15,7 @@
 // tempos de GPU (blast.ps1 view -ProfileGpu → Tools/gpu_profile.py --live): o fluido do campo e a deformação das explosões
 DECLARE_GPU_STAT_NAMED(BattleSmokeField, TEXT("BattleSmoke"));
 DECLARE_GPU_STAT_NAMED(BattleSmokeWarp, TEXT("BattleSmokeWarp"));
+DECLARE_GPU_STAT_NAMED(BattleSmokeShadow, TEXT("BattleSmokeShadow"));
 
 namespace
 {
@@ -82,6 +83,10 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBattleSmokeParameters, )
 	SHADER_PARAMETER(float, WarpCarveClose)
 	SHADER_PARAMETER(int32, WarpDebug)
 	SHADER_PARAMETER(float, WarpMax)
+	SHADER_PARAMETER(FVector4f, ShadowMap)
+	SHADER_PARAMETER(FVector4f, ShadowLight)
+	SHADER_PARAMETER(float, ShadowOpacity)
+	SHADER_PARAMETER(int32, ShadowRes)
 	SHADER_PARAMETER(int32, WakeCount)
 	SHADER_PARAMETER_ARRAY(FVector4f, WakeA, [BattleSmoke::MaxWakes])
 	SHADER_PARAMETER_ARRAY(FVector4f, WakeB, [BattleSmoke::MaxWakes])
@@ -106,6 +111,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBattleSmokeParameters, )
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float4>, OutTex)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float4>, WarpOut)
 	SHADER_PARAMETER_RDG_BUFFER_UAV(RWBuffer<uint>, Bounds)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ShadowOut)
 END_SHADER_PARAMETER_STRUCT()
 
 #define BATTLE_SMOKE_SHADER(Name, Entry)                                                              \
@@ -135,6 +141,8 @@ BATTLE_SMOKE_SHADER(FBattleWarpRenderCS, "MainWarpRender")
 BATTLE_SMOKE_SHADER(FBattleCopyFieldCS, "MainCopyField")
 BATTLE_SMOKE_SHADER(FBattleCopyVelCS, "MainCopyVel")
 BATTLE_SMOKE_SHADER(FBattleResetBoundsCS, "MainResetBounds")
+BATTLE_SMOKE_SHADER(FBattleShadowClearCS, "MainShadowClear")
+BATTLE_SMOKE_SHADER(FBattleShadowCS, "MainShadow")
 
 namespace
 {
@@ -172,6 +180,50 @@ namespace
 }
 
 FBattleSmokeSim::FBattleSmokeSim() = default;
+
+void FBattleSmokeSim::RenderShadow(FRDGBuilder& GraphBuilder, const FSmokeShadowInputs& In)
+{
+	if (!In.Out || In.Res <= 0)
+	{
+		return;
+	}
+	RDG_EVENT_SCOPE_STAT(GraphBuilder, BattleSmokeShadow, "SmokeShadow");
+	FRDGTextureRef Out = External(GraphBuilder, In.Out->GetRenderTargetTexture(), TEXT("BattleSmoke.Shadow"));
+	FRDGTextureUAVRef OutUAV = GraphBuilder.CreateUAV(Out);
+	const FIntVector Groups = FComputeShaderUtils::GetGroupCount(FIntVector(In.Res, In.Res, 1), FIntVector(8, 8, 1));
+	auto Common = [&](FBattleSmokeParameters* P)
+	{
+		P->ShadowMap = FVector4f(In.OriginM.X, In.OriginM.Y, In.TexelM, In.GroundZM);
+		P->ShadowLight = FVector4f(In.LightDir, 0.0f);
+		P->ShadowRes = In.Res;
+		P->ShadowOut = OutUAV;
+		P->LinearClamp = TStaticSamplerState<SF_Trilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+	};
+	{
+		FBattleSmokeParameters* P = GraphBuilder.AllocParameters<FBattleSmokeParameters>();
+		Common(P);
+		TShaderMapRef<FBattleShadowClearCS> Shader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BattleSmoke ShadowClear"), Shader, P, Groups);
+	}
+	for (const FSmokeShadowCaster& C : In.Casters)
+	{
+		if (!C.Velocity || !C.Velocity->TextureRHI)
+		{
+			continue;
+		}
+		FBattleSmokeParameters* P = GraphBuilder.AllocParameters<FBattleSmokeParameters>();
+		Common(P);
+		const float R = float(C.VelocityResolution);
+		P->WarpFoot = FVector4f(C.FootM, C.Scale);
+		P->WarpFrames = FVector4f(C.Frame0 * R, C.Frame1 * R, C.Alpha, R);
+		P->WarpAtlasDepth = R * C.VelocityFrames;
+		P->WarpDomain = C.DomainLocalM;
+		P->ShadowOpacity = C.Opacity;
+		P->BakeVel = External(GraphBuilder, C.Velocity->TextureRHI, TEXT("BattleSmoke.BakeVelocity"));
+		TShaderMapRef<FBattleShadowCS> Shader(GetGlobalShaderMap(GMaxRHIFeatureLevel));
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BattleSmoke Shadow"), Shader, P, Groups);
+	}
+}
 
 FBattleSmokeSim::~FBattleSmokeSim()
 {

@@ -1,14 +1,16 @@
 #include "BlastLabCamera.h"
 
+#include "BlastLabGround.h"
 #include "Camera/CameraComponent.h"
 
 namespace
 {
 	// reference/webgl/js/camera.js
 	constexpr float RmbDead = 0.02f, RmbMin = 0.15f, RmbGain = 2.0f;   // rolagem: zona morta, mínimo e ganho (telas/s)
-	constexpr float MapHalf = 500.0f;                                  // m
 	constexpr float ZoomRts = 220.0f, ZoomMax = 800.0f, ZoomLift = 0.5f, LiftMax = 175.0f;
 	constexpr float ZoomPerNotch = 1.127f;      // 1.0012^100: um "clique" de roda do navegador (deltaY 100)
+	// o tremor do choque: trauma 1 = 1° (~3% da altura da tela, a nuclear), decai 1/s, ruído a 18 Hz
+	constexpr float MaxShakeDeg = 1.0f, TraumaDecay = 1.0f, ShakeHz = 18.0f;
 
 	// WebGL (x, y pra cima, z) em metros → Unreal em cm
 	FVector ToUE(float X, float Y, float Z) { return FVector(X, Z, Y) * 100.0f; }
@@ -24,6 +26,17 @@ ABlastLabCamera::ABlastLabCamera()
 	Camera->bConstrainAspectRatio = false;
 	Camera->bOverrideAspectRatioAxisConstraint = true;
 	Camera->AspectRatioAxisConstraint = AspectRatio_MaintainYFOV;
+}
+
+void ABlastLabCamera::BeginPlay()
+{
+	Super::BeginPlay();
+	FBox Terrain;
+	if (BlastLabGround::Bounds(GetWorld(), Terrain))
+	{
+		MapMin = FVector2D(Terrain.Min.X, Terrain.Min.Y) / 100.0;
+		MapMax = FVector2D(Terrain.Max.X, Terrain.Max.Y) / 100.0;
+	}
 }
 
 void ABlastLabCamera::Orbit(float Dx, float Dy)
@@ -48,8 +61,8 @@ void ABlastLabCamera::ScrollRMB(float Ox, float Oy, float RealDt)
 	const float Step = (RmbMin + RmbGain * (R - RmbDead)) * View * FMath::Min(RealDt, 0.1f) / R;
 	const float Fx = -FMath::Cos(Azim), Fz = -FMath::Sin(Azim);       // frente no chão (da câmera pro alvo)
 	const float Rx = -Fz, Rz = Fx;
-	Center.X = FMath::Clamp(Center.X + (Rx * Ox - Fx * Oy) * Step, -MapHalf, MapHalf);
-	Center.Y = FMath::Clamp(Center.Y + (Rz * Ox - Fz * Oy) * Step, -MapHalf, MapHalf);
+	Center.X = FMath::Clamp(Center.X + (Rx * Ox - Fx * Oy) * Step, MapMin.X, MapMax.X);
+	Center.Y = FMath::Clamp(Center.Y + (Rz * Ox - Fz * Oy) * Step, MapMin.Y, MapMax.Y);
 }
 
 void ABlastLabCamera::Kick(float Amount)
@@ -58,6 +71,22 @@ void ABlastLabCamera::Kick(float Amount)
 	{
 		Shake = FMath::Min(FMath::Max(Shake, Amount), 1.5f);
 	}
+}
+
+bool ABlastLabCamera::bShakeEnabled = true;
+bool ABlastLabCamera::bTripod = false;
+
+void ABlastLabCamera::AddTrauma(float Amount)
+{
+	if (FMath::IsFinite(Amount) && Amount > 0.0f)
+	{
+		Trauma = FMath::Min(Trauma + Amount, 1.0f);      // teto global: dez explosões juntas não sacodem o mapa (o bug do BF1)
+	}
+}
+
+FVector ABlastLabCamera::AimPoint() const
+{
+	return FVector(Center.X * 100.0, Center.Y * 100.0, GroundM * 100.0);
 }
 
 void ABlastLabCamera::Quake(float Amp)
@@ -81,14 +110,22 @@ void ABlastLabCamera::Tick(float DeltaSeconds)
 
 	float A = Azim, E = Elev, Ty = TargetY, F = BaseFov;
 	Ty += FMath::Min(ZoomLift * FMath::Max(0.0f, Dist - ZoomRts), LiftMax);
+	// o relevo: o alvo fica TargetY acima do chão sob o centro (no campo de testes, plano, 0)
+	const float Ground = float(BlastLabGround::HeightAt(GetWorld(), Center.X * 100.0, Center.Y * 100.0) / 100.0);
+	GroundM = bGroundReady ? FMath::Lerp(GroundM, Ground, 1.0f - FMath::Exp(-Dt / 0.25f)) : Ground;
+	bGroundReady = true;
+	Ty += GroundM;
 	// câmera na mão: três senos incomensuráveis, amplitude de décimos de grau
 	auto Hn = [this](float P, float S)
 	{
 		return (FMath::Sin(T * 0.73f + P) * 0.55f + FMath::Sin(T * 1.31f + P * 2.1f) * 0.3f + FMath::Sin(T * 2.17f + P * 3.7f) * 0.15f) * S;
 	};
-	A += Hn(0.0f, 0.0075f);
-	E += Hn(1.7f, 0.0042f);
-	Ty += Hn(3.4f, 0.045f);
+	if (!bTripod)
+	{
+		A += Hn(0.0f, 0.0075f);
+		E += Hn(1.7f, 0.0042f);
+		Ty += Hn(3.4f, 0.045f);
+	}
 
 	Shake *= FMath::Exp(-Dt * 3.1f);
 	if (!FMath::IsFinite(Shake) || Shake < 1e-5f) Shake = 0.0f;
@@ -119,9 +156,18 @@ void ABlastLabCamera::Tick(float DeltaSeconds)
 	float Px = Center.X + Shx * 0.4f + FMath::Cos(A) * Ce * Dist + Shx;
 	float Py = Ty + Shy * 0.4f + Se * Dist + Shy;
 	float Pz = Center.Y + Shz * 0.4f + FMath::Sin(A) * Ce * Dist + Shz;
-	Py = FMath::Max(Py, 0.45f);
+	Py = FMath::Max(Py, float(BlastLabGround::HeightAt(GetWorld(), Px * 100.0, Pz * 100.0) / 100.0) + 0.45f);
 	const FVector Pos = ToUE(Px, Py, Pz);
-	SetActorLocationAndRotation(Pos, (Target - Pos).Rotation());
+	// o tremor do choque: trauma², só rotação (a câmera não sai do lugar), ruído suave
+	Trauma = FMath::Max(0.0f, Trauma - Dt * TraumaDecay);
+	FRotator ShakeRot = FRotator::ZeroRotator;
+	if (Trauma > 0.0f && bShakeEnabled && !bTripod)
+	{
+		const float S = Trauma * Trauma * MaxShakeDeg;
+		ShakeRot = FRotator(S * FMath::PerlinNoise1D(T * ShakeHz + 11.3f), S * FMath::PerlinNoise1D(T * ShakeHz + 47.1f),
+			0.5f * S * FMath::PerlinNoise1D(T * ShakeHz + 91.7f));
+	}
+	SetActorLocationAndRotation(Pos, (Target - Pos).Rotation() + ShakeRot);
 	// a Unreal pede o fov HORIZONTAL; com MaintainYFOV ele vale pra 16:9 e o vertical fica fixo
 	Camera->SetFieldOfView(FMath::RadiansToDegrees(2.0f * FMath::Atan(FMath::Tan(F * 0.5f) * 16.0f / 9.0f)));
 }

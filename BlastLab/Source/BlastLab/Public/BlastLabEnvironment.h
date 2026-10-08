@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "GameFramework/Actor.h"
 #include "BlastLabEnvironment.generated.h"
@@ -65,6 +65,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	TObjectPtr<UMaterialInterface> ExposureMask;
 
+	/**
+	 * A cor da poeira que as explosões levantam neste campo (a saia rente ao
+	 * chão do M_Explosion, SkirtTint): areia, neve, terra. Montada por campo
+	 * (Tools/build_worlds.py); quando o terreno tiver material físico por
+	 * camada, o chão do ponto da explosão manda.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	FLinearColor DustTint = FLinearColor(0.80f, 0.68f, 0.55f);
+
 	/** Hora solar local, 0–24. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float TimeOfDay = 15.0f;
@@ -123,11 +132,33 @@ public:
 	TArray<float> CurveRenderLux;
 
 	void SetTimeOfDay(float Hours);
+
+	/**
+	 * Ar de deserto: aerossol de poeira (AOD ~0.2 a 550 nm contra os ~0.005 da
+	 * atmosfera limpa da Unreal) e névoa quente. O sol baixo fica dourado e o
+	 * longe some no ar sujo, como no vídeo e nas artes. Opção, não o padrão:
+	 * -Air=desert ou o botão "poeira no ar" do painel (pedido do Felipe, 07/10).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bDesertAir = false;
+	void SetDesertAir(bool bOn);
+
+	/**
+	 * Teste de comparação (-Backlight=<graus>): o sol na FRENTE da câmera, em
+	 * contraluz como no vídeo do Veo, deslocado <graus> pra direita da direção
+	 * em que ela olha; a altura é a da hora. Gira só o azimute do sol.
+	 */
+	float BacklightDeg = 0.0f;
+	bool bBacklight = false;
+	float SunAzimuthOffsetDeg = 0.0f;
 	float SunAltitudeDeg() const { return SunAltDeg; }
 	/** EV100 da exposição analítica agora. */
 	float TargetEV100() const { return TargetEV; }
 	/** Iluminância do ambiente agora (lux do render). */
 	float RenderLux() const { return Sample(CurveRenderLux, 52000.0f); }
+	/** Direção PRA a luz principal (o sol de dia, a lua de noite) e a altura dela (graus). */
+	FVector KeyLightDirection() const { return KeyDir; }
+	float KeyLightAltitudeDeg() const { return KeyAltDeg; }
 
 	/** Últimos valores mandados aos materiais (leitura de teste). */
 	float LastPurkinje = 0.0f;
@@ -159,5 +190,13 @@ private:
 	float SunAltDeg = 0.0f;
 	float TargetEV = 14.61f;
 	float AppliedTime = -1.0f;
+	// o ar limpo do mapa (pra voltar dele): lido na primeira aplicação
+	bool bAirDefaultsRead = false;
+	float DefaultMieScale = 0.0f, DefaultMieAbsorption = 0.0f, DefaultMieHeight = 0.0f, DefaultMieAnisotropy = 0.0f;
+	FLinearColor DefaultMieColor = FLinearColor::White;
+	float DefaultFogDensity = 0.0f;
+	void ApplyAir();
 	int32 KeyLight = -1;                 // 0 = sol, 1 = lua (a prioridade só muda na troca)
+	FVector KeyDir = FVector::UpVector;
+	float KeyAltDeg = 90.0f;
 };

@@ -8,6 +8,7 @@ public class BlastLabShaders : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "RenderCore", "RHI" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "Projects" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Projects",
+			"Renderer", "Json" });       // o raymarch das explosões: o passo depois do TSR (BlastRaymarch.cpp) e o cabeçalho da gravação
 	}
 }

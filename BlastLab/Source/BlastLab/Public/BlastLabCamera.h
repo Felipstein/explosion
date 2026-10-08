@@ -38,6 +38,26 @@ public:
 	/** Tremor longo (onda de choque). */
 	void Quake(float Amplitude);
 
+	/**
+	 * O choque chegando (UBlastLabSimulation, em d/343 s): trauma que soma e
+	 * satura em 1; o tremor é trauma², só de rotação, com ruído suave, e decai
+	 * em ~1 s (Eiserloh, "Math for Game Programmers: Juicing Your Cameras",
+	 * GDC 2016). Trauma 1 = 1° (~3% da tela, a nuclear).
+	 */
+	void AddTrauma(float Amount);
+
+	/** Acessibilidade: o tremor do choque pode ser desligado (painel, -NoShake). */
+	static bool bShakeEnabled;
+
+	/**
+	 * Tripé: sem a câmera na mão e sem tremor (as capturas de comparação do
+	 * -AutoTest, quadro a quadro com o vídeo; -LiveCam devolve os dois).
+	 */
+	static bool bTripod;
+
+	/** O ponto do chão pra onde a câmera olha (cm): o "microfone" do Zero Hour, no ponto de mira. */
+	FVector AimPoint() const;
+
 	/** Enquadramento direto (testes: a mesma câmera das referências do WebGL). */
 	void SetView(float InDist, float InAzim, float InElev, float InTargetY, float InFovV)
 	{
@@ -48,9 +68,16 @@ public:
 	/** Fov vertical atual (rad). */
 	float VerticalFov() const { return Fov; }
 
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 private:
+	// a rolagem fica dentro do terreno (m, x/y da Unreal); sem Landscape, ±500 m como no WebGL
+	FVector2D MapMin = FVector2D(-500.0, -500.0);
+	FVector2D MapMax = FVector2D(500.0, 500.0);
+	// a altura do chão sob o centro (m), suavizada: a câmera sobe e desce com o relevo sem tremer
+	float GroundM = 0.0f;
+	bool bGroundReady = false;
 	// estado (metros, radianos) — valores iniciais do WebGL
 	FVector2D Center = FVector2D::ZeroVector;   // no chão: x leste, y (WebGL z)
 	float Dist = 62.0f;
@@ -60,6 +87,7 @@ private:
 	float Fov = 0.58f;                          // vertical
 	float BaseFov = 0.58f;
 	float Shake = 0.0f;
+	float Trauma = 0.0f;
 	float QuakeAmp = 0.0f;
 	float QuakeT = 0.0f;
 	float T = 0.0f;

@@ -95,6 +95,7 @@ private:
 	TArray<float> PendingView;
 	TArray<TPair<int32, float>> AutoPasses;     // (0 avião · 1 míssil · 2 disparo, instante)
 	bool bAutoPassesParsed = false;
+	TArray<float> AutoGpuDumps;                 // -AutoGpuDump=1.5,7: instantes da árvore de tempos de GPU
 	double AutoSumDt = 0.0;
 	TArray<float> AutoFrameTimes, AutoBaseTimes;
 	int32 AutoFrames = 0;

@@ -1,4 +1,313 @@
-# Estado atual — 06/10/2026: a explosão reage ao que passa, sem trocar de fumaça
+# Estado atual — 08/10/2026: o renderizador do WebGL dentro da Unreal
+
+**O raymarch do WebGL portado (08/10, madrugada; o Felipe: "volta a ser o meu
+velho gerador").** O Heterogeneous Volume da Unreal saía borrado (buffer de
+536×304 no alta), apagava o fogo cedo, deixava a fumaça cinza-azulada e custava
+20–30 ms. Agora a Carga Pesada e todas as armas feitas dela (granada a nuclear)
+são desenhadas pelo MESMO renderizador do WebGL (`js/instances.js`), portado
+como passo próprio depois do TSR e antes do bloom:
+- `Shaders/Private/BlastRaymarch.usf` + `Source/BlastLabShaders/.../BlastRaymarch.cpp`:
+  cache de luz 48³ por explosão (sol e fogo), marcha em meia resolução com salto
+  pelo macro, quadros misturados com vetores de movimento, ruído que anda com a
+  fumaça, oitavas de espalhamento múltiplo, corpo negro (Planck × CIE), upsample
+  pela profundidade e acúmulo temporal (Schneider 2015 / Hillaire 2015). Mesmas
+  constantes do WebGL.
+- `Tools/build_raymarch_bake.py` lê o arquivo ORIGINAL do WebGL (com a
+  transmitância do céu) → `Intermediate/Raymarch/r96_v<n>.bin` (213 MB cada, na
+  RAM; os quadros em uso sobem pra um pool de 20 na placa, ~80 MB).
+- `UBlastRaymarchSubsystem` junta as explosões vivas; `AExplosionVolume` esconde o
+  volume dela e continua com luzes, clarão, sombra no chão e a **deformação pelo
+  que passa** (o túnel do B-2 e do avião), que o raymarch lê igual ao material.
+- Ligado por padrão; `-Raymarch=0` volta pro volume antigo. Sem o arquivo da
+  gravação, a explosão fica no volume antigo (não some). Os corpos da EmberGen
+  (morte de tanque) seguem no volume da Unreal.
+- **O "erro" aprovado, reproduzido:** a cor da luz-chave do WebGL é a irradiância
+  num chão horizontal (sol × sen da altura, `atmosphere.js` texel 0) usada como luz
+  de frente. Às 15h a fumaça recebe 0.44 do sol: é a fuligem preta aprovada. Com a
+  luz inteira ela saía bege (`captures/cmp_250.jpg` → `cmp_250b.jpg`).
+- **Medido** (alta, 1600×900, câmera de perto da Carga Pesada): raymarch 1.1–1.7 ms
+  de GPU (marcha cheia: 3.2–4.8 ms, sem ganho visível: a maciez de perto é o voxel
+  de 40 cm da gravação). Quadro por arma, antes → agora: granada 17.2 → 11.6 ms,
+  morteiro 22.8 → 11.9, Carga Pesada 25.1 → 12.1, paiol 27.2 → 12.2, ataque aéreo
+  23.7 → 12.3. Seis Cargas de cima (RTS): raymarch 2–5 ms, 66 qps.
+- **Nos mapas** (08/10, manhã; câmera de RTS de cima, alta, placa sozinha), quadro
+  mediano sem explosão / volume antigo / raymarch: deserto 14.7 / 26.6 / **16.4 ms**
+  (61 qps), neve 15 / 27.9 / **16.3 ms** (61 qps), floresta 17.8 / 29.1 / **19.1 ms**
+  (52 qps); o raymarch 0.6–1.2 ms de GPU. As árvores na frente tapam a bola certo
+  (`captures/rm_mapas_antes_agora.jpg`). Os engasgos de 0.5–6 s da 1ª rodada eram
+  outra Unreal (o RTSGame) aberta junto, sem a trava: não valem.
+- **A nuclear** muda de cor como no WebGL (`instances.js _nukeLook`): marrom-
+  avermelhada logo depois da bola, branca quando esfria (albedo 0.48 → 0.70, a
+  emissão compensada); `AExplosionVolume::bNuclear`, `captures/rm_nuke.jpg`.
+- Até **16 explosões** ao mesmo tempo (32 quadros na placa, 113 MB); acima disso
+  as mais longe não aparecem. **Barragem de 12** (de cima, alta): deserto 20.8 ms
+  (48 qps, p95 33), campo de teste 19.0 ms (53 qps); o volume antigo com as mesmas
+  12 caía pra ~4 qps com travadas de 1–10 s. Abaixo do ultra só as 3 maiores na tela
+  fazem sombra com a luz do fogo (as 12 luzes com sombra custavam ~8 + 8 ms). A
+  travada de 2.5 s na detonação dos testes com `-ProfileGpu` é o próprio profiler
+  começando a gravar (log do CsvProfiler), não a explosão. Aberto: um tranco de
+  ~250 ms aos 0.5 s no deserto com 12 (não aparece no campo de teste).
+  Vídeo com a câmera girando: `captures/raymarch_barragem12_deserto.mp4` (o
+  acúmulo temporal não deixa rastro).
+- Folhas e vídeos: `captures/rm_arsenal.jpg` (o arsenal antes/agora),
+  `captures/rm_live2_sheet.jpg`/`cmp_250b.jpg` (contra o WebGL),
+  `captures/antes_agora_b2.mp4`, `raymarch_b2.mp4`, `raymarch_rts_barragem.mp4`.
+- **Aberto:** a "saia de poeira" branca do volume antigo não existe no WebGL e
+  não aparece no novo; o "pente" na borda do corte do B-2 já existia no volume
+  antigo (é o desenho da deformação de 06/10); `-RmDetail2=` (2ª oitava do
+  detalhe, a do ultra do WebGL) não mudou nada visível e fica desligada.
+- Depuração: `-RmTerms=sol,céu,fogo,emissão`, `-RmDebug=1|2|3` (transmitância
+  até o sol / fogo / céu), `-RmRes=` (resolução da marcha), `-RmTemporal=` (peso
+  do quadro novo; 1 = sem acúmulo), `-RmLightCaches=`, `-RmSteps=`. E no teste
+  automático `-AutoVideo=de,até` com `-UseFixedTimeStep -FPS=30`: uma foto por
+  quadro no relógio fixo (vídeo sem os pulos das fotos).
+
+# 06/10/2026: a explosão reage ao que passa, sem trocar de fumaça
+
+**Uma fumaça só na morte de tanque (07/10, noite; P0 do Felipe).** Eram três fumaças com três caras no mesmo quadro: a cortina escura do fogo da carcaça (Mantaflow), a coluna da JangaFX (aprovada: "tá boa") e a bola cinza-clara do campo em cima dela, que cresce com o tempo. Agora:
+- o fogo da carcaça mostra só a chama: a fuligem abaixo de um calor some (`SootTempCut` no material, `build_explosion.py`; zerar a fuligem não servia, a emissão é proporcional a ela). A fumaça dele fica ≤ 0.3 de calor, a chama ~1.3: corte em 0.3;
+- com a coluna, o campo só recebe o calor da carcaça, sem fuligem: a bola some (conferido aos 15 e 30 s, `captures/ue/_p0_longo.jpg`);
+- sem a bola, o topo da coluna virava uma tampa reta (o teto do domínio do EmberGen): ela se dissolve de 7 a 11 m locais (`TopCutM`/`TopCutFadeM`; A/B 14.5/13/12/11 na câmera baixa). A coluna ficou ~3 m mais baixa e mais estreita (a cortina do fogo a alargava).
+- Folha e vídeo de 6 s antes/depois, mesma história, câmera de RTS e baixa: `captures/ue/_p0_uma_fumaca.jpg` e `.mp4`.
+- Medido no miolo opaco da fumaça: o R/B varia 0.02–0.25 dentro da própria coluna (o topo ao sol ~0.94, o lado na sombra do céu ~0.73) — é a luz, não outra fumaça; o critério Δ ≤ 0.1 não fecha assim. E a fuligem sai neutra-fria (R/B 0.7–0.95) contra o marrom-preto quente do alvo (1.3–2.9): decisão de luz/ar ou da cor da fuligem, fora do P0.
+
+**Desempenho (07/10, tarde; o Felipe: "tá travando pra krl").** Medido ao vivo, sem `-benchmark` (o passo fixo das gravações A/B escondia o tempo real: os "33.3 ms" do log nunca mediram nada). Preset alta, Range_Desert_Units, câmera de RTS, perfil de GPU por passe + memória de vídeo:
+
+| | antes | depois |
+|---|---|---|
+| Morte de Tanque, quadro mediano / p95 | 89 / 145 ms (11 qps) | 32 / 41 ms (31 qps) |
+| Morte de Tanque, quadros > 50 ms | quase todos | 0 |
+| Carga Pesada durante a explosão | ~48 ms (21 qps) | ~30 ms (33 qps), 0 > 50 ms |
+| Morte de Tanque, câmera de perto | — | 35 / 45 ms (29 qps) |
+| memória de vídeo, pico | 5.7 GB (~800 MB jogados pra RAM) | 5.1 GB |
+
+As causas, todas medidas (árvore do `profilegpu` por volume: `-AutoGpuDump=1.5,7`):
+- **Volumes 111 → 13 ms.** O cache de luz de cada volume custava 10–15 ms por luz: a bola, a coluna e o fogo da carcaça têm voxel de ~9 cm (192³ em 17 m; a Carga Pesada tem 40 cm) e as duas luzes de dentro (bola e carcaça) acendiam os três. Abaixo do ultra (`ExplosionVolume.cpp`, `FullDetail`): célula do cache ≥ 45 cm (ainda mais fina que os 80 cm da Carga Pesada aprovada), a luz de dentro só pelo material (sem a luz com sombra) e 96 passos de marcha no alta (`DefaultScalability.ini`, como o Alto da Epic).
+- **CPU: streaming bloqueante das texturas de volume, 17–34 ms → 1 ms por quadro** na thread de render. Ao vivo os pedidos agora são assíncronos com busca adiantada; bloqueantes só nas gravações (`-benchmark` e Movie Render Queue).
+- **CPU: ~250 consultas do chão por quadro** (cada pedaço, contra cada pedaço de Landscape): 16 → 2 ms. Grade de alturas de 1 m guardada (`BlastLabGround::HeightAtCached`). Os rastros reamostrados em 48 pontos e as cabeças com malha fixa.
+- **Memória de vídeo:** no alta, o pool de sombra virtual, o histórico do TSR e o atlas do Lumen nos tamanhos do Alto da Epic (o Épico dobrava os dois primeiros).
+- **Travada da 1ª detonação:** os materiais dos pedaços estreavam no 1º quadro (PSO); agora aquecem na abertura (140 → 0 ms).
+- O fogo da carcaça (queima 2 min) para de fazer sombra no cenário depois de 6 s abaixo do ultra (~2–3 ms a menos o resto do tempo); nos primeiros 6 s ela fica: a luz mora no casco, e sem a sombra dele o rastro escuro da torre acendia de creme.
+- **O que muda na imagem** (`captures/ue/_ab_desempenho.jpg`, mesma história): de cima, nada que se veja; de perto, o topo da coluna um pouco mais cinza-claro aos 8 s (o cache de luz mais grosso). O ultra fica como era (visual máximo, mesmo travando).
+- Ainda aberto: a fase de 0.5–3 s da morte de tanque fica em ~39 ms (25 qps) na câmera de RTS (a placa: volumes ~12 ms, sombras e luzes da bola ~7 ms); a grade de alturas guardada não acompanha terreno que mude (hoje ele é fixo); a sombra volumétrica do fogo de dentro só existe no ultra.
+
+**Teste do flipbook (07/10, tarde; o Felipe: "parece jogo de 2003").** A prévia no Cycles da mesma simulação é muito melhor que o volume ao vivo, então testamos o que os AAA fazem: a bola pré-renderizada num cartão.
+- `-BallFlipbook=1`: `ABlastFlipbook` e `Tools/build_flipbook.py` (atlas EXR da sessão de arte em `captures/concept/38_flipbook/`, fumaça e fogo em atlas separados com ganhos próprios). O volume da EG fica invisível, mas segue com as luzes e o choque.
+- **Resultado até agora, sem enfeite:** tamanho e tempo batem. Mas o atlas foi renderizado em contraluz: a fumaça vira silhueta preta com borda dura e a bola fica bege-marrom aos 0.7–1.0 s, longe da prévia, que tem o sol de lado/frente. Próximo: o mesmo render com a luz da prévia, borda do alfa mais macia e domo menos afundado (`captures/ue/_ab_flipbook_fixed.jpg`).
+- **Atlas AgX em cor de tela** (`-FlipbookSet=gas_hero_agx`, `M_FlipbookCardDisplay`): o material inverte o nosso tonemapper em forma fechada. A 1ª versão iterava e fazia pontos coloridos; a ida e volta agora erra poucos %. Tirou o contorno preto. **Mas na cena o cartão sai ~3 EV mais claro que o atlas** (bola creme com pontos vermelhos aos 1 s; `captures/ue/_flipbook_agx_vs_cycles.jpg`, com o volume na mesma luz e história). Dividir pela pré-exposição piorou (tela branca, rodada agx3; desfeito no código, o asset ficou com a versão errada até remontar). Fato da engine: com `BL_ReplacingTonemapper` a cena chega ao nosso tonemapper SEM dividir pela pré-exposição (`PostProcessMaterial.cpp:263`, `MaterialTemplate.ush:3473`). Medir com `TONEMAP_DEBUG` antes de mexer de novo.
+- O teste agora carrega só o conjunto de atlas em uso: os sete juntos, ~600 MB, estouravam a memória de vídeo. O aviso de memória aos 6–8 s na vista aberta já existia só com o volume.
+- **Parado por ordem do Felipe (07/10):** chega de tentativa e erro. A sessão de arte fecha um plano com estudo (como os estúdios fazem no UE5, o que foge do padrão da Unreal aqui, critérios medidos) antes da próxima mudança.
+
+**Recomeço da morte de tanque (07/10, madrugada).** O Felipe achou "gigante" e pediu um passo atrás, baseado nos vídeos, nas artes e em segundas opiniões. Coordenação da sessão de arte; os estudos ficam em `captures/concept/37_restart_study/`.
+
+- **Escala medida, não chutada:** no vídeo do Veo (`gameplay_v3`, tanque de 7.9 m), contra a largura opaca da gravação (`Intermediate/BakeRaw`).
+  - Bola no vídeo: 6–8 m aos 0.3 s, 6.7 × 9.4 m a 1.06 s, 10.5 m a 2.8 s.
+  - A Carga Pesada a 0.55, no relógio da gravação, bate nos quatro instantes. A de antes (2.2) era 4× grande.
+  - O choque e o tremor seguem o rendimento; a bola segue o alvo (`FBlastWeapon::BallScale`).
+- **Corpo novo:** a Gasoline Explosion da JangaFX (EmberGen, CC0), convertida pela sessão de arte pra `BakeRaw/eg_gasoline`.
+  - Formato: 192³, 17.1 m, em metros reais.
+  - Montagem: `BLAST_BAKE=eg_gasoline` no `build_explosion.py` gera `SVT_/DA_/M_Explosion_EgGasoline`, sem os remendos do corpo do WebGL; o detalhe vem da simulação.
+  - A arma aponta pra ela (`FBlastWeapon::Body`); faltando o corpo, cai na Carga Pesada em 0.55.
+  - O ganho de fuligem por quadro (`UExplosionBake::SootGain`) segura a fumaça que o EmberGen dissolve.
+- **Saiu:**
+  - a saia de poeira analítica dentro do volume, na morte de tanque (vira camada própria);
+  - a estrela de lente (`-FlashStar` traz de volta pra comparar).
+- **Destroços** (`ABlastDebris`, `Tools/build_debris.py`):
+  - chapas pretas recortadas, girando e com sombra;
+  - cometas com cabeça branca e rastro de fumaça em fita (borda comida por Worley);
+  - rastro de fuligem com fogo atrás da torre arremessada.
+- **Luz da fumaça:** o espalhamento múltiplo (oitavas de Wrenninge) passa a pesar o albedo (ω^n; `MsAlbedo`). Antes ele supunha nuvem branca e enchia a sombra da fuligem de sol quente.
+  - A/B do céu nos volumes (0.175 × 1.0) em `captures/ue/_ab_sky_0175_vs_1.jpg`.
+- **Câmera em tripé no `-AutoTest`**, sem câmera na mão e sem tremor (`-LiveCam` devolve os dois). Os shaders da torre móvel compilam no aquecimento.
+- **A morte de tanque em camadas, todas simuladas** (sessão de arte converte; aqui `BLAST_BAKE=<nome>` monta SVT, DA e material):
+  - bola: `eg_gasoline_b` (EmberGen), TempScale 1.8 (A/B `captures/ue/_ab_eg_temp.jpg`);
+  - fogo da carcaça: `wreck_fire_loop` (Mantaflow, casco como obstáculo), loop de 4 s no pé do tanque, entrando de 0.8 a 1.3 s, TempScale 0.55 (o calor do Mantaflow não esfria), luz a 2% da curva;
+  - coluna: `eg_plume_loop` (Smoke Plume), loop de 3 s a 0.85, base rala até 4 m e topo esvaecendo; a fonte dela está a 8.5 m do meio do cubo e tomba ~55°, então o volume é deslocado pra fonte cair no casco e girado pra tombar pra longe da câmera;
+  - anel de poeira: `eg_ring` (Dust Shockwave) como segundo volume, a 35% da densidade, cor do chão.
+  - `AExplosionVolume`: loop (`LoopPeriod`, emenda do último quadro no primeiro), parâmetros de material por explosão, luz por escala, clarão e halo desligáveis. O halo de ofuscamento (M_FireGlare) ficou só no corpo antigo: na EG ele lavava a bola de creme por ~1 s.
+  - Os quadros empilhados das texturas auxiliares cabem em 2048 de profundidade (a EG tem 74 quadros: 24³ por quadro).
+  - Pool de streaming dos corpos novos em 4× o maior quadro: com 12× a 1660 passou 543 MB do orçamento.
+- **Correções do painel de 7 juízes sobre a rodada f** (`captures/concept/37_restart_study/05_painel_rodada_f.md`, nota 3.5/10; rodada j em `captures/ue/_hero_close_j_grid.jpg`):
+  - poeira num canal de luz próprio (2), só com o céu: a luz do fogo de dentro da bola a acendia de creme;
+  - anel rente (achatado a 0.3) e com o miolo livre (4 m: o casco nunca fica coberto);
+  - escurecimento da autoexposição ≤ 0.25 EV de dia (às 16 h fechava −0.6 EV no clarão);
+  - torre: sobe 12.5 m/s, sai 3 m/s pro lado da câmera, solta 2 quadros depois do clarão e pousa à vista a ~1 tanque; o rastro sem o "sabre" laranja;
+  - fogo da carcaça com 1/3 do ganho e luz 0.1; ele cresce 1.35× de 1.3 a 3 s;
+  - coluna mais opaca, decaindo pra 35% de 5 a 8 s;
+  - 32 chapas de 0.4–1.4 m.
+  - Falta: o núcleo HDR do clarão, faíscas em quantidade (40–80 espinhos + fagulhas), marca no chão e carcaça queimada, o topo da coluna.
+- **Rodadas l–p (07/10, manhã):**
+  - a torre sai de lado na tela (perpendicular à linha de visão), sem tapar a bola;
+  - o creme da bola aos 0.8–1.0 s era a luz de DENTRO dela acendendo a própria fumaça rala (a temperatura mais baixa não mudava nada). Com a luz de dentro a 0.3 (`VolumeLightScale`; a do chão fica) e a temperatura 1.3× só de 0.6 a 1.2 s, a couve-flor fica amarelo-laranja;
+  - a luz do fogo da carcaça no cenário fica em 0.1, mas na fumaça em 0.02: mais que isso acendia a coluna de marrom;
+  - o fogo da carcaça usa a curva de emissão comprimida (0.55): com a física (1.0) o tonemapper clipava o miolo em branco antes da borda aparecer;
+  - A/B sem recompilar: `-BallVolumeLight=`, `-BallTempDip=`, `-PlumeSootExt=`, `-WreckFireParams=Nome=valor;...`
+  - Folha contra o vídeo: `captures/ue/_veo_vs_hero_close_p.jpg`.
+- **O primeiro segundo e a luz do vídeo (07/10, manhã; decisão do Felipe: hora dourada com poeira no ar):**
+  - núcleo do clarão (o halo de 9.5 m, 0–0.15 s), luz do clarão com τ 0.08 s a 1 m do chão (o "anel de luz" é o chão aceso), 60 espinhos e 150 fagulhas (`ABlastDebris`);
+  - **"poeira no ar"** (`-Air=desert` ou o botão no painel; o padrão continua o céu atual): aerossol de poeira (Mie 40× o limpo da Unreal, AOD ~0.3, camada de 2 km, g 0.7, tom 1:0.85:0.65) e névoa 2.5× mais densa e quente;
+  - **`-Backlight=<graus>`** (teste de comparação): o sol na frente da câmera, como no Veo, travado depois de 1.5 s;
+  - capturas herói de comparação: `-Hour 16.75` e `-GameArgs "... -Air=desert -Backlight=12"`. Folha: `captures/ue/_veo_vs_hero_close_s2.jpg`;
+  - a bola aos 0.6–1.0 s na luz dourada mede R/B 2.0–2.4 (alvo ≥ 2), menos aos 0.8 s (1.7);
+  - núcleo do clarão de 14 m (~1.8 tanque), τ 0.1 s;
+  - coluna em contraluz: saía cinza-marrom (L ~80 contra ≤ 50 no vídeo). Um arbusto escuro à mesma distância fica em 28–45, então não é a névoa: é a fuligem refletindo o céu. A fuligem da plume e da EG passa a albedo 0.15 × 0.55 = 0.08 (era 0.165);
+  - **achado sobre a exposição:** com o sol dentro do quadro a exposição fica presa na borda do histograma e mudar o alvo por hora não a move (EV100 ~12.3 com o alvo de 10.9 a 12.1). O bias move (-AEBias=2.5: 12.5 → 11.45 EV100). Vai importar pra câmera de cinema; as comparações ficam na exposição do jogo (bias 1.5).
+
+**Cena herói (07/10, madrugada; decisão da sessão de arte com o Felipe).** Em vez de espalhar por fases, uma tomada só de ponta a ponta: a câmera baixa do vídeo do Veo (a morte de tanque), no mapa `Range_Desert_Units`. O mapa tem 4 tanques USA da sessão de arte; a vítima fica na origem, com as tags HeroVictim + Hull/Turret/Barrel. O som ficou pra depois: foco 100% visual. Ordem:
+1. anti-slime e TV velha;
+2. morte de tanque (tamanho, torre e cano voando);
+3. carcaça e coluna;
+4. faíscas-cometa e chapas;
+5. anel.
+
+- **Arma nova "Morte de Tanque"** (`-AutoWeapon=6`): bola 2.2× a Carga Pesada (~25 m), no relógio da gravação (tamanho e tempo desacoplados: `AExplosionVolume::TimeScale`).
+- **A torre e o cano da vítima voam juntos, como um corpo só:** 18 m/s, girando 300°/s, quicam uma vez e ficam.
+- **A carcaça queima 2 min:** fonte de "fogo contínuo" (tipo 7) no fluido do campo, com fuligem e calor num cilindro de 2.2 m. A chama vai até 3 m e treme a 0.75 Hz; o empuxo do campo sobe a coluna preta.
+- **Anti-slime:**
+  - piroclástico em 4 oitavas (2.4 → 0.3 m), metade da amplitude por oitava;
+  - fresta escura só na casca já fria;
+  - línguas de chama no fogo quente;
+  - separação quente/frio mais suave (o degrau virava grão colorido com a marcha sorteada).
+- O `blast_metrics.py` mede também o "grão" (desvio da cor de cada pixel da média 5×5 nas partes claras): linha de base 3.0–3.3 aos 0.8–1 s.
+
+**Fase A do arrepio (07/10; plano único em EXPLOSOES §6 + CONCEITO_EXPLOSOES §4d).**
+
+O alvo virou o vídeo do Veo (morte de tanque) e as artes por tipo (§4e). A sessão de arte mede com a folha quadro a quadro; aqui, `Tools/blast_metrics.py` (janela de 24 m pela posição registrada no log).
+
+- **A1, curva física:** a emissão vai com expoente 1.0 (o WebGL usava 0.44–0.6: a fuligem fria brilhava 24–90× demais, o "marrom"). Ganho 16 e temperatura 0.9.
+- **A3, a bola é só fuligem e fogo:** sem a poeira da gravação dentro; fuligem 2.5× mais opaca; poeira da saia com albedo 0.95.
+- **Brasas nas rachaduras:** os topos das bolhas do piroclástico esfriam e o quente vaza pelos vales.
+- Medido às 16h (sol a 15°), comparando o `cmp_rts` (antes) com o `cmp_rts_a`:
+  - saturação da parte escura: 1.0 → 0.41 aos 1.5 s, 0.31 aos 2 s (alvo ~0.4; antes era "bronze");
+  - p5 da luminância: 0.11 a partir de 1.3 s (critério ≤ 0.18);
+  - aos 0.8–1 s, casca preta com o fogo pelas rachaduras; aos 1.3–1.5 s, preto com brasas.
+- **A4, clarão:**
+  - luz própria (FlashLight: sem sombra, sem Lumen, sem névoa) e estrela de raios (M_FlashStar);
+  - a curva da luz gravada levada à física (expoente 1/0.44);
+  - a luz da bola no cenário com valores físicos (fator 50 → 4: o pico dava ~5e8 cd, a física ~4e7);
+  - de dia a exposição fecha no máximo 0.3 EV;
+  - estrela de 24 m (2–3× a bola), visível até ~0.13 s;
+  - medido (`cmp_rts_d`): o chão volta ao normal já aos 0.10 s, com mediana 0.67 (antes, creme até 0.4 s).
+  - O "limão" que sobra (1.7% aos 1.5 s) é o núcleo amarelo indo pro branco: rgb (0.97, 0.94, 0.62), matiz 52–60°, nenhum pixel ≥ 60°.
+- **A5, evento único:** o choque chega ao ponto de mira em d/343 s e dispara o tremor junto:
+  - trauma², só rotação, ruído a 18 Hz, decai em ~1 s;
+  - teto global; botão "tremor" no painel e `-NoShake`;
+  - gancho do som no mesmo instante. Os sons vêm da especificação da sessão de arte, e o download só com ok do Felipe.
+
+**A explosão rumo à arte alvo (06/10, noite; fase 1 refeita, em andamento).**
+
+O alvo agora é uma arte só: `docs/concept/explosions/target_ground_blast.webp` (a `29_game_shot/a_gemini`). Ela tem núcleo branco-amarelo estourado, fumaça preta subindo e terra indo pros lados, tudo em bolhas nítidas. A folha de comparação é `Tools/strip.py`: ela recorta os nossos quadros na mesma largura em metros que a arte (~30 m), pela posição que o teste automático registra.
+
+Medido antes de mexer:
+- Na câmera de RTS a explosão saía borrada. O ruído de detalhe (0.3–0.07 m) ficava abaixo do passo de 0.4 m e do pixel.
+- A emissão com expoente 0.44 achatava a bola num creme uniforme.
+- Dobrar a resolução do volume quase não mudou nada: o borrão estava no próprio volume.
+
+O que entrou no material (`build_explosion.py`; tudo é parâmetro, com A/B por `-ExplosionParams=Nome=valor;...`):
+- **Deslocamento piroclástico:** a superfície da fumaça anda ao longo da própria normal pelo ruído Worley de 2.4/1.2 m. A normal é pré-calculada da gravação de baixa resolução.
+- **Erosão da casca rala** (Nubis), só onde a fumaça já esfriou.
+- **Sombreado das bolhas no albedo:** fresta escura e lado oposto ao sol. O cache de luz do volume (0.8 m) não vê as bolhas.
+- **Borda afiada:** a névoa rala some.
+- **Cor:**
+  - expoente 0.6 e ganho 6: o núcleo estoura em branco como na arte, que tem mais da metade da bola com saturação ≤ 0.11;
+  - temperatura no mapa 0.75;
+  - lóbulos frios pela temperatura;
+  - a fuligem abaixo de ~1100 K não brilha.
+- **Saia de poeira** analítica no mesmo volume, que compõe e faz sombra com o fogo:
+  - frente de 15 m que freia, altura de 5 m e tronco no meio;
+  - bolhas que crescem com a frente;
+  - assentamento a partir de 0.8 s;
+  - cor por campo (`DustTint`).
+
+Custo, ainda alto, na câmera de RTS e qualidade alta: o quadro vai de 16 a 38 ms (~8 ms da bola e ~15 ms da saia, pela caixa marchada maior). A otimização fica pra depois do visual.
+
+Falta pra chegar na arte:
+- a nitidez das bolhas, porque a gravação de 96³ é lisa;
+- a coluna preta subindo de lado;
+- os destroços.
+
+**Campos com chão de verdade (06/10, noite).**
+
+Pedido do Felipe: testar as explosões num mundo do WorldForge, com deserto, neve, estrada e grama, e no futuro impacto em árvores.
+
+- **O que já existe:** o WorldForge gera um bioma por mapa. As três fatias de qualidade dele viraram campos do simulador:
+  - `Range_Desert`: deserto com estrada de asfalto;
+  - `Range_Snow`: neve com pinheiros;
+  - `Range_Forest`: grama com mata.
+  - `blast.ps1 worlds` copia as fatias (1,3 GB, fora do git como lá) e monta os mapas (`build_worlds.py`).
+  - A luz da fatia sai e entram o céu, o sol, a hora do dia e a exposição do simulador, com que as explosões foram calibradas.
+  - Além da borda (~252 m) fica o chão liso do campo de teste.
+- **A Arena** (os quatro chãos juntos, com material físico por camada: PM_Sand, PM_Snow, PM_Grass, PM_Asphalt, PM_Dirt, PM_Rock) foi pedida à sessão do WorldForge. Ela entrou na fila depois dos itens que o Felipe já tinha pedido lá. `blast.ps1 worlds` já monta a `Range_Arena` quando ela existir.
+- **No painel:** a seção CAMPO troca de campo (teste, deserto, neve, floresta) levando a hora junto.
+- **Relevo:** o clique, a câmera, o avião e a sombra da fumaça seguiam o plano z = 0. Agora seguem o terreno (`BlastLabGround`: traço só contra o Landscape, sem rochas e árvores). A câmera não rola pra fora do terreno.
+- **Árvores:** precisam do plugin Procedural Vegetation Editor e de `r.Nanite.Foliage=1` (ligado no BlastLab; recompila os shaders uma vez).
+
+**Noite e hora dourada (06/10, tarde).**
+
+O Felipe viu "dois sóis" e roxo. Medido (`captures/ue/_night_ab.jpg`, `_gold2.jpg`), eram três coisas:
+
+1. **A lua virava uma bola branca de ~12°.**
+   - A auréola herdada do WebGL era ~400× a física, e com a exposição da noite estourava em branco.
+   - Agora a lua tem brilho de TELA fixo, como nos jogos (EyeAdaptationInverse):
+     - disco 2× o real, com mares;
+     - brilho em volta medido na noite aprovada (`captures/concept/11_night_tilt`);
+     - extinção pela massa de ar (Kasten & Young).
+2. **O céu da lua era o azul do dia, 1.7× mais claro que o chão.**
+   - Nas noites aprovadas ele é 0.3–0.8× o chão.
+   - A parte do céu iluminada pela lua escurece ×0.29 só na tela; a luz ambiente fica igual (`NightSky`, BlastLabEnvironment).
+   - As estrelas passam a ter contagem real (N(<m) ≈ 10^(0.475m + 0.87)) e só aparecem acima da magnitude-limite do céu atrás delas (Crumey 2014): com lua cheia, poucas e fracas.
+3. **O botão "dourada" (17:27, herdado do WebGL) caía com o sol 2° abaixo do horizonte.**
+   - O chão saía magenta (matiz −31°, contra 63–72° nas artes).
+   - Agora fica às 16:45 (sol a +6.4°): luz quente e sombras longas.
+
+Em aberto: o crepúsculo civil (17:36) sai rosa-magenta forte no chão (croma 24 num chão cinza). Proposta: balanço de branco por hora com adaptação parcial (CIECAM02), a mostrar em A/B.
+
+**Plano das explosões novas:** `docs/EXPLOSOES.md` (pesquisa de mercado, física e técnica + segunda opinião). As fases estão na memória (`project-fases-explosoes`).
+
+**Fase 1, item 1: sombra da fumaça no chão (06/10).**
+
+A sombra que o Heterogeneous Volume da 5.8 projeta (`r.HeterogeneousVolumes.Shadows`) não chegou ao chão aqui: com ou sem Virtual Shadow Maps, a diferença foi nula.
+
+No lugar dela entrou um mapa de sombra próprio, a técnica das nuvens da Unreal, do Horizon e do Frostbite:
+
+- **O mapa:** a espessura óptica da fumaça vista da luz principal, em 512² texels de 0.5 m numa janela que segue a câmera. É calculado por `BattleSmoke.usf MainShadow`.
+- **A fonte:** a gravação em baixa resolução, que agora guarda a extinção (`export_bake_velocity.py`). Ela usa a mesma conta do material, com o desvanecimento do topo e a erosão das bordas finas.
+- **Onde entra:** pela light function do sol e da lua (`M_SmokeShadowLF`), só na luz direta e só perto do chão, até ~10 m. Acima disso o volume já faz a própria sombra.
+
+Custo: 0.06 ms (`GPU/BattleSmokeShadow`).
+
+Medido: aos 2.5 s, uma sombra grande na direção da sombra dos prédios, enquanto a nuvem é densa (`captures/ue/_shadow4_ab.jpg`); aos 4.5 s ela se desfaz junto com a nuvem.
+
+**Fase 1: REJEITADA pelo Felipe (06/10)** ("qualidade de jogo bosta, nada realista").
+
+As camadas abaixo estão desligadas (`UBlastLabSimulation::bLayersEnabled = false`) e os retalhos de chão foram tirados do campo de teste. Só a sombra da fumaça ficou.
+
+O erro foi de execução: primitivas de protótipo (bola aditiva, disco chapado, cubos, decal de ruído), validadas só por tempo e tamanho, sem pôr o quadro ao lado das artes. O que fica aproveitável é a infraestrutura: a receita em JSON relida sozinha, a física dos pedaços e o tipo de chão pelo material físico.
+
+O que foi feito (`ABlastEffects`, vídeo `captures/ue/_fase1_carga.gif`):
+
+Cada arma tem uma receita em `BlastLab/Config/BlastRecipes.json`, que o simulador relê quando o arquivo muda (testado com ele aberto). As camadas são:
+
+- **Clarão:** bola branca aditiva de 60–240 ms.
+- **Anel de poeira no chão até o raio do dano:**
+  - o raio é o de 5 psi, R = 4.6·W^(1/3): 4.6 m na granada, 12.5 m na Carga Pesada, 112 m na nuke;
+  - a frente sai rápido e freia; depois a poeira assenta em 2× o tempo;
+  - a poeira é mais clara que o chão.
+- **Destroços, torrões e faíscas:**
+  - balísticos, com arrasto quadrático (velocidade terminal ∝ √tamanho) e quique no chão;
+  - os pedaços ficam no chão e depois afundam;
+  - tamanho mínimo de 3 pixels;
+  - as faíscas são riscos de 1/30 s.
+- **Marca queimada (decal):** com riscos radiais, do raio do dano, ficando 60–600 s.
+- **Tipo de chão:** o material físico no ponto (PM_Terra, PM_Areia, PM_Asfalto, PM_Grama, com retalhos no campo de teste) muda a cor dos torrões, a poeira e a fuligem.
+
+As escalas saem da física: quantidades ∝ λ, velocidades e durações ∝ √λ (Froude), com λ = (W/20 kg)^(1/3).
+
+Problema achado e resolvido: na primeira explosão, a Unreal desenhava o decal padrão enquanto compilava o nosso, e isso pintava quadrados escuros no chão. Agora o aquecimento da abertura desenha uma camada minúscula, e os shaders compilam durante o "preparando".
+
+Custo com 5 Cargas Pesadas: ~0.2 ms da sombra, mais os pedaços nas sombras das luzes do fogo, mais a translucidez do anel. O resto é o que já existia (volumes e luzes, ~22 ms no PC de hoje).
+
+A luz do fogo no chão já existia (FireLight). À noite ela faz sombras radiais fortes dos objetos e dos destroços.
 
 **Decisão (06/10, depois do teste do Felipe):** a "entrega" do WebGL (aos 3.3 s
 a explosão gravada virava fumaça do fluido do campo) saiu. Ela se via: a

@@ -9,6 +9,7 @@ class AExplosionVolume;
 class UHeterogeneousVolumeComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UTextureRenderTarget2D;
 class UTextureRenderTargetVolume;
 class UVolumeTexture;
 
@@ -81,6 +82,15 @@ public:
 
 private:
 	void UpdateBox(const FIntVector& Min, const FIntVector& Max);
+	/** O mapa de sombra da fumaça das explosões (BattleSmoke.usf MainShadow) e a light function que o lê. */
+	void UpdateSmokeShadow();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> ShadowTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ShadowFunction;
+	bool bShadowEmpty = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTargetVolume> FieldTarget;

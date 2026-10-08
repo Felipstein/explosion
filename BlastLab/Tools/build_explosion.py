@@ -33,6 +33,8 @@ MATERIAL = '/Game/Explosions/M_Explosion'
 POOL_FACTOR = 12.0
 NOISE_RAW = os.path.join(PROJECT, 'Intermediate', 'Noise', 'curl_noise_64.bgra')  # make_noise.py
 NOISE = '/Game/Explosions/T_CurlNoise'
+WORLEY_RAW = os.path.join(PROJECT, 'Intermediate', 'Noise', 'worley_128.bgra')    # make_noise.py
+WORLEY = '/Game/Explosions/T_DetailWorley'
 MAP = '/Game/Maps/TestRange'
 LUX_PER_UNIT = 128000.0        # js/celestial.js SUN_LUX
 # Emissão = a do WebGL em cd/m², sem fator. (Até 05/10 ela levava 0.17/0.067 =
@@ -46,6 +48,31 @@ mel = unreal.MaterialEditingLibrary
 actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 levels = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
 log = lambda *a: unreal.log('EXPLOSION ' + ' '.join(str(x) for x in a))
+
+# Outra gravação (BLAST_BAKE=<nome> → Intermediate/BakeRaw/<nome>, no mesmo
+# formato do convert_bake.py, ex. a eg_gasoline do EmberGen da sessão de arte):
+# uma variante, os próprios assets (SVT_/DA_/M_Explosion_<Nome>) e o material
+# SEM os remendos do corpo do WebGL (ruído de detalhe, erosão Nubis, piroclástico,
+# sombreado de bolhas, topos frios): o detalhe vem da própria simulação.
+BAKE_NAME = os.environ.get('BLAST_BAKE')
+VELOCITY_RAW = os.path.join(PROJECT, 'Intermediate', 'BakeVelocity')    # export_bake_velocity.py
+VELOCITY = '/Game/Explosions/Interaction/T_BakeVelocity_v%d'
+NORMAL = '/Game/Explosions/Interaction/T_BakeNormal_v%d'
+if BAKE_NAME:
+    TAG = ''.join(p.capitalize() for p in BAKE_NAME.split('_'))            # eg_gasoline → EgGasoline
+    VARIANTS = 1
+    # uma explosão viva de cada corpo por vez na cena: 2 quadros (a mistura) × 2.
+    # Com 12, os quatro corpos novos passaram 543 MB do orçamento de vídeo da 1660
+    POOL_FACTOR = 4.0
+    # '%.0s' % variante = '': os caminhos continuam aceitando a variante
+    BAKE_RAW = os.path.join(PROJECT, 'Intermediate', 'BakeRaw', BAKE_NAME + '%.0s')
+    SVT = '/Game/Explosions/SVT_%s%%.0s' % TAG
+    BAKE = '/Game/Explosions/DA_%s%%.0s' % TAG
+    MATERIAL = '/Game/Explosions/M_Explosion_%s' % TAG
+    VELOCITY_RAW = os.path.join(VELOCITY_RAW, BAKE_NAME)
+    VELOCITY = '/Game/Explosions/Interaction/T_BakeVelocity_%s%%.0s' % TAG
+    NORMAL = '/Game/Explosions/Interaction/T_BakeNormal_%s%%.0s' % TAG
+
 
 def read_meta(variant):
     with open(os.path.join(BAKE_RAW % variant, 'meta.json'), encoding='utf-8') as f:
@@ -69,6 +96,12 @@ def volume(variant):
     lib = unreal.EditorAssetLibrary
     if lib.does_asset_exist(svt):
         v = unreal.load_asset(svt)
+        if lib.get_metadata_tag(v, 'bake_raw') != fingerprint and not os.path.exists(os.path.join(raw, 'f000_a.bin')):
+            # os quadros brutos foram apagados (o disco: ~85 MB por quadro) e o meta
+            # foi regenerado: o volume que existe é o bom, refazer seria impossível
+            log('raw frames gone: keeping', svt)
+            lib.set_metadata_tag(v, 'bake_raw', fingerprint)
+            lib.save_loaded_asset(v)
         if lib.get_metadata_tag(v, 'bake_raw') == fingerprint:
             if v.get_editor_property('streaming_pool_size_factor') != POOL_FACTOR:
                 v.set_editor_property('streaming_pool_size_factor', POOL_FACTOR)
@@ -121,13 +154,14 @@ def bake_asset(variant, svt):
     b.set_editor_property('velocity', vel)
     b.set_editor_property('velocity_resolution', res)
     b.set_editor_property('soot_height', [h * 100.0 for h in heights])
+    b.set_editor_property('normal', bake_normal(variant))
+    # as do EmberGen dissolvem a fumaça: o ganho por quadro do conversor mantém a massa
+    b.set_editor_property('soot_gain', [float(g) for g in meta.get('soot_gain_suggested', [])])
     lib.save_loaded_asset(b)
     log('bake asset', path)
     return b
 
 
-VELOCITY_RAW = os.path.join(PROJECT, 'Intermediate', 'BakeVelocity')    # export_bake_velocity.py
-VELOCITY = '/Game/Explosions/Interaction/T_BakeVelocity_v%d'
 WARP_NONE = '/Game/Explosions/Interaction/T_WarpNone'
 
 
@@ -143,6 +177,30 @@ def bake_velocity(variant):
         raise RuntimeError('bake velocity %d: %s' % (variant, error))
     unreal.EditorAssetLibrary.save_loaded_asset(t)
     return t, n, info['soot_height_m_v%d' % variant]
+
+
+def bake_normal(variant):
+    """A normal da fumaça em baixa resolução (export_bake_velocity.py nrm<n>.bin).
+    Refeita quando o bruto muda (impressão no metadado)."""
+    with open(os.path.join(VELOCITY_RAW, 'velocity.json'), encoding='utf-8') as f:
+        info = json.load(f)
+    n, frames = info['resolution'], info['frames']
+    raw = os.path.join(VELOCITY_RAW, 'nrm%d.bin' % variant)
+    with open(raw, 'rb') as f:
+        fingerprint = hashlib.sha1(f.read()).hexdigest()[:16]
+    lib = unreal.EditorAssetLibrary
+    path = NORMAL % variant
+    if lib.does_asset_exist(path):
+        t = unreal.load_asset(path)
+        if lib.get_metadata_tag(t, 'raw') == fingerprint:
+            return t
+        lib.delete_asset(path)
+    t, error = unreal.BlastLabEditorLib.create_volume_texture(raw, path, unreal.IntVector(n, n, n * frames))
+    if not t:
+        raise RuntimeError('bake normal %d: %s' % (variant, error))
+    lib.set_metadata_tag(t, 'raw', fingerprint)
+    lib.save_loaded_asset(t)
+    return t
 
 
 def warp_none():
@@ -167,6 +225,20 @@ def noise_texture():
         raise RuntimeError('noise: ' + error)
     unreal.EditorAssetLibrary.save_loaded_asset(t)
     log('noise created', NOISE)
+    return t
+
+
+def worley_texture():
+    """Worley 128³ da erosão (make_noise.py worley). Pra refazer, apague o asset."""
+    if unreal.EditorAssetLibrary.does_asset_exist(WORLEY):
+        return unreal.load_asset(WORLEY)
+    if not os.path.exists(WORLEY_RAW):
+        raise RuntimeError('worley noise missing: run python BlastLab/Tools/make_noise.py')
+    t, error = unreal.BlastLabEditorLib.create_volume_texture(WORLEY_RAW, WORLEY, unreal.IntVector(128, 128, 128))
+    if not t:
+        raise RuntimeError('worley: ' + error)
+    unreal.EditorAssetLibrary.save_loaded_asset(t)
+    log('worley created', WORLEY)
     return t
 
 
@@ -218,6 +290,175 @@ LOOK = dict(sootExt=13.5, dustExt=5.5, sootAlbedo=0.30, dustAlbedo=0.78,
 # erosão das bordas finas e período das duas fases do flow noise (s).
 DETAIL = dict(amp=0.42, scale=0.85, dens=0.34, erode=0.042, period=0.5)
 
+# Detalhe pra câmera de RTS (06/10, docs/EXPLOSOES.md §9). Vista a 100–200 m,
+# a explosão saía em bolhas lisas: o ruído acima (ladrilho de 1.2 m, oitavas de
+# 0.3/0.15/0.07 m) fica abaixo do passo da marcha (0.4 m) e do pixel, e o TSR
+# tira a média. O "upres" das nuvens do Horizon (Schneider, Nubis, SIGGRAPH
+# 2015/2017/2023): a casca rala da fumaça é comida pelo ruído Worley 1 − F1
+# onde ele é baixo (entre as bolhas), e o que sobra fica com borda dura.
+# Oitavas de 2.4/1.2/0.6 m (ladrilho de 9.6 m com 4/8/16 células) e pesos
+# 0.625/0.25/0.125 (os do Nubis), andando com a velocidade gravada em duas
+# fases (o mesmo flow noise de cima, com período de 1 s). Todos são parâmetros
+# do material: o simulador aceita -ExplosionParams=Nome=valor;... pra A/B.
+# Medido 06/10 no deserto, câmera de RTS (captures/ue/_pyro_ab, _fire_ab): com
+# 0.7 e referência 0.25 a erosão comia o corpo da fumaça aos 2.5 s; 0.4 e 0.1
+# só afinam a casca.
+# TempDetail: quanto os topos das bolhas esfriam (0.25 em 06/10, com o ruído
+# solto; 0.5 desde 07/10, nos topos do piroclástico: casca preta com o fogo
+# nas rachaduras). TempSplit 0.55: ~metade da superfície é topo.
+EROSION = dict(ErodeAmount=0.4, ErodeTile=9.6, SootRef=0.1, DustRef=0.1, TempDetail=0.5, TempSplit=0.55,
+               period=1.0)
+# A cor: o expoente da luminância do corpo negro, a escala da temperatura no
+# mapa (0.92 → 1.6 de temperatura gravada = 3300 K) e um ganho. O 0.44 do WebGL
+# achatava a bola num creme só (1500 K brilhava 1/38 de 3000 K, contra 1/4000
+# na física); com 0.6 e ganho 1.6 o quente estoura em branco-amarelo e o morno
+# fica laranja atrás da fuligem (A/B de 06/10 contra a arte, _fire_ab).
+# Ganho 6: na arte mais da metade da bola está estourada em branco (saturação
+# ≤ 0.11); com 2.5 a nossa ficava toda laranja saturada, sem estourar (medido
+# 06/10, _fire_e: 2.5 / 6 / 12).
+# Curva física (07/10, fase A de docs/CONCEITO_EXPLOSOES.md §4b, liberada pelo
+# Felipe): o brilho visível do corpo negro cresce como ~T^16 a 1500 K; com o
+# expoente 0.44–0.6 do WebGL a fuligem fria brilhava 24–90× demais (o
+# "marrom") e o núcleo só 3–12×. Com 1.0 a casca escura com brasas nas
+# rachaduras sai do próprio render (emissão por Kirchhoff).
+# Temperatura 0.9 e ganho 16: com 0.75 a curva física apagava a bola já aos
+# 0.8 s; o vídeo do Veo ainda está branco-amarelo até ~1 s e vira casca preta
+# com brasas em 1.3–1.5 s (A/B de 07/10, captures/ue/_fa2: 0.75/12, 0.9/12, 0.9/25)
+COLOR = dict(EmissionCurve=1.0, TempScale=0.9, EmissionBoost=16.0, EmissionFloor=0.3)
+# A bola de fogo da morte de tanque é combustível: fuligem e fogo, sem a poeira
+# da gravação dentro (poeira 0.78 + fuligem 0.30 = o marrom); a poeira fica na
+# saia, com o albedo real (0.95–0.99). A fuligem real é quase uma superfície
+# (8.7 m²/g: 1 m de casca deixa passar ~1%): extinção 2.5× a do WebGL.
+FUEL = dict(BakeDust=0.0, SootExtScale=2.5, DustAlbedo=0.95,
+            # a base da coluna mais rala até BaseClearM (m locais; 0 = nada): a coluna
+            # da carcaça vista de cima não pode cobrir o tanque (regra de jogo)
+            BaseClearM=0.0,
+            # a fração do alto da caixa em que a fumaça some (as colunas em loop saem pelo teto: com 0.2 o topo ficava cortado reto)
+            TopFade=0.2,
+            # o miolo livre (m locais do eixo; 0 = nada): o anel de poeira nunca cobre o casco
+            HollowM=0.0,
+            # só a fuligem quente (> 0: o limiar na temperatura decodificada): o fogo
+            # da carcaça mostra só a chama, e a fumaça da morte de tanque é uma só, a
+            # coluna da JangaFX (pedido do Felipe, 07/10: três fumaças com três caras).
+            # Zerar a fuligem não serve: a emissão do material é proporcional a ela
+            SootTempCut=0.0,
+            # o topo dos DADOS (m locais; 0 = nada) e quantos metros abaixo dele a
+            # fumaça se dissolve: a Smoke Plume termina num corte reto onde acabava o
+            # domínio do EmberGen (sem a bola do campo por cima, virava uma tampa)
+            TopCutM=0.0, TopCutFadeM=3.0)
+# A saia de poeira rente ao chão (a "terra indo pros lados" da arte alvo,
+# docs/concept/explosions/target_ground_blast.webp): analítica, dentro do mesmo
+# volume (compõe e faz sombra junto com o fogo). O C++ (ExplosionVolume.cpp
+# SkirtAt) dá a frente, a altura e a quantidade a cada instante; aqui fica a
+# forma: frente e topo em couve-flor pelo Worley, que cresce junto com a frente
+# (as bolhas andam pra fora em vez de ficarem paradas).
+SKIRT_RMAX = 15.0          # m locais, o raio final da Carga Pesada (= ExplosionVolume.cpp)
+
+
+def skirt_noise_code():
+    """As bolhas da saia: o Worley em coordenadas que se expandem com a frente
+    (a mesma bolha anda pra fora) e sobem devagar. Devolve (bolhas, bolhas na
+    direção do sol, 0, 0)."""
+    return (
+        'float3 sp = UVW * %r - float3(%r, %r, 0.0);     // m locais a partir do pé\n' % (DOMAIN_M, DOMAIN_M / 2, DOMAIN_M / 2) +
+        '// fora da saia (o miolo da bola de fogo, o alto), nada de ler o ruído\n'
+        'if (SkirtDust <= 0.0 || length(sp.xy) > SkirtRadius * 1.35 || sp.z > SkirtHeight * 2.7) return float4(0.5, 0.5, 0, 0);\n'
+        'float3 q = float3(sp.xy * (%r / max(SkirtRadius, 1.0)), sp.z - 0.5 * Time);\n' % SKIRT_RMAX +
+        'float3 off = frac(sin(float3(Seed, Seed + 1.7, Seed + 3.1) * 43758.5453)) ;\n'
+        'float3 fp = q / ErodeTile + off;\n'
+        'float b = dot(Texture3DSampleLevel(Worley, WorleySampler, fp, 0).rgb, float3(0.625, 0.25, 0.125));\n'
+        'float bs = dot(Texture3DSampleLevel(Worley, WorleySampler, fp + SunDir * (0.8 / ErodeTile), 0).rgb, float3(0.625, 0.25, 0.125));\n'
+        'return float4(b, bs, 0.0, 0.0);'
+    )
+# o deslocamento piroclástico: até PyroAmp metros (locais) ao longo da normal;
+# o sombreado das bolhas no albedo: as frestas entre elas (BillowAO) e o lado
+# contrário ao sol (BillowShadow)
+PYRO = dict(PyroAmp=1.6, BillowAO=0.6, BillowShadow=0.8, EdgeSharp=1.0, SkirtSoft=1.2)
+if BAKE_NAME:
+    # a simulação nova já tem o detalhe (couve-flor em várias escalas, a casca
+    # rachando): nada de ruído falso por cima. Ficam a cor, a emissão e a luz.
+    DETAIL.update(amp=0.0, dens=0.0, erode=0.0)
+    EROSION.update(ErodeAmount=0.0, TempDetail=0.0)
+    PYRO.update(PyroAmp=0.0, BillowAO=0.0, BillowShadow=0.0, EdgeSharp=0.02)
+    if BAKE_NAME.startswith(('eg_plume', 'eg_gasoline', 'wreck_fire')):
+        # A coluna em contraluz saía cinza-marrom (L ~80) contra L ≤ 50 no vídeo;
+        # um arbusto escuro à mesma distância (~38 m) fica em 28–45, então a névoa
+        # não é a causa: é a fuligem refletindo o céu (albedo 0.30 × cor 0.55 =
+        # 0.165, mais claro que o arbusto). Fuligem densa de verdade tem albedo de
+        # massa ~0.05–0.1 (o albedo simples ~0.2–0.3 vira bem menos em meio espesso,
+        # que o volume sem as ordens altas não reproduz): 0.15 × 0.55 = 0.08. A
+        # bola da EG e o fogo da carcaça levam a mesma fuligem (os três corpos são
+        # a mesma fumaça; aos 3 s o miolo da coluna perto da base é a fumaça do fogo
+        # em loop: com só a plume e a EG escuras a região medida não mudou)
+        LOOK.update(sootAlbedo=0.15)
+    if BAKE_NAME.startswith('eg_gasoline'):
+        # o conversor põe a chama em ~0.5–0.8 (temperatura×0.40 + chama×0.55): com
+        # 0.9 ela caía em ~2000 K e a bola saía caqui aos 0.3–1 s; com 1.8 o fogo
+        # das rachaduras fica laranja-amarelo como no vídeo aos 1.3 s (A/B de 07/10,
+        # captures/ue/_ab_eg_temp.jpg: 0.9/16, 1.8/16, 1.5/40)
+        COLOR.update(TempScale=1.8)
+# Gravação de poeira (eg_dust, a Grenade Dust Impact): a densidade vem no canal de
+# poeira e a cor é a do chão do campo (SkirtTint, que o C++ troca pelo do ponto)
+DUST_BODY = bool(BAKE_NAME) and ('dust' in BAKE_NAME or 'ring' in BAKE_NAME)
+if DUST_BODY:
+    FUEL.update(BakeDust=1.0)
+
+
+def normal_code():
+    """A normal pra fora da fumaça e a força da borda, pré-calculadas da extinção
+    gravada em baixa resolução (32³ por quadro, quadros empilhados em z;
+    export_bake_velocity.py nrm<n>.bin), misturando os dois quadros do instante.
+    A normal sai lisa (1.2 m por texel na Carga Pesada), que é o que o
+    deslocamento quer; onde as dos dois quadros discordam, a força cai."""
+    return (
+        'float R = VelRes, N = VelFrames;\n'
+        'float3 t = clamp(UVW * R, 0.5, R - 0.5);       // texel, sem vazar pro quadro vizinho\n'
+        'float3 inv = 1.0 / float3(R, R, R * N);\n'
+        'float4 a = Texture3DSampleLevel(BakeNormal, BakeNormalSampler, float3(t.xy, t.z + VelFrame0 * R) * inv, 0);\n'
+        'float4 b = Texture3DSampleLevel(BakeNormal, BakeNormalSampler, float3(t.xy, t.z + VelFrame1 * R) * inv, 0);\n'
+        'float4 m = lerp(a, b, FrameAlpha);\n'
+        'float3 nrm = m.xyz * 2.0 - 1.0;\n'
+        'float l = length(nrm);\n'
+        'return float4(nrm / max(l, 1e-4), m.w * saturate(l * 2.0));'
+    )
+
+
+def erosion_code():
+    """O ruído Worley das bordas, levado pela velocidade gravada (duas fases com
+    a mistura que preserva o contraste, Vlachos 2010). Devolve (bolhas 2.4–0.6 m,
+    a oitava de 1.2 m sozinha, as bolhas 0.6 m na direção do sol, 0). A terceira
+    é a sombra própria barata das bolhas (a derivada direcional, Quilez): o cache
+    de luz do volume tem 0.8 m e não vê bolha nenhuma."""
+    return (
+        'float3 lp = UVW * %r;                         // m, espaço local\n' % DOMAIN_M +
+        'float3 vel = B.gba;\n'
+        'float ph = Time / %r;\n' % EROSION['period'] +
+        'float4 acc = 0;\n'
+        'float sun = 0, w2 = 0;\n'
+        '[unroll] for (int q = 0; q < 2; q++) {\n'
+        '  float pk = ph + 0.5 * q;\n'
+        '  float c = floor(pk), tk = pk - c;\n'
+        '  float w = 1.0 - abs(2.0 * tk - 1.0);\n'
+        '  float3 h = float3(c, q + 11.0, Seed);\n'
+        '  h = float3(dot(h, float3(127.1, 311.7, 74.7)), dot(h, float3(269.5, 183.3, 246.1)),\n'
+        '             dot(h, float3(113.5, 271.9, 124.6)));\n'
+        '  h = frac(sin(h) * 43758.5453123);\n'
+        '  float3 fp = (lp - vel * (tk * %r)) / ErodeTile + h;\n' % EROSION['period'] +
+        '  acc += w * (Texture3DSampleLevel(Worley, WorleySampler, fp, 0) - 0.5);\n'
+        '  float4 s = Texture3DSampleLevel(Worley, WorleySampler, fp + SunDir * (0.6 / ErodeTile), 0);\n'
+        '  sun += w * (dot(s.rgb, float3(0.625, 0.25, 0.125)) - 0.5);\n'
+        '  w2 += w * w;\n'
+        '}\n'
+        'float k = rsqrt(max(w2, 1e-4));\n'
+        'float4 n = saturate(0.5 + acc * k);\n'
+        '// y: a turbulência fina (0.6 e 0.3 m), as línguas de chama no fogo quente.\n'
+        '// w: o piroclástico em 4 oitavas, 2.4 → 0.3 m, cada uma com metade da\n'
+        '// amplitude da anterior: lóbulos dentro de lóbulos (couve-flor). Com só\n'
+        '// 2.4 e 1.2 m os lóbulos saíam redondos e iguais ("slime", 07/10)\n'
+        'return float4(dot(n.rgb, float3(0.625, 0.25, 0.125)), dot(n.ba, float2(0.6, 0.4)), saturate(0.5 + sun * k),\n'
+        '              dot(n, float4(0.533, 0.267, 0.133, 0.067)));'
+    )
+
 
 def displace_code():
     """Flow noise de duas fases (Vlachos, "Water Flow in Portal 2", SIGGRAPH
@@ -242,12 +483,18 @@ def displace_code():
         '             dot(h, float3(113.5, 271.9, 124.6)));\n'
         '  h = frac(sin(h) * 43758.5453123) * 2.0 - 1.0;\n'
         '  float3 off = Seed * float3(7.3, 5.1, 3.1) + h * 17.0;\n'
-        '  float3 fp = (lp - vel * (tk * %r)) * %r + off;\n' % (d['period'], d['scale']) +
+        '  float3 fp = (lp - vel * (tk * %r)) * DetailFreq + off;\n' % d['period'] +
         '  r += w * (Texture3DSampleLevel(Noise, NoiseSampler, fp, 0).xyz * 2.0 - 1.0);\n'
         '  w2 += w * w;\n'
         '}\n'
         'float3 n = r * rsqrt(max(w2, 1e-4));\n'
-        'return float4(UVW + n * %r, (n.x + n.y + n.z) * 0.577);' % (d['amp'] / DOMAIN_M)
+        '// Piroclástico (Wrenninge, "Production Volume Rendering", SIGGRAPH 2011;\n'
+        '// o "pyroclastic noise" do Houdini): a superfície da fumaça anda ao longo\n'
+        '// da própria normal, pra fora onde as bolhas do Worley são altas e pra\n'
+        '// dentro entre elas. Lendo a gravação em p − n·A·(2b − 1), a borda vira\n'
+        '// couve-flor nítida em vez de borrão (sem dobra: o empurrão é na normal)\n'
+        'float3 pyro = -NRM.xyz * (PyroAmp * NRM.w * (EN.w * 2.0 - 1.0));\n'
+        'return float4(UVW + (n * DetailAmp + pyro) / %r, (n.x + n.y + n.z) * 0.577);' % DOMAIN_M
     )
 
 
@@ -258,21 +505,65 @@ def decode_code():
         '// códigos do WebGL (js/bake.js): fuligem r²·4, temperatura g·1.6, poeira b²·2.5, combustível r²\n'
         'float soot = A.r * A.r * 4.0;\n'
         'float temp = A.g * 1.6;\n'
-        'float dust = A.b * A.b * 2.5;\n'
+        'float dust = A.b * A.b * 2.5 * BakeDust;      // a poeira gravada dentro da bola (FUEL)\n'
         'float fuel = B.r * B.r;\n'
+        'float clr = BaseClearM > 0.0 ? smoothstep(0.3 * BaseClearM, BaseClearM, UVW.z * %r) : 1.0;\n' % DOMAIN_M +
+        'clr *= HollowM > 0.0 ? smoothstep(0.6 * HollowM, HollowM, length((UVW.xy - 0.5) * %r)) : 1.0;\n' % DOMAIN_M +
+        'soot *= clr;\n'
+        'dust *= clr;\n'
         '// detalhe (js/instances.js sampleInst): densidade modulada pelo ruído e\n'
         '// esvaecida no teto e nas laterais da caixa (boxFade), depois as bordas\n'
         '// finas erodidas (a fumaça densa quase não perde nada)\n'
         'float2 side = min(UVW.xy, 1.0 - UVW.xy);\n'
-        'float boxFade = smoothstep(0.0, 0.2, 1.0 - UVW.z) * smoothstep(0.0, %r, min(side.x, side.y));\n'
+        'float boxFade = smoothstep(0.0, TopFade, 1.0 - UVW.z) * smoothstep(0.0, %r, min(side.x, side.y));\n'
         % (5.0 / RES) +
+        'boxFade *= TopCutM > 0.0 ? smoothstep(TopCutM, TopCutM - TopCutFadeM, UVW.z * %r) : 1.0;\n' % DOMAIN_M +
         'float modulate = (1.0 + %r * NM) * boxFade;\n' % d['dens'] +
         'soot *= modulate;\n'
         'dust *= modulate;\n'
         'float er = %r * (0.5 - 0.5 * NM);\n' % d['erode'] +
         'soot = max(soot - er / (1.0 + soot * 9.0), 0.0);\n'
         'dust = max(dust - er * 0.7 / (1.0 + dust * 9.0), 0.0);\n'
-        'float sigS = %r * soot * DensityScale;\n' % a['sootExt'] +
+        '// erosão da casca rala (Nubis: remap(d, e, 1, 0, 1)): abaixo da densidade\n'
+        '// de referência a fumaça é comida entre as bolhas do Worley; o miolo fica\n'
+        '// só na fumaça que já esfriou (abaixo de ~2100 K): comer a casca quente\n'
+        '// deixaria a bola de fogo rendada, não com lóbulos escuros na frente\n'
+        'float ero = ErodeAmount * (1.0 - EN.x) * (1.0 - smoothstep(0.35, 0.6, temp * 0.92));\n'
+        'float qs = soot / SootRef, qd = dust / DustRef;\n'
+        'soot = qs < 1.0 ? SootRef * saturate((qs - ero) / max(1.0 - ero, 0.05)) : soot;\n'
+        'dust = qd < 1.0 ? DustRef * saturate((qd - ero) / max(1.0 - ero, 0.05)) : dust;\n'
+        '// Lóbulos frios: os TOPOS das bolhas do piroclástico (EN.w alto, a casca\n'
+        '// empurrada pra fora) esfriam e ficam pretos; o quente vaza pelos VALES,\n'
+        '// as rachaduras entre elas (no vídeo do Veo os topos são pretos e o laranja\n'
+        '// aparece nas rachaduras; com o ruído solto o brilho ficava no topo das\n'
+        '// bolhas, com cara de metal lustroso — avaliação de 07/10)\n'
+        '// (±0.15: com ±0.08 a borda quente/fria era um degrau que a marcha com\n'
+        '// sorteio transformava em grão colorido, a "TV velha")\n'
+        'float hot0 = saturate(temp * 0.9);            // o quente antes dos topos esfriarem\n'
+        'float cold = smoothstep(TempSplit - 0.15, TempSplit + 0.15, EN.w);\n'
+        'temp *= 1.0 - TempDetail * cold;\n'
+        '// A saia de poeira (SKIRT, acima): mais densa perto da frente (a terra é\n'
+        '// empurrada pra fora), caindo com a altura; frente e topo em couve-flor\n'
+        'float3 sp = UVW * %r - float3(%r, %r, 0.0);\n' % (DOMAIN_M, DOMAIN_M / 2, DOMAIN_M / 2) +
+        'float rr = length(sp.xy);\n'
+        'float redge = SkirtRadius * (0.78 + 0.44 * SN.x);\n'
+        'float hedge = SkirtHeight * (0.45 + 1.1 * SN.x);\n'
+        'float radial = smoothstep(redge, redge - SkirtSoft, rr) * (0.35 + 0.65 * smoothstep(0.15 * SkirtRadius, 0.75 * SkirtRadius, rr));\n'
+        '// no meio, o tronco de terra jogada pra cima liga o chão à bola (na arte a\n'
+        '// bola senta na poeira; a nossa descola do chão cedo)\n'
+        'hedge *= 1.0 + 0.6 * (1.0 - smoothstep(0.1 * SkirtRadius, 0.4 * SkirtRadius, rr));\n'
+        '// topo pelas bolhas (borda dura de SkirtSoft m), não por uma queda exponencial lisa\n'
+        'float vertical = (0.55 + 0.45 * exp(-sp.z / max(0.6 * hedge, 0.1))) * smoothstep(hedge, hedge - SkirtSoft, sp.z);\n'
+        'float skirt = SkirtDust * radial * vertical * smoothstep(0.0, %r, min(side.x, side.y));\n' % (5.0 / RES) +
+        'dust += skirt;\n'
+        'float wSkirt = skirt / max(dust + soot, 1e-5);\n'
+        '// Borda afiada: a névoa rala some e a transição fica curta (a borda da\n'
+        '// arte é dura; a nossa espalhava ~1 m de degradê de 0.4 m por voxel)\n'
+        'soot *= smoothstep(0.004 * EdgeSharp, 0.03 * EdgeSharp, soot);\n'
+        'dust *= smoothstep(0.004 * EdgeSharp, 0.04 * EdgeSharp, dust);\n'
+        '// só a fuligem quente (FUEL SootTempCut): a fria, a fumaça, some\n'
+        'soot *= SootTempCut > 0.0 ? smoothstep(SootTempCut, SootTempCut + 0.1, hot0) : 1.0;\n'
+        'float sigS = %r * SootExtScale * soot * DensityScale;\n' % a['sootExt'] +
         'float sigD = %r * dust * DensityScale;\n' % a['dustExt'] +
         'float sigT = sigS + sigD;\n'
         'float wS = sigS / max(sigT, 1e-5);\n'
@@ -300,6 +591,12 @@ def ms_fill_code():
     return '\n'.join([
         '// fase dupla de Henyey–Greenstein (glsl.js phaseDual), pra cada luz-chave',
         'float phIso = 1.0 / (4.0 * 3.14159265);',
+        '// A ordem n do espalhamento pesa ω^n; as oitavas de Wrenninge (b = 0.52)',
+        '// foram feitas pra nuvem (ω ≈ 1) e já trazem um ω no σ_s. Na fuligem (ω ≈',
+        '// 0.17) a 2ª ordem real é ~6× menor: sem o ω em cada oitava, o sol quente',
+        '// enchia a sombra da fumaça (marrom, 1–1.7 stop de contraste contra 2–3.5 no',
+        '// alvo; estudo da sessão de arte, 07/10). MsAlbedo 0 = o antigo, pra A/B.',
+        'float w = lerp(1.0, saturate(dot(Albedo, float3(0.2126, 0.7152, 0.0722))), MsAlbedo);',
         'float3 rd = -CamVec;                                   // da câmera pro ponto',
         'float3 L = 0;',
         '[unroll] for (int i = 0; i < 2; i++) {',
@@ -312,7 +609,7 @@ def ms_fill_code():
         '  float phSun = lerp(hf, hb, %r);' % m['mix'],
         '  float ms = 0.0, ae = 1.0, ab = 1.0, ap = 1.0;',
         '  [unroll] for (int o = 1; o < %d; o++) {' % m['octaves'],
-        '    ae *= %r; ab *= %r; ap *= %r;' % (m['ext'], m['scatter'], m['phase']),
+        '    ae *= %r; ab *= %r * w; ap *= %r;' % (m['ext'], m['scatter'], m['phase']),
         '    ms += ae * ab * (1.0 - ap) * lerp(phIso, phSun, ap);',
         '  }',
         '  L += irr * ms;',
@@ -333,13 +630,17 @@ def ms_fill(E, link, custom, alb, ext, x, y):
         n.set_editor_property('light_index', 0 if i % 2 == 0 else 1)
         nodes[name] = n
     cam = E(unreal.MaterialExpressionCameraVectorWS, x - 300, y + 360)
+    wa = E(unreal.MaterialExpressionScalarParameter, x - 300, y + 450)
+    wa.set_editor_property('parameter_name', 'MsAlbedo')
+    wa.set_editor_property('default_value', 1.0)
     c = custom('MsFill (oitavas)', ms_fill_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT3, y,
-               ('Albedo', 'Ext', 'Sun', 'Moon', 'SunDir', 'MoonDir', 'CamVec'), x=x)
+               ('Albedo', 'Ext', 'Sun', 'Moon', 'SunDir', 'MoonDir', 'CamVec', 'MsAlbedo'), x=x)
     link(alb, '', c, 'Albedo')
     link(ext, '', c, 'Ext')
     for name, n in nodes.items():
         link(n, '', c, name)
     link(cam, '', c, 'CamVec')
+    link(wa, '', c, 'MsAlbedo')
     return c
 
 
@@ -349,9 +650,12 @@ def material():
         m = unreal.load_asset(MATERIAL)
         mel.delete_all_material_expressions(m)
     else:
-        m = asset_tools.create_asset('M_Explosion', '/Game/Explosions', unreal.Material, unreal.MaterialFactoryNew())
+        m = asset_tools.create_asset(MATERIAL.rsplit('/', 1)[1], '/Game/Explosions', unreal.Material, unreal.MaterialFactoryNew())
     m.set_editor_property('material_domain', unreal.MaterialDomain.MD_VOLUME)
     m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_ADDITIVE)
+    # as explosões são criadas em jogo: a marca de uso não vem do editor (sem ela,
+    # material padrão: a eg_gasoline saiu invisível na rodada c, 07/10)
+    mel.set_material_usage(m, unreal.MaterialUsage.MATUSAGE_HETEROGENEOUS_VOLUMES)
     E = lambda cls, x, y: mel.create_material_expression(m, cls, x, y)
     failed = []
 
@@ -457,13 +761,53 @@ def material():
     # tempo da gravação (s), por explosão: o ruído anda com a fumaça
     time = param('Time', 0.0, -650, x=-1000)
     seed = param('Seed', 0.0, -750, x=-1000)   # uma por explosão: duas iguais não ficam idênticas
-    displace = custom('Displace (flow noise)', displace_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT4,
-                      -400, ('UVW', 'B', 'Time', 'Seed', 'Noise'), x=-750)
+    alpha = param('FrameAlpha', 0.0, -900, x=-1000)
+
+    # o Worley das bordas (as bolhas), uma vez só pra todos os nós de leitura (EN)
+    worley = E(unreal.MaterialExpressionTextureObject, -1000, -1450)
+    worley.set_editor_property('texture', worley_texture())
+    worley.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+    erosion = custom('Erosion noise (Nubis)', erosion_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT4,
+                     -1350, ('UVW', 'B', 'Time', 'Seed', 'Worley', 'ErodeTile', 'SunDir'), x=-750)
+    sun_dir = E(unreal.MaterialExpressionSkyAtmosphereLightDirection, -1000, -1950)
+    sun_dir.set_editor_property('light_index', 0)
+    link(sun_dir, '', erosion, 'SunDir')
+    link(domain, '', erosion, 'UVW')
+    link(svt0, out_b, erosion, 'B')
+    link(time, '', erosion, 'Time')
+    link(seed, '', erosion, 'Seed')
+    link(worley, '', erosion, 'Worley')
+    look = {name: param(name, value, -1600 - 100 * i, x=-1000)
+            for i, (name, value) in enumerate(list(EROSION.items())[:-1] + list(COLOR.items()) + list(PYRO.items())
+                                              + list(FUEL.items()))}
+    link(look['ErodeTile'], '', erosion, 'ErodeTile')
+
+    # a normal da fumaça, pré-calculada da gravação em baixa resolução (BakeNormal)
+    bake_nrm = E(unreal.MaterialExpressionTextureObjectParameter, -1000, -2300)
+    bake_nrm.set_editor_property('parameter_name', 'BakeNormal')
+    bake_nrm.set_editor_property('texture', bake_normal(0))
+    bake_nrm.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+    normal = custom('Normal (gravação 32³)', normal_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT4, -2200,
+                    ('UVW', 'BakeNormal', 'VelFrame0', 'VelFrame1', 'FrameAlpha', 'VelFrames', 'VelRes'), x=-750)
+    link(domain, '', normal, 'UVW')
+    link(bake_nrm, '', normal, 'BakeNormal')
+    link(alpha, '', normal, 'FrameAlpha')
+    for i, (name, value) in enumerate((('VelFrame0', 0.0), ('VelFrame1', 0.0), ('VelFrames', 56.0), ('VelRes', 32.0))):
+        link(param(name, value, -2400 - 100 * i, x=-1000), '', normal, name)
+
+    displace = custom('Displace (flow noise + piroclástico)', displace_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT4,
+                      -400, ('UVW', 'B', 'Time', 'Seed', 'Noise', 'DetailAmp', 'DetailFreq', 'EN', 'NRM', 'PyroAmp'), x=-750)
     link(domain, '', displace, 'UVW')
     link(svt0, out_b, displace, 'B')
     link(time, '', displace, 'Time')
     link(seed, '', displace, 'Seed')
     link(noise, '', displace, 'Noise')
+    # o ruído fino do WebGL pela metade: por cima do piroclástico ele serrilhava a borda
+    link(param('DetailAmp', 0.5 * DETAIL['amp'], -1150, x=-1000), '', displace, 'DetailAmp')
+    link(param('DetailFreq', DETAIL['scale'], -1250, x=-1000), '', displace, 'DetailFreq')
+    link(erosion, '', displace, 'EN')
+    link(normal, '', displace, 'NRM')
+    link(look['PyroAmp'], '', displace, 'PyroAmp')
     uvw = E(unreal.MaterialExpressionComponentMask, -600, -250)
     nm = E(unreal.MaterialExpressionComponentMask, -600, -150)
     for k, v in (('r', True), ('g', True), ('b', True), ('a', False)):
@@ -477,7 +821,6 @@ def material():
     # de bakeAtMV): A = quadro0(p − v·a·Δt), B = quadro1(p + v·(1−a)·Δt),
     # mistura(A, B, a). Sem o componente de quadros, alfa = Δt = 0 e só o
     # quadro de baixo conta.
-    alpha = param('FrameAlpha', 0.0, -900, x=-1000)
     interval = param('FrameInterval', 0.0, -1000, x=-1000)
     carry = {}
     for name, sign, weight, y in (('Back', '-', 'FrameAlpha', -50), ('Forward', '+', '(1.0 - FrameAlpha)', 50)):
@@ -514,13 +857,36 @@ def material():
     link(kept, '', density, 'B')
     emission = param('EmissionScale', 1.0, 600)
 
+    shape = ('ErodeAmount', 'SootRef', 'DustRef', 'TempDetail', 'TempSplit', 'EdgeSharp', 'SkirtSoft') + tuple(FUEL)
+    # a saia de poeira: o C++ põe a frente, a altura e a quantidade a cada instante
+    skirt_p = {name: param(name, 0.0, 1600 + 100 * i, x=-1000)
+               for i, name in enumerate(('SkirtRadius', 'SkirtHeight', 'SkirtDust'))}
+    skirt_n = custom('Skirt noise (bolhas da saia)', skirt_noise_code(), unreal.CustomMaterialOutputType.CMOT_FLOAT4,
+                     1500, ('UVW', 'Worley', 'SunDir', 'SkirtRadius', 'SkirtHeight', 'SkirtDust', 'Seed', 'Time', 'ErodeTile'),
+                     x=-750)
+    link(domain, '', skirt_n, 'UVW')
+    link(worley, '', skirt_n, 'Worley')
+    link(sun_dir, '', skirt_n, 'SunDir')
+    for p in ('SkirtRadius', 'SkirtHeight', 'SkirtDust'):
+        link(skirt_p[p], '', skirt_n, p)
+    link(seed, '', skirt_n, 'Seed')
+    link(time, '', skirt_n, 'Time')
+    link(look['ErodeTile'], '', skirt_n, 'ErodeTile')
+
     def decode(name, code, output, y, extra=()):
-        c = custom(name, code, output, y, ('A', 'B', 'UVW', 'NM', 'DensityScale') + tuple(extra), x=-200)
+        c = custom(name, code, output, y, ('A', 'B', 'UVW', 'NM', 'DensityScale', 'EN', 'SN') + shape +
+                   tuple(skirt_p) + tuple(extra), x=-200)
         link(mix[''], '', c, 'A')
         link(mix[out_b], '', c, 'B')
         link(uvw, '', c, 'UVW')
         link(nm, '', c, 'NM')
         link(density, '', c, 'DensityScale')
+        link(erosion, '', c, 'EN')
+        link(skirt_n, '', c, 'SN')
+        for p in shape:
+            link(look[p], '', c, p)
+        for p, node in skirt_p.items():
+            link(node, '', c, p)
         return c
 
     a = LOOK
@@ -530,25 +896,53 @@ def material():
                  'return sigT * %r;' % vox,
                  unreal.CustomMaterialOutputType.CMOT_FLOAT3, -200)
     alb = decode('Albedo', decode_code() +
-                 'float3 tint = lerp(float3%r, float3%r, wS);\n' % (a['dustColor'], a['sootColor']) +
-                 'float alb = lerp(%r, %r, wS);\n' % (a['dustAlbedo'], a['sootAlbedo']) +
-                 'return (sigT > 1e-6) ? tint * alb : float3(0, 0, 0);',
-                 unreal.CustomMaterialOutputType.CMOT_FLOAT3, 0)
+                 'float3 tint = lerp(lerp(%s, SkirtTint.rgb, wSkirt), float3%r, wS);\n'
+                 % ('SkirtTint.rgb' if DUST_BODY else 'float3%r' % (a['dustColor'],), a['sootColor']) +
+                 'float alb = lerp(DustAlbedo, %r, wS);\n' % a['sootAlbedo'] +
+                 '// as bolhas sombreadas: fresta escura entre elas e o lado oposto ao sol\n'
+                 '// (a bolha vizinha na direção do sol mais alta que esta = sombra)\n'
+                 'float bb0 = lerp(EN.x, SN.x, wSkirt), bbs = lerp(EN.z, SN.y, wSkirt);\n'
+                 'float shade = lerp(1.0 - BillowAO, 1.0, bb0) * saturate(1.0 - BillowShadow * max(bbs - bb0, 0.0) * 4.0);\n'
+                 '// a fresta escura só na casca que já esfriou: na fase branca ela contornava\n'
+                 '// cada lóbulo de escuro (a "gelatina", 07/10); a poeira da saia sempre\n'
+                 'shade = lerp(1.0, shade, max(1.0 - smoothstep(0.45, 0.7, hot0), wSkirt));\n'
+                 'return (sigT > 1e-6) ? tint * alb * shade : float3(0, 0, 0);',
+                 unreal.CustomMaterialOutputType.CMOT_FLOAT3, 0, extra=('BillowAO', 'BillowShadow', 'SkirtTint'))
+    link(look['BillowAO'], '', alb, 'BillowAO')
+    link(look['BillowShadow'], '', alb, 'BillowShadow')
+    # A cor da terra da saia (o C++ troca pelo chão do ponto). Areia do deserto:
+    # a arte mede a poeira ao sol com matiz ~29° e saturação ~0.55; a poeira
+    # fina é mais clara e menos saturada que o chão (0.35, 0.21, 0.11)
+    skirt_tint = E(unreal.MaterialExpressionVectorParameter, -1000, 1900)
+    skirt_tint.set_editor_property('parameter_name', 'SkirtTint')
+    skirt_tint.set_editor_property('default_value', unreal.LinearColor(0.95, 0.74, 0.52, 1.0))
+    link(skirt_tint, 'RGBA', alb, 'SkirtTint')
     lut = blackbody_lut()
     table = ',\n'.join('float4(%.6f, %.6f, %.6f, %.6f)' % e for e in lut)
     emi = decode('Emission', decode_code() +
                  'static const float4 LUT[%d] = {\n%s};\n' % (len(lut), table) +
-                 'float x = saturate(temp * %r) * %d.0 - 0.5;\n' % (a['tempScale'], len(lut)) +
+                 'float x = saturate(temp * TempScale) * %d.0 - 0.5;\n' % len(lut) +
                  'int i0 = clamp((int)floor(x), 0, %d), i1 = min(i0 + 1, %d);\n' % (len(lut) - 1, len(lut) - 1) +
                  'float4 bb = lerp(LUT[i0], LUT[i1], saturate(x - floor(x)));\n'
                  '// frente de chama: 2.5x onde ainda há combustível queimando (inst.params.flameBoost)\n'
                  'float flame = temp > 0.12 ? 1.0 + %r * smoothstep(0.02, 0.35, fuel) : 1.0;\n' % a['flameBoost'] +
-                 'float3 e = bb.rgb * pow(max(bb.a, 0.0), %r) * %r * flame * sigS * (1.0 - %r);\n'
-                 % (a['emissionCurve'], a['emissionGain'], a['sootAlbedo']) +
+                 'float3 e = bb.rgb * pow(max(bb.a, 0.0), EmissionCurve) * %r * flame * sigS * (1.0 - %r);\n'
+                 % (a['emissionGain'], a['sootAlbedo']) +
+                 '// a fuligem que já esfriou (abaixo de ~1100 K) não brilha: com o ganho alto\n'
+                 '// ela virava um balão marrom-avermelhado aos 1.5 s, e na arte é cinza-preta\n'
+                 'e *= smoothstep(EmissionFloor, EmissionFloor + 0.15, saturate(temp * TempScale));\n'
+                 '// línguas de chama: a turbulência fina varia o brilho do fogo (o miolo\n'
+                 '// claro tinha textura chapada; no vídeo é fogo turbulento)\n'
+                 'e *= 0.55 + 0.9 * EN.y;\n'
                  '// radiância do WebGL → cd/m², por voxel\n'
-                 'return e * %r * %r * %r * EmissionScale;' % (LUX_PER_UNIT, vox, WEBGL_CONVENTION),
-                 unreal.CustomMaterialOutputType.CMOT_FLOAT3, 200, extra=('EmissionScale',))
+                 'return e * %r * %r * %r * EmissionScale * EmissionBoost;' % (LUX_PER_UNIT, vox, WEBGL_CONVENTION),
+                 unreal.CustomMaterialOutputType.CMOT_FLOAT3, 200,
+                 extra=('EmissionScale', 'EmissionCurve', 'TempScale', 'EmissionBoost', 'EmissionFloor'))
     link(emission, '', emi, 'EmissionScale')
+    link(look['EmissionBoost'], '', emi, 'EmissionBoost')
+    link(look['EmissionFloor'], '', emi, 'EmissionFloor')
+    link(look['EmissionCurve'], '', emi, 'EmissionCurve')
+    link(look['TempScale'], '', emi, 'TempScale')
 
     # Teto da sombra da luz do fogo (js/instances.js instLightCache: tauCap 2.2 —
     # "a luz pontual no centróide atravessaria a bola de fogo inteira e apagaria
@@ -563,7 +957,7 @@ def material():
     scale = param('SizeScale', 1.0, 1050, x=-1000)
     fill = decode('FireFill', decode_code() +
                   'float3 tint = lerp(float3%r, float3%r, wS);\n' % (a['dustColor'], a['sootColor']) +
-                  'float alb = lerp(%r, %r, wS);\n' % (a['dustAlbedo'], a['sootAlbedo']) +
+                  'float alb = lerp(DustAlbedo, %r, wS);\n' % a['sootAlbedo'] +
                   'float3 d = (UVW * %r - FirePos.xyz) * SizeScale;      // m do mundo\n' % DOMAIN_M +
                   'float3 irr = FireInt.rgb / (20.0 * SizeScale * SizeScale + dot(d, d));\n'
                   '// espalhamento isotrópico por voxel (mesma unidade da extinção)\n'
@@ -804,9 +1198,22 @@ def battle_smoke_material():
 
 
 if __name__ == '__main__':
-    bakes = [bake_asset(v, volume(v)) for v in range(VARIANTS)]
-    mat = material()
-    battle_smoke_material()
-    scene(mat, bakes[0])
-    unreal.EditorAssetLibrary.save_directory('/Game/', only_if_is_dirty=True, recursive=True)
-    log('done')
+    if BAKE_NAME:
+        # outra gravação: o volume, os dados e o material dela (o mapa e o campo ficam)
+        bake_asset(0, volume(0))
+        material()
+        unreal.EditorAssetLibrary.save_directory('/Game/Explosions', only_if_is_dirty=True, recursive=True)
+        log('done (bake %s)' % BAKE_NAME)
+    elif os.environ.get('BLAST_ONLY') == 'material':
+        # só os materiais (iterar a aparência sem refazer volumes e mapa)
+        material()
+        battle_smoke_material()
+        unreal.EditorAssetLibrary.save_directory('/Game/Explosions', only_if_is_dirty=True, recursive=True)
+        log('done (material only)')
+    else:
+        bakes = [bake_asset(v, volume(v)) for v in range(VARIANTS)]
+        mat = material()
+        battle_smoke_material()
+        scene(mat, bakes[0])
+        unreal.EditorAssetLibrary.save_directory('/Game/', only_if_is_dirty=True, recursive=True)
+        log('done')

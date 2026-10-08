@@ -6,7 +6,9 @@
 #   blast.ps1 build-explosion            # converte a explosão gravada e põe no campo (depois de build-scene);
 #                                        # e os materiais do avião/míssil/disparo (build_movers.py)
 #   blast.ps1 render Seq_Explosion       # renderiza uma sequência em captures\ue\ (visual máximo)
-#   blast.ps1 view [baixa|media|alta|ultra]      # abre o simulador (padrão: alta)
+#   blast.ps1 worlds                     # traz as fatias do WorldForge (deserto, neve, floresta) e monta
+#                                        # os campos de teste com chão de verdade (Range_*, build_worlds.py)
+#   blast.ps1 view [baixa|media|alta|ultra]      # abre o simulador (padrão: alta); -Map Range_Desert abre outro campo
 #   blast.ps1 editor                     # abre o editor no projeto
 #   blast.ps1 py Tools\x.py              # roda um script Python da Unreal sem abrir o editor
 #
@@ -24,6 +26,7 @@ param(
   [switch]$ProfileGpu,
   [string]$Hour = '',     # view: começa nessa hora do dia (ex.: 22.5)
   [string]$Cam = '',      # view: câmera fixa dist,azim,elev,alvoY,fovV (ex.: a das referências do WebGL)
+  [string]$Map = 'TestRange',   # view: o campo (TestRange, Range_Desert, Range_Snow, Range_Forest)
   [string]$GameArgs = ''  # view: argumentos extras do jogo (ex.: '-AELow=60 -AEHigh=98 -AEBias=1')
 )
 $ErrorActionPreference = 'Stop'
@@ -69,10 +72,33 @@ function BuildExplosion {
   Prepare 'Intermediate\BakeVelocity\velocity.json' 'export_bake_velocity.py'   # o vento do que passa deforma a explosão
   RunUnrealPython 'Tools\build_explosion.py'
   RunUnrealPython 'Tools\build_movers.py'                              # avião, míssil, disparo
+  RunUnrealPython 'Tools\build_effects.py'                             # clarão, anel de poeira, marca queimada
+}
+
+# As fatias de qualidade do WorldForge viram campos de teste: copia os assets
+# CC0 importados lá (Content/Slice) e os mapas, que ficam fora do git como no
+# WorldForge (refeitos lá por fetch_assets.py + forge.ps1 slice). Só lê o WorldForge.
+function ImportWorlds {
+  $from = Join-Path $Repo 'WorldForge\Content'
+  $to = Join-Path $Root 'Content'
+  if (-not (Test-Path (Join-Path $from 'Slice'))) { Write-Error 'sem WorldForge\Content\Slice: monte as fatias lá (forge.ps1 slice)'; exit 1 }
+  robocopy (Join-Path $from 'Slice') (Join-Path $to 'Slice') /MIR /NJH /NJS /NP /NFL /NDL | Out-Null
+  if ($LASTEXITCODE -ge 8) { Write-Error "robocopy failed ($LASTEXITCODE)"; exit 1 }
+  # cada fatia entra já com o nome do campo (Slice_Desert → Range_Desert) e é
+  # editada no lugar: duplicar o mapa pela Unreal estragava o terreno (preto e
+  # riscado, medido 06/10); o lago da floresta usa a água do gerador
+  foreach ($f in @{ 'Maps\Slice_Desert.umap' = 'Maps\Range_Desert.umap'; 'Maps\Slice_Snow.umap' = 'Maps\Range_Snow.umap';
+                    'Maps\Slice_Forest.umap' = 'Maps\Range_Forest.umap'; 'Maps\Slice_Arena.umap' = 'Maps\Range_Arena.umap';
+                    'Materials\M_Water.uasset' = 'Materials\M_Water.uasset'; 'Textures\T_WaterN.uasset' = 'Textures\T_WaterN.uasset' }.GetEnumerator()) {
+    $s = Join-Path $from $f.Key
+    if (Test-Path $s) { Copy-Item $s (Join-Path $to $f.Value) -Force }
+  }
+  RunUnrealPython 'Tools\build_worlds.py'
 }
 
 switch ($Command) {
   'setup' { Compile; BuildScene; BuildExplosion }
+  'worlds' { ImportWorlds }
   'compile' { Compile }
   'build-scene' { BuildScene }
   'build-explosion' { BuildExplosion }
@@ -88,6 +114,7 @@ switch ($Command) {
     # renderiza a sequência com passo de tempo fixo e fecha
     $extra = @()
     if ($Cvars) { $extra += "-dpcvars=$Cvars" }
+    if ($GameArgs) { $extra += $GameArgs -split '\s+' }   # ex.: render Seq_Explosion -GameArgs '-Raymarch=1'
     $config = 'Config_Test'
     if ($ProfileGpu) {
       $extra += '-csvGpuStats', '-csvCaptureFrames=300'
@@ -111,7 +138,7 @@ switch ($Command) {
   'view' {
     # preset do painel: baixa | media | alta | ultra (padrão alta)
     $q = if ($Target) { $Target } else { 'alta' }
-    $a = @("`"$Project`"", '/Game/Maps/TestRange', '-game', '-windowed', '-ResX=1600', '-ResY=900',
+    $a = @("`"$Project`"", "/Game/Maps/$Map", '-game', '-windowed', '-ResX=1600', '-ResY=900',
            "-Quality=$q", '-nosplash')
     if ($Cvars) { $a += "-ExecCmds=`"$Cvars`"" }        # comandos extras: view alta -Cvars 'r.X 1, r.Y 0'
     if ($Hour) { $a += "-TimeOfDay=$Hour" }
@@ -125,7 +152,8 @@ switch ($Command) {
       $a += "-AutoTest=$dest", "-abslog=$log", '-unattended'
       if ($ProfileGpu) { $a += '-csvGpuStats', '-AutoProfile' }   # tempos de GPU durante a explosão → Tools\gpu_profile.py --live
       Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a -Wait
-      Select-String -Path $log -Pattern 'AUTOTEST|Error' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
+      # material que não compilou vira o padrão em silêncio: o teste avisa
+      Select-String -Path $log -Pattern 'AUTOTEST|Error|Failed to compile Material' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
     } else {
       Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a
     }

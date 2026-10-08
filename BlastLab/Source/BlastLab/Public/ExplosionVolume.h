@@ -5,6 +5,7 @@
 
 class UExplosionBake;
 class UHeterogeneousVolumeComponent;
+class UMaterialBillboardComponent;
 class UMaterialInstanceDynamic;
 class UPointLightComponent;
 class UTexture;
@@ -79,8 +80,163 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
 	TObjectPtr<UPointLightComponent> FireLightVolume;
 
+	/**
+	 * O clarão da detonação (2–3 quadros): luz própria sem sombra, sem rebote no
+	 * Lumen e sem espalhamento na névoa (o Lumen e a névoa guardam a luz por
+	 * segundos e o chão ficava aceso depois do clarão).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
+	TObjectPtr<UPointLightComponent> FlashLight;
+
+	/** A estrela de raios do clarão (0–0.13 s), virada pra câmera (M_FlashStar). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
+	TObjectPtr<UMaterialBillboardComponent> FlashStar;
+
+	/** O ofuscamento da bola branca (0.1–0.5 s), pela curva da emissão (M_FireGlare). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
+	TObjectPtr<UMaterialBillboardComponent> FireGlare;
+
+	/** O relógio da gravação (0 = o do tamanho, SizeScale): a morte de tanque toca sem esticar. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float TimeScale = 0.0f;
+
+	/** Acende as luzes (fogo, clarão, ofuscamento). A poeira que acompanha uma explosão não tem luz própria. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bLights = true;
+
+	/** Multiplica a fuligem e o fogo por metro (a bola menor que o rendimento continua opaca). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float Thickness = 1.0f;
+
+	/** A saia de poeira relativa à da Carga Pesada: altura e vida (início e τ do assentamento). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float SkirtHeight = 1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float SkirtLife = 1.0f;
+
+	/**
+	 * Gravação em loop (o fogo da carcaça, BakeRaw/wreck_fire_loop): toca em
+	 * módulo de LoopPeriod s (o último quadro emenda no primeiro) até LoopLife s.
+	 * 0 = toca uma vez.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float LoopPeriod = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float LoopLife = 0.0f;
+
+	/** O clarão e o ofuscamento da detonação (um fogo contínuo não tem). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bFlash = true;
+
+	/**
+	 * O halo de ofuscamento (M_FireGlare, disco virado pra câmera). Só no corpo
+	 * do WebGL: na EG a curva da luz fica alta ~1 s e o halo lavava a bola inteira
+	 * de creme (A/B de 07/10, captures/ue/_ab_emission_eg.jpg); o brilho dela vem
+	 * do próprio fogo e do bloom.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bGlare = true;
+
+	/**
+	 * Mais fuligem e fogo por metro só no começo (× EarlyThickness em t = 0,
+	 * voltando a 1 entre 0.7·EarlyEnd e EarlyEnd s da gravação): a bola da EG
+	 * saía pálida e translúcida até ~1 s sem mexer na batida de 1.3–1.5 s.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float EarlyThickness = 1.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float EarlyEnd = 0.0f;
+
+	/**
+	 * A temperatura no mapa do corpo negro (TempScale do material) × TempDip só
+	 * de 0.6 a 1.2 s da gravação (entra de 0.5 a 0.7, sai de 1.1 a 1.3). 0 = a do
+	 * material. A bola da EG saía creme (quente demais) aos 0.8–1.0 s, onde o
+	 * vídeo é laranja-amarelo, sem mexer na casca com brasas de 1.3–1.5 s.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float TempBase = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float TempDip = 1.0f;
+	/** × TempLate depois da casca com brasas (entra de 1.5 a 2.0 s): a fumaça fria não brilha. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float TempLate = 1.0f;
+	/** O mesmo pro ganho da emissão (EmissionBoost × EmissionDip na mesma janela; 0 = o do material). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float EmissionBase = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float EmissionDip = 1.0f;
+
+	/**
+	 * O núcleo do clarão (0–0.15 s): o halo M_FireGlare do tamanho de FlashCoreM
+	 * (~1.2 tanque), a FlashCoreLum cd/m² caindo com τ 0.05 s. No vídeo o clarão
+	 * branco enche o quadro nos 2 primeiros quadros; sem ele a morte de tanque
+	 * abria com uma bolinha contida (painel da sessão de arte, rodada f).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float FlashCoreM = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float FlashCoreLum = 2.0e5f;
+	/** A queda do núcleo (s): visível até ~3τ. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float FlashCoreTauS = 0.05f;
+	/** A queda da luz do clarão (s; 0 = a padrão, 35 ms) e a altura dela (cm; 0 = a padrão, 3 m): baixa, ela acende o chão em volta. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float FlashTauS = 0.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float FlashHeightCm = 0.0f;
+
+	/**
+	 * O volume não é desenhado (as luzes, o clarão e o choque continuam): o teste
+	 * do flipbook (ABlastFlipbook) põe a bola pré-renderizada no lugar dele.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bHideVolume = false;
+
+	/** A bomba nuclear: a nuvem muda de marrom pra branca (o raymarch, BlastRaymarch.cpp). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bNuclear = false;
+
+	/** Achata (< 1) a gravação na vertical: o anel de poeira rente ao chão. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float HeightScale = 1.0f;
+
+	/** Parâmetros do material só desta (ex. BaseClearM: a base da coluna mais rala). */
+	TMap<FName, float> MaterialParams;
+
+	/**
+	 * Multiplica, além do LightScale, só a luz de DENTRO da fumaça (canal 1: a
+	 * fumaça própria e a das outras explosões). O fogo da carcaça a 0.1 acendia a
+	 * coluna de marrom (rodada l); a bola da EG acendia a própria fumaça rala de
+	 * creme aos 0.8–1.0 s. A luz no casco e no chão fica.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float VolumeLightScale = 1.0f;
+
+	/** Multiplica a luz gravada (a curva vem normalizada no pico da Carga Pesada). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float LightScale = 1.0f;
+
+	/** A luz do cenário pode fazer sombra (as bolas pequenas do fogo da carcaça não: várias vivas ao mesmo tempo). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bSceneShadow = true;
+
+	/**
+	 * O mip da gravação que o streaming traz (0 = a resolução inteira). Uma bola
+	 * tocada a 0.45 da escala no mip 1 tem o mesmo voxel no mundo que a bola
+	 * inteira no mip 0, com 1/8 dos dados: várias cabem no pool de streaming.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	float StreamMip = 0.0f;
+
 	/** Tempo da gravação que está sendo mostrado. */
-	float BakeTime() const { return Age / FMath::Max(SizeScale, 0.01f); }
+	float BakeTime() const
+	{
+		const float Raw = Age / FMath::Max(TimeScale > 0.0f ? TimeScale : SizeScale, 0.01f);
+		return LoopPeriod > 0.0f ? FMath::Fmod(FMath::Max(Raw, 0.0f), LoopPeriod) : Raw;
+	}
+
+	/** Os dois quadros em volta de T e a fração (com a emenda do loop). */
+	void FramesAt(float T, int32& F0, int32& F1, float& Alpha) const;
 
 	/** A gravação acabou (o simulador remove a explosão). */
 	bool IsFinished() const;
@@ -104,6 +260,7 @@ public:
 	 */
 	void SetWarp(UTexture* Warp);
 	bool IsWarped() const { return WarpTexture != nullptr; }
+	UTexture* GetWarp() const { return WarpTexture; }
 
 	/** Caixa da fumaça no quadro gravado atual, no mundo (cm). */
 	FBox SmokeBoxWorld() const;
@@ -131,4 +288,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture> WarpTexture;
 	bool bWarpDirty = false;
+	bool bDustTintSet = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> StarMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GlareMaterial;
+	/** O pico da luz gravada (o maior canal de LightColor), pra levar a curva à física. */
+	float BakeLightPeak = -1.0f;
+	virtual void BeginPlay() override;
 };

@@ -1,11 +1,14 @@
 #include "BlastLabPanel.h"
 
+#include "BlastLabCamera.h"
 #include "BlastLabEnvironment.h"
 #include "BlastLabMover.h"
 #include "BlastLabSimulation.h"
 #include "Celestial.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
 #include "Scalability.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
@@ -60,11 +63,25 @@ namespace
 		return Style;
 	}
 
-	// presets de hora do painel do WebGL (index.html)
+	// presets de hora do painel do WebGL (index.html). A "dourada" de lá (17:27)
+	// cai com o sol 2° ABAIXO do horizonte (latitude −23.5°, junho): sem luz
+	// direta, o chão saía magenta do céu do crepúsculo (medido 06/10: matiz −31°
+	// contra 63–72° nas artes de hora dourada). Agora com o sol a +6.4°.
 	struct FPreset { const TCHAR* Label; float Hours; };
 	const FPreset Presets[] = {
 		{ TEXT("amanhecer"), 5.35f }, { TEXT("manhã"), 8.5f }, { TEXT("meio-dia"), 12.6f },
-		{ TEXT("dourada"), 17.45f }, { TEXT("crepúsculo"), 18.55f }, { TEXT("noite"), 22.5f },
+		{ TEXT("dourada"), 16.75f }, { TEXT("crepúsculo"), 18.55f }, { TEXT("noite"), 22.5f },
+	};
+
+	// os campos: o de caixas (o layout do WebGL) e os de chão de verdade, feitos
+	// das fatias do WorldForge (Tools/blast.ps1 worlds); só aparece o que foi montado
+	struct FRangeMap { const TCHAR* Label; const TCHAR* Map; const TCHAR* Tip; };
+	const FRangeMap Ranges[] = {
+		{ TEXT("teste"), TEXT("/Game/Maps/TestRange"), TEXT("o campo de teste do WebGL: caixas e chão liso") },
+		{ TEXT("deserto"), TEXT("/Game/Maps/Range_Desert"), TEXT("deserto com estrada de asfalto (fatia do WorldForge)") },
+		{ TEXT("neve"), TEXT("/Game/Maps/Range_Snow"), TEXT("neve com pinheiros e rio congelado (fatia do WorldForge)") },
+		{ TEXT("floresta"), TEXT("/Game/Maps/Range_Forest"), TEXT("campo de grama com mata (fatia do WorldForge)") },
+		{ TEXT("arena"), TEXT("/Game/Maps/Range_Arena"), TEXT("deserto, neve, grama e estrada juntos (WorldForge)") },
 	};
 
 	// Nível do motor e resolução de render de cada preset (o TSR amplia pra
@@ -142,6 +159,31 @@ void SBlastLabPanel::Construct(const FArguments& InArgs)
 		[this] { const ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(World.Get()); return Env && Env->bAutoCycle; },
 		[this] { if (ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(World.Get())) Env->bAutoCycle = !Env->bAutoCycle; },
 		LOCTEXT("CycleTip", "ciclo automático (tecla t)"))];
+	// o ar sujo do deserto (aerossol de poeira e névoa quente): o sol baixo fica dourado
+	PresetRow->AddSlot()[Button(LOCTEXT("DesertAir", "poeira no ar"),
+		[this] { const ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(World.Get()); return Env && Env->bDesertAir; },
+		[this] { if (ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(World.Get())) Env->SetDesertAir(!Env->bDesertAir); },
+		LOCTEXT("DesertAirTip", "ar de deserto: aerossol de poeira e névoa quente (com a hora dourada, o vídeo)"))];
+
+	// trocar de campo leva a hora junto (BlastLabController lê a opção TimeOfDay)
+	TSharedRef<SWrapBox> FieldRow = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(3.0, 3.0));
+	for (const FRangeMap& F : Ranges)
+	{
+		if (!FPackageName::DoesPackageExist(F.Map))
+		{
+			continue;
+		}
+		const FString Map = F.Map;
+		FieldRow->AddSlot()[Button(FText::FromString(F.Label),
+			[this, Map] { return World.IsValid() && World->GetOutermost()->GetName() == Map; },
+			[this, Map]
+			{
+				const ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(World.Get());
+				UGameplayStatics::OpenLevel(World.Get(), FName(*Map), true,
+					Env ? FString::Printf(TEXT("TimeOfDay=%.4f"), Env->TimeOfDay) : FString());
+			},
+			FText::FromString(F.Tip))];
+	}
 
 	TSharedRef<SHorizontalBox> QualityRow = SNew(SHorizontalBox);
 	const TCHAR* QualityLabels[] = { TEXT("baixa"), TEXT("média"), TEXT("alta"), TEXT("ultra") };
@@ -152,6 +194,10 @@ void SBlastLabPanel::Construct(const FArguments& InArgs)
 			[Q] { return CurrentQuality == Q; }, [Q] { ApplyQuality(Q); },
 			FText::Format(LOCTEXT("QualityTip", "qualidade {0} (tecla {1})"), FText::FromString(QualityLabels[q]), FText::AsNumber(q + 1)))];
 	}
+	// acessibilidade: o tremor da câmera quando o choque chega
+	QualityRow->AddSlot().FillWidth(1.0f).Padding(1.5f, 0.0f)[Button(LOCTEXT("Shake", "tremor"),
+		[] { return ABlastLabCamera::bShakeEnabled; }, [] { ABlastLabCamera::bShakeEnabled = !ABlastLabCamera::bShakeEnabled; },
+		LOCTEXT("ShakeTip", "tremor da câmera quando o choque chega (acessibilidade)"))];
 
 	// avião, míssil e disparo atravessando a fumaça da última explosão (aceso enquanto passa)
 	auto Pass = [this](const FText& Label, EBlastMover Kind, const FText& Tip)
@@ -270,6 +316,11 @@ void SBlastLabPanel::Construct(const FArguments& InArgs)
 							]
 						]
 						+ SVerticalBox::Slot().AutoHeight()[PresetRow])
+				]
+				// ---- campo ----
+				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
+				[
+					Section(LOCTEXT("Field", "CAMPO"), FieldRow)
 				]
 				// ---- sistema ----
 				+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)

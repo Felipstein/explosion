@@ -199,6 +199,18 @@ METAL = {0: 0.0, 1: 0.0, 2: 0.45, 3: 0.6, 4: 0.0}
 # é a do WebGL (time_of_day_table), então as cores também são as dele.
 
 
+def physical_material(name):
+    """PM_<name> em /Game/Physics: o tipo de chão que as explosões leem
+    (BlastLabSimulation::SpawnEffects → Config/BlastRecipes.json "surfaces")."""
+    path = '/Game/Physics/PM_' + name
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        return unreal.load_asset(path)
+    pm = asset_tools.create_asset('PM_' + name, '/Game/Physics', unreal.PhysicalMaterial,
+                                  unreal.PhysicalMaterialFactoryNew())
+    unreal.EditorAssetLibrary.save_loaded_asset(pm)
+    return pm
+
+
 def piece(mesh, mat, pos, scale, quat, color, rough, metal, folder, cylinder=False):
     center = list(pos)
     if cylinder:
@@ -249,7 +261,37 @@ def build():
     ground = piece(plane, ground_material(), [0, 0, 0], [20000, 1, 20000], [0, 0, 0, 1],
                    g[8:11], g[11], 0.0, 'Scenery')
     ground.set_actor_label('Ground')
+    ground.static_mesh_component.set_phys_material_override(physical_material('Terra'))
     log('scenery', len(L['boxes']), 'boxes', len(L['cylinders']), 'cylinders')
+
+    environment()
+
+    # ---- câmera: o enquadramento padrão do WebGL ------------------------------
+    # dist 62 m, azim −0.62, elev 0.36, alvo a 2 m; fov vertical 0.58 rad em 16:9
+    camera(label='DefaultCam', dist=62, azim=-0.62, elev=0.36, target_y=2.0)
+    # a de lado, na altura da fumaça (a das folhas de teste do avião)
+    camera(label='SideCam', dist=72, azim=-0.62, elev=0.10, target_y=30.0)
+
+    levels.save_current_level()
+    log('map saved')
+
+    cams = {a.get_actor_label(): a for a in actors.get_all_level_actors()
+            if isinstance(a, unreal.CineCameraActor)}
+    sequence('Seq_Scene', cams['DefaultCam'], seconds=2.0)
+    sequence('Seq_Side', cams['SideCam'], seconds=2.0)
+    render_configs()
+    thumbnail()
+    unreal.EditorAssetLibrary.save_directory('/Game/', only_if_is_dirty=True, recursive=True)
+    log('all saved')
+
+
+def environment(build_assets=True):
+    """O céu, o sol, a lua, a névoa, a exposição e a hora do dia do simulador
+    (BlastLabEnvironment), mais o modo de jogo dele (painel, câmera RTS, clique
+    pra detonar), no mapa aberto. build_assets=False reaproveita os materiais
+    já montados: os mapas feitos das fatias do WorldForge (build_worlds.py)."""
+    def made(path, builder):
+        return builder() if build_assets else unreal.load_asset(path)
 
     # ---- céu e luz -----------------------------------------------------------
     # Sol às 15h do protótipo (direção medida no WebGL, pra o sol):
@@ -319,35 +361,23 @@ def build():
     env = actors.spawn_actor_from_class(unreal.BlastLabEnvironment, unreal.Vector(0, 0, 0))
     env.set_actor_label('Environment')
     for prop, value in (('sun', sun), ('moon', moon), ('atmosphere', sky), ('post_process', pp), ('fog', fog),
-                        ('time_of_day', 15.0), ('params', environment_params()),
-                        ('exposure_mask', exposure_mask_material())):
+                        ('time_of_day', 15.0), ('params', made(ENV_PARAMS, environment_params)),
+                        ('exposure_mask', made(EXPOSURE_MASK, exposure_mask_material))):
         env.set_editor_property(prop, value)
     time_of_day_table(env)
-    dome = sky_dome()
+    # a sombra da fumaça na luz direta do sol e da lua (o simulador põe uma
+    # instância com o mapa dele, BattleSmokeSubsystem); aqui ela compila junto
+    # com o mapa
+    shadow_fn = made(SMOKE_SHADOW, smoke_shadow_function)
+    for light in (lc, mc):
+        light.set_editor_property('light_function_material', shadow_fn)
+    dome = sky_dome(made(SKY, sky_material))
     for a in (sun, moon, sky, sl, fog, pp, env, dome):
         a.set_folder_path('Environment')
     # o simulador (painel, câmera RTS, clique pra detonar); o modo do mapa
     # vence o padrão do projeto, então fica explícito aqui também
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     world.get_world_settings().set_editor_property('default_game_mode', unreal.BlastLabGameMode)
-
-    # ---- câmera: o enquadramento padrão do WebGL ------------------------------
-    # dist 62 m, azim −0.62, elev 0.36, alvo a 2 m; fov vertical 0.58 rad em 16:9
-    camera(label='DefaultCam', dist=62, azim=-0.62, elev=0.36, target_y=2.0)
-    # a de lado, na altura da fumaça (a das folhas de teste do avião)
-    camera(label='SideCam', dist=72, azim=-0.62, elev=0.10, target_y=30.0)
-
-    levels.save_current_level()
-    log('map saved')
-
-    cams = {a.get_actor_label(): a for a in actors.get_all_level_actors()
-            if isinstance(a, unreal.CineCameraActor)}
-    sequence('Seq_Scene', cams['DefaultCam'], seconds=2.0)
-    sequence('Seq_Side', cams['SideCam'], seconds=2.0)
-    render_configs()
-    thumbnail()
-    unreal.EditorAssetLibrary.save_directory('/Game/', only_if_is_dirty=True, recursive=True)
-    log('all saved')
 
 
 ENV_PARAMS = '/Game/Materials/MPC_Environment'
@@ -374,19 +404,30 @@ def webgl_ev100(hours):
     return math.log2(SUN_LUX / r[3])
 
 
+ENV_SCALARS = (
+    ('Purkinje', 1.0e5),     # tonemapper
+    ('StarGain', 1.0),       # céu: reforço das fontes da noite (1 de dia, ~880 com a lua)
+    ('NightSky', 1.0),       # céu: o quanto o céu iluminado pela lua escurece na tela
+    ('SkyPhys', 1.0),        # céu: luminância do render → física (visibilidade das estrelas)
+)
+
+
 def environment_params():
     """Parâmetros da hora que o C++ (BlastLabEnvironment) escreve e os
-    materiais leem: Purkinje (tonemapper) e StarGain (céu)."""
+    materiais leem (ENV_SCALARS). Os que faltam num asset antigo entram."""
     if unreal.EditorAssetLibrary.does_asset_exist(ENV_PARAMS):
-        return unreal.load_asset(ENV_PARAMS)
-    c = asset_tools.create_asset('MPC_Environment', '/Game/Materials', unreal.MaterialParameterCollection,
-                                 unreal.MaterialParameterCollectionFactoryNew())
-    scalars = []
-    for name, value in (('Purkinje', 1.0e5), ('StarGain', 1.0)):
-        p = unreal.CollectionScalarParameter()
-        p.set_editor_property('parameter_name', name)
-        p.set_editor_property('default_value', value)
-        scalars.append(p)
+        c = unreal.load_asset(ENV_PARAMS)
+    else:
+        c = asset_tools.create_asset('MPC_Environment', '/Game/Materials', unreal.MaterialParameterCollection,
+                                     unreal.MaterialParameterCollectionFactoryNew())
+    scalars = list(c.get_editor_property('scalar_parameters'))
+    have = {str(p.get_editor_property('parameter_name')) for p in scalars}
+    for name, value in ENV_SCALARS:
+        if name not in have:
+            p = unreal.CollectionScalarParameter()
+            p.set_editor_property('parameter_name', name)
+            p.set_editor_property('default_value', value)
+            scalars.append(p)
     c.set_editor_property('scalar_parameters', scalars)
     unreal.EditorAssetLibrary.save_loaded_asset(c)
     return c
@@ -721,22 +762,34 @@ struct FNight
         for (int i = 0; i < oct; i++) { s += a * abs(snoise(p)); n += a; p *= lac; a *= gain; }
         return s / max(n, 1e-4);
     }
-    // estrelas: lei de potência numa grade de direções; a mais forte ≈ Sírius (~65 cd/m²)
+    // estrelas numa grade de direções, uma por célula. A magnitude sai da
+    // contagem real do céu: N(<m) ≈ 10^(0.475·m + 0.87) estrelas no céu todo
+    // (~22 até m = 1, ~9000 até 6.5), então a célula de posto N tem a
+    // magnitude cuja contagem é N; brilho 10^(−0.4·(m + 1.46)) do de Sírius
+    // (~65 cd/m² no núcleo). O WebGL tinha brilho pow(h, 16), ~1000× mais
+    // estrelas que o céu real a cada brilho: o céu de lua e o crepúsculo saíam
+    // forrados delas. Só aparece a que passa da magnitude-limite do céu
+    // atrás dela (mlim, Crumey 2014), com ~1 magnitude de transição.
     // pix: tamanho do pixel em unidades da grade. O núcleo do WebGL (0.085 da
     // célula, ~1') é menor que um pixel: o anti-aliasing temporal da Unreal
     // apagava as estrelas. Raio mínimo de ~1.5 pixel com a mesma energia
     // (o brilho cai com a área).
-    float3 starField(float3 dir, float t, float pix)
+    float3 starField(float3 dir, float t, float pix, float mlim)
     {
         float3 p = dir * 290.0;
         float3 id = floor(p), fp = frac(p) - 0.5;
         float3 h = hash33(id);
         float d = length(fp - h * 0.36);
         float mag = hash12(id.xy * 1.7 + id.z * 31.7);
-        float bright = pow(mag, 16.0);
+        // células da grade que a esfera corta: 4π·290²
+        float rank = max((1.0 - mag) * 1.057e6, 1.0);
+        float m = (log10(rank) - 0.87) / 0.475;
+        float vis = saturate(mlim - m + 0.5);
+        if (vis <= 0.0) return 0.0;
+        float bright = pow(10.0, -0.4 * (m + 1.46));
         float r0 = 0.085;
         float r = clamp(0.75 * pix, r0, 0.45);
-        float core = smoothstep(r, 0.0, d) * bright * (r0 * r0) / (r * r);
+        float core = smoothstep(r, 0.0, d) * bright * vis * (r0 * r0) / (r * r);
         float tw = 0.70 + 0.30 * sin(t * 2.7 + mag * 97.0) * sin(t * 1.31 + mag * 41.0);
         float ct = hash11(mag * 53.0);
         float3 tint = lerp(float3(1.00, 0.78, 0.60), float3(0.72, 0.84, 1.00), smoothstep(0.25, 0.8, ct));
@@ -760,33 +813,67 @@ const float BOOST = 880.0;                               // lua do render / fís
 float3 d = normalize(float3(Dir.x, Dir.z, Dir.y));
 float3 md = normalize(float3(MoonDir.x, MoonDir.z, MoonDir.y));
 float pix = (length(ddx(d)) + length(ddy(d))) * 0.5 * 290.0;
-float3 col = 0.0;
+// Fora da captura da Sky Light (como no WebGL, a luz ambiente é só o céu):
+// o que entra aqui só a tela vê
+float inView = 1.0 - View.RenderingReflectionCaptureMask;
+// O céu iluminado pela lua escurece na tela, não na luz ambiente: com o luar
+// 880× o físico (o "dia pra noite"), ele saía o azul do dia, 1.7× mais claro
+// que o chão; nas noites aprovadas (captures/concept/11_night_tilt) ele é
+// 0.3–0.8× o chão (NightSky, BlastLabEnvironment)
+float3 col = ViewLum * lerp(1.0, NightSky, inView);
 // fontes da noite, só quando o céu é de lua (o WebGL: wash > 0.004)
 if (Gain > BOOST * 0.004 && d.y > -0.06)
 {
     float h = smoothstep(-0.06, 0.08, d.y);
-    col += (Night.starField(d, T, pix) + Night.milkyWay(d)) * h * Gain;
+    // Magnitude-limite a olho nu pelo brilho do céu atrás (Crumey 2014, MNRAS
+    // 442: mlim = 0.426·μ − 2.365 − 2.5·log F, F = 2), com μ em mag/arcsec² da
+    // luminância FÍSICA do céu (SkyPhys desfaz o reforço da lua): ~6.2 no céu
+    // escuro, ~4 com lua cheia, nada no céu claro do crepúsculo
+    float skyPhys = max(dot(ViewLum, float3(0.2126, 0.7152, 0.0722)) * SkyPhys, 1e-9);
+    float mu = -2.5 * log10(skyPhys / 1.08e5);
+    float mlim = 0.426 * mu - 2.365 - 0.753;
+    // a Via Láctea é extensa: some quando o contraste com o céu cai abaixo de ~0.1
+    float3 mw = Night.milkyWay(d);
+    float mwVis = saturate((dot(mw, float3(0.2126, 0.7152, 0.0722)) / skyPhys - 0.1) / 0.2);
+    col += (Night.starField(d, T, pix, mlim) + mw * mwVis) * h * Gain;
     col += MOONLIGHT * 2.0e-4 * h * Gain;                  // airglow + luz zodiacal
 }
-// lua: disco com escurecimento de bordo e mares, ~2500 cd/m² na lua cheia.
-// Fora da captura da Sky Light (como no WebGL, a luz ambiente é só o céu): o
-// halo de dezenas de milhares de cd/m² virava uma luz pontual na iluminação
-// global e manchava o chão.
-float inView = 1.0 - View.RenderingReflectionCaptureMask;
-float dm = dot(d, md);
-float disk = smoothstep(0.999955, 0.999985, dm) * inView;
-if (disk > 0.0)
+// Lua: desenhada com brilho de TELA fixo (InvExp desfaz a exposição), como os
+// jogos fazem e como o olho a vê: a lua cheia é ~10⁵× o chão que ela ilumina,
+// e com a exposição da noite o disco físico, mais a auréola do WebGL (~400×
+// a física), virava uma bola branca de ~12° — "dois sóis" (06/10). Medido na
+// noite aprovada (11_night_tilt/b_gpt): disco quase branco (0.85 no centro)
+// com mares visíveis; ~2× o tamanho real; brilho em volta de 0.21·(r/R)^−1.35
+// acima do céu (8× o céu na borda, 2× a 5 raios).
+// Extinção pela massa de ar (Kasten & Young 1989) com as espessuras ópticas
+// do zênite da atmosfera padrão da Unreal (Rayleigh + Mie + ozônio): a lua
+// baixa fica laranja e fraca.
+float alt = degrees(asin(clamp(md.y, -1.0, 1.0)));
+float airmass = 1.0 / max(md.y + 0.50572 * pow(max(alt + 6.07995, 0.1), -1.6364), 1e-3);
+float3 T_moon = exp(-float3(0.061, 0.141, 0.272) * min(airmass, 40.0)) * smoothstep(-0.6, 0.4, alt);
+// cor como o olho a vê (o disco da noite aprovada, sRGB 234/242/254), não a
+// do luar: a lua tem brilho de dia, sem o desvio de Purkinje
+float3 tintM = float3(0.93, 1.01, 1.12);
+const float R_MOON = 0.00908;                            // raio angular: 0.52° (2× o real)
+float ang = acos(clamp(dot(d, md), -1.0, 1.0));
+float rR = ang / R_MOON;
+if (rR < 40.0 && inView > 0.0)
 {
-    float3 tt = normalize(cross(md, float3(0.0, 1.0, 0.0)) + 1e-4);
-    float3 bb = cross(md, tt);
-    float2 uv = float2(dot(d, tt), dot(d, bb)) * 160.0;
-    float rr = saturate(length(uv));
-    float limb = sqrt(max(1.0 - rr * rr, 0.0)) * 0.45 + 0.55;
-    float maria = 0.76 + 0.24 * Night.fbm(float3(uv * 2.2, 0.0), 4, 2.3, 0.55);
-    col += MOONLIGHT * 2500.0 * BOOST * disk * limb * maria;
+    float3 screen = 0.0;
+    if (rR < 1.15)
+    {
+        float3 tt = normalize(cross(md, float3(0.0, 1.0, 0.0)) + 1e-4);
+        float3 bb = cross(md, tt);
+        float2 uv = float2(dot(d, tt), dot(d, bb)) / R_MOON;
+        float rr = saturate(length(uv));
+        float limb = sqrt(max(1.0 - rr * rr, 0.0)) * 0.45 + 0.55;
+        float maria = 0.76 + 0.24 * Night.fbm(float3(uv * 2.2, 0.0), 4, 2.3, 0.55);
+        float disk = smoothstep(1.06, 0.97, rR);
+        screen += 1.2 * disk * limb * maria;              // ~0.85 depois do tonemapper
+    }
+    screen += 0.21 * pow(max(rR, 1.0), -1.35) * saturate(1.0 - rR / 40.0);
+    col += tintM * T_moon * screen * InvExp.x;
 }
-// auréola estreita (< 2°); a larga já vem do espalhamento da atmosfera
-col += MOONLIGHT * 75.0 * BOOST * pow(max(dm, 0.0), 420.0) * inView;
 // o disco do sol também fica fora: a luz direta dele já é a luz direcional
 col += SunDisk * inView;
 return col;
@@ -818,14 +905,19 @@ def sky_material():
     moon_dir = E(unreal.MaterialExpressionSkyAtmosphereLightDirection, -700, 120)
     moon_dir.set_editor_property('light_index', 1)
     time = E(unreal.MaterialExpressionTime, -700, 220)
-    gain = E(unreal.MaterialExpressionCollectionParameter, -700, 320)    # escrito pela hora do dia (C++)
-    gain.set_editor_property('collection', environment_params())
-    gain.set_editor_property('parameter_name', 'StarGain')
+    params = {}
+    for i, name in enumerate(('StarGain', 'NightSky', 'SkyPhys')):    # escritos pela hora do dia (C++)
+        p = E(unreal.MaterialExpressionCollectionParameter, -700, 320 + 80 * i)
+        p.set_editor_property('collection', environment_params())
+        p.set_editor_property('parameter_name', name)
+        params[name] = p
+    # 1/exposição: a lua é desenhada com brilho de tela fixo
+    inv_exp = E(unreal.MaterialExpressionEyeAdaptationInverse, -700, 560)
     night = E(unreal.MaterialExpressionCustom, -400, 100)
     night.set_editor_property('description', 'NightSky')
     night.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
     inputs = []
-    for n in ('Dir', 'MoonDir', 'T', 'Gain', 'SunDisk'):
+    for n in ('Dir', 'MoonDir', 'T', 'Gain', 'SunDisk', 'ViewLum', 'NightSky', 'SkyPhys', 'InvExp'):
         ci = unreal.CustomInput()
         ci.set_editor_property('input_name', n)
         inputs.append(ci)
@@ -834,12 +926,13 @@ def sky_material():
     link(view_dir, '', night, 'Dir')
     link(moon_dir, '', night, 'MoonDir')
     link(time, '', night, 'T')
-    link(gain, '', night, 'Gain')
+    link(params['StarGain'], '', night, 'Gain')
     link(sun_disk, '', night, 'SunDisk')
-    add = E(unreal.MaterialExpressionAdd, -100, 0)
-    link(view_lum, '', add, 'A')
-    link(night, '', add, 'B')
-    ok = mel.connect_material_property(add, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    link(view_lum, '', night, 'ViewLum')
+    link(params['NightSky'], '', night, 'NightSky')
+    link(params['SkyPhys'], '', night, 'SkyPhys')
+    link(inv_exp, '', night, 'InvExp')
+    ok = mel.connect_material_property(night, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     if failed or not ok:
         raise RuntimeError('sky: failed links %s %s' % (failed, ok))
     mel.recompile_material(m)
@@ -906,7 +999,71 @@ def exposure_mask_material():
     return m
 
 
-def sky_dome():
+SMOKE_SHADOW = '/Game/Materials/M_SmokeShadowLF'
+SMOKE_SHADOW_HLSL = r'''
+// O mapa de sombra da fumaça (BattleSmoke.usf MainShadow): espessura óptica τ
+// entre um plano e a luz, vista de cima. O pixel vai ao plano ao longo da luz e
+// a luz direta dele perde e^−τ.
+float3 P = WP / 100.0;
+float3 L = normalize(Light.xyz);
+if (Light.w < 0.5 || L.z < 0.05) return 1.0;
+float h = P.z - Map.w;
+float2 pp = P.xy - L.xy * (h / L.z);
+float2 uv = (pp - Map.xy) * Map.z;
+float edge = saturate(min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y)) * 20.0);
+float tau = Texture2DSampleLevel(Tex, TexSampler, uv, 0).r;
+// Só perto do chão (o chão, as unidades, os prédios baixos): o volume da
+// explosão já faz a própria sombra, e acima de ~10 m ela contaria duas vezes
+float nearGround = saturate((10.0 - h) / 5.0);
+return lerp(1.0, exp(-tau), edge * nearGround).xxx;
+'''
+
+
+def smoke_shadow_function():
+    """Light function do sol e da lua: a sombra da fumaça das explosões no chão."""
+    m = new_material(SMOKE_SHADOW)
+    m.set_editor_property('material_domain', unreal.MaterialDomain.MD_LIGHT_FUNCTION)
+    E = lambda cls, x, y: mel.create_material_expression(m, cls, x, y)
+    failed = []
+
+    def link(a, sa, b, eb):
+        if not mel.connect_material_expressions(a, sa, b, eb):
+            failed.append('%s.%s -> %s.%s' % (a.get_name(), sa, b.get_name(), eb))
+
+    wp = E(unreal.MaterialExpressionWorldPosition, -700, -200)
+    smap = E(unreal.MaterialExpressionVectorParameter, -700, -80)
+    smap.set_editor_property('parameter_name', 'ShadowMap')
+    smap.set_editor_property('default_value', unreal.LinearColor(0.0, 0.0, 1.0 / 256.0, 0.0))
+    slight = E(unreal.MaterialExpressionVectorParameter, -700, 40)
+    slight.set_editor_property('parameter_name', 'ShadowLight')
+    slight.set_editor_property('default_value', unreal.LinearColor(0.0, 0.0, 1.0, 0.0))
+    tex = E(unreal.MaterialExpressionTextureObjectParameter, -700, 160)
+    tex.set_editor_property('parameter_name', 'Shadow')
+    tex.set_editor_property('texture', unreal.load_asset('/Engine/EngineResources/Black'))
+    tex.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+    c = E(unreal.MaterialExpressionCustom, -350, 0)
+    c.set_editor_property('description', 'SmokeShadow')
+    c.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    inputs = []
+    for n in ('WP', 'Map', 'Light', 'Tex'):
+        ci = unreal.CustomInput()
+        ci.set_editor_property('input_name', n)
+        inputs.append(ci)
+    c.set_editor_property('inputs', inputs)
+    c.set_editor_property('code', SMOKE_SHADOW_HLSL)
+    link(wp, '', c, 'WP')
+    link(smap, 'RGBA', c, 'Map')          # o parâmetro de vetor sai RGB sem o pino RGBA
+    link(slight, 'RGBA', c, 'Light')
+    link(tex, '', c, 'Tex')
+    ok = mel.connect_material_property(c, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    if failed or not ok:
+        raise RuntimeError('smoke shadow: failed links %s %s' % (failed, ok))
+    mel.recompile_material(m)
+    unreal.EditorAssetLibrary.save_loaded_asset(m)
+    return m
+
+
+def sky_dome(material):
     """Esfera de 50 km em volta do campo (o chão vai a 10 km), vista por
     dentro. Não projeta sombra nem entra na iluminação global."""
     mesh = unreal.load_asset('/Engine/BasicShapes/Sphere')               # raio 50 cm
@@ -915,7 +1072,7 @@ def sky_dome():
     a.set_actor_scale3d(unreal.Vector(1.0e5, 1.0e5, 1.0e5))
     c = a.static_mesh_component
     c.set_static_mesh(mesh)
-    c.set_material(0, sky_material())
+    c.set_material(0, material)
     for prop, value in (('cast_shadow', False), ('affect_distance_field_lighting', False),
                         ('affect_dynamic_indirect_lighting', False), ('visible_in_ray_tracing', False),
                         ('receives_decals', False), ('mobility', unreal.ComponentMobility.STATIC)):

@@ -65,6 +65,13 @@ float WarpCarveClose;  // nos últimos WarpCarveClose s ele fecha
 int WarpDebug;         // 0 normal · 1 só o recorte · 2 só a deformação · 3 só a fumaça dentro do corte
 float WarpMax;         // |D| máximo (m locais)
 
+// ---- sombra da fumaça no chão (MainShadow) --------------------------------------
+float4 ShadowMap;      // canto (m).xy, tamanho do texel (m), altura do plano (m)
+float4 ShadowLight;    // direção PRA a luz (sol ou lua).xyz
+float ShadowOpacity;   // opacidade da explosão (a que o material usa)
+int ShadowRes;         // texels por lado
+RWTexture2D<float> ShadowOut;
+
 // ---- esteiras de avião (WakeVelocity) ------------------------------------------
 #define MAXW 2
 int WakeCount;
@@ -498,6 +505,18 @@ void MainFieldsFx(uint3 id : SV_DispatchThreadID)
 			f.w += k * C.w * 1.6;
 			f.y = max(f.y, k * 0.35);
 		}
+		else if (kind == 7)
+		{
+			// Fogo contínuo (a carcaça queimando, docs/EXPLOSOES.md §7b): fuligem e
+			// calor num cilindro no pé (A.xyz, raio A.w, altura Dd.x). O empuxo do
+			// próprio campo sobe a coluna preta e o calor faz a base brilhar.
+			// C.w = fuligem por segundo; C.x = o calor (0–1)
+			float3 rel = w - A.xyz;
+			float k = smoothstep(A.w, A.w * 0.3, length(rel.xy)) * smoothstep(-0.5, 0.5, rel.z)
+			        * smoothstep(Dd.x, Dd.x * 0.4, rel.z);
+			f.x += k * C.w * Dt;
+			f.y = max(f.y, k * C.x);
+		}
 	}
 	FldOut[id] = f;
 }
@@ -534,6 +553,30 @@ float3 BakeVelocityAt(float3 lp)
 	float3 a = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.x + z) / WarpAtlasDepth), 0).xyz;
 	float3 b = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.y + z) / WarpAtlasDepth), 0).xyz;
 	return lerp(a, b, WarpFrames.z);
+}
+
+// extinção gravada (1/m, igual em qualquer escala: export_bake_velocity.py) no
+// ponto local lp, entre os dois quadros do instante; fora do domínio, nada
+float BakeExtinctionAt(float3 lp)
+{
+	float3 uvw = lp / WarpDomain + float3(0.5, 0.5, 0.0);
+	if (any(uvw < 0.0) || any(uvw > 1.0)) return 0;
+	float R = WarpFrames.w;
+	float z = clamp(uvw.z * R, 0.5, R - 0.5);
+	float a = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.x + z) / WarpAtlasDepth), 0).w;
+	float b = BakeVel.SampleLevel(LinearClamp, float3(uvw.xy, (WarpFrames.y + z) / WarpAtlasDepth), 0).w;
+	float sigma = max(lerp(a, b, WarpFrames.z), 0.0);
+	// o que o material da explosão faz com a densidade (build_explosion.py
+	// decode_code), na média do ruído: some no teto e nas laterais da caixa
+	// (boxFade) e as bordas finas são erodidas (erode 0.042·½, na fuligem: o
+	// voxel da gravação é 38/96 m e a extinção dela é 13.5 por unidade).
+	// Sem isso, no fim a nuvem quase sumia e a sombra continuava escura (06/10)
+	float2 side = min(uvw.xy, 1.0 - uvw.xy);
+	sigma *= smoothstep(0.0, 0.2, 1.0 - uvw.z) * smoothstep(0.0, 5.0 / 96.0, min(side.x, side.y));
+	const float SootPerSigma = (38.0 / 96.0) / 13.5;
+	float s = sigma * SootPerSigma;
+	s = max(s - 0.021 / (1.0 + s * 9.0), 0.0);
+	return s / SootPerSigma;
 }
 
 // Esteira de um avião (WakeA..D): o par de vórtices de ponta de asa que ele
@@ -739,6 +782,51 @@ void MainWarpRender(uint3 id : SV_DispatchThreadID)
 	if (WarpDebug == 3) { OutTex[id] = float4(0, 0, 0, 1.0 - carve); return; }
 	if (WarpDebug == 2) { OutTex[id] = float4(s.xyz, 0); return; }
 	OutTex[id] = float4(s.xyz, 1.0 - keep);
+}
+
+// ---- 8b. a sombra da fumaça no chão ----------------------------------------------
+// O "mapa de sombra das nuvens" da Unreal (VolumetricCloud), do Horizon e do
+// Frostbite: uma textura vista de cima com a espessura óptica τ = ∫σ ds da
+// fumaça entre cada ponto de um plano horizontal e a luz principal. A light
+// function do sol e da lua (M_SmokeShadowLF) leva cada pixel ao plano ao longo
+// da luz e tira e^−τ só da luz DIRETA, como a sombra de verdade. A sombra que o
+// Heterogeneous Volume da 5.8 projeta (r.HeterogeneousVolumes.Shadows) não
+// chegava ao chão aqui (06/10: com ou sem Virtual Shadow Maps, diferença nula).
+// Uma explosão por despacho, somando (a de baixo resolução da gravação: a
+// sombra de fumaça é macia de qualquer jeito).
+[numthreads(8, 8, 1)]
+void MainShadowClear(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int2(id.xy) >= ShadowRes)) return;
+	ShadowOut[id.xy] = 0.0;
+}
+
+[numthreads(8, 8, 1)]
+void MainShadow(uint3 id : SV_DispatchThreadID)
+{
+	if (any(int2(id.xy) >= ShadowRes)) return;
+	float3 P = float3(ShadowMap.xy + (float2(id.xy) + 0.5) * ShadowMap.z, ShadowMap.w);
+	float3 L = ShadowLight.xyz;
+	float S = WarpFoot.w;
+	float3 bmin = WarpFoot.xyz + float3(-0.5, -0.5, 0.0) * (WarpDomain * S);
+	float3 bmax = WarpFoot.xyz + float3(0.5, 0.5, 1.0) * (WarpDomain * S);
+	// o raio P + t·L contra a caixa gravada (lajes)
+	float3 Ls = float3(abs(L.x) < 1e-6 ? 1e-6 : L.x, abs(L.y) < 1e-6 ? 1e-6 : L.y, abs(L.z) < 1e-6 ? 1e-6 : L.z);
+	float3 inv = 1.0 / Ls;
+	float3 ta = (bmin - P) * inv, tb = (bmax - P) * inv;
+	float3 tn = min(ta, tb), tf = max(ta, tb);
+	float t0 = max(max(tn.x, tn.y), max(tn.z, 0.0));
+	float t1 = min(min(tf.x, tf.y), tf.z);
+	if (t1 <= t0) return;
+	const int N = 32;
+	float dt = (t1 - t0) / N;
+	float tau = 0.0;
+	for (int i = 0; i < N; i++)
+	{
+		float3 x = P + L * (t0 + (i + 0.5) * dt);
+		tau += BakeExtinctionAt((x - WarpFoot.xyz) / S) * dt;
+	}
+	ShadowOut[id.xy] += tau * ShadowOpacity;
 }
 
 // ---- 9. saída pro material e o recorte da fumaça --------------------------------

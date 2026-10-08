@@ -2,9 +2,11 @@
 
 #include "BlastLabCamera.h"
 #include "BlastLabEnvironment.h"
+#include "BlastLabGround.h"
 #include "BlastLabMover.h"
 #include "BlastLabPanel.h"
 #include "BlastLabSimulation.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/Texture2D.h"
@@ -12,7 +14,9 @@
 #include "ExplosionBake.h"
 #include "ExplosionVolume.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GameFramework/GameModeBase.h"
 #include "InputCoreTypes.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
 #include "SceneView.h"
@@ -61,11 +65,19 @@ void ABlastLabController::BeginPlay()
 	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(Mode);
 
-	// preset de qualidade: -Quality=baixa|media|alta|ultra (padrão alta)
-	FString Quality = TEXT("alta");
-	FParse::Value(FCommandLine::Get(), TEXT("Quality="), Quality);
-	SBlastLabPanel::ApplyQuality(Quality == TEXT("baixa") ? EBlastQuality::Low : Quality == TEXT("media") ? EBlastQuality::Medium
-		: Quality == TEXT("ultra") ? EBlastQuality::Ultra : EBlastQuality::High);
+	// preset de qualidade: -Quality=baixa|media|alta|ultra (padrão alta). Só na
+	// abertura: trocando de campo pelo painel, fica o que o jogador escolheu
+	static bool bQualityApplied = false;
+	if (!bQualityApplied)
+	{
+		bQualityApplied = true;
+		ABlastLabCamera::bShakeEnabled = !FParse::Param(FCommandLine::Get(), TEXT("NoShake"));
+		ABlastLabCamera::bTripod = FCString::Strifind(FCommandLine::Get(), TEXT("-AutoTest=")) && !FParse::Param(FCommandLine::Get(), TEXT("LiveCam"));
+		FString Quality = TEXT("alta");
+		FParse::Value(FCommandLine::Get(), TEXT("Quality="), Quality);
+		SBlastLabPanel::ApplyQuality(Quality == TEXT("baixa") ? EBlastQuality::Low : Quality == TEXT("media") ? EBlastQuality::Medium
+			: Quality == TEXT("ultra") ? EBlastQuality::Ultra : EBlastQuality::High);
+	}
 
 	Thumbnail = LoadObject<UTexture2D>(nullptr, ThumbnailPath);
 	if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
@@ -74,9 +86,15 @@ void ABlastLabController::BeginPlay()
 		Viewport->AddViewportWidgetContent(Panel.ToSharedRef(), 10);
 	}
 
-	// -TimeOfDay=<h>: começa nessa hora (testes de crepúsculo e noite)
+	// -TimeOfDay=<h>: começa nessa hora (testes de crepúsculo e noite); trocando
+	// de campo pelo painel, a hora vem na opção do mapa (?TimeOfDay=<h>)
 	float StartHour = -1.0f;
-	if (FParse::Value(FCommandLine::Get(), TEXT("TimeOfDay="), StartHour))
+	const AGameModeBase* GameMode = GetWorld()->GetAuthGameMode();
+	if (GameMode && UGameplayStatics::HasOption(GameMode->OptionsString, TEXT("TimeOfDay")))
+	{
+		StartHour = FCString::Atof(*UGameplayStatics::ParseOption(GameMode->OptionsString, TEXT("TimeOfDay")));
+	}
+	if (StartHour >= 0.0f || FParse::Value(FCommandLine::Get(), TEXT("TimeOfDay="), StartHour))
 	{
 		if (ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(this))
 		{
@@ -100,7 +118,13 @@ void ABlastLabController::BeginPlay()
 	// aquecimento dos shaders das explosões, bem na frente da câmera inicial
 	if (UBlastLabSimulation* Sim = UBlastLabSimulation::Get(this))
 	{
-		Sim->Prewarm(FVector::ZeroVector);
+		Sim->Prewarm(FVector(0.0, 0.0, BlastLabGround::HeightAt(GetWorld(), 0.0, 0.0)));
+		// -Weapon=<índice>: abre com a arma escolhida no painel (6 = Morte de Tanque)
+		int32 Weapon = -1;
+		if (FParse::Value(FCommandLine::Get(), TEXT("-Weapon="), Weapon) && UBlastLabSimulation::Arsenal().IsValidIndex(Weapon))
+		{
+			Sim->SelectedWeapon = Weapon;
+		}
 	}
 
 	FParse::Value(FCommandLine::Get(), TEXT("AutoTest="), AutoFolder);
@@ -169,15 +193,14 @@ void ABlastLabController::SetupInputComponent()
 bool ABlastLabController::GroundUnderScreenPoint(const FVector2D& Screen, FVector& Out) const
 {
 	FVector Origin, Dir;
-	if (!DeprojectScreenPositionToWorld(Screen.X, Screen.Y, Origin, Dir) || Dir.Z > -1e-4)
+	if (!DeprojectScreenPositionToWorld(Screen.X, Screen.Y, Origin, Dir))
 	{
-		return false;                                  // acima do horizonte
+		return false;
 	}
-	const float T = -Origin.Z / Dir.Z;                 // o campo é o plano z = 0
-	Out = Origin + Dir * T;
+	// longe demais: o clique perto do horizonte jogaria a explosão a quilômetros
 	const ABlastLabCamera* C = Cam();
 	const float Range = ClickRangeM * FMath::Max(1.0f, (C ? C->Distance() : 0.0f) / ZoomRtsM) * 100.0f;
-	return T * Dir.Size() <= Range;                    // longe demais: o clique perto do horizonte jogaria a explosão a quilômetros
+	return BlastLabGround::Ray(GetWorld(), Origin, Dir, Range, Out);
 }
 
 bool ABlastLabController::GroundUnderCursor(FVector& Out) const
@@ -202,10 +225,8 @@ AExplosionVolume* ABlastLabController::DetonateAt(const FVector& Ground)
 	}
 	if (E)
 	{
-		if (ABlastLabCamera* C = Cam())
-		{
-			C->Kick(FMath::Min(1.2f, 0.5f * E->SizeScale + 0.35f));     // main.js: tranco pela magnitude
-		}
+		// o tranco da câmera não sai mais aqui: o tremor chega com o choque, em
+		// d/343 s (UBlastLabSimulation::ShockArrived)
 		if (Panel.IsValid())
 		{
 			Panel->Fired(Sim->SelectedWeapon);
@@ -491,7 +512,34 @@ void ABlastLabController::TickAutoTest(float RealDt)
 			{
 				Sim->SelectedWeapon = AutoWeapon;
 			}
-			AutoExplosion = DetonateAt(FVector::ZeroVector);
+			// -AutoAim=x,y (fração da tela): detona pelo caminho do clique, o raio da
+			// tela até o terreno (testa o clique no relevo); sem ele, no pé da origem
+			FVector Ground(0.0, 0.0, BlastLabGround::HeightAt(GetWorld(), 0.0, 0.0));
+			FString Aim;
+			if (FParse::Value(FCommandLine::Get(), TEXT("AutoAim="), Aim, false))
+			{
+				FString AX, AY;
+				int32 W, H;
+				GetViewportSize(W, H);
+				if (Aim.Split(TEXT(","), &AX, &AY) && !GroundUnderScreenPoint(FVector2D(W * FCString::Atof(*AX), H * FCString::Atof(*AY)), Ground))
+				{
+					UE_LOG(LogTemp, Display, TEXT("AUTOTEST aim %s missed the ground"), *Aim);
+				}
+				UE_LOG(LogTemp, Display, TEXT("AUTOTEST aim %s ground %s"), *Aim, *Ground.ToString());
+			}
+			AutoExplosion = DetonateAt(Ground);
+			// onde ela cai na tela e quantos pixels valem 10 m ali (Tools/strip.py
+			// recorta pela mesma largura em metros da arte, sem escolher no olho)
+			if (AutoExplosion)
+			{
+				const FVector Mid = Ground + FVector(0.0, 0.0, 500.0 * AutoExplosion->SizeScale);
+				const FVector Right = PlayerCameraManager ? FRotationMatrix(PlayerCameraManager->GetCameraRotation()).GetScaledAxis(EAxis::Y) : FVector::RightVector;
+				FVector2D A, B;
+				if (ProjectWorldLocationToScreen(Mid, A) && ProjectWorldLocationToScreen(Mid + Right * 1000.0, B))
+				{
+					UE_LOG(LogTemp, Display, TEXT("AUTOTEST screen %.1f %.1f px10m %.1f"), A.X, A.Y, (B - A).Size());
+				}
+			}
 			bAutoDetonated = AutoExplosion != nullptr;
 			UE_LOG(LogTemp, Display, TEXT("AUTOTEST detonated weapon %d scale %.2f"), AutoWeapon, AutoExplosion ? AutoExplosion->SizeScale : 0.0f);
 			// -AutoMulti=<n> -AutoSpread=front|behind|far: mais explosões junto, pra
@@ -524,6 +572,7 @@ void ABlastLabController::TickAutoTest(float RealDt)
 						const float A = 2.0f * PI * I / (Multi - 1);
 						P = FVector(FMath::Cos(A), FMath::Sin(A), 0.0f) * 2200.0f;
 					}
+					P.Z = BlastLabGround::HeightAt(GetWorld(), P.X, P.Y);
 					Sim->Detonate(P, AutoWeapon);
 				}
 				UE_LOG(LogTemp, Display, TEXT("AUTOTEST multi %d spread %s"), Multi, *Spread);
@@ -561,6 +610,18 @@ void ABlastLabController::TickAutoTest(float RealDt)
 	if (AutoPasses.IsEmpty() && !bAutoPassesParsed)
 	{
 		bAutoPassesParsed = true;
+		// -AutoGpuDump=1.5,7: a árvore de tempos de GPU de um quadro (profilegpu,
+		// no log) nesses instantes: o custo de cada volume e de cada passe dele
+		FString Dumps;
+		if (FParse::Value(FCommandLine::Get(), TEXT("AutoGpuDump="), Dumps, false))
+		{
+			TArray<FString> P;
+			Dumps.ParseIntoArray(P, TEXT(","));
+			for (const FString& S : P)
+			{
+				AutoGpuDumps.Add(FCString::Atof(*S));
+			}
+		}
 		FString Passes;
 		if (FParse::Value(FCommandLine::Get(), TEXT("AutoPass="), Passes, false))
 		{
@@ -586,6 +647,15 @@ void ABlastLabController::TickAutoTest(float RealDt)
 			AutoPasses.RemoveAt(i);
 		}
 	}
+	if (AutoGpuDumps.Num() && T >= AutoGpuDumps[0])
+	{
+		UE_LOG(LogTemp, Display, TEXT("AUTOTEST profilegpu at t=%.2f"), T);
+		ConsoleCommand(TEXT("profilegpu"));
+		// e a memória de vídeo: o pool de render targets e os maiores recursos
+		ConsoleCommand(TEXT("r.DumpRenderTargetPoolMemory"));
+		ConsoleCommand(TEXT("rhi.DumpResourceMemory 60"));
+		AutoGpuDumps.RemoveAt(0);
+	}
 	if (T > 0.2f)
 	{
 		AutoSumDt += RealDt;
@@ -602,6 +672,30 @@ void ABlastLabController::TickAutoTest(float RealDt)
 	else if (RealDt > 0.05f)
 	{
 		UE_LOG(LogTemp, Display, TEXT("AUTOTEST hitch %.0f ms at t=%.2f"), RealDt * 1000.0f, T);
+	}
+	// -AutoOrbit=<rad/s>: a câmera gira devagar em volta do alvo depois da
+	// detonação (o acúmulo temporal das explosões com a câmera andando)
+	static const float OrbitRate = [] { float V = 0.0f; FParse::Value(FCommandLine::Get(), TEXT("AutoOrbit="), V); return V; }();
+	if (OrbitRate != 0.0f)
+	{
+		if (ABlastLabCamera* C = Cam())
+		{
+			C->Orbit(-OrbitRate * RealDt / 0.005f, 0.0f);
+		}
+	}
+	// -AutoVideo=de,até: uma foto por quadro nesse intervalo (s da gravação),
+	// vid_NNNN.png. Com -UseFixedTimeStep -FPS=30 o relógio anda 1/30 s por quadro
+	// e a pausa de cada foto não pula tempo: o vídeo sai na velocidade certa.
+	static const FVector2f Video = []
+	{
+		FString V, A, B;
+		return FParse::Value(FCommandLine::Get(), TEXT("AutoVideo="), V, false) && V.Split(TEXT(","), &A, &B)
+			? FVector2f(FCString::Atof(*A), FCString::Atof(*B)) : FVector2f(1.0f, -1.0f);
+	}();
+	static int32 VideoFrame = 0;
+	if (T >= Video.X && T <= Video.Y)
+	{
+		FScreenshotRequest::RequestScreenshot(FPaths::Combine(AutoFolder, FString::Printf(TEXT("vid_%04d.png"), VideoFrame++)), true, false);
 	}
 	if (AutoTimes.IsValidIndex(AutoNext) && T >= AutoTimes[AutoNext])
 	{

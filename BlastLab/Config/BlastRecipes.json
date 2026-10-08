@@ -1,0 +1,67 @@
+{
+  "_leia": [
+    "Receita de camadas de cada arma (docs/EXPLOSOES.md). O simulador relê este arquivo quando ele muda: edite, salve e detone de novo.",
+    "Tempos em ms, tamanhos em m, velocidades em m/s, faixas [mín, máx] sorteadas por pedaço.",
+    "Escala pela física, a partir da Carga Pesada (20 kg de TNT), com lambda = (W/20 kg)^(1/3):",
+    "  raio do dano = raio de 5 psi = 4.6 * W^(1/3) m (Kinney & Graham): anel e marca queimada (peso visual = peso no jogo);",
+    "  durações e velocidades * sqrt(lambda) (semelhança de Froude); quantidades * lambda;",
+    "  anel: 0.5 s na Carga Pesada (o ZH usa 0.33 s no tiro e 1.7 s na nuke); clarão: 80 ms (2–3 quadros a 30 qps).",
+    "surfaces: pelo material físico do chão no ponto (PM_Terra, PM_Areia, PM_Asfalto, PM_Grama). Cores relativas ao chão de teste (terra escura, albedo ~6%): a poeira fina do anel é ~3x mais clara e menos saturada que o chão (a da cor do chão sumia nele); a fuligem da marca, ~0.013."
+  ],
+  "weapons": {
+    "granada": {
+      "flashMs": 60, "flashRadiusM": 0.9, "flashRadiance": 30,
+      "ringDelayMs": 15, "ringMs": 300, "ringRadiusM": 4.6, "ringOpacity": 0.85,
+      "debris": 4, "debrisSpeed": [9, 24], "debrisElevDeg": [25, 75], "debrisSizeM": [0.12, 0.35],
+      "clods": 15, "clodSpeed": [4, 13], "clodElevDeg": [40, 80], "clodSizeM": [0.08, 0.2],
+      "sparks": 20, "sparkSpeed": [20, 55], "sparkElevDeg": [5, 70], "sparkLifeMs": [200, 700],
+      "scorchRadiusM": 4.6, "scorchMs": 150, "scorchLifeS": 60
+    },
+    "morteiro": {
+      "flashMs": 70, "flashRadiusM": 1.5, "flashRadiance": 30,
+      "ringDelayMs": 15, "ringMs": 390, "ringRadiusM": 7.6, "ringOpacity": 0.85,
+      "debris": 7, "debrisSpeed": [12, 31], "debrisElevDeg": [25, 75], "debrisSizeM": [0.15, 0.45],
+      "clods": 24, "clodSpeed": [5, 17], "clodElevDeg": [40, 80], "clodSizeM": [0.1, 0.27],
+      "sparks": 30, "sparkSpeed": [22, 60], "sparkElevDeg": [5, 70], "sparkLifeMs": [220, 800],
+      "scorchRadiusM": 7.6, "scorchMs": 170, "scorchLifeS": 75
+    },
+    "tanque": {
+      "flashMs": 80, "flashRadiusM": 2.5, "flashRadiance": 30,
+      "ringDelayMs": 20, "ringMs": 500, "ringRadiusM": 12.5, "ringOpacity": 0.85,
+      "debris": 12, "debrisSpeed": [15, 40], "debrisElevDeg": [25, 75], "debrisSizeM": [0.25, 0.7],
+      "clods": 40, "clodSpeed": [6, 22], "clodElevDeg": [40, 80], "clodSizeM": [0.12, 0.35],
+      "sparks": 50, "sparkSpeed": [25, 70], "sparkElevDeg": [5, 70], "sparkLifeMs": [250, 900],
+      "scorchRadiusM": 12.5, "scorchMs": 200, "scorchLifeS": 90
+    },
+    "deposito": {
+      "flashMs": 100, "flashRadiusM": 4.0, "flashRadiance": 30,
+      "ringDelayMs": 25, "ringMs": 630, "ringRadiusM": 19.8, "ringOpacity": 0.85,
+      "debris": 19, "debrisSpeed": [19, 50], "debrisElevDeg": [25, 80], "debrisSizeM": [0.3, 0.9],
+      "clods": 63, "clodSpeed": [8, 28], "clodElevDeg": [40, 80], "clodSizeM": [0.15, 0.44],
+      "sparks": 80, "sparkSpeed": [30, 85], "sparkElevDeg": [5, 75], "sparkLifeMs": [300, 1100],
+      "scorchRadiusM": 19.8, "scorchMs": 250, "scorchLifeS": 120
+    },
+    "aereo": {
+      "flashMs": 120, "flashRadiusM": 5.6, "flashRadiance": 30,
+      "ringDelayMs": 30, "ringMs": 750, "ringRadiusM": 27.8, "ringOpacity": 0.85,
+      "debris": 27, "debrisSpeed": [22, 60], "debrisElevDeg": [25, 80], "debrisSizeM": [0.4, 1.2],
+      "clods": 89, "clodSpeed": [9, 33], "clodElevDeg": [40, 80], "clodSizeM": [0.18, 0.52],
+      "sparks": 110, "sparkSpeed": [30, 90], "sparkElevDeg": [5, 75], "sparkLifeMs": [300, 1200],
+      "scorchRadiusM": 27.8, "scorchMs": 300, "scorchLifeS": 150
+    },
+    "nuclear": {
+      "flashMs": 240, "flashRadiusM": 22.0, "flashRadiance": 40,
+      "ringDelayMs": 60, "ringMs": 1500, "ringRadiusM": 112, "ringOpacity": 0.9,
+      "debris": 60, "debrisSpeed": [45, 120], "debrisElevDeg": [20, 70], "debrisSizeM": [0.8, 2.5],
+      "clods": 160, "clodSpeed": [18, 66], "clodElevDeg": [30, 75], "clodSizeM": [0.35, 1.0],
+      "sparks": 200, "sparkSpeed": [40, 120], "sparkElevDeg": [5, 75], "sparkLifeMs": [400, 1600],
+      "scorchRadiusM": 112, "scorchMs": 600, "scorchLifeS": 600
+    }
+  },
+  "surfaces": {
+    "terra":   { "clodColor": [0.060, 0.052, 0.045, 0.95], "ringColor": [0.20, 0.18, 0.155], "scorchColor": [0.015, 0.013, 0.011], "clods": 1.0, "ring": 1.0 },
+    "areia":   { "clodColor": [0.14, 0.12, 0.085, 0.95],   "ringColor": [0.26, 0.23, 0.18],  "scorchColor": [0.025, 0.021, 0.017], "clods": 0.6, "ring": 1.0 },
+    "asfalto": { "clodColor": [0.035, 0.035, 0.035, 0.80], "ringColor": [0.16, 0.16, 0.155], "scorchColor": [0.008, 0.008, 0.008], "clods": 0.4, "ring": 0.5 },
+    "grama":   { "clodColor": [0.045, 0.040, 0.030, 0.95], "ringColor": [0.17, 0.16, 0.13],  "scorchColor": [0.012, 0.011, 0.009], "clods": 1.2, "ring": 0.5 }
+  }
+}

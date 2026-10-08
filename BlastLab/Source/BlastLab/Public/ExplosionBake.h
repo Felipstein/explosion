@@ -62,9 +62,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BlastLab|Interaction")
 	int32 VelocityResolution = 32;
 
+	/**
+	 * A normal pra fora da fumaça e a força da borda, na mesma grade da
+	 * Velocity (rgb = normal·0.5 + 0.5, a = força): o deslocamento piroclástico
+	 * do material (Tools/export_bake_velocity.py, build_explosion.py).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BlastLab")
+	TObjectPtr<UVolumeTexture> Normal;
+
 	/** Altura média da fuligem em cada quadro, em cm desde o pé (é por onde o avião e o míssil passam). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BlastLab|Interaction")
 	TArray<float> SootHeight;
+
+	/**
+	 * Ganho da fuligem em cada quadro (vazio = 1). As simulações do EmberGen
+	 * DISSOLVEM a fumaça (−50% aos 2.2 s na Gasoline): o ganho, S_pico / S(t)
+	 * depois do pico (teto 6×), mantém a massa de fuligem que no vídeo fica no ar.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "BlastLab")
+	TArray<float> SootGain;
 
 	float Duration() const { return FrameTimes.Num() ? FrameTimes.Last() : 0.0f; }
 

@@ -7,8 +7,16 @@ Mesma resolução (64³), mesmo período (4), mesmas 3 oitavas e mesmo remapeame
 (c·0.06 + 0.5). O hash por seno em double dá outro sorteio que o da GPU, com
 a mesma estatística.
 
+E o ruído da erosão das bordas (o "upres" na hora do render, como as nuvens do
+Horizon: Schneider, "Nubis", SIGGRAPH 2015/2017/2023): Worley periódico 128³,
+uma oitava por canal, com 4, 8, 16 e 32 células por ladrilho. O material lê
+1 − F1 (bolhas redondas, a "couve-flor") e come a casca rala da fumaça entre
+elas. Cada canal sai equalizado (percentis 1–99 → 0–1), pra a mesma
+"quantidade" de erosão valer em todas as oitavas.
+
 Rodar: python BlastLab/Tools/make_noise.py
-Saída (fora do git): Intermediate/Noise/curl_noise_64.bgra (BGRA8, x mais rápido)
+Saída (fora do git): Intermediate/Noise/curl_noise_64.bgra e worley_128.bgra
+(BGRA8, x mais rápido)
 """
 import os
 
@@ -70,6 +78,41 @@ def main():
     bgra.tofile(os.path.join(OUT, 'curl_noise_64.bgra'))
     print('noise', RES, 'mean', c.mean(axis=(0, 1, 2)).round(3), 'std', c.std(axis=(0, 1, 2)).round(3),
           'outside [0,1]: %.2f%%' % (100 * ((c * 0.06 + 0.5 < 0) | (c * 0.06 + 0.5 > 1)).mean()))
+    worley()
+
+
+WORLEY_RES = 128
+WORLEY_CELLS = (4, 8, 16, 32)          # R, G, B, A
+
+
+def worley_octave(cells, seed):
+    """1 − F1 periódico: a distância ao ponto de semente mais próximo (um por
+    célula, 27 vizinhas com volta no ladrilho), em unidades de célula."""
+    rng = np.random.default_rng(seed)
+    feat = rng.random((cells, cells, cells, 3)).astype(np.float32)
+    u = ((np.arange(WORLEY_RES) + 0.5) / WORLEY_RES * cells).astype(np.float32)
+    z, y, x = np.meshgrid(u, u, u, indexing='ij')
+    p = np.stack([x, y, z], -1)
+    c = np.floor(p).astype(np.int32)
+    best = np.full(p.shape[:-1], np.inf, np.float32)
+    for dz in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                n = c + np.array([dx, dy, dz], np.int32)
+                f = n + feat[n[..., 2] % cells, n[..., 1] % cells, n[..., 0] % cells]
+                best = np.minimum(best, ((p - f) ** 2).sum(-1))
+    v = 1.0 - np.sqrt(best)
+    lo, hi = np.percentile(v, (1, 99))
+    return np.clip((v - lo) / (hi - lo), 0, 1)
+
+
+def worley():
+    ch = [worley_octave(n, 101 + i) for i, n in enumerate(WORLEY_CELLS)]
+    rgba = np.stack(ch, -1)
+    bgra = (rgba[..., [2, 1, 0, 3]] * 255 + 0.5).astype(np.uint8)
+    os.makedirs(OUT, exist_ok=True)
+    bgra.tofile(os.path.join(OUT, 'worley_128.bgra'))
+    print('worley', WORLEY_RES, 'cells', WORLEY_CELLS, 'means', [round(float(c.mean()), 3) for c in ch])
 
 
 if __name__ == '__main__':

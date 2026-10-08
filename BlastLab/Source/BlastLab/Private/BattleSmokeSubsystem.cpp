@@ -1,6 +1,13 @@
 #include "BattleSmokeSubsystem.h"
 
+#include "BlastLabEnvironment.h"
+#include "BlastLabGround.h"
 #include "BlastLabSimulation.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Components/LightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/HeterogeneousVolumeComponent.h"
 #include "Engine/TextureRenderTargetVolume.h"
 #include "Engine/VolumeTexture.h"
@@ -17,6 +24,12 @@ namespace
 {
 	const TCHAR* MaterialPath = TEXT("/Game/Explosions/M_BattleSmoke.M_BattleSmoke");
 	const TCHAR* NoisePath = TEXT("/Game/Explosions/T_CurlNoise.T_CurlNoise");
+	const TCHAR* ShadowFunctionPath = TEXT("/Game/Materials/M_SmokeShadowLF.M_SmokeShadowLF");
+	// O mapa de sombra da fumaça: 512² texels de 0.5 m, uma janela de 256 m em volta
+	// do ponto do chão pra onde a câmera olha (a vista de RTS cobre ~200 × 120 m).
+	// A sombra de fumaça é macia: meio metro sobra
+	constexpr int32 ShadowRes = 512;
+	constexpr float ShadowTexelM = 0.5f;
 	// battlesmoke.js: dissipação (o mesmo sootTau do fluido) e o campo que conta como vazio
 	constexpr float SootTau = 10.0f;
 	constexpr float IdleMass = 0.15f;
@@ -87,6 +100,112 @@ void UBattleSmokeSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	Volume->SetVisibility(false);
 	UpdateBox(FIntVector(0), FineDim - FIntVector(1));
 	Sim = MakeShared<FBattleSmokeSim, ESPMode::ThreadSafe>();
+
+	// a sombra da fumaça no chão: entra na luz direta do sol e da lua pela light function
+	if (UMaterialInterface* Function = LoadObject<UMaterialInterface>(nullptr, ShadowFunctionPath))
+	{
+		ShadowTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("SmokeShadow"));
+		ShadowTarget->bCanCreateUAV = true;
+		ShadowTarget->ClearColor = FLinearColor::Black;
+		ShadowTarget->InitCustomFormat(ShadowRes, ShadowRes, PF_R32_FLOAT, true);
+		ShadowTarget->UpdateResourceImmediate(true);
+		ShadowFunction = UMaterialInstanceDynamic::Create(Function, this);
+		ShadowFunction->SetTextureParameterValue(TEXT("Shadow"), ShadowTarget);
+		ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(0.0f, 0.0f, 1.0f, 0.0f));
+		if (ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(this))
+		{
+			for (ADirectionalLight* Light : { Env->Sun.Get(), Env->Moon.Get() })
+			{
+				if (Light && Light->GetLightComponent())
+				{
+					Light->GetLightComponent()->SetLightFunctionMaterial(ShadowFunction);
+				}
+			}
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BlastLab: sem M_SmokeShadowLF (rode Tools/blast.ps1 build-scene): sem sombra da fumaça no chão"));
+	}
+}
+
+void UBattleSmokeSubsystem::UpdateSmokeShadow()
+{
+	if (!Sim.IsValid() || !ShadowTarget || !ShadowFunction)
+	{
+		return;
+	}
+	const ABlastLabEnvironment* Env = ABlastLabEnvironment::Find(this);
+	const UBlastLabSimulation* BlastSim = UBlastLabSimulation::Get(this);
+	// a janela em volta do ponto do chão pra onde a câmera olha, presa à grade dos texels
+	FVector Center = FVector::ZeroVector;
+	const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	if (PC && PC->PlayerCameraManager)
+	{
+		const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector Fwd = PC->PlayerCameraManager->GetCameraRotation().Vector();
+		if (!BlastLabGround::Ray(GetWorld(), Eye, Fwd, 1.0e6, Center))
+		{
+			Center = Eye + FVector(Fwd.X, Fwd.Y, 0.0).GetSafeNormal() * 10000.0;
+			Center.Z = BlastLabGround::HeightAt(GetWorld(), Center.X, Center.Y);
+		}
+	}
+	const float HalfM = 0.5f * ShadowRes * ShadowTexelM;
+	FSmokeShadowInputs In;
+	In.Res = ShadowRes;
+	In.TexelM = ShadowTexelM;
+	// o plano da sombra: o chão onde a câmera olha (com relevo, a sombra vale até
+	// ~5 m acima dele e some até 10 m: M_SmokeShadowLF)
+	In.GroundZM = float(Center.Z / 100.0);
+	In.OriginM = FVector2f(FMath::GridSnap(float(Center.X) / 100.0f, ShadowTexelM) - HalfM, FMath::GridSnap(float(Center.Y) / 100.0f, ShadowTexelM) - HalfM);
+	const FVector L = Env ? Env->KeyLightDirection() : FVector::UpVector;
+	In.LightDir = FVector3f(L);
+	// com a luz rente ao horizonte a sombra seria infinita: some até 3°
+	const bool bLight = Env && Env->KeyLightAltitudeDeg() > 3.0f;
+	if (bLight && BlastSim)
+	{
+		for (const TObjectPtr<AExplosionVolume>& Ptr : BlastSim->AliveExplosions())
+		{
+			const AExplosionVolume* E = Ptr.Get();
+			const UExplosionBake* B = E ? E->Bake.Get() : nullptr;
+			if (!B || !B->Velocity || E->IsFinished() || E->Opacity <= 0.0f)
+			{
+				continue;
+			}
+			// a sombra cai a até ~altura/tan(altura do sol) do pé
+			const float SizeM = B->DomainCm / 100.0f * E->SizeScale;
+			const float Reach = HalfM + SizeM * (1.0f + float(FVector2D(L.X, L.Y).Size() / FMath::Max(L.Z, 0.05)));
+			const FVector Foot = E->GetActorLocation() / 100.0;
+			if (FMath::Abs(Foot.X - Center.X / 100.0) > Reach || FMath::Abs(Foot.Y - Center.Y / 100.0) > Reach)
+			{
+				continue;
+			}
+			FSmokeShadowCaster& C = In.Casters.AddDefaulted_GetRef();
+			C.FootM = FVector3f(Foot);
+			C.Scale = E->SizeScale;
+			C.Opacity = E->Opacity;
+			C.DomainLocalM = B->DomainCm / 100.0f;
+			B->FramesAt(E->BakeTime(), C.Frame0, C.Frame1, C.Alpha);
+			C.VelocityResolution = B->VelocityResolution;
+			C.VelocityFrames = B->FrameTimes.Num();
+			C.Velocity = B->Velocity->GetResource();
+		}
+	}
+	const bool bAny = In.Casters.Num() > 0;
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowMap"), FLinearColor(In.OriginM.X, In.OriginM.Y, 1.0f / (ShadowRes * ShadowTexelM), In.GroundZM));
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(L.X, L.Y, L.Z, bAny ? 1.0f : 0.0f));
+	if (!bAny && bShadowEmpty)
+	{
+		return;
+	}
+	bShadowEmpty = !bAny;
+	In.Out = ShadowTarget->GameThread_GetRenderTargetResource();
+	ENQUEUE_RENDER_COMMAND(BattleSmokeShadow)([S = Sim, Inputs = MoveTemp(In)](FRHICommandListImmediate& RHICmdList)
+	{
+		FRDGBuilder GraphBuilder(RHICmdList);
+		S->RenderShadow(GraphBuilder, Inputs);
+		GraphBuilder.Execute();
+	});
 }
 
 void UBattleSmokeSubsystem::Deinitialize()
@@ -139,8 +258,9 @@ void UBattleSmokeSubsystem::AddDisturber(const FBattleSmokeDisturber& D)
 	if (Disturbers.Num() < BattleSmoke::MaxDisturbers)
 	{
 		Disturbers.Add(D);
-		// fumaça de motor entra no campo: conta pro "não está vazio"
-		if (FMath::RoundToInt32(D.B.W) == 5)
+		// fumaça de motor e fogo contínuo entram no campo: contam pro "não está vazio"
+		const int32 Kind = FMath::RoundToInt32(D.B.W);
+		if (Kind == 5 || Kind == 7)
 		{
 			MassEstimate += 0.02f;
 		}
@@ -245,6 +365,7 @@ void UBattleSmokeSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
+	UpdateSmokeShadow();
 	const UBlastLabSimulation* BlastSim = UBlastLabSimulation::Get(this);
 	const float Dt = BlastSim ? BlastSim->SimDelta(DeltaTime) : DeltaTime;
 	Time += Dt;
