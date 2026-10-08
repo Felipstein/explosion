@@ -1,0 +1,15 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "O jogo RTS: simulação própria e determinística (SimCore) + a Unreal desenhando (RTSGame). docs/JOGO.md",
+	"Modules": [
+		{ "Name": "SimCore", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "BlastFx", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "RTSGame", "Type": "Runtime", "LoadingPhase": "Default" }
+	],
+	"Plugins": [
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "EditorScriptingUtilities", "Enabled": true }
+	]
+}

@@ -1,0 +1,345 @@
+#include "Sim/Replay.h"
+
+namespace Sim
+{
+	namespace
+	{
+		constexpr uint32_t Magic = 0x52535452;   // "RTSR"
+		constexpr uint32_t FormatVersion = 1;
+		constexpr int32_t MaxMapSide = 4096;
+		constexpr size_t MaxKeyLength = 64;
+		constexpr uint16_t MaxUnitDefs = 1024;
+		constexpr uint16_t MaxStartingUnits = 10000;
+
+		enum class Record : uint8_t
+		{
+			Commands = 1,
+			Hash = 2,
+			End = 3,
+		};
+
+		void WriteString(ByteWriter& W, const std::string& S)
+		{
+			W.U16(uint16_t(S.size()));
+			W.Raw(reinterpret_cast<const uint8_t*>(S.data()), S.size());
+		}
+
+		bool ReadString(ByteReader& R, std::string& Out)
+		{
+			uint16_t Len = 0;
+			if (!R.U16(Len) || Len > MaxKeyLength)
+			{
+				return false;
+			}
+			Out.resize(Len);
+			return Len == 0 || R.Raw(reinterpret_cast<uint8_t*>(&Out[0]), Len);
+		}
+
+		void WriteFix(ByteWriter& W, Fix F) { W.I64(F.Raw); }
+		bool ReadFix(ByteReader& R, Fix& F) { return R.I64(F.Raw); }
+		void WriteI32(ByteWriter& W, int32_t V) { W.U32(uint32_t(V)); }
+		bool ReadI32(ByteReader& R, int32_t& V) { uint32_t U = 0; if (!R.U32(U)) { return false; } V = int32_t(U); return true; }
+
+		void WriteDef(ByteWriter& W, const UnitDef& D)
+		{
+			WriteString(W, D.Key);
+			WriteI32(W, D.MaxHp);
+			W.U8(uint8_t(D.Armor));
+			WriteFix(W, D.Radius);
+			WriteFix(W, D.PathRadius);
+			WriteFix(W, D.MaxSpeed);
+			WriteFix(W, D.Accel);
+			WriteFix(W, D.Brake);
+			WriteI32(W, D.TurnBam);
+			WriteI32(W, D.TurretTurnBam);
+			WriteI32(W, D.TurretIdleReturnTicks);
+			WriteFix(W, D.Sight);
+			WriteFix(W, D.Weapon.Range);
+			WriteI32(W, D.Weapon.Damage);
+			W.U8(uint8_t(D.Weapon.Type));
+			WriteI32(W, D.Weapon.ReloadTicks);
+			WriteI32(W, D.Weapon.AimToleranceBam);
+			WriteFix(W, D.Weapon.ProjectileStep);
+		}
+
+		bool ReadDef(ByteReader& R, UnitDef& D)
+		{
+			uint8_t Armor = 0;
+			uint8_t Damage = 0;
+			const bool bOk = ReadString(R, D.Key) && ReadI32(R, D.MaxHp) && R.U8(Armor)
+				&& ReadFix(R, D.Radius) && ReadFix(R, D.PathRadius) && ReadFix(R, D.MaxSpeed)
+				&& ReadFix(R, D.Accel) && ReadFix(R, D.Brake) && ReadI32(R, D.TurnBam)
+				&& ReadI32(R, D.TurretTurnBam) && ReadI32(R, D.TurretIdleReturnTicks) && ReadFix(R, D.Sight)
+				&& ReadFix(R, D.Weapon.Range) && ReadI32(R, D.Weapon.Damage) && R.U8(Damage)
+				&& ReadI32(R, D.Weapon.ReloadTicks) && ReadI32(R, D.Weapon.AimToleranceBam)
+				&& ReadFix(R, D.Weapon.ProjectileStep);
+			if (!bOk || Armor >= uint8_t(ArmorType::Count) || Damage >= uint8_t(DamageType::Count))
+			{
+				return false;
+			}
+			D.Armor = ArmorType(Armor);
+			D.Weapon.Type = DamageType(Damage);
+			return true;
+		}
+	}
+
+	void WriteSetup(ByteWriter& W, const MatchSetup& S)
+	{
+		W.U64(S.Seed);
+		W.U32(uint32_t(S.Map.Width));
+		W.U32(uint32_t(S.Map.Height));
+		WriteFix(W, S.Map.CellSize);
+		WriteFix(W, S.Map.Origin.X);
+		WriteFix(W, S.Map.Origin.Y);
+		W.Raw(S.Map.Pass.data(), S.Map.Pass.size());
+
+		W.U16(uint16_t(S.Rules.Units.size()));
+		for (const UnitDef& D : S.Rules.Units)
+		{
+			WriteDef(W, D);
+		}
+		for (int A = 0; A < int(ArmorType::Count); ++A)
+		{
+			for (int T = 0; T < int(DamageType::Count); ++T)
+			{
+				WriteI32(W, S.Rules.Armor.Percent[A][T]);
+			}
+		}
+
+		W.U8(uint8_t(S.Players.size()));
+		for (const PlayerSetup& P : S.Players)
+		{
+			W.U8(P.Team);
+			W.U8(P.bIsAI ? 1 : 0);
+			W.U16(uint16_t(P.Units.size()));
+			for (const StartingUnit& U : P.Units)
+			{
+				WriteString(W, U.Key);
+				WriteFix(W, U.Pos.X);
+				WriteFix(W, U.Pos.Y);
+				W.U16(U.Facing.Bam);
+			}
+		}
+	}
+
+	bool ReadSetup(ByteReader& R, MatchSetup& Out)
+	{
+		Out = MatchSetup();
+		uint32_t Width = 0;
+		uint32_t Height = 0;
+		Fix CellSize;
+		Vec2 Origin;
+		if (!R.U64(Out.Seed) || !R.U32(Width) || !R.U32(Height) || Width == 0 || Height == 0
+			|| Width > uint32_t(MaxMapSide) || Height > uint32_t(MaxMapSide)
+			|| !ReadFix(R, CellSize) || CellSize.Raw <= 0 || !ReadFix(R, Origin.X) || !ReadFix(R, Origin.Y))
+		{
+			return false;
+		}
+		Out.Map.Resize(int32_t(Width), int32_t(Height), CellSize, Origin);
+		if (!R.Raw(Out.Map.Pass.data(), Out.Map.Pass.size()))
+		{
+			return false;
+		}
+		for (const uint8_t P : Out.Map.Pass)
+		{
+			if (P > uint8_t(CellPass::Water))
+			{
+				return false;
+			}
+		}
+
+		uint16_t DefCount = 0;
+		if (!R.U16(DefCount) || DefCount > MaxUnitDefs)
+		{
+			return false;
+		}
+		Out.Rules.Units.resize(DefCount);
+		for (UnitDef& D : Out.Rules.Units)
+		{
+			if (!ReadDef(R, D))
+			{
+				return false;
+			}
+		}
+		for (int A = 0; A < int(ArmorType::Count); ++A)
+		{
+			for (int T = 0; T < int(DamageType::Count); ++T)
+			{
+				if (!ReadI32(R, Out.Rules.Armor.Percent[A][T]))
+				{
+					return false;
+				}
+			}
+		}
+
+		uint8_t PlayerCount = 0;
+		if (!R.U8(PlayerCount) || PlayerCount == 0 || PlayerCount > MaxPlayers)
+		{
+			return false;
+		}
+		Out.Players.resize(PlayerCount);
+		for (PlayerSetup& P : Out.Players)
+		{
+			uint8_t AI = 0;
+			uint16_t UnitCount = 0;
+			if (!R.U8(P.Team) || !R.U8(AI) || !R.U16(UnitCount) || UnitCount > MaxStartingUnits)
+			{
+				return false;
+			}
+			P.bIsAI = AI != 0;
+			P.Units.resize(UnitCount);
+			for (StartingUnit& U : P.Units)
+			{
+				if (!ReadString(R, U.Key) || !ReadFix(R, U.Pos.X) || !ReadFix(R, U.Pos.Y) || !R.U16(U.Facing.Bam))
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	void ReplayWriter::Begin(const MatchSetup& Setup)
+	{
+		Header = ByteWriter();
+		Body = ByteWriter();
+		Header.U32(Magic);
+		Header.U32(FormatVersion);
+		Header.U32(SimVersion);
+		WriteSetup(Header, Setup);
+		LastTick = 0;
+		LastHash = 0;
+	}
+
+	void ReplayWriter::AddTick(TickNumber Tick, const std::vector<Command>& Commands, uint64_t HashAfter)
+	{
+		if (!Commands.empty())
+		{
+			Body.U8(uint8_t(Record::Commands));
+			Body.U32(Tick);
+			Body.U16(uint16_t(Commands.size()));
+			for (const Command& C : Commands)
+			{
+				WriteCommand(Body, C);
+			}
+		}
+		if (Tick % ReplayHashInterval == 0)
+		{
+			Body.U8(uint8_t(Record::Hash));
+			Body.U32(Tick);
+			Body.U64(HashAfter);
+		}
+		LastTick = Tick;
+		LastHash = HashAfter;
+	}
+
+	std::vector<uint8_t> ReplayWriter::Finish() const
+	{
+		ByteWriter Out;
+		Out.Raw(Header.Bytes.data(), Header.Bytes.size());
+		Out.Raw(Body.Bytes.data(), Body.Bytes.size());
+		Out.U8(uint8_t(Record::End));
+		Out.U32(LastTick);
+		Out.U64(LastHash);
+		return Out.Bytes;
+	}
+
+	bool ReplayReader::Load(const std::vector<uint8_t>& Bytes)
+	{
+		*this = ReplayReader();
+		ByteReader R(Bytes.data(), Bytes.size());
+		uint32_t FileMagic = 0;
+		uint32_t Format = 0;
+		uint32_t Version = 0;
+		if (!R.U32(FileMagic) || FileMagic != Magic || !R.U32(Format) || Format != FormatVersion
+			|| !R.U32(Version) || Version != SimVersion || !ReadSetup(R, SetupData))
+		{
+			return false;
+		}
+		while (true)
+		{
+			uint8_t Type = 0;
+			if (!R.U8(Type))
+			{
+				return false;   // acabou sem o registro de fim
+			}
+			if (Type == uint8_t(Record::Commands))
+			{
+				TickRecord T;
+				uint16_t Count = 0;
+				if (!R.U32(T.Tick) || !R.U16(Count))
+				{
+					return false;
+				}
+				T.Commands.resize(Count);
+				for (Command& C : T.Commands)
+				{
+					if (!ReadCommand(R, C) || C.Tick != T.Tick)
+					{
+						return false;
+					}
+				}
+				Ticks.push_back(std::move(T));
+			}
+			else if (Type == uint8_t(Record::Hash))
+			{
+				HashRecord H;
+				if (!R.U32(H.Tick) || !R.U64(H.Hash))
+				{
+					return false;
+				}
+				Hashes.push_back(H);
+			}
+			else if (Type == uint8_t(Record::End))
+			{
+				HashRecord H;
+				if (!R.U32(FinalTick) || !R.U64(H.Hash))
+				{
+					return false;
+				}
+				H.Tick = FinalTick;
+				Hashes.push_back(H);
+				return R.AtEnd();
+			}
+			else
+			{
+				return false;
+			}
+		}
+	}
+
+	std::vector<Command> ReplayReader::CommandsFor(TickNumber Tick) const
+	{
+		// registros em ordem crescente de passo: busca binária
+		size_t Lo = 0;
+		size_t Hi = Ticks.size();
+		while (Lo < Hi)
+		{
+			const size_t Mid = (Lo + Hi) / 2;
+			if (Ticks[Mid].Tick < Tick) { Lo = Mid + 1; } else { Hi = Mid; }
+		}
+		if (Lo < Ticks.size() && Ticks[Lo].Tick == Tick)
+		{
+			return Ticks[Lo].Commands;
+		}
+		return {};
+	}
+
+	bool ReplayReader::ExpectedHash(TickNumber Tick, uint64_t& Out) const
+	{
+		// gravados em ordem de passo (o do fim pode repetir o último: vale o último)
+		size_t Lo = 0;
+		size_t Hi = Hashes.size();
+		while (Lo < Hi)
+		{
+			const size_t Mid = (Lo + Hi) / 2;
+			if (Hashes[Mid].Tick <= Tick) { Lo = Mid + 1; } else { Hi = Mid; }
+		}
+		if (Lo > 0 && Hashes[Lo - 1].Tick == Tick)
+		{
+			Out = Hashes[Lo - 1].Hash;
+			return true;
+		}
+		return false;
+	}
+}

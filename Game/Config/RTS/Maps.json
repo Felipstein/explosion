@@ -1,0 +1,19 @@
+{
+	"_about": "Mapas do skirmish. A grade lógica sai do próprio mapa ao carregar (alturas do Landscape + pedras grandes) até a sessão do WorldForge exportar a grade canônica (docs/JOGO.md §3.6). Regras de passagem iguais às do gerador (WorldGenerator.cpp): penhasco acima de 0,78 de inclinação, água abaixo de −1,5 m.",
+	"maps": [
+		{
+			"name": "World_TestSalt2",
+			"title": "Deserto (salina)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [ [ -282.6, -335.7 ], [ 282.6, 335.7 ] ],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [ "boulder", "namaqualand_rocks", "namaqualand_cliff", "DatePalm", "concrete_road_barrier" ],
+			"skirmish": { "units_per_player": [ [ "usa_mbt", 6 ] ] }
+		}
+	]
+}

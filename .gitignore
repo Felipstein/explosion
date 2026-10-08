@@ -27,3 +27,20 @@ WorldForge/Content/Maps/Slice_*.umap
 # as prévias em qualidade real (Ver em qualidade real): refeitas pelo app
 WorldForge/Content/Maps/World_*.umap
 WorldForge/Content/Maps/Worlds/
+
+# Game (Unreal): o jogo. O que a engine regenera, e o que vem por link físico do
+# WorldForge (mapa do deserto e fatias) e do BlastLab (tanque) — refeitos por
+# Game/Tools/game.ps1 worlds. Os testes da simulação compilam em Intermediate/SimTests.
+Game/Binaries/
+Game/Intermediate/
+Game/Saved/
+Game/DerivedDataCache/
+Game/.vs/
+Game/*.sln
+Game/Content/Slice/
+Game/Content/Maps/World_*.umap
+Game/Content/Textures/T_WaterN.uasset
+Game/Content/Units/
+Game/Content/Explosions/
+Game/Content/Materials/M_FireGlare.uasset
+Game/Content/Materials/M_FlashStar.uasset

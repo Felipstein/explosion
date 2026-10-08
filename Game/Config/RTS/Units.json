@@ -1,0 +1,46 @@
+{
+	"_about": "Dados de design das unidades. Valores em metros/segundos/graus. Números do Zero Hour 1.04 (INI originais, 3 fontes conferidas em 07/10/2026) convertidos com 1 unidade do ZH = 0,2633 m (o Crusader tem 30 unidades de comprimento, o nosso tanque 7,9 m). O jogo relê ao começar cada partida.",
+	"meters_per_zh_unit": 0.2633,
+	"armor": {
+		"tank": { "armor_piercing": 100, "small_arms": 25, "explosive": 100 }
+	},
+	"units": [
+		{
+			"key": "usa_mbt",
+			"name": "Tanque básico USA",
+			"_source": "AmericaTankCrusader / CrusaderLocomotor / CrusaderTankGun / TankArmor (ZH 1.04)",
+			"max_hp": 480,
+			"armor": "tank",
+			"radius_m": 3.6,
+			"path_radius_m": 2.0,
+			"speed_mps": 7.90,
+			"accel_mps2": 263.3,
+			"brake_mps2": 263.3,
+			"turn_dps": 180,
+			"turret_turn_dps": 180,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 39.5,
+			"weapon": {
+				"range_m": 39.5,
+				"damage": 60,
+				"damage_type": "armor_piercing",
+				"reload_s": 2.0,
+				"aim_tolerance_deg": 2.0,
+				"projectile_mps": 105.3
+			},
+			"visual": {
+				"hull": [
+					"/Game/Units/USA_MBT/SM_USA_MBT_Hull/StaticMeshes/SM_USA_MBT_Hull",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_l",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_r",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Wheels/StaticMeshes/wheel_*"
+				],
+				"turret": [
+					"/Game/Units/USA_MBT/SM_USA_MBT_Turret/StaticMeshes/SM_USA_MBT_Turret",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Barrel/StaticMeshes/SM_USA_MBT_Barrel"
+				],
+				"muzzle_height_m": 2.08
+			}
+		}
+	]
+}

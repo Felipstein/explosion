@@ -2,7 +2,8 @@
 
 Projeto do Felipe: um **simulador de explosões volumétricas** nível AAA
 (explosões, fumaça e interação, pensando num RTS estilo C&C). Este
-repositório é o simulador e as referências; o jogo não é montado aqui.
+repositório é a casa do jogo inteiro: o jogo (`Game/`), o simulador de
+explosões, o criador de mundos, as artes conceituais e as referências.
 Converse em **português**. Nomes de código, pastas e assets em **inglês**
 (en-US); comentários e documentos em português.
 
@@ -18,6 +19,12 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   05/10/2026): gerador por semente + app com painel. `Tools/forge.ps1` faz
   tudo (setup, view, teste `-Folder`/`-UITest`). Contexto em `docs/WORLDFORGE.md`.
   A meta é uma ferramenta moderna nível AAA, não um clone do WorldBuilder.
+- `Game/`: o **jogo** (Unreal 5.8, desde 08/10/2026): menu, skirmish local
+  contra IA. A partida é uma simulação própria em C++ puro e ponto fixo
+  (`Source/SimCore`, determinística pro multiplayer lockstep); a Unreal só
+  desenha (`Source/RTSGame`, `Source/BlastFx` = a explosão do BlastLab).
+  `Tools/game.ps1` faz tudo (setup, view, teste `-Folder`, vídeo `-Record`);
+  `Tools/simtest.ps1` testa a simulação sem a Unreal. Arquitetura em `docs/JOGO.md`.
 - `reference/webgl/`: o simulador **WebGL** original, congelado na tag
   `v6-fumaca-interacao`. É a referência visual aprovada. Não mexer no JS.
 - `docs/`: leia nesta ordem quando precisar de contexto:

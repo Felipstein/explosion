@@ -13,6 +13,11 @@ BlastLab/                  o simulador (Unreal Engine 5.8)
   Tools/                   ferramentas pra montar, testar e criar explosões
   Config/                  configuração do projeto
   Content/                 assets (todos gerados pelas Tools)
+Game/                      o jogo (Unreal Engine 5.8): menu + skirmish; docs/JOGO.md
+  Source/SimCore/          a partida: simulação determinística em C++ puro (ponto fixo)
+  Source/RTSGame/          a Unreal desenhando: câmera, unidades, HUD, telas, teste automático
+  Source/BlastFx/          a explosão do BlastLab no jogo
+  Tools/                   game.ps1 (compilar, montar, abrir, testar, gravar vídeo), simtest.ps1
 WorldForge/                o criador de mundos do RTS (Unreal Engine 5.8): docs/WORLDFORGE.md
   Source/WorldForge/       Generation/ (o gerador, só Core) + terreno, câmera RTS, painel
   Tools/                   forge.ps1 (compilar, montar, abrir, testar), texturas, materiais
@@ -31,6 +36,10 @@ powershell -File BlastLab\Tools\blast.ps1 setup        # compila e monta tudo do
 powershell -File BlastLab\Tools\blast.ps1 view         # abre o simulador (gráfico máximo)
 powershell -File BlastLab\Tools\blast.ps1 editor       # abre o editor da Unreal
 ```
+
+O jogo: `powershell -File Game\Tools\game.ps1 setup` na primeira vez, depois
+`powershell -File Game\Tools\game.ps1 view` (abre no menu; "Jogar Skirmish"
+começa a partida contra a IA). Controles no rodapé da tela; detalhes em `docs/JOGO.md`.
 
 Criador de mundos: `WorldForge\WorldForge.cmd` (ou `powershell -File
 WorldForge\Tools\forge.ps1 setup` na primeira vez). Detalhes em `docs/WORLDFORGE.md`.
