@@ -15,6 +15,7 @@
 #include "RTSAutoTest.generated.h"
 
 class ARTSPlayerController;
+class FRTSTestInputGate;
 class URTSMatchSubsystem;
 
 UCLASS()
@@ -25,6 +26,7 @@ class RTSGAME_API URTSAutoTest : public UGameInstanceSubsystem, public FTickable
 public:
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 	// FTickableGameObject
 	virtual void Tick(float DeltaTime) override;
@@ -55,7 +57,7 @@ private:
 	void Build();
 	void Finish();
 	void PumpInput();
-	void QueueClick(const FVector2D& Pixel);
+	void QueueClick(const FVector2D& Pixel, FKey Button = EKeys::LeftMouseButton);
 	void QueueDrag(const FVector2D& From, const FVector2D& To);
 	void QueueKey(FKey K);
 	FVector2D ToSlate(const FVector2D& Pixel) const;
@@ -75,11 +77,16 @@ private:
 	int32 Failures = 0;
 	TArray<FInputEvent> Pending;
 	TSet<FKey> Pressed;
+	TSharedPtr<FRTSTestInputGate> Gate;
+	bool bDummyInjecting = false;
 	FVector2D LastSlatePos = FVector2D::ZeroVector;
 
 	// medições
 	TArray<float> FrameMs;
 	FVector2D CentroidBefore = FVector2D::ZeroVector;
+	FVector2D MinimapTarget = FVector2D::ZeroVector;
+	int32 SelectionBefore = 0;
+	double MinimapOrderOffCm = 1e12;
 	float NextBattleShot = 0.0f;
 	float NextPush = 0.0f;
 	bool bStallLogged = false;

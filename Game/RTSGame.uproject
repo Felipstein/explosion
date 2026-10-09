@@ -5,6 +5,7 @@
 	"Description": "O jogo RTS: simulação própria e determinística (SimCore) + a Unreal desenhando (RTSGame). docs/JOGO.md",
 	"Modules": [
 		{ "Name": "SimCore", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "RTSShaders", "Type": "Runtime", "LoadingPhase": "PostConfigInit" },
 		{ "Name": "BlastFx", "Type": "Runtime", "LoadingPhase": "Default" },
 		{ "Name": "RTSGame", "Type": "Runtime", "LoadingPhase": "Default" }
 	],

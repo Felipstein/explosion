@@ -4,7 +4,13 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
+#include "CanvasItem.h"
+#include "Engine/Texture2D.h"
+#include "RTSCameraPawn.h"
+#include "RTSFogOfWar.h"
 #include "RTSGameData.h"
+#include "RTSSessionSubsystem.h"
+#include "TextureResource.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
@@ -25,6 +31,12 @@ namespace
 	constexpr float ObjectiveSeconds = 7.0f;
 	constexpr float HelpSeconds = 30.0f;
 	constexpr float FadeInSeconds = 1.2f;
+	/** O minimapa: moldura de 30% da altura da tela, a 16 px dos cantos (fora da faixa da rolagem pela borda). */
+	constexpr float MinimapFrameFraction = 0.30f;
+	constexpr float MinimapMarginPx = 16.0f;
+	/** Cores da caixa da câmera do ZH (W3DRadar: topo 225,225,0 e o resto 158,158,0). */
+	const FLinearColor ViewBoxTop(FColor(225, 225, 0));
+	const FLinearColor ViewBoxRest(FColor(158, 158, 0));
 
 	FLinearColor HealthColor(float Ratio)
 	{
@@ -193,12 +205,26 @@ void ARTSHUD::DrawMenu(ARTSPlayerController* PC)
 	Y = H * 0.50f;
 	DrawButton(TEXT("skirmish"), TEXT("JOGAR SKIRMISH"), X, Y, PanelW - X * 2.0f, 58.0f);
 	DrawLabel(TEXT("Deserto (salina)  ·  você × IA  ·  6 tanques cada"), X + 2.0f, Y + 68.0f, 11, DimText);
-	Y += 124.0f;
+	Y += 96.0f;
+	const URTSSessionSubsystem* Session = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+	const bool bFog = !Session || Session->bFogOfWar;
+	DrawButton(TEXT("fogsetting"), bFog ? TEXT("NÉVOA DE GUERRA: LIGADA") : TEXT("NÉVOA DE GUERRA: DESLIGADA"), X, Y, PanelW - X * 2.0f, 44.0f);
+	DrawLabel(TEXT("depuração: F9 liga e desliga dentro da partida"), X + 2.0f, Y + 52.0f, 10, DimText);
+	Y += 96.0f;
 	DrawButton(TEXT("quit"), TEXT("SAIR"), X, Y, PanelW - X * 2.0f, 58.0f);
 }
 
 void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
+	if (!Match->IsReady())
+	{
+		// a tela de carregar continua (a mesma da troca de mapa) até a cena estar pronta
+		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0.012f, 0.014f, 0.017f, 1.0f));
+		DrawLabel(TEXT("CARREGANDO"), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f - 30.0f, 26, FLinearColor(0.92f, 0.93f, 0.95f), true, true);
+		const int32 Dots = int32(FPlatformTime::Seconds() * 3.0) % 4;
+		DrawLabel(FString::ChrN(Dots, TEXT('.')), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f + 12.0f, 20, FLinearColor(0.92f, 0.93f, 0.95f, 0.7f), true);
+		return;
+	}
 	DrawUnits(PC, Match);
 	DrawMarkers(PC);
 
@@ -222,6 +248,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 
 	DrawTopBar(Match);
 	DrawEnemyArrow(Match);
+	DrawMinimap(PC, Match);
 	const bool bPlaying = Match->Result() == ERTSMatchResult::Playing;
 	if (bPlaying && Match->SecondsSinceStart() < ObjectiveSeconds)
 	{
@@ -234,7 +261,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	}
 	if (PC->ShowDebug())
 	{
-		DrawLabel(Match->DebugLine(), 16.0f, Canvas->SizeY - 56.0f, 10, Accent);
+		DrawLabel(Match->DebugLine(), 16.0f, 46.0f, 10, Accent);
 	}
 
 	if (!bPlaying && Match->SecondsSinceEnd() > ResultDelaySeconds)
@@ -282,6 +309,10 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	const TArray<uint32>& Selected = PC->GetSelection();
 	for (const FRTSUnitState& U : Units)
 	{
+		if (!Match->IsUnitShown(U.Id))
+		{
+			continue;   // na névoa: nem anel nem barra
+		}
 		const FRTSUnitVisual* Visual = Match->VisualOf(U.Def);
 		const float RadiusCm = (Visual ? Visual->RadiusM : 3.0f) * 100.0f * RingScale;
 		const FVector Ground(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + 25.0f);
@@ -346,7 +377,8 @@ void ARTSHUD::DrawTopBar(URTSMatchSubsystem* Match)
 	DrawPanel(W * 0.5f - 240.0f, 0.0f, 480.0f, 36.0f, FLinearColor(0.015f, 0.018f, 0.022f, 0.6f));
 	DrawLabel(Clock(Match->MatchSeconds()), W * 0.5f, 7.0f, 13, TextColor, true, true);
 	DrawLabel(FString::Printf(TEXT("Seus tanques  %d"), Mine), W * 0.5f - 220.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(Match->LocalPlayer()), 0.35f), false, true);
-	DrawLabel(FString::Printf(TEXT("Inimigo  %d"), Theirs), W * 0.5f + 120.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(1), 0.35f), false, true);
+	const FString Right = Match->IsFogShown() ? FString::Printf(TEXT("Destruídos  %d"), Match->UnitsKilled()) : FString::Printf(TEXT("Inimigo  %d"), Theirs);
+	DrawLabel(Right, W * 0.5f + 120.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(1), 0.35f), false, true);
 }
 
 void ARTSHUD::DrawObjective(URTSMatchSubsystem* Match)
@@ -386,7 +418,7 @@ void ARTSHUD::DrawEnemyArrow(URTSMatchSubsystem* Match)
 	double Best = 0.0;
 	for (const FRTSUnitState& U : Units)
 	{
-		if (!Match->IsEnemyOfLocal(U.Owner))
+		if (!Match->IsEnemyOfLocal(U.Owner) || !Match->IsUnitShown(U.Id))
 		{
 			continue;
 		}
@@ -403,12 +435,27 @@ void ARTSHUD::DrawEnemyArrow(URTSMatchSubsystem* Match)
 			Best = D;
 		}
 	}
-	if (!Nearest)
+	FVector2D TargetCm;
+	bool bBase = false;
+	if (Nearest)
 	{
-		return;
+		TargetCm = Nearest->PosCm;
+	}
+	else
+	{
+		// nada à vista: com névoa, aponta a largada do inimigo (todo mundo conhece pelo mapa) até ela ser vista
+		URTSFogOfWar* Fog = Match->GetFog();
+		const FVector2D Start = Match->PlayerStartCm(1);
+		if (!Match->IsFogShown() || !Fog || Fog->IsExplored(Start))
+		{
+			return;
+		}
+		TargetCm = Start;
+		Best = FVector2D::Distance(Start, FVector2D(Center.X, Center.Y));
+		bBase = true;
 	}
 	// a direção na tela: a do inimigo projetado (ou a do chão, girada pela vista)
-	const FVector Target(Nearest->PosCm.X, Nearest->PosCm.Y, Map ? Map->GroundZCm(Nearest->PosCm) : 0.0f);
+	const FVector Target(TargetCm.X, TargetCm.Y, Map ? Map->GroundZCm(TargetCm) : 0.0f);
 	FVector2D S;
 	FVector2D D2;
 	if (PlayerOwner->ProjectWorldLocationToScreen(Target, S))
@@ -437,7 +484,8 @@ void ARTSHUD::DrawEnemyArrow(URTSMatchSubsystem* Match)
 	DrawLine(Tip.X, Tip.Y, Back.X - Side.X * 13.0, Back.Y - Side.Y * 13.0, C, 3.0f);
 	DrawLine(Back.X + Side.X * 13.0, Back.Y + Side.Y * 13.0, Back.X - Side.X * 13.0, Back.Y - Side.Y * 13.0, C, 3.0f);
 	const FVector2D LabelAt = Back - D2 * 18.0;
-	DrawLabel(FString::Printf(TEXT("%d m"), FMath::RoundToInt(Best / 100.0)), LabelAt.X, LabelAt.Y - 8.0f, 10, C, true, true);
+	DrawLabel(bBase ? FString::Printf(TEXT("base inimiga  %d m"), FMath::RoundToInt(Best / 100.0)) : FString::Printf(TEXT("%d m"), FMath::RoundToInt(Best / 100.0)),
+		LabelAt.X, LabelAt.Y - 8.0f, 10, C, true, true);
 }
 
 void ARTSHUD::DrawPause()
@@ -448,6 +496,9 @@ void ARTSHUD::DrawPause()
 	DrawLabel(TEXT("PAUSADO"), W * 0.5f, H * 0.32f, 36, TextColor, true, true);
 	DrawButton(TEXT("resume"), TEXT("CONTINUAR"), W * 0.5f - 170.0f, H * 0.45f, 340.0f, 54.0f);
 	DrawButton(TEXT("menu"), TEXT("SAIR PARA O MENU"), W * 0.5f - 170.0f, H * 0.45f + 70.0f, 340.0f, 54.0f);
+	const URTSMatchSubsystem* Match = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
+	const bool bFog = Match && Match->IsFogOn();
+	DrawButton(TEXT("fog"), bFog ? TEXT("NÉVOA: LIGADA  (F9)") : TEXT("NÉVOA: DESLIGADA  (F9)"), W * 0.5f - 170.0f, H * 0.45f + 140.0f, 340.0f, 44.0f);
 }
 
 void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)
@@ -465,4 +516,222 @@ void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)
 	DrawLabel(FString::Printf(TEXT("%s de partida   ·   %d destruídos   ·   %d perdidos   ·   replay salvo"),
 		*Clock(Match->MatchSeconds()), Match->UnitsKilled(), Match->UnitsLost()), W * 0.5f, Top + 92.0f, 12, WithAlpha(DimText, Alpha), true);
 	DrawButton(TEXT("menu"), TEXT("VOLTAR AO MENU"), W * 0.5f - 170.0f, Top + H * 0.24f + 18.0f, 340.0f, 54.0f);
+}
+
+// ---------------------------------------------------------------- minimapa
+
+FVector2D ARTSHUD::MinimapUVToScreen(const FVector2D& UV) const
+{
+	// o quadrado do mapa girado pelo giro padrão da câmera: "pra frente" na vista padrão é "pra
+	// cima" no minimapa, e a caixa da câmera fica em pé (o radar do ZH fica alinhado com a
+	// câmera padrão dele)
+	const double X = (UV.X - 0.5) * MinimapSide;
+	const double Y = (UV.Y - 0.5) * MinimapSide;
+	return MinimapCenter + FVector2D(X * MinimapCos + Y * MinimapSin, -X * MinimapSin + Y * MinimapCos);
+}
+
+FVector2D ARTSHUD::MinimapScreenToUV(const FVector2D& Screen) const
+{
+	const FVector2D R = Screen - MinimapCenter;
+	const double X = R.X * MinimapCos - R.Y * MinimapSin;
+	const double Y = R.X * MinimapSin + R.Y * MinimapCos;
+	return FVector2D(X / MinimapSide + 0.5, Y / MinimapSide + 0.5);
+}
+
+bool ARTSHUD::IsOverMinimap(const FVector2D& Screen) const
+{
+	return bMinimapDrawn && MinimapFrame.IsInside(Screen);
+}
+
+bool ARTSHUD::MinimapToWorld(const FVector2D& Screen, FVector2D& OutCm, bool bClamp) const
+{
+	if (!bMinimapDrawn)
+	{
+		return false;
+	}
+	FVector2D UV = MinimapScreenToUV(Screen);
+	const bool bInside = UV.X >= 0.0 && UV.X <= 1.0 && UV.Y >= 0.0 && UV.Y <= 1.0;
+	if (!bInside && !bClamp)
+	{
+		return false;
+	}
+	UV = FVector2D(FMath::Clamp(UV.X, 0.0, 1.0), FMath::Clamp(UV.Y, 0.0, 1.0));
+	OutCm = FVector2D(MinimapMinCm.X + (1.0 - UV.Y) * MinimapSizeCm.X, MinimapMinCm.Y + UV.X * MinimapSizeCm.Y);
+	return true;
+}
+
+bool ARTSHUD::WorldToMinimapScreen(const FVector2D& Cm, FVector2D& OutScreen) const
+{
+	if (!bMinimapDrawn)
+	{
+		return false;
+	}
+	const FVector2D UV((Cm.Y - MinimapMinCm.Y) / MinimapSizeCm.Y, 1.0 - (Cm.X - MinimapMinCm.X) / MinimapSizeCm.X);
+	OutScreen = MinimapUVToScreen(UV);
+	return true;
+}
+
+void ARTSHUD::DrawClippedLine(FVector2D A, FVector2D B, const FLinearColor& Color, float Thickness)
+{
+	// Liang–Barsky na moldura do minimapa (o ZH corta a caixa da câmera no retângulo do radar)
+	const FVector2D D = B - A;
+	double T0 = 0.0;
+	double T1 = 1.0;
+	const double P[4] = { -D.X, D.X, -D.Y, D.Y };
+	const double Q[4] = { A.X - MinimapFrame.Min.X, MinimapFrame.Max.X - A.X, A.Y - MinimapFrame.Min.Y, MinimapFrame.Max.Y - A.Y };
+	for (int32 K = 0; K < 4; ++K)
+	{
+		if (FMath::Abs(P[K]) < 1e-9)
+		{
+			if (Q[K] < 0.0)
+			{
+				return;
+			}
+			continue;
+		}
+		const double T = Q[K] / P[K];
+		if (P[K] < 0.0) { T0 = FMath::Max(T0, T); } else { T1 = FMath::Min(T1, T); }
+	}
+	if (T0 > T1)
+	{
+		return;
+	}
+	const FVector2D C0 = A + D * T0;
+	const FVector2D C1 = A + D * T1;
+	DrawLine(C0.X, C0.Y, C1.X, C1.Y, Color, Thickness);
+}
+
+void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
+{
+	URTSFogOfWar* Fog = Match->GetFog();
+	UTexture2D* Tex = Fog ? Fog->MinimapTexture() : nullptr;
+	if (!Fog || !Fog->IsMinimapReady() || !Tex || !Tex->GetResource())
+	{
+		bMinimapDrawn = false;
+		return;
+	}
+	const float F = FMath::RoundToFloat(Canvas->SizeY * MinimapFrameFraction);
+	const float X0 = MinimapMarginPx;
+	const float Y0 = Canvas->SizeY - MinimapMarginPx - F;
+	MinimapFrame = FBox2D(FVector2D(X0, Y0), FVector2D(X0 + F, Y0 + F));
+	MinimapCenter = FVector2D(X0 + F * 0.5f, Y0 + F * 0.5f);
+	MinimapSide = F / UE_SQRT_2 * 0.97f;
+	const ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(PC->GetPawn());
+	const float YawRad = FMath::DegreesToRadians(Cam ? Cam->DefaultYawDeg : 45.0f);
+	MinimapCos = FMath::Cos(YawRad);
+	MinimapSin = FMath::Sin(YawRad);
+	MinimapMinCm = Fog->MapMinCm();
+	MinimapSizeCm = Fog->MapSizeCm();
+	bMinimapDrawn = true;
+
+	// moldura e o mapa (dois triângulos com os cantos girados: o mesmo cálculo dos pontos)
+	DrawPanel(X0, Y0, F, F, FLinearColor(0.012f, 0.014f, 0.017f, 0.82f));
+	const FVector2D C00 = MinimapUVToScreen(FVector2D(0, 0));
+	const FVector2D C10 = MinimapUVToScreen(FVector2D(1, 0));
+	const FVector2D C11 = MinimapUVToScreen(FVector2D(1, 1));
+	const FVector2D C01 = MinimapUVToScreen(FVector2D(0, 1));
+	for (int32 T = 0; T < 2; ++T)
+	{
+		FCanvasTriangleItem Tri = T == 0
+			? FCanvasTriangleItem(C00, C10, C11, FVector2D(0, 0), FVector2D(1, 0), FVector2D(1, 1), Tex->GetResource())
+			: FCanvasTriangleItem(C00, C11, C01, FVector2D(0, 0), FVector2D(1, 1), FVector2D(0, 1), Tex->GetResource());
+		Tri.BlendMode = SE_BLEND_Opaque;
+		Canvas->DrawItem(Tri);
+	}
+	const FLinearColor Edge(0.62f, 0.66f, 0.72f, 0.55f);
+	DrawLine(C00.X, C00.Y, C10.X, C10.Y, Edge, 1.0f);
+	DrawLine(C10.X, C10.Y, C11.X, C11.Y, Edge, 1.0f);
+	DrawLine(C11.X, C11.Y, C01.X, C01.Y, Edge, 1.0f);
+	DrawLine(C01.X, C01.Y, C00.X, C00.Y, Edge, 1.0f);
+
+	// unidades (inimigo só à vista), na cor do jogador; selecionado com borda clara
+	// ~5 px a 900 linhas: o tanque de 8 m tem 1,5 px no mapa de 1 km, então o ponto é maior que ele
+	const float Dot = FMath::Max(4.0f, F / 55.0f);
+	TArray<FRTSUnitState> Units;
+	Match->GetUnits(Units);
+	const TArray<uint32>& Selected = PC->GetSelection();
+	for (const FRTSUnitState& U : Units)
+	{
+		if (!Match->IsUnitShown(U.Id))
+		{
+			continue;
+		}
+		FVector2D P;
+		WorldToMinimapScreen(U.PosCm, P);
+		// contorno: claro no selecionado, escuro no resto (lê em cima da areia e da salina)
+		const FLinearColor Outline = Selected.Contains(U.Id) ? FLinearColor(0.95f, 0.97f, 1.0f, 0.95f) : FLinearColor(0.0f, 0.0f, 0.0f, 0.8f);
+		DrawPanel(P.X - Dot * 0.5f - 1.0f, P.Y - Dot * 0.5f - 1.0f, Dot + 2.0f, Dot + 2.0f, Outline);
+		DrawPanel(P.X - Dot * 0.5f, P.Y - Dot * 0.5f, Dot, Dot, Brighten(URTSMatchSubsystem::PlayerColor(U.Owner), 0.15f));
+	}
+
+	// a caixa da câmera: os 4 cantos da tela no plano do chão em volta do foco
+	const FRTSBakedMap* Map = Match->BakedMap();
+	const FVector2D Focus = Cam ? Cam->GetFocusCm() : FVector2D::ZeroVector;
+	const float PlaneZ = Map ? Map->GroundZCm(Focus) : 0.0f;
+	const FVector2D Corners[4] = { FVector2D(0, 0), FVector2D(Canvas->SizeX, 0), FVector2D(Canvas->SizeX, Canvas->SizeY), FVector2D(0, Canvas->SizeY) };
+	FVector2D Box[4];
+	for (int32 K = 0; K < 4; ++K)
+	{
+		FVector O;
+		FVector D;
+		if (!PlayerOwner->DeprojectScreenPositionToWorld(Corners[K].X, Corners[K].Y, O, D))
+		{
+			return;
+		}
+		// raio que não cruza o chão perto (câmera deitada): limita a 2 km
+		double T = 200000.0;
+		if (D.Z < -1e-3)
+		{
+			T = FMath::Min(T, (PlaneZ - O.Z) / D.Z);
+		}
+		const FVector Hit = O + D * T;
+		WorldToMinimapScreen(FVector2D(Hit.X, Hit.Y), Box[K]);
+	}
+	DrawClippedLine(Box[0], Box[1], ViewBoxTop, 1.5f);
+	DrawClippedLine(Box[1], Box[2], ViewBoxRest, 1.5f);
+	DrawClippedLine(Box[2], Box[3], ViewBoxRest, 1.5f);
+	DrawClippedLine(Box[3], Box[0], ViewBoxRest, 1.5f);
+
+	// ordens dadas pelo minimapa: um pulso que fecha no destino
+	for (const FRTSMinimapPulse& Pulse : PC->GetMinimapPulses())
+	{
+		FVector2D P;
+		WorldToMinimapScreen(Pulse.Cm, P);
+		const float T = FMath::Clamp(Pulse.Age / 0.7f, 0.0f, 1.0f);
+		const float R = FMath::Lerp(F * 0.08f, 2.0f, T);
+		const FLinearColor C = WithAlpha(Pulse.bAttack ? AttackRed : MoveGreen, 1.0f - T);
+		for (int32 K = 0; K < 12; ++K)
+		{
+			const float A0 = K * PI / 6.0f;
+			const float A1 = (K + 1) * PI / 6.0f;
+			DrawLine(P.X + R * FMath::Cos(A0), P.Y + R * FMath::Sin(A0), P.X + R * FMath::Cos(A1), P.Y + R * FMath::Sin(A1), C, 1.5f);
+		}
+	}
+
+	// "sob ataque" (ZH Radar.cpp): triângulo vermelho que gira e fecha da metade do radar até 6 px
+	// em 1,5 s, fica até 3,5 s e some no último meio segundo
+	for (const FRTSMinimapPing& Ping : PC->GetMinimapPings())
+	{
+		FVector2D P;
+		WorldToMinimapScreen(Ping.Cm, P);
+		const float Shrink = FMath::Clamp(Ping.Age / 1.5f, 0.0f, 1.0f);
+		const float R = FMath::Lerp(MinimapSide * 0.5f, 6.0f, Shrink);
+		const float Alpha = Ping.Age > 3.5f ? FMath::Clamp((4.0f - Ping.Age) / 0.5f, 0.0f, 1.0f) : 1.0f;
+		const FLinearColor C = WithAlpha(FMath::Lerp(FLinearColor(FColor(255, 0, 0)), FLinearColor(FColor(255, 128, 128)), Shrink), Alpha);
+		const float Spin = Ping.Age * 2.0f * PI * 0.5f;
+		FVector2D V[3];
+		for (int32 K = 0; K < 3; ++K)
+		{
+			const float A = Spin + K * 2.0f * PI / 3.0f - PI * 0.5f;
+			V[K] = P + FVector2D(FMath::Cos(A), FMath::Sin(A)) * R;
+		}
+		for (int32 K = 0; K < 3; ++K)
+		{
+			DrawClippedLine(V[K], V[(K + 1) % 3], C, 2.0f);
+		}
+	}
+	if (PC->AttackMessageAlpha() > 0.0f)
+	{
+		DrawLabel(TEXT("Unidade sob ataque  (Espaço vai até lá)"), X0 + 2.0f, Y0 - 22.0f, 11, WithAlpha(AttackRed, PC->AttackMessageAlpha()), false, true);
+	}
 }

@@ -22,4 +22,7 @@ public:
 	void StartSkirmish();
 	void ReturnToMenu();
 	void Quit(APlayerController* PC);
+
+	/** A próxima partida começa com névoa de guerra (o botão do menu; depuração enquanto é teste). */
+	bool bFogOfWar = true;
 };

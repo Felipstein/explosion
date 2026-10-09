@@ -1,0 +1,87 @@
+// A névoa de guerra (RTSFogPass.cpp): roda depois da luz do opaco e antes dos volumes e da
+// translucência, multiplicando a cor da cena (blend DestColor × Zero). Por isso explosão,
+// traçante e clarão nunca pegam a névoa do chão atrás deles (o W3DShroud do ZH também só
+// multiplica terreno e objetos).
+
+#include "/Engine/Private/Common.ush"
+
+Texture2D<float> SceneDepth;
+Texture2D FogTexture;
+SamplerState FogSampler;
+float4x4 ClipToWorld;
+float4 ViewRect;        // x, y, largura, altura (pixels do alvo)
+float4 MapMinInvSize;   // canto mínimo do mapa (cm) e 1/tamanho (1/cm)
+float2 FogTexelSize;    // 1/largura, 1/altura da textura de visão
+float Strength;         // 1 = névoa inteira, 0 = nada
+float Time;
+
+// B-spline cúbica com 4 leituras bilineares (Sigg & Hadwiger, GPU Gems 2, cap. 20): a borda da
+// névoa sai suave (C2) em vez de losangos alinhados à grade, que é o que o bilinear dá quando uma
+// célula de 4 m ocupa 60–160 px da tela.
+float SampleBSpline(float2 UV)
+{
+	const float2 TexSize = 1.0 / FogTexelSize;
+	const float2 P = UV * TexSize - 0.5;
+	const float2 I = floor(P);
+	const float2 F = P - I;
+	const float2 F2 = F * F;
+	const float2 F3 = F2 * F;
+	const float2 W0 = (1.0 / 6.0) * (-F3 + 3.0 * F2 - 3.0 * F + 1.0);
+	const float2 W1 = (1.0 / 6.0) * (3.0 * F3 - 6.0 * F2 + 4.0);
+	const float2 W2 = (1.0 / 6.0) * (-3.0 * F3 + 3.0 * F2 + 3.0 * F + 1.0);
+	const float2 W3 = (1.0 / 6.0) * F3;
+	const float2 G0 = W0 + W1;
+	const float2 G1 = W2 + W3;
+	// onde ler (em texels, com o centro do texel K em K): entre I−1 e I, e entre I+1 e I+2
+	const float2 H0 = I - 1.0 + W1 / G0;
+	const float2 H1 = I + 1.0 + W3 / G1;
+	const float2 UV00 = (float2(H0.x, H0.y) + 0.5) * FogTexelSize;
+	const float2 UV10 = (float2(H1.x, H0.y) + 0.5) * FogTexelSize;
+	const float2 UV01 = (float2(H0.x, H1.y) + 0.5) * FogTexelSize;
+	const float2 UV11 = (float2(H1.x, H1.y) + 0.5) * FogTexelSize;
+	const float A = FogTexture.SampleLevel(FogSampler, UV00, 0).r;
+	const float B = FogTexture.SampleLevel(FogSampler, UV10, 0).r;
+	const float C = FogTexture.SampleLevel(FogSampler, UV01, 0).r;
+	const float D = FogTexture.SampleLevel(FogSampler, UV11, 0).r;
+	return G0.y * (G0.x * A + G1.x * B) + G1.y * (G0.x * C + G1.x * D);
+}
+
+float Hash12(float2 P)
+{
+	float3 P3 = frac(float3(P.xyx) * 0.1031);
+	P3 += dot(P3, P3.yzx + 33.33);
+	return frac((P3.x + P3.y) * P3.z);
+}
+
+float ValueNoise(float2 P)
+{
+	const float2 I = floor(P);
+	const float2 F = P - I;
+	const float2 U = F * F * (3.0 - 2.0 * F);
+	return lerp(lerp(Hash12(I), Hash12(I + float2(1, 0)), U.x), lerp(Hash12(I + float2(0, 1)), Hash12(I + float2(1, 1)), U.x), U.y);
+}
+
+void MainPS(float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+	const float DeviceZ = SceneDepth.Load(int3(SvPosition.xy, 0)).r;
+	// sem nada atrás (céu, profundidade infinita com Z invertido) e fora do mapa = nunca visto
+	float Linear = 0.0;
+	if (DeviceZ > 0.0)
+	{
+		const float2 NDC = float2((SvPosition.x - ViewRect.x) / ViewRect.z * 2.0 - 1.0, 1.0 - (SvPosition.y - ViewRect.y) / ViewRect.w * 2.0);
+		const float4 W = mul(float4(NDC, DeviceZ, 1.0), ClipToWorld);
+		const float3 World = W.xyz / W.w;
+		const float2 UV = (World.xy - MapMinInvSize.xy) * MapMinInvSize.zw;
+		if (all(UV >= 0.0) && all(UV <= 1.0))
+		{
+			// a borda viva: um ruído lento, na escala da célula (4 m), desloca a amostra em até
+			// 2/3 de célula; sem isso a borda segue a grade mesmo suavizada
+			const float2 N = World.xy * (1.0 / 400.0);
+			const float2 Wobble = float2(ValueNoise(N + Time * 0.15), ValueNoise(N.yx + 17.3 - Time * 0.11)) - 0.5;
+			// a textura é sRGB: o hardware já devolve o multiplicador linear do nível da tela
+			Linear = saturate(SampleBSpline(UV + Wobble * FogTexelSize * 1.33));
+		}
+	}
+	const float K = lerp(1.0, Linear, saturate(Strength));
+	OutColor = float4(K, K, K, 1.0);
+}

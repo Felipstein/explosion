@@ -37,6 +37,14 @@ public:
 	void FocusOn(const FVector2D& Cm);
 	/** Vai deslizando até o ponto (gravação: sem pulos de câmera). */
 	void GlideTo(const FVector2D& Cm) { GlideTarget = Cm; bGliding = true; }
+	/** Pula pro ponto na hora, mantendo giro e zoom (o clique no minimapa: userLookAt do ZH). */
+	void JumpTo(const FVector2D& Cm);
+	/**
+	 * Com névoa, a exposição local da Unreal não pode misturar a luminância borrada da tela (60%
+	 * por padrão): a névoa escura ao lado clarearia o que está à vista. Fica só a grade bilateral,
+	 * que separa por faixa de luminância (revisão de 08/10).
+	 */
+	void SetFogExposureFix(bool bOn);
 	void SetMenuMode(bool bMenu) { bMenuMode = bMenu; }
 	void SetBounds(const FBox2D& Cm) { BoundsCm = Cm; }
 	FVector2D GetFocusCm() const { return FVector2D(Focus.X, Focus.Y); }

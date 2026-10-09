@@ -1,5 +1,7 @@
 #include "RTSPlayerController.h"
 
+#include "HAL/PlatformTime.h"
+
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
@@ -95,6 +97,11 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 	{
 		TickMatch(DeltaTime);
 	}
+	if (Selected.Num() != LoggedSelection)
+	{
+		UE_LOG(LogTemp, Log, TEXT("RTS seleção: %d → %d"), LoggedSelection, Selected.Num());
+		LoggedSelection = Selected.Num();
+	}
 	// presets (ferramenta de teste; pro jogador eles vão pra tela de opções)
 	const FKey QualityKeys[4] = { EKeys::F5, EKeys::F6, EKeys::F7, EKeys::F8 };
 	for (int32 Q = 0; Q < 4; ++Q)
@@ -144,6 +151,17 @@ void ARTSPlayerController::OnButton(FName Id)
 	{
 		Session->ReturnToMenu();
 	}
+	else if (Id == TEXT("fog"))
+	{
+		if (URTSMatchSubsystem* M = Match())
+		{
+			M->ToggleFogReveal();
+		}
+	}
+	else if (Id == TEXT("fogsetting"))
+	{
+		Session->bFogOfWar = !Session->bFogOfWar;
+	}
 }
 
 void ARTSPlayerController::TickMenu()
@@ -182,6 +200,10 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	}
 
 	const bool bOver = M && M->Result() != ERTSMatchResult::Playing;
+	if (WasInputKeyJustPressed(EKeys::F9) && M)
+	{
+		M->ToggleFogReveal();   // depuração: a névoa liga e desliga na hora
+	}
 	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver)
 	{
 		bPauseMenu = !bPauseMenu;
@@ -211,6 +233,12 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		return;
 	}
 
+	if (ARTSHUD* HUD = GetRTSHUD())
+	{
+		bOverMinimap = bHasMouse && HUD->IsOverMinimap(Mouse);
+	}
+	TickMinimap(DeltaTime, Cam, Mouse, bHasMouse);
+	TickAlerts(DeltaTime);
 	if (Cam)
 	{
 		TickCamera(DeltaTime, Cam);
@@ -229,10 +257,16 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	HandleGroups();
 
 	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH)
-	HoverId = (bHasMouse && !bLeftDown) ? PickUnit(Mouse) : 0;
+	const bool bMinimapMouse = bOverMinimap || MinimapGesture != EMinimapGesture::None;
+	HoverId = (bHasMouse && !bLeftDown && !bMinimapMouse) ? PickUnit(Mouse) : 0;
 	EMouseCursor::Type Cursor = EMouseCursor::Default;
 	FRTSUnitState Hovered;
-	if (bAttackMoveArmed)
+	if (bMinimapMouse)
+	{
+		// sobre o minimapa: seta sem seleção, "andar" com seleção, mira com o ataque andando armado
+		Cursor = Selected.IsEmpty() ? EMouseCursor::Default : (bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross);
+	}
+	else if (bAttackMoveArmed)
 	{
 		Cursor = EMouseCursor::Crosshairs;
 	}
@@ -243,10 +277,18 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	}
 	CurrentMouseCursor = Cursor;
 
-	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse)
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+	{
+		UE_LOG(LogTemp, Log, TEXT("RTS clique: esquerdo desceu em (%.0f, %.0f), mouse %d, gesto do minimapa %d"), Mouse.X, Mouse.Y, int32(bHasMouse), int32(MinimapGesture));
+	}
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse && MinimapGesture == EMinimapGesture::None)
 	{
 		bLeftDown = true;
 		LeftDownPos = Mouse;
+	}
+	if (WasInputKeyJustReleased(EKeys::LeftMouseButton))
+	{
+		UE_LOG(LogTemp, Log, TEXT("RTS clique: esquerdo subiu em (%.0f, %.0f), estava apertado %d"), Mouse.X, Mouse.Y, int32(bLeftDown));
 	}
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton) && bLeftDown)
 	{
@@ -276,7 +318,7 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	// setas (ADR-0003): ↑↓ rolam, ←→ giram; A e S são ordens, então não há WASD
 	In.PanAxis.Y = (IsInputKeyDown(EKeys::Up) ? 1.0f : 0.0f) - (IsInputKeyDown(EKeys::Down) ? 1.0f : 0.0f);
 	In.YawDelta = ((IsInputKeyDown(EKeys::Right) ? 1.0f : 0.0f) - (IsInputKeyDown(EKeys::Left) ? 1.0f : 0.0f)) * RotateDegPerSec * DeltaTime;
-	if (bEdgeScroll && bHasMouse && W > 0 && H > 0 && !bRightScrolling && !bMiddleDown)
+	if (bEdgeScroll && bHasMouse && W > 0 && H > 0 && !bRightScrolling && !bMiddleDown && !bOverMinimap && MinimapGesture == EMinimapGesture::None)
 	{
 		// a borda rola mais rápido que a tecla, e a vertical um pouco mais (ZH)
 		const float EX = Mouse.X <= EdgeScrollPx ? -1.0f : (Mouse.X >= W - 1 - EdgeScrollPx ? 1.0f : 0.0f);
@@ -288,7 +330,7 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	In.PanAxis.Y = FMath::Clamp(In.PanAxis.Y, -EdgeScrollBoost * VerticalScrollBias, EdgeScrollBoost * VerticalScrollBias);
 
 	// botão direito: arrastar rola (estilo Generals: quanto mais longe do ponto, mais rápido); clique rápido desseleciona
-	if (WasInputKeyJustPressed(EKeys::RightMouseButton) && bHasMouse)
+	if (WasInputKeyJustPressed(EKeys::RightMouseButton) && bHasMouse && MinimapGesture == EMinimapGesture::None)
 	{
 		bRightDown = true;
 		bRightScrolling = false;
@@ -307,8 +349,9 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	}
 	if (WasInputKeyJustReleased(EKeys::RightMouseButton))
 	{
-		if (!bRightScrolling)
+		if (bRightDown && !bRightScrolling)
 		{
+			UE_LOG(LogTemp, Log, TEXT("RTS clique: direito desfez a seleção em (%.0f, %.0f)"), Mouse.X, Mouse.Y);
 			Selected.Reset();
 			bAttackMoveArmed = false;
 		}
@@ -351,6 +394,127 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 		bMiddleDown = false;
 	}
 	Cam->ApplyInput(In, DeltaTime);
+}
+
+void ARTSPlayerController::TickMinimap(float DeltaTime, ARTSCameraPawn* Cam, const FVector2D& Mouse, bool bHasMouse)
+{
+	for (int32 I = MinimapPulses.Num() - 1; I >= 0; --I)
+	{
+		MinimapPulses[I].Age += DeltaTime;
+		if (MinimapPulses[I].Age > 0.7f)
+		{
+			MinimapPulses.RemoveAt(I);
+		}
+	}
+	ARTSHUD* HUD = GetRTSHUD();
+	URTSMatchSubsystem* M = Match();
+	if (!HUD || !M || !bHasMouse)
+	{
+		return;
+	}
+	const bool bLeftPressed = WasInputKeyJustPressed(EKeys::LeftMouseButton);
+	const bool bRightPressed = WasInputKeyJustPressed(EKeys::RightMouseButton);
+	if (MinimapGesture == EMinimapGesture::None && bOverMinimap && (bLeftPressed || bRightPressed))
+	{
+		FVector2D Cm;
+		const bool bOnMap = HUD->MinimapToWorld(Mouse, Cm);
+		if (!bOnMap)
+		{
+			MinimapGesture = EMinimapGesture::Ignore;   // a moldura fora do losango: só engole o clique
+		}
+		else if (bLeftPressed && !Selected.IsEmpty())
+		{
+			// com seleção, o esquerdo manda (andar, ou ataque andando se armado), como no ZH
+			const FRTSBakedMap* Map = M->BakedMap();
+			M->OrderMove(Selected, Cm, bAttackMoveArmed);
+			AddMarker(FVector(Cm.X, Cm.Y, Map ? Map->GroundZCm(Cm) : 0.0f), bAttackMoveArmed);
+			MinimapPulses.Add({ Cm, 0.0f, bAttackMoveArmed });
+			bAttackMoveArmed = false;
+			++Orders;
+			MinimapGesture = EMinimapGesture::LeftDone;
+		}
+		else
+		{
+			// sem seleção, ou o direito: a câmera vai pro ponto, e segurando arrasta
+			if (Cam)
+			{
+				Cam->JumpTo(Cm);
+			}
+			bAttackMoveArmed = false;
+			MinimapGesture = bLeftPressed ? EMinimapGesture::LeftDrag : EMinimapGesture::RightDrag;
+		}
+	}
+	const bool bLeftHeld = IsInputKeyDown(EKeys::LeftMouseButton);
+	const bool bRightHeld = IsInputKeyDown(EKeys::RightMouseButton);
+	if ((MinimapGesture == EMinimapGesture::LeftDrag && bLeftHeld) || (MinimapGesture == EMinimapGesture::RightDrag && bRightHeld))
+	{
+		FVector2D Cm;
+		if (Cam && HUD->MinimapToWorld(Mouse, Cm, true))
+		{
+			Cam->JumpTo(Cm);
+		}
+	}
+	if (MinimapGesture != EMinimapGesture::None && !bLeftHeld && !bRightHeld)
+	{
+		MinimapGesture = EMinimapGesture::None;
+	}
+	// Espaço: a câmera vai pro último "sob ataque" (ZH: não precisa de radar pra isso)
+	if (WasInputKeyJustPressed(EKeys::SpaceBar) && bHasAlert && Cam)
+	{
+		Cam->JumpTo(LastAlertCm);
+	}
+}
+
+void ARTSPlayerController::TickAlerts(float DeltaTime)
+{
+	AttackMessageAge += DeltaTime;
+	for (int32 I = MinimapPings.Num() - 1; I >= 0; --I)
+	{
+		MinimapPings[I].Age += DeltaTime;
+		if (MinimapPings[I].Age > 4.0f)
+		{
+			MinimapPings.RemoveAt(I);
+		}
+	}
+	URTSMatchSubsystem* M = Match();
+	if (!M)
+	{
+		return;
+	}
+	TArray<FVector2D> Hits;
+	M->TakeDamageAlerts(Hits);
+	int32 W = 0;
+	int32 H = 0;
+	GetViewportSize(W, H);
+	ARTSHUD* HUD = GetRTSHUD();
+	const FRTSBakedMap* Map = M->BakedMap();
+	const double Now = FPlatformTime::Seconds();
+	for (const FVector2D& Cm : Hits)
+	{
+		// só o que você não está vendo: fora da tela, ou embaixo do minimapa
+		FVector2D S;
+		const bool bOnScreen = ProjectWorldLocationToScreen(FVector(Cm.X, Cm.Y, Map ? Map->GroundZCm(Cm) : 0.0f), S)
+			&& S.X >= 0 && S.Y >= 0 && S.X < W && S.Y < H && !(HUD && HUD->IsOverMinimap(S));
+		if (bOnScreen)
+		{
+			continue;
+		}
+		// um aviso a cada 10 s num raio de ~66 m (250 unidades do ZH)
+		bool bRecent = false;
+		for (const FRTSMinimapPing& Old : MinimapPings)
+		{
+			bRecent |= FVector2D::Distance(Old.Cm, Cm) < 6600.0;
+		}
+		if (bRecent || (bHasAlert && FVector2D::Distance(LastAlertCm, Cm) < 6600.0 && Now - LastAlertTime < 10.0))
+		{
+			continue;
+		}
+		MinimapPings.Add({ Cm, 0.0f });
+		LastAlertCm = Cm;
+		LastAlertTime = Now;
+		bHasAlert = true;
+		AttackMessageAge = 0.0f;
+	}
 }
 
 void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
@@ -444,6 +608,13 @@ void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& 
 		{
 			Found.Add(U.Id);
 		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS caixa: (%.0f, %.0f)-(%.0f, %.0f), pegou %d"), Box.Min.X, Box.Min.Y, Box.Max.X, Box.Max.Y, Found.Num());
+	if (Found.IsEmpty())
+	{
+		// caixa vazia não mexe na seleção (ZH, SelectionXlat::onMouseLeftClick): um clique que
+		// escorrega uns pixels não pode desfazer o grupo, e caixa não dá ordem
+		return;
 	}
 	if (!bShift)
 	{
@@ -556,6 +727,10 @@ uint32 ARTSPlayerController::PickUnit(const FVector2D& Mouse) const
 	float BestScore = TNumericLimits<float>::Max();
 	for (const FRTSUnitState& U : Units)
 	{
+		if (!M->IsUnitShown(U.Id))
+		{
+			continue;   // na névoa não se clica (o ZH não deixa)
+		}
 		const FRTSUnitVisual* Visual = M->VisualOf(U.Def);
 		const float RadiusCm = Visual ? Visual->RadiusM * 100.0f : 300.0f;
 		const FVector Center(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + PickHeightCm);

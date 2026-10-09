@@ -597,6 +597,40 @@ powershell -File Game\Tools\simtest.ps1        # a simulação sem a Unreal, em 
 
 Os anéis de seleção (1,3× o raio) ainda se sobrepõem com os tanques a 8 m.
 
+**Teste t6 (08/10, 10:36, tempo real, com as colunas).** Vitória em 87 s; quadro mediano de 22 ms e p95 de 31 ms (no t1 o p95 era 62 ms), 40 de 8865 acima de 50 ms. Dois problemas:
+- **"Voltar ao menu" falhou no teste, não no jogo.** O painel entra 3 s depois do golpe final, e o teste clicava em 2,5 s. Agora o passo do resultado espera o painel inteiro (3,8 s e o botão existir).
+- **O primeiro minuto saiu cru:** chão em xadrez (material compilando), pedras em malha grosseira (Nanite sem as páginas finas) e tanques sem textura. O PC estava ocupado e o cache de shaders (Zen) levou 20 s pra subir; nos t4 e t5, com o cache quente, a partida já abria bonita.
+  - **Correção, como os jogos fazem:** a tela de carregar continua até a cena estar pronta. Ela espera os shaders na fila zerarem, o carregamento assíncrono acabar e as texturas pararem de faltar (ou de chegar, se o pool encher). Depois disso, segura mais 1 s pro Nanite buscar as páginas finas pelo que é desenhado atrás da tela.
+  - O teto é de 25 s. A simulação não anda e as ordens não valem enquanto isso. O log diz quanto levou ("RTS cena pronta em ...").
+
+**Névoa de guerra e minimapa (08/10, tarde; a lista viva é `docs/BASE_JOGAVEL.md` §0).** O plano passou por três revisores (Unreal, lockstep, jogabilidade do ZH) antes do código.
+- **Na simulação** (`Sim/Vision.h`):
+  - visão por time em inteiros, na grade de 4 m: cada unidade carimba um disco, com contador por célula (o esquema de revelar e desfazer do ZH);
+  - revelar vai além de mirar (o ZH separa ShroudClearingRange de VisionRange): Sight + maior raio + 1 célula, então ninguém atira no que o time não vê;
+  - quem sai de uma célula deixa a visão velha 1 s (ZH `UnlookPersistDuration`), quem morre também, e quem atira de dentro da névoa aparece 1 s pra quem levou o tiro;
+  - ordem de ataque num alvo que sumiu vira ataque andando até onde ele estava;
+  - `MatchSetup.bFogOfWar` vem do menu, e o comando `SetFog` (o F9) só vale com `bAllowDebugCommands` (skirmish local);
+  - a visão entra na impressão digital (as células carimbadas e os olhos que ficam);
+  - a IA de teste continua vendo tudo: IA fica pra depois, o Felipe.
+  - **Testes:** discos, explorado, olho que fica, SetFog em bytes e recusado online, time inválido recusado. Numa batalha 12 × 12 com névoa: 187 tiros, 0 em alvo invisível, e 105 conferências da visão contra uma refeita do zero, todas certas. As 3 compilações dão o mesmo hash. 800 tanques: ~1 ms por passo.
+- **No desenho:**
+  - **A passada (módulo `RTSShaders`, `Game/Shaders/Private/FogOfWar.usf`)** roda depois da luz do opaco e antes dos volumes e da translucência, como o W3DShroud do ZH. Assim a explosão e o traçante não pegam a névoa do chão atrás deles; um pós-processo comum cortaria a bola ao meio na borda da visão.
+    - **Níveis do ZH:** 0 nunca visto, 127/255 já visto, 255 à vista, andando 1 nível por segundo. Eles vão como sRGB, e o hardware entrega o multiplicador linear.
+    - **Borda:** B-spline com 4 leituras (Sigg & Hadwiger), com um ruído lento na escala da célula.
+  - **Exposição local:** a câmera do jogo usa só a grade bilateral (`LocalExposureBlurredLuminanceBlend = 0`). Senão a névoa escura clareava o que está à vista. A/B contra o aprovado com `-RTSLEBlend=0.6`.
+  - **Na névoa somem:** a unidade inimiga (com sombra e luz, 1 s de carência), o anel, a barra, o clique, o clarão e a luz de quem atira de dentro dela, o impacto e a explosão. O traçante nasce onde entra na visão. A carcaça só aparece depois de vista, e sem o fogo enquanto ninguém olha.
+  - **Vazamentos fechados no HUD:** "Inimigo N" vira "Destruídos K"; a seta aponta só inimigo à vista, ou a base inimiga até ela ser explorada.
+  - **No fim da partida o mapa se revela,** como no ZH.
+- **Minimapa:**
+  - **Captura:** foto de cima ortográfica em HDR, tirada uma vez na tela de carregar, sem as unidades e antes de a névoa ligar. A exposição usa a chave de Reinhard (média geométrica → 18%, com o bias do mapa) e a curva é a ACES de Narkowicz.
+  - **Formato:** losango girado pelo giro padrão da câmera, então "pra frente" fica pra cima e a caixa da câmera, em pé. Os pontos têm a cor do jogador, e a caixa da câmera, as cores do ZH.
+  - **Clique do ZH:** esquerdo com seleção manda andar (ou atacar andando com o A); sem seleção, ou com o direito, a câmera pula e, segurando, arrasta. O minimapa fica com o gesto inteiro: não desseleciona nem rola.
+  - **"Sob ataque" do ZH:** o triângulo que gira e fecha, com 4 s de vida e no máximo 1 a cada 10 s por 66 m; o Espaço leva a câmera até lá.
+- **Liga e desliga:** F9, o botão na pausa e o botão "Névoa de guerra" no menu principal.
+- **Caixa vazia não mexe na seleção** (ZH `SelectionXlat::onMouseLeftClick`): antes, um clique que escorregava uns 6 px virava caixa vazia e desfazia o grupo. Caixa também não dá ordem, como no ZH.
+- **O teste automático bloqueia o mouse e o teclado de verdade** (um `IInputProcessor` deixa passar só a entrada sintética). O t8 e o t9 falharam porque o PC estava em uso enquanto a janela do teste abria na frente. Desde o t10 (08/10): 0 falhas.
+- **`game.ps1`** usa a fila da placa (`C:\Users\luisf\.gpu_queue`).
+
 **Pendente, na ordem:**
 1. **Pedido pra sessão do WorldForge (ela estava fechada):** a grade de passabilidade canônica exportada junto com o mapa (`pass.png` + obstáculos + versão), no lugar da tirada do mapa ao carregar.
 2. **Esteira:** as rodas giram, mas a esteira ainda não anda (falta animar a textura dela).

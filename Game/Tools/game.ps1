@@ -52,6 +52,35 @@ function Compile {
   if ($code -ne 0) { Write-Error 'compile failed'; exit 1 }
 }
 
+# A placa é uma só (docs/GPU.md): entra na fila comum das sessões (quem chega primeiro usa
+# primeiro; com só a trava, quem confere mais vezes ganhava e o teste esperava pra sempre),
+# abre o jogo, renova a cada 5 min enquanto ele roda e sai da fila no fim, também em erro.
+function RunWithGpu([string]$Owner, [string[]]$GameArgs) {
+  $queue = 'C:\Users\luisf\.gpu_queue\gpu_queue.ps1'
+  $lock = Join-Path $Repo 'captures\.gpu_lock'
+  if (Test-Path $queue) {
+    do { & powershell -NoProfile -ExecutionPolicy Bypass -File $queue enter -Owner $Owner -Tag 'RTSGame.uproject' | Out-Null } while ($LASTEXITCODE -ne 0)
+  } else {
+    while ((Test-Path $lock) -and (((Get-Date) - (Get-Item $lock).LastWriteTime).TotalMinutes -lt 20)) { Start-Sleep 15 }
+    Set-Content $lock "$Owner | $(Get-Date -Format s)"
+  }
+  try {
+    $p = Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $GameArgs -PassThru
+    $touched = Get-Date
+    while (-not $p.HasExited) {
+      Start-Sleep 5
+      if (((Get-Date) - $touched).TotalMinutes -ge 5) {
+        if (Test-Path $queue) { & powershell -NoProfile -ExecutionPolicy Bypass -File $queue touch -Owner $Owner | Out-Null }
+        else { try { (Get-Item $lock).LastWriteTime = Get-Date } catch { Set-Content $lock "$Owner | $(Get-Date -Format s)" } }
+        $touched = Get-Date
+      }
+    }
+  } finally {
+    if (Test-Path $queue) { & powershell -NoProfile -ExecutionPolicy Bypass -File $queue leave -Owner $Owner | Out-Null }
+    else { Remove-Item $lock -ErrorAction SilentlyContinue }
+  }
+}
+
 # Link físico (mesmo disco: não ocupa espaço). A Unreal salva num arquivo novo e troca,
 # então salvar do lado do jogo nunca escreve no WorldForge/BlastLab.
 function LinkTree([string]$From, [string]$To) {
@@ -114,27 +143,7 @@ switch ($Command) {
       $a += "-RTSAutoTest=$Script", "-RTSCapture=$dest", "-abslog=$log", '-unattended'
       # gravação: passo fixo de 1/30 s (cada quadro = um passo da simulação), uma foto por quadro do combate
       if ($Record) { $a += '-RTSRecord', '-benchmark', '-fps=30' }
-      # trava da placa (docs/GPU.md): espera a das outras sessões, segura a nossa enquanto o
-      # jogo roda (renovada a cada 5 min: a partida gravada passa de 20 min) e solta no fim
-      $lock = Join-Path $Repo 'captures\.gpu_lock'
-      while ($true) {
-        $busy = (Test-Path $lock) -and (((Get-Date) - (Get-Item $lock).LastWriteTime).TotalMinutes -lt 20)
-        if (Get-Process UnrealEditor -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -ne '' }) { $busy = $true }
-        if (-not $busy) { break }
-        Start-Sleep 15
-      }
-      Set-Content $lock "RTSGame | teste $Folder | $(Get-Date -Format s)"
-      try {
-        $p = Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a -PassThru
-        $touched = Get-Date
-        while (-not $p.HasExited) {
-          Start-Sleep 5
-          if (((Get-Date) - $touched).TotalMinutes -ge 5) {
-            try { (Get-Item $lock).LastWriteTime = Get-Date } catch { Set-Content $lock "RTSGame | teste $Folder | $(Get-Date -Format s)" }
-            $touched = Get-Date
-          }
-        }
-      } finally { Remove-Item $lock -ErrorAction SilentlyContinue }
+      RunWithGpu "RTSGame | teste $Folder" $a
       Select-String -Path $log -Pattern 'RTS' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
       $frames = Join-Path $dest 'frames'
       if ($Record -and (Test-Path $frames)) {
@@ -150,7 +159,8 @@ switch ($Command) {
         if ($LASTEXITCODE -eq 0) { Remove-Item $frames -Recurse -Force; Write-Host "vídeo: $mp4" }
       }
     } else {
-      Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a
+      # o Felipe jogando: a placa é dele enquanto o jogo estiver aberto (o script espera o jogo fechar)
+      RunWithGpu 'RTSGame | Felipe testando o jogo' $a
     }
   }
   default { throw "comando desconhecido: $Command" }

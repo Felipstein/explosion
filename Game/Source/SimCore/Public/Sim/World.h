@@ -23,6 +23,7 @@
 #include "Sim/Rng.h"
 #include "Sim/SimMap.h"
 #include "Sim/Types.h"
+#include "Sim/Vision.h"
 
 namespace Sim
 {
@@ -46,6 +47,10 @@ namespace Sim
 		SimMap Map;
 		Ruleset Rules;
 		std::vector<PlayerSetup> Players;
+		/** Névoa de guerra: cada time só enxerga o que as unidades dele veem. */
+		bool bFogOfWar = true;
+		/** Aceita comandos de depuração (SetFog): sim no skirmish local, não no online. */
+		bool bAllowDebugCommands = false;
 
 		uint64_t Hash() const;
 	};
@@ -119,6 +124,24 @@ namespace Sim
 		const SimMap& Map() const { return MapData; }
 		const Ruleset& Rules() const { return RulesData; }
 
+		// --- visão e névoa de guerra (a visão é por time: aliados enxergam juntos)
+		/** Névoa ligada (vem da montagem; o comando SetFog troca no meio, pra depuração). */
+		bool IsFogOfWar() const { return bFogOfWar; }
+		uint8_t TeamOf(PlayerIndex P) const { return Players[P].Team; }
+		/** A célula está à vista do time agora / já foi vista alguma vez (sem olhar o liga/desliga). */
+		bool IsCellVisible(uint8_t Team, int32_t X, int32_t Y) const;
+		bool IsCellExplored(uint8_t Team, int32_t X, int32_t Y) const;
+		/** O jogador enxerga esse ponto? Com a névoa desligada, enxerga tudo. */
+		bool IsVisibleTo(PlayerIndex P, Vec2 Pos) const;
+		/** A visão do time pro desenho, célula a célula (Y·W + X): 0 nunca vista, 1 já vista, 2 à vista. */
+		void CopyVisibility(uint8_t Team, std::vector<uint8_t>& Out) const;
+		/** Sobe sempre que a visão do time muda (o desenho só refaz a textura quando muda). */
+		uint32_t VisionVersion(uint8_t Team) const { return Vision.Version(Team); }
+		/** Onde cada jogador começou (o centro das unidades iniciais): todo mundo conhece pelo mapa. */
+		Vec2 PlayerStart(PlayerIndex P) const { return P < Starts.size() ? Starts[P] : Vec2::Zero(); }
+		/** Refaz a contagem de visão do zero e compara com a incremental (teste: pega carimbo errado). */
+		bool VisionSelfCheck() const;
+
 	private:
 		/** Estado das unidades em arrays paralelos (SoA), sempre em ordem crescente de ID. */
 		struct UnitArrays
@@ -149,6 +172,7 @@ namespace Sim
 			std::vector<Vec2> EngageAnchor;      // onde a perseguição começou (a coleira mede daqui)
 			std::vector<EntityId> Ignore;        // alvo inalcançável, ignorado até IgnoreUntil
 			std::vector<TickNumber> IgnoreUntil;
+			std::vector<int32_t> LookCell;       // onde o disco de visão está carimbado (−1 = nenhum)
 
 			void Resize(size_t N);
 		};
@@ -184,6 +208,7 @@ namespace Sim
 		void UpdateProjectiles();
 		void ResolveDamage();
 		void RemoveDead();
+		void UpdateVision();
 		void CheckVictory();
 
 		// ajudantes
@@ -227,6 +252,30 @@ namespace Sim
 		std::vector<DamageIntent> PendingDamage;
 		Fix MaxUnitRadius;
 		uint64_t CachedHash = 0;
+
+		// visão: a grade sai das células carimbadas (LookCell) e dos olhos que ficam (Lingering),
+		// que entram no hash; o explorado só o desenho lê
+		VisionGrid Vision;
+		bool bFogOfWar = true;
+		bool bAllowDebug = false;
+		std::vector<Vec2> Starts;
+		/** Olho que fica um tempo: o de quem morreu (a visão não some no mesmo quadro: SC2) e o
+		 *  do tiro vindo da névoa (quem atirou aparece um instante pro time de quem levou). */
+		struct LingeringLook
+		{
+			uint8_t Team = 0;
+			int32_t Cell = -1;
+			int32_t RadiusCells = 0;
+			int64_t RadiusSq = 0;
+			TickNumber Until = 0;
+		};
+		std::vector<LingeringLook> Lingering;
+		/** Raio de visão do tipo, em células (teto e quadrado). */
+		void SightCells(uint16_t Def, int32_t& OutRadius, int64_t& OutRadiusSq) const;
+		void LookAt(uint8_t Team, uint16_t Def, int32_t Cell, int32_t Delta);
+		void AddLingering(uint8_t Team, int32_t Cell, int32_t RadiusCells, int64_t RadiusSq, TickNumber Ticks);
+		/** A unidade Self (o time dela) vê a unidade J? Com a névoa desligada, sim. */
+		bool SeesUnit(int32_t Self, int32_t J) const;
 		/** Regiões ligadas do mapa, uma grade por folga das unidades (sai do mapa: não entra no hash). */
 		std::vector<int32_t> RegionClearances;
 		std::vector<std::vector<int32_t>> RegionLabels;

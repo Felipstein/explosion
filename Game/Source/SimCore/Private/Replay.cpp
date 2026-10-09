@@ -120,6 +120,8 @@ namespace Sim
 				W.U16(U.Facing.Bam);
 			}
 		}
+		W.U8(S.bFogOfWar ? 1 : 0);
+		W.U8(S.bAllowDebugCommands ? 1 : 0);
 	}
 
 	bool ReadSetup(ByteReader& R, MatchSetup& Out)
@@ -182,7 +184,7 @@ namespace Sim
 		{
 			uint8_t AI = 0;
 			uint16_t UnitCount = 0;
-			if (!R.U8(P.Team) || !R.U8(AI) || !R.U16(UnitCount) || UnitCount > MaxStartingUnits)
+			if (!R.U8(P.Team) || P.Team >= MaxPlayers || !R.U8(AI) || !R.U16(UnitCount) || UnitCount > MaxStartingUnits)
 			{
 				return false;
 			}
@@ -196,6 +198,14 @@ namespace Sim
 				}
 			}
 		}
+		uint8_t Fog = 0;
+		uint8_t Debug = 0;
+		if (!R.U8(Fog) || Fog > 1 || !R.U8(Debug) || Debug > 1)
+		{
+			return false;
+		}
+		Out.bFogOfWar = Fog != 0;
+		Out.bAllowDebugCommands = Debug != 0;
 		return true;
 	}
 

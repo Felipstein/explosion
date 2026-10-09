@@ -9,7 +9,7 @@ public class RTSGame : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "SimCore", "BlastFx" });
 		PrivateDependencyModuleNames.AddRange(new string[] {
-			"Slate", "SlateCore", "MoviePlayer", "Landscape", "Json", "Projects"
+			"Slate", "SlateCore", "MoviePlayer", "Landscape", "Json", "Projects", "RTSShaders", "RenderCore", "RHI"
 		});
 	}
 }

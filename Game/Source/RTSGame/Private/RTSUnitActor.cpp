@@ -234,6 +234,27 @@ void ARTSUnitActor::PlayFire()
 	ARTSEffect::SpawnFlash(GetWorld(), MuzzleLocation() + MuzzleDirection() * 60.0f, 90.0f, 1.5e6f, 0.09f, FLinearColor(3.0f, 2.0f, 0.9f));
 }
 
+void ARTSUnitActor::SetFogHidden(bool bHide)
+{
+	if (bHide != bFogHidden)
+	{
+		bFogHidden = bHide;
+		SetActorHiddenInGame(bHide);
+	}
+}
+
+void ARTSUnitActor::SetWreckLive(bool bLive)
+{
+	if (bLive != bWreckLive)
+	{
+		bWreckLive = bLive;
+		if (bDead)
+		{
+			FireLight->SetVisibility(bLive);
+		}
+	}
+}
+
 void ARTSUnitActor::Die()
 {
 	if (bDead)
@@ -244,7 +265,7 @@ void ARTSUnitActor::Die()
 	DeathAge = 0.0f;
 	Char();
 	// o clarão e a bola são da explosão (BlastFx, a Carga Pesada aprovada); aqui só a carcaça
-	FireLight->SetVisibility(true);
+	FireLight->SetVisibility(bWreckLive);
 	// a torre voa em ~1 de cada 3 mortes (munição detonando), não em toda (Vanguard ADR-0027)
 	const uint32 H = CosmeticHash(SimId);
 	if (H % 3 == 0)

@@ -1,8 +1,12 @@
 #include "RTSAutoTest.h"
 
+#include "RTSFogOfWar.h"
+#include "RTSHUD.h"
+
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
@@ -15,6 +19,25 @@
 #include "RTSPlayerController.h"
 #include "UnrealClient.h"
 #include "Widgets/SViewport.h"
+
+// Durante o teste só a entrada sintética chega no jogo. O mouse e o teclado de verdade (o
+// Felipe usando o PC enquanto a janela do teste abre na frente) entravam junto: um clique que
+// escorregou virou caixa, um botão direito desfez a seleção (t8/t9, 08/10).
+class FRTSTestInputGate : public IInputProcessor
+{
+public:
+	bool bInjecting = false;
+
+	virtual void Tick(const float DeltaTime, FSlateApplication& App, TSharedRef<ICursor> Cursor) override {}
+	virtual bool HandleKeyDownEvent(FSlateApplication& App, const FKeyEvent& E) override { return !bInjecting; }
+	virtual bool HandleKeyUpEvent(FSlateApplication& App, const FKeyEvent& E) override { return !bInjecting; }
+	virtual bool HandleMouseMoveEvent(FSlateApplication& App, const FPointerEvent& E) override { return !bInjecting; }
+	virtual bool HandleMouseButtonDownEvent(FSlateApplication& App, const FPointerEvent& E) override { return !bInjecting; }
+	virtual bool HandleMouseButtonUpEvent(FSlateApplication& App, const FPointerEvent& E) override { return !bInjecting; }
+	virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& App, const FPointerEvent& E) override { return !bInjecting; }
+	virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& App, const FPointerEvent& E, const FPointerEvent* Gesture) override { return !bInjecting; }
+	virtual const TCHAR* GetDebugName() const override { return TEXT("RTSTestInputGate"); }
+};
 
 bool URTSAutoTest::ShouldCreateSubsystem(UObject* Outer) const
 {
@@ -32,8 +55,23 @@ void URTSAutoTest::Initialize(FSubsystemCollectionBase& Collection)
 	}
 	bRecord = FParse::Param(FCommandLine::Get(), TEXT("RTSRecord"));
 	Build();
+	if (FSlateApplication::IsInitialized())
+	{
+		Gate = MakeShared<FRTSTestInputGate>();
+		FSlateApplication::Get().RegisterInputPreProcessor(Gate, 0);
+	}
 	bActive = true;
 	UE_LOG(LogTemp, Display, TEXT("RTS TEST começou: %d passos, fotos em %s"), Steps.Num(), *Folder);
+}
+
+void URTSAutoTest::Deinitialize()
+{
+	if (Gate.IsValid() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().UnregisterInputPreProcessor(Gate);
+	}
+	Gate.Reset();
+	Super::Deinitialize();
 }
 
 TStatId URTSAutoTest::GetStatId() const
@@ -85,11 +123,11 @@ FVector2D URTSAutoTest::ButtonCenter(FName Id) const
 	return FVector2D(-1, -1);
 }
 
-void URTSAutoTest::QueueClick(const FVector2D& Pixel)
+void URTSAutoTest::QueueClick(const FVector2D& Pixel, FKey Button)
 {
 	Pending.Add({ FInputEvent::EType::Move, Pixel, EKeys::Invalid });
-	Pending.Add({ FInputEvent::EType::Down, Pixel, EKeys::LeftMouseButton });
-	Pending.Add({ FInputEvent::EType::Up, Pixel, EKeys::LeftMouseButton });
+	Pending.Add({ FInputEvent::EType::Down, Pixel, Button });
+	Pending.Add({ FInputEvent::EType::Up, Pixel, Button });
 }
 
 void URTSAutoTest::QueueDrag(const FVector2D& From, const FVector2D& To)
@@ -119,6 +157,7 @@ void URTSAutoTest::PumpInput()
 	Pending.RemoveAt(0);
 	FSlateApplication& App = FSlateApplication::Get();
 	const FVector2D Pos = ToSlate(E.Pos);
+	TGuardValue<bool> Injecting(Gate.IsValid() ? Gate->bInjecting : bDummyInjecting, true);
 	// o mouse de verdade em cima da janela atropelava os eventos sintéticos (a posição do
 	// viewport vinha dele): leva o cursor junto, como uma mão faria
 	if (E.Type == FInputEvent::EType::Move || E.Type == FInputEvent::EType::Down || E.Type == FInputEvent::EType::Up)
@@ -205,7 +244,7 @@ bool URTSAutoTest::BattleFocus(FVector2D& OutCm) const
 	int32 N = 0;
 	for (const FRTSUnitState& U : Units)
 	{
-		if (FVector2D::Distance(U.PosCm, Own) < 20000.0)
+		if (FVector2D::Distance(U.PosCm, Own) < 20000.0 && M->IsUnitShown(U.Id))
 		{
 			Sum += U.PosCm;
 			++N;
@@ -233,7 +272,7 @@ void URTSAutoTest::Build()
 
 	Steps.Add({ TEXT("jogar_skirmish"),
 		[this]() { QueueClick(ButtonCenter(TEXT("skirmish"))); },
-		[this]() { return Match() != nullptr && PC() && !PC()->IsMenu(); },
+		[this]() { return Match() != nullptr && Match()->IsReady() && PC() && !PC()->IsMenu(); },
 		[this]() { return Match() ? FString() : TEXT("a partida não começou"); },
 		5.0f, 120.0f });
 
@@ -259,6 +298,7 @@ void URTSAutoTest::Build()
 					Box += S;
 				}
 			}
+			UE_LOG(LogTemp, Log, TEXT("RTS TEST caixa: tanques na tela de (%.0f, %.0f) a (%.0f, %.0f), válida %d"), Box.Min.X, Box.Min.Y, Box.Max.X, Box.Max.Y, int32(Box.bIsValid));
 			if (Box.bIsValid)
 			{
 				QueueDrag(Box.Min - FVector2D(60, 60), Box.Max + FVector2D(60, 60));
@@ -303,6 +343,92 @@ void URTSAutoTest::Build()
 		[this]() { return PC() && !PC()->IsAttackMoveArmed() ? FString() : TEXT("o ataque andando ficou armado"); },
 		2.0f });
 
+	// a névoa e o minimapa (docs/BASE_JOGAVEL.md §0), clicando como o Felipe clica
+	auto Hud = [this]() { return PC() ? Cast<ARTSHUD>(PC()->GetHUD()) : nullptr; };
+	Steps.Add({ TEXT("nevoa"), nullptr,
+		[this]() { return Match() && Match()->GetFog() && Match()->GetFog()->IsMinimapReady(); },
+		[this]() { return Match() && Match()->IsFogShown() ? FString() : TEXT("a névoa não está ligada"); },
+		1.0f, 20.0f });
+
+	Steps.Add({ TEXT("nevoa_desligada"),
+		[this]() { QueueKey(EKeys::F9); },
+		[this]() { return Match() && !Match()->IsFogOn(); },
+		[this]() { return Match() && !Match()->IsFogShown() ? FString() : TEXT("o F9 não desligou a névoa"); },
+		1.6f, 10.0f });
+
+	Steps.Add({ TEXT("nevoa_ligada"),
+		[this]() { QueueKey(EKeys::F9); },
+		[this]() { return Match() && Match()->IsFogOn(); },
+		[this]() { return Match() && Match()->IsFogShown() ? FString() : TEXT("o F9 não religou a névoa"); },
+		1.6f, 10.0f });
+
+	Steps.Add({ TEXT("minimapa_camera"),
+		[this, Hud]()
+		{
+			// botão direito no minimapa, na largada do inimigo: a câmera vai lá e a seleção fica
+			SelectionBefore = PC() ? PC()->GetSelection().Num() : 0;
+			MinimapTarget = Match() ? Match()->PlayerStartCm(1) : FVector2D::ZeroVector;
+			FVector2D Px;
+			if (Hud() && Hud()->WorldToMinimapScreen(MinimapTarget, Px))
+			{
+				QueueClick(Px, EKeys::RightMouseButton);
+			}
+		},
+		[this]()
+		{
+			ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+			return Cam && FVector2D::Distance(Cam->GetFocusCm(), MinimapTarget) < 4000.0;
+		},
+		[this]()
+		{
+			ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+			const double Off = Cam ? FVector2D::Distance(Cam->GetFocusCm(), MinimapTarget) / 100.0 : 1e9;
+			const int32 Sel = PC() ? PC()->GetSelection().Num() : 0;
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST minimapa: câmera a %.1f m do ponto, seleção %d de %d"), Off, Sel, SelectionBefore);
+			return Sel == SelectionBefore ? FString() : FString::Printf(TEXT("o clique direito no minimapa mudou a seleção (%d → %d)"), SelectionBefore, Sel);
+		},
+		1.0f, 10.0f });
+
+	Steps.Add({ TEXT("minimapa_ordem"),
+		[this, Hud]()
+		{
+			// esquerdo no minimapa com o exército selecionado: ordem de andar até lá (80 m à frente)
+			FVector2D Own;
+			OwnCentroid(Own);
+			const FVector2D Enemy = Match() ? Match()->PlayerStartCm(1) : Own;
+			MinimapTarget = Own + (Enemy - Own).GetSafeNormal() * 8000.0;
+			MinimapOrderOffCm = 1e12;
+			FVector2D Px;
+			if (Hud() && Hud()->WorldToMinimapScreen(MinimapTarget, Px))
+			{
+				QueueClick(Px);
+			}
+		},
+		[this]()
+		{
+			// a marca da ordem no chão, perto do ponto (a resolução do minimapa é de ~5 m por pixel);
+			// ela vive 0,7 s, então confere enquanto existe
+			double Best = 1e12;
+			if (PC())
+			{
+				for (const FRTSOrderMarker& Marker : PC()->GetMarkers())
+				{
+					Best = FMath::Min(Best, FVector2D::Distance(FVector2D(Marker.World.X, Marker.World.Y), MinimapTarget));
+				}
+			}
+			if (Best < MinimapOrderOffCm)
+			{
+				MinimapOrderOffCm = Best;
+			}
+			return MinimapOrderOffCm < 1500.0;
+		},
+		[this]()
+		{
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST minimapa: ordem a %.1f m do ponto clicado"), MinimapOrderOffCm / 100.0);
+			return MinimapOrderOffCm < 1500.0 ? FString() : TEXT("o clique esquerdo no minimapa não deu ordem perto do ponto");
+		},
+		0.1f, 5.0f });
+
 	Steps.Add({ TEXT("batalha"),
 		[this]() { NextBattleShot = 0.0f; NextFollow = 0.0f; NextPush = 12.0f; BattleShots = 0; bStallLogged = false; },
 		[this]()
@@ -336,7 +462,7 @@ void URTSAutoTest::Build()
 					const FRTSUnitState* Best = nullptr;
 					for (const FRTSUnitState& U : Units)
 					{
-						if (M->IsEnemyOfLocal(U.Owner) && (!Best || FVector2D::Distance(U.PosCm, Own) < FVector2D::Distance(Best->PosCm, Own)))
+						if (M->IsEnemyOfLocal(U.Owner) && M->IsUnitShown(U.Id) && (!Best || FVector2D::Distance(U.PosCm, Own) < FVector2D::Distance(Best->PosCm, Own)))
 						{
 							Best = &U;
 						}
@@ -368,7 +494,10 @@ void URTSAutoTest::Build()
 		[this]() { return Match() && Match()->Result() != ERTSMatchResult::Playing ? FString() : TEXT("a partida não terminou"); },
 		1.0f, 420.0f, false });
 
-	Steps.Add({ TEXT("resultado"), nullptr, []() { return true; },
+	// o painel entra 3 s depois do golpe final e leva 0,6 s pra aparecer: espera ele inteiro (a
+	// foto mostra o resultado e o próximo passo acha o botão; no t6 o clique saiu antes do botão)
+	Steps.Add({ TEXT("resultado"), nullptr,
+		[this]() { return Match() && Match()->SecondsSinceEnd() > 3.8f && ButtonCenter(TEXT("menu")).X >= 0.0; },
 		[this]()
 		{
 			URTSMatchSubsystem* M = Match();

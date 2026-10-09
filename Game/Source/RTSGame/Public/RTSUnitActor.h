@@ -31,6 +31,15 @@ public:
 	void Die();
 
 	uint32 GetSimId() const { return SimId; }
+	/** Névoa: some (com sombra e luz) ou volta. Só troca quando muda (recriar as peças custa). */
+	void SetFogHidden(bool bHide);
+	bool IsFogHidden() const { return bFogHidden; }
+	/** Carcaça na névoa: aparece como foi vista, sem o fogo "ao vivo" enquanto ninguém olha. */
+	void SetWreckLive(bool bLive);
+	/** A carcaça já foi vista pelo jogador local (a de inimigo morto na névoa só aparece quando a área é revista). */
+	bool bWreckKnown = false;
+	/** Quando o jogador local viu esta unidade pela última vez (segundos de mundo). */
+	double LastSeenSeconds = -1.0e9;
 	bool IsDead() const { return bDead; }
 	float GetRadiusCm() const { return RadiusCm; }
 
@@ -72,6 +81,8 @@ private:
 	FQuat TiltSmoothed = FQuat::Identity;
 
 	bool bDead = false;
+	bool bFogHidden = false;
+	bool bWreckLive = true;
 	float DeathAge = 0.0f;
 	bool bTurretFlying = false;
 	FVector TurretVelocity = FVector::ZeroVector;

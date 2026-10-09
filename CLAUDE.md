@@ -25,6 +25,8 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   desenha (`Source/RTSGame`, `Source/BlastFx` = a explosão do BlastLab).
   `Tools/game.ps1` faz tudo (setup, view, teste `-Folder`, vídeo `-Record`);
   `Tools/simtest.ps1` testa a simulação sem a Unreal. Arquitetura em `docs/JOGO.md`.
+  **A lista viva da base jogável** (multiplayer, War Factory, névoa, minimapa, visual
+  final; o que é de cada sessão) é `docs/BASE_JOGAVEL.md`: quem mexer num item marca lá.
 - `reference/webgl/`: o simulador **WebGL** original, congelado na tag
   `v6-fumaca-interacao`. É a referência visual aprovada. Não mexer no JS.
 - `docs/`: leia nesta ordem quando precisar de contexto:

@@ -7,6 +7,6 @@ public class RTSGameEditorTarget : TargetRules
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.Latest;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-		ExtraModuleNames.AddRange(new string[] { "SimCore", "BlastFx", "RTSGame" });
+		ExtraModuleNames.AddRange(new string[] { "SimCore", "RTSShaders", "BlastFx", "RTSGame" });
 	}
 }

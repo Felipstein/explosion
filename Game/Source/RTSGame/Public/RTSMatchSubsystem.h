@@ -13,6 +13,7 @@
 #include "RTSMatchSubsystem.generated.h"
 
 class ARTSUnitActor;
+class URTSFogOfWar;
 struct FRTSBakedMap;
 struct FRTSUnitVisual;
 struct FRTSMatchState;
@@ -52,6 +53,24 @@ public:
 	/** Monta a partida no mapa carregado: você (jogador 0) contra uma IA. */
 	bool StartSkirmish(const FString& MapName, FString& OutError);
 	bool IsRunning() const;
+	/** A cena acabou de carregar (shaders, texturas): só então a partida começa a contar. */
+	bool IsReady() const { return bReady; }
+
+	// --- névoa de guerra e minimapa (docs/BASE_JOGAVEL.md §0)
+	/** A névoa está sendo desenhada (ligada e a partida rolando; no fim o mapa se revela, como no ZH). */
+	bool IsFogShown() const;
+	/** O liga/desliga de depuração (F9, botão da pausa): troca o desenho na hora e a regra pela fila. */
+	void ToggleFogReveal();
+	bool IsFogOn() const { return bFogDisplay; }
+	/** A unidade aparece pro jogador local (as suas sempre; inimigo só à vista, com 1 s de carência). */
+	bool IsUnitShown(uint32 Id) const;
+	/** O ponto está à vista agora (pros efeitos: tiro, impacto, explosão). */
+	bool IsPointShown(const FVector2D& Cm) const;
+	URTSFogOfWar* GetFog() const { return Fog; }
+	/** Onde cada jogador começou (todo mundo conhece pelo mapa): a seta da base inimiga. */
+	FVector2D PlayerStartCm(uint8 Player) const;
+	/** Posições das suas unidades que levaram tiro desde a última chamada (o "sob ataque" do minimapa). */
+	void TakeDamageAlerts(TArray<FVector2D>& Out);
 
 	void SetPaused(bool bInPaused);
 	bool IsPaused() const { return bPaused; }
@@ -100,6 +119,7 @@ private:
 	void SpawnView(uint32 Id);
 	void SaveReplay();
 	void IssueGroupIfChanged(const TArray<uint32>& Units);
+	void UpdateFog(float DeltaTime);
 
 	/** O estado da partida (simulação, fila, IA, replay). Ponteiro cru: o tipo só existe no .cpp
 	 *  (o código gerado da Unreal não aceita TUniquePtr de tipo incompleto). */
@@ -112,9 +132,24 @@ private:
 	/** Materiais e malhas dos efeitos presos na memória: o GC não os descarrega entre rajadas (o tiro seguinte travaria recarregando). */
 	UPROPERTY()
 	TArray<TObjectPtr<UObject>> KeepLoaded;
+	UPROPERTY()
+	TObjectPtr<URTSFogOfWar> Fog;
+	bool bFogDisplay = true;
+	bool bFogPassOn = false;
+	uint32 LastVisionVersion = MAX_uint32;
+	bool bLastFogShown = true;
+	TArray<FVector2D> DamageAlerts;
+
+	/** Segura a partida até a cena estar pronta (a tela de carregar continua até lá). */
+	void UpdateWarmup();
 
 	double Accumulator = 0.0;
 	bool bPaused = false;
+	bool bReady = false;
+	double WarmStartSeconds = 0.0;      // relógio de verdade (FPlatformTime)
+	double SettledSince = -1.0;
+	int32 LastWantingTextures = -1;
+	double LastTextureProgress = 0.0;
 	bool bReplaySaved = false;
 	ERTSMatchResult MatchResult = ERTSMatchResult::Playing;
 	double LastStepMs = 0.0;

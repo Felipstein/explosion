@@ -30,6 +30,10 @@ namespace Sim
 		constexpr Fix MaxPushPerTick = Fix::FromRatio(13, 100);
 		/** Quem está parado a até isto de um aliado que leva tiro vai ajudar. */
 		constexpr Fix HelpRadius = Fix::FromInt(20);
+		/** A visão de quem morreu fica 1 s (no SC2 ela não some no mesmo instante). */
+		constexpr int32_t VisionLingerTicks = TicksPerSecond;
+		/** Quem atira de dentro da névoa aparece num disco de 1 célula em volta dele. */
+		constexpr int32_t ShotRevealCells = 1;
 
 		template <typename T>
 		void Compact(std::vector<T>& V, const std::vector<uint8_t>& Keep)
@@ -67,6 +71,7 @@ namespace Sim
 		LastAttacker.resize(N); TurretIdle.resize(N); Path.resize(N); PathIndex.resize(N);
 		PathGoal.resize(N); NeedsPath.resize(N); RepathWait.resize(N); StuckTicks.resize(N);
 		StuckAnchor.resize(N); EngageAnchor.resize(N); Ignore.resize(N); IgnoreUntil.resize(N);
+		LookCell.resize(N);
 	}
 
 	// ---------------------------------------------------------------- montagem
@@ -77,6 +82,8 @@ namespace Sim
 		H.Add(Seed);
 		H.Add(Map.Hash());
 		H.Add(Rules.Hash());
+		H.Add(bFogOfWar);
+		H.Add(bAllowDebugCommands);
 		H.Add(uint64_t(Players.size()));
 		for (const PlayerSetup& P : Players)
 		{
@@ -104,12 +111,27 @@ namespace Sim
 		MapData.ComputeClearance();
 		RulesData = Setup.Rules;
 		Random = Rng(Setup.Seed);
+		// antes de nascer: o raio de visão de cada um depende do maior raio (SightCells)
+		MaxUnitRadius = Fix::Zero();
+		for (const UnitDef& D : RulesData.Units)
+		{
+			MaxUnitRadius = Max(MaxUnitRadius, D.Radius);
+		}
+		int32_t Teams = 0;
 		for (const PlayerSetup& P : Setup.Players)
 		{
+			if (P.Team >= MaxPlayers)
+			{
+				return false;   // o time é índice da grade de visão: nunca maior que o número de vagas
+			}
 			PlayerState S;
 			S.Team = P.Team;
 			Players.push_back(S);
+			Teams = std::max(Teams, int32_t(P.Team) + 1);
 		}
+		Vision.Init(MapData.Width, MapData.Height, Teams);
+		bFogOfWar = Setup.bFogOfWar;
+		bAllowDebug = Setup.bAllowDebugCommands;
 		// Onde cada unidade nasce. A montagem vem de fora (formação em volta da largada) e pode
 		// cair em cima de pedra, penhasco ou num platô isolado; quem nasce num lugar de onde não
 		// sai fica presa a partida toda e ninguém vence (teste t4, 08/10). Então: a célula
@@ -205,18 +227,24 @@ namespace Sim
 				}
 			}
 		}
+		Starts.assign(Setup.Players.size(), Vec2::Zero());
+		std::vector<int64_t> StartCount(Setup.Players.size(), 0);
 		for (const Placement& Pl : Places)
 		{
 			Spawn(Pl.Owner, Pl.Def, Pl.Pos, Pl.Facing);
+			Starts[Pl.Owner] += Pl.Pos;
+			StartCount[Pl.Owner] += 1;
+		}
+		for (size_t P = 0; P < Starts.size(); ++P)
+		{
+			if (StartCount[P] > 0)
+			{
+				Starts[P] = Vec2::Make(Starts[P].X / StartCount[P], Starts[P].Y / StartCount[P]);
+			}
 		}
 		const Vec2 Extent = MapData.MaxCorner() - MapData.MinCorner();
 		BinsW = int32_t((Extent.X / BinSize).Floor()) + 1;
 		BinsH = int32_t((Extent.Y / BinSize).Floor()) + 1;
-		MaxUnitRadius = Fix::Zero();
-		for (const UnitDef& D : RulesData.Units)
-		{
-			MaxUnitRadius = Max(MaxUnitRadius, D.Radius);
-		}
 		CachedHash = ComputeHash();
 		return true;
 	}
@@ -253,6 +281,9 @@ namespace Sim
 		U.EngageAnchor[I] = Pos;
 		U.Ignore[I] = NoEntity;
 		U.IgnoreUntil[I] = 0;
+		const Cell C = MapData.CellOf(Pos);
+		U.LookCell[I] = MapData.InBounds(C.X, C.Y) ? MapData.Index(C.X, C.Y) : -1;
+		LookAt(Players[Owner].Team, DefIndex, U.LookCell[I], +1);
 		if (IdToIndex.size() <= Id)
 		{
 			IdToIndex.resize(size_t(Id) + 1, -1);
@@ -312,13 +343,21 @@ namespace Sim
 	void World::Step(const std::vector<Command>& Commands)
 	{
 		Events.clear();
+		// depuração (só se a montagem deixar): vale até depois do fim, pra olhar o mapa
+		for (const Command& C : Commands)
+		{
+			if (C.Tick == CurrentTick && C.Type == CommandType::SetFog && bAllowDebug && C.Player < Players.size())
+			{
+				bFogOfWar = C.Target != 0;
+			}
+		}
 		// depois do fim a partida segue rodando (os tanques terminam a curva, a fumaça sobe),
 		// só sem ordens novas e sem conferir a vitória de novo
 		if (!bMatchOver)
 		{
 			for (const Command& C : Commands)
 			{
-				if (C.Tick == CurrentTick)
+				if (C.Tick == CurrentTick && C.Type != CommandType::SetFog)
 				{
 					ApplyCommand(C);
 				}
@@ -336,6 +375,7 @@ namespace Sim
 		UpdateWeapons();
 		ResolveDamage();
 		RemoveDead();
+		UpdateVision();
 		if (!bMatchOver)
 		{
 			CheckVictory();
@@ -404,6 +444,7 @@ namespace Sim
 			{
 				return;   // alvo morto ou aliado: ordem inválida, ignora (ataque forçado vem depois)
 			}
+
 			for (const int32_t I : Members)
 			{
 				U.Order[I] = OrderType::Attack;
@@ -733,7 +774,7 @@ namespace Sim
 		const bool bIgnoring = U.Ignore[Self] != NoEntity && CurrentTick < U.IgnoreUntil[Self];
 		ForEachNear(U.Pos[Self], Radius + MaxUnitRadius, [&](int32_t J)
 		{
-			if (U.Hp[J] <= 0 || !AreEnemies(U.Owner[Self], U.Owner[J]) || (bIgnoring && U.Id[J] == U.Ignore[Self]))
+			if (U.Hp[J] <= 0 || !AreEnemies(U.Owner[Self], U.Owner[J]) || (bIgnoring && U.Id[J] == U.Ignore[Self]) || !SeesUnit(Self, J))
 			{
 				return;
 			}
@@ -767,9 +808,18 @@ namespace Sim
 				U.OrderTarget[I] = NoEntity;
 				U.Path[I].clear();
 			}
-			if (!IsAliveEnemy(I, U.Engage[I]))
+			if (U.Order[I] == OrderType::Attack && bFogOfWar)
 			{
-				U.Engage[I] = NoEntity;
+				// o alvo da ordem sumiu na névoa: vai até onde ele foi visto, atacando o que aparecer (ZH)
+				const int32_t J = IndexOf(U.OrderTarget[I]);
+				if (J >= 0 && !SeesUnit(I, J))
+				{
+					GiveMove(I, U.Pos[J], OrderType::AttackMove);
+				}
+			}
+			if (!IsAliveEnemy(I, U.Engage[I]) || (IndexOf(U.Engage[I]) >= 0 && !SeesUnit(I, IndexOf(U.Engage[I]))))
+			{
+				U.Engage[I] = NoEntity;   // morto, ou sumiu na névoa
 			}
 			if (!IsAliveEnemy(I, U.LastAttacker[I]))
 			{
@@ -833,7 +883,8 @@ namespace Sim
 			{
 				U.FireTarget[I] = U.Engage[I];
 			}
-			else if (U.FireTarget[I] != NoEntity && (!IsAliveEnemy(I, U.FireTarget[I]) || !WithinRaw(U.FireTarget[I], D.Weapon.Range)))
+			else if (U.FireTarget[I] != NoEntity && (!IsAliveEnemy(I, U.FireTarget[I]) || !WithinRaw(U.FireTarget[I], D.Weapon.Range)
+				|| !SeesUnit(I, IndexOf(U.FireTarget[I]))))
 			{
 				U.FireTarget[I] = NoEntity;
 			}
@@ -1271,6 +1322,12 @@ namespace Sim
 			if (H.Source != NoEntity)
 			{
 				U.LastAttacker[T] = H.Source;
+				const int32_t Shooter = IndexOf(H.Source);
+				if (bFogOfWar && Shooter >= 0 && U.LookCell[Shooter] >= 0)
+				{
+					// quem atira de fora da visão aparece 1 s (o clarão denuncia), pra reação ter alvo
+					AddLingering(Players[U.Owner[T]].Team, U.LookCell[Shooter], ShotRevealCells, int64_t(ShotRevealCells) * ShotRevealCells, TickNumber(VisionLingerTicks));
+				}
 				// os aliados parados perto escutam o tiro e vão atrás de quem atirou (o resto fica assistindo)
 				if (IndexOf(H.Source) >= 0)
 				{
@@ -1314,6 +1371,16 @@ namespace Sim
 			if (!Keep[I])
 			{
 				IdToIndex[U.Id[I]] = -1;
+				if (U.LookCell[I] >= 0)
+				{
+					// o disco já está carimbado: passa pra lista e sai quando o tempo acabar
+					LingeringLook L;
+					L.Team = Players[U.Owner[I]].Team;
+					L.Cell = U.LookCell[I];
+					SightCells(U.Def[I], L.RadiusCells, L.RadiusSq);
+					L.Until = CurrentTick + TickNumber(VisionLingerTicks);
+					Lingering.push_back(L);
+				}
 			}
 		}
 		Compact(U.Id, Keep); Compact(U.Owner, Keep); Compact(U.Def, Keep); Compact(U.Pos, Keep);
@@ -1324,6 +1391,7 @@ namespace Sim
 		Compact(U.PathIndex, Keep); Compact(U.PathGoal, Keep); Compact(U.NeedsPath, Keep);
 		Compact(U.RepathWait, Keep); Compact(U.StuckTicks, Keep); Compact(U.StuckAnchor, Keep);
 		Compact(U.EngageAnchor, Keep); Compact(U.Ignore, Keep); Compact(U.IgnoreUntil, Keep);
+		Compact(U.LookCell, Keep);
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
 			IdToIndex[U.Id[I]] = int32_t(I);
@@ -1332,6 +1400,153 @@ namespace Sim
 		{
 			P.Group.erase(std::remove_if(P.Group.begin(), P.Group.end(),
 				[this](EntityId Id) { return IndexOf(Id) < 0; }), P.Group.end());
+		}
+	}
+
+	// ---------------------------------------------------------------- visão
+
+	void World::SightCells(uint16_t Def, int32_t& OutRadius, int64_t& OutRadiusSq) const
+	{
+		// revelar vai além de mirar (o ZH separa ShroudClearingRange de VisionRange): o alvo
+		// automático mede até Sight + o raio do alvo (39,5 + 3,6 m), e a grade de 4 m arredonda as
+		// duas pontas (até 2,8 m cada). O disco pega as células com o centro a até
+		// Sight + maior raio + 1 célula: o tanque nunca escolhe sozinho um alvo que o time não vê
+		const Fix RadiusCells = (RulesData.Units[Def].Sight + MaxUnitRadius) / MapData.CellSize + Fix::One();
+		OutRadius = int32_t(RadiusCells.Floor()) + 1;
+		OutRadiusSq = (RadiusCells * RadiusCells).Floor();
+	}
+
+	void World::LookAt(uint8_t Team, uint16_t Def, int32_t Cell, int32_t Delta)
+	{
+		if (Cell < 0)
+		{
+			return;
+		}
+		int32_t Radius = 0;
+		int64_t RadiusSq = 0;
+		SightCells(Def, Radius, RadiusSq);
+		Vision.Look(Team, Cell, Radius, RadiusSq, Delta);
+	}
+
+	void World::AddLingering(uint8_t Team, int32_t Cell, int32_t RadiusCells, int64_t RadiusSq, TickNumber Ticks)
+	{
+		if (Cell < 0)
+		{
+			return;
+		}
+		Vision.Look(Team, Cell, RadiusCells, RadiusSq, +1);
+		LingeringLook L;
+		L.Team = Team;
+		L.Cell = Cell;
+		L.RadiusCells = RadiusCells;
+		L.RadiusSq = RadiusSq;
+		L.Until = CurrentTick + Ticks;
+		Lingering.push_back(L);
+	}
+
+	bool World::SeesUnit(int32_t Self, int32_t J) const
+	{
+		if (!bFogOfWar)
+		{
+			return true;
+		}
+		if (Self < 0 || J < 0)
+		{
+			return false;
+		}
+		return Vision.IsVisible(Players[U.Owner[Self]].Team, U.LookCell[J]);
+	}
+
+	bool World::VisionSelfCheck() const
+	{
+		VisionGrid Fresh;
+		Fresh.Init(Vision.Width(), Vision.Height(), Vision.Teams());
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			int32_t Radius = 0;
+			int64_t RadiusSq = 0;
+			SightCells(U.Def[I], Radius, RadiusSq);
+			Fresh.Look(Players[U.Owner[I]].Team, U.LookCell[I], Radius, RadiusSq, +1);
+		}
+		for (const LingeringLook& L : Lingering)
+		{
+			Fresh.Look(L.Team, L.Cell, L.RadiusCells, L.RadiusSq, +1);
+		}
+		return Fresh.SameCounts(Vision);
+	}
+
+	void World::UpdateVision()
+	{
+		// os olhos de quem morreu saem quando o tempo deles acaba (em ordem de morte)
+		size_t Kept = 0;
+		for (size_t K = 0; K < Lingering.size(); ++K)
+		{
+			if (Lingering[K].Until <= CurrentTick)
+			{
+				Vision.Look(Lingering[K].Team, Lingering[K].Cell, Lingering[K].RadiusCells, Lingering[K].RadiusSq, -1);
+			}
+			else
+			{
+				Lingering[Kept++] = Lingering[K];
+			}
+		}
+		Lingering.resize(Kept);
+		// quem mudou de célula carimba o disco novo; o velho fica 1 s e sai pela lista (o ZH faz
+		// igual: UnlookPersistDuration de 30 quadros), senão quem anda na borda da visão pisca
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			const Cell C = MapData.CellOf(U.Pos[I]);
+			const int32_t Now = MapData.InBounds(C.X, C.Y) ? MapData.Index(C.X, C.Y) : -1;
+			if (Now == U.LookCell[I])
+			{
+				continue;
+			}
+			const uint8_t Team = Players[U.Owner[I]].Team;
+			LookAt(Team, U.Def[I], Now, +1);
+			if (U.LookCell[I] >= 0)
+			{
+				LingeringLook L;
+				L.Team = Team;
+				L.Cell = U.LookCell[I];
+				SightCells(U.Def[I], L.RadiusCells, L.RadiusSq);
+				L.Until = CurrentTick + TickNumber(VisionLingerTicks);
+				Lingering.push_back(L);
+			}
+			U.LookCell[I] = Now;
+		}
+	}
+
+	bool World::IsCellVisible(uint8_t Team, int32_t X, int32_t Y) const
+	{
+		return MapData.InBounds(X, Y) && Vision.IsVisible(Team, MapData.Index(X, Y));
+	}
+
+	bool World::IsCellExplored(uint8_t Team, int32_t X, int32_t Y) const
+	{
+		return MapData.InBounds(X, Y) && Vision.IsExplored(Team, MapData.Index(X, Y));
+	}
+
+	bool World::IsVisibleTo(PlayerIndex P, Vec2 Pos) const
+	{
+		if (!bFogOfWar)
+		{
+			return true;
+		}
+		if (P >= Players.size())
+		{
+			return false;
+		}
+		const Cell C = MapData.CellOf(Pos);
+		return IsCellVisible(Players[P].Team, C.X, C.Y);
+	}
+
+	void World::CopyVisibility(uint8_t Team, std::vector<uint8_t>& Out) const
+	{
+		const int32_t N = MapData.Width * MapData.Height;
+		Out.assign(size_t(N), 0);
+		for (int32_t I = 0; I < N; ++I)
+		{
+			Out[size_t(I)] = Vision.IsVisible(Team, I) ? 2 : (Vision.IsExplored(Team, I) ? 1 : 0);
 		}
 	}
 
@@ -1386,6 +1601,7 @@ namespace Sim
 		H.Add(Winner);
 		H.Add(MatchEndTick);
 		H.Add(PathCursor);
+		H.Add(bFogOfWar);
 		for (const PlayerState& P : Players)
 		{
 			H.Add(P.Team);
@@ -1411,6 +1627,12 @@ namespace Sim
 			H.Add(U.PathIndex[I]); H.Add(U.PathGoal[I]); H.Add(U.NeedsPath[I]); H.Add(U.RepathWait[I]);
 			H.Add(U.StuckTicks[I]); H.Add(U.StuckAnchor[I]);
 			H.Add(U.EngageAnchor[I]); H.Add(U.Ignore[I]); H.Add(U.IgnoreUntil[I]);
+			H.Add(U.LookCell[I]);
+		}
+		H.Add(uint64_t(Lingering.size()));
+		for (const LingeringLook& L : Lingering)
+		{
+			H.Add(L.Team); H.Add(L.Cell); H.Add(L.RadiusCells); H.Add(L.RadiusSq); H.Add(L.Until);
 		}
 		H.Add(uint64_t(Projectiles.size()));
 		for (const Projectile& P : Projectiles)

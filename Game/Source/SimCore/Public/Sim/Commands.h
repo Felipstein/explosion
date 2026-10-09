@@ -24,6 +24,7 @@ namespace Sim
 		Attack = 3,       // grupo ataca Target
 		Stop = 4,         // grupo para e esquece ordens
 		AttackMove = 5,   // grupo anda até Point atacando o que encontrar
+		SetFog = 6,       // liga (Target = 1) ou desliga (0) a névoa de guerra: depuração, vale pra todos
 	};
 
 	struct Command

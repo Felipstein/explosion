@@ -17,6 +17,21 @@ class ARTSCameraPawn;
 class ARTSHUD;
 class URTSMatchSubsystem;
 
+/** Pulso no minimapa onde uma ordem dada por ele chega. */
+struct FRTSMinimapPulse
+{
+	FVector2D Cm = FVector2D::ZeroVector;
+	float Age = 0.0f;
+	bool bAttack = false;
+};
+
+/** "Sob ataque" no minimapa (ZH: 4 s de vida). */
+struct FRTSMinimapPing
+{
+	FVector2D Cm = FVector2D::ZeroVector;
+	float Age = 0.0f;
+};
+
 /** Marca de ordem no chão (verde = andar, vermelho = atacar), some sozinha. */
 struct FRTSOrderMarker
 {
@@ -56,10 +71,18 @@ public:
 	/** Ação de um botão do HUD (menu, pausa, fim). */
 	void OnButton(FName Id);
 
+	const TArray<FRTSMinimapPulse>& GetMinimapPulses() const { return MinimapPulses; }
+	const TArray<FRTSMinimapPing>& GetMinimapPings() const { return MinimapPings; }
+	/** O letreiro "Unidade sob ataque" (some em 3 s). */
+	float AttackMessageAlpha() const { return FMath::Clamp(1.0f - (AttackMessageAge - 2.5f) / 0.5f, 0.0f, 1.0f) * (AttackMessageAge < 3.0f ? 1.0f : 0.0f); }
+
 private:
 	void TickMenu();
 	void TickMatch(float DeltaTime);
 	void TickCamera(float DeltaTime, ARTSCameraPawn* Cam);
+	/** O minimapa pega o gesto inteiro quando o botão desce em cima dele (o ZH engole o clique). */
+	void TickMinimap(float DeltaTime, ARTSCameraPawn* Cam, const FVector2D& Mouse, bool bHasMouse);
+	void TickAlerts(float DeltaTime);
 	void HandleLeftClick(const FVector2D& Mouse);
 	void HandleBoxSelect(const FVector2D& A, const FVector2D& B);
 	void HandleGroups();
@@ -89,6 +112,7 @@ private:
 	FVector2D LeftDownPos = FVector2D::ZeroVector;
 	uint32 LastClickedId = 0;
 	double LastClickTime = 0.0;
+	int32 LoggedSelection = 0;
 
 	bool bRightDown = false;
 	bool bRightScrolling = false;
@@ -100,4 +124,14 @@ private:
 
 	int32 LastGroupKey = -1;
 	double LastGroupKeyTime = 0.0;
+
+	enum class EMinimapGesture : uint8 { None, LeftDrag, LeftDone, RightDrag, Ignore };
+	EMinimapGesture MinimapGesture = EMinimapGesture::None;
+	bool bOverMinimap = false;
+	TArray<FRTSMinimapPulse> MinimapPulses;
+	TArray<FRTSMinimapPing> MinimapPings;
+	float AttackMessageAge = 1000.0f;
+	bool bHasAlert = false;
+	FVector2D LastAlertCm = FVector2D::ZeroVector;
+	double LastAlertTime = -1000.0;
 };

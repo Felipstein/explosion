@@ -26,6 +26,9 @@ namespace Sim
 			break;
 		case CommandType::Stop:
 			break;
+		case CommandType::SetFog:
+			W.U8(C.Target != 0 ? 1 : 0);
+			break;
 		}
 	}
 
@@ -68,6 +71,16 @@ namespace Sim
 			return R.U32(Out.Target);
 		case CommandType::Stop:
 			return true;
+		case CommandType::SetFog:
+		{
+			uint8_t On = 0;
+			if (!R.U8(On) || On > 1)
+			{
+				return false;
+			}
+			Out.Target = On;
+			return true;
+		}
 		}
 		return false;   // tipo desconhecido
 	}

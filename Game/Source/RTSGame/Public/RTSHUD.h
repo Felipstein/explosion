@@ -28,6 +28,14 @@ public:
 	/** Onde está o botão no último quadro (pro teste automático clicar nele). */
 	bool FindButton(FName Id, FBox2D& OutBox) const;
 
+	// --- minimapa (o losango no canto de baixo à esquerda), na geometria do último quadro
+	/** O ponto da tela está sobre a moldura do minimapa (o clique é dele, não do mundo). */
+	bool IsOverMinimap(const FVector2D& Screen) const;
+	/** O ponto da tela cai dentro do mapa do minimapa: o lugar no mundo (cm). bClamp prende na borda. */
+	bool MinimapToWorld(const FVector2D& Screen, FVector2D& OutCm, bool bClamp = false) const;
+	/** Onde um lugar do mundo aparece no minimapa (pro teste clicar). */
+	bool WorldToMinimapScreen(const FVector2D& Cm, FVector2D& OutScreen) const;
+
 private:
 	struct FButton
 	{
@@ -44,6 +52,10 @@ private:
 	void DrawEnemyArrow(URTSMatchSubsystem* Match);
 	void DrawPause();
 	void DrawResult(URTSMatchSubsystem* Match);
+	void DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	FVector2D MinimapUVToScreen(const FVector2D& UV) const;
+	FVector2D MinimapScreenToUV(const FVector2D& Screen) const;
+	void DrawClippedLine(FVector2D A, FVector2D B, const FLinearColor& Color, float Thickness);
 
 	void DrawGroundRing(const FVector& Center, float RadiusCm, const FLinearColor& Color, float Thickness);
 	void DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color);
@@ -54,4 +66,13 @@ private:
 	FVector2D MousePos() const;
 
 	TArray<FButton> Buttons;
+
+	bool bMinimapDrawn = false;
+	FBox2D MinimapFrame = FBox2D(ForceInit);
+	FVector2D MinimapCenter = FVector2D::ZeroVector;
+	float MinimapSide = 0.0f;       // lado do quadrado do mapa (o losango é ele girado)
+	float MinimapCos = 1.0f;
+	float MinimapSin = 0.0f;
+	FVector2D MinimapMinCm = FVector2D::ZeroVector;
+	FVector2D MinimapSizeCm = FVector2D(1.0, 1.0);
 };

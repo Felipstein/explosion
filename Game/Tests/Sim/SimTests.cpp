@@ -427,6 +427,217 @@ namespace
 		Check(GatherFar < 18.0, "juntar: todos em volta do ponto");
 	}
 
+	// ------------------------------------------------------------------ 4d. visão e névoa
+
+	MatchSetup TwoTankSetup(Cell Mine, Cell Theirs, bool bFog)
+	{
+		MatchSetup S;
+		S.Map = MakeOpenMap(64, 64);
+		S.Rules.Units.push_back(UnitDef::FromSpec(TankSpec()));
+		S.Rules.Armor.Set(ArmorType::Tank, DamageType::ArmorPiercing, 100);
+		S.bFogOfWar = bFog;
+		S.bAllowDebugCommands = true;
+		const auto At = [&](Cell C)
+		{
+			StartingUnit U;
+			U.Key = "usa_mbt";
+			U.Pos = S.Map.CellCenter(C);
+			return U;
+		};
+		PlayerSetup P0;
+		P0.Units = { At(Mine) };
+		PlayerSetup P1;
+		P1.Team = 1;
+		P1.bIsAI = true;
+		P1.Units = { At(Theirs) };
+		S.Players = { P0, P1 };
+		return S;
+	}
+
+	void StepWith(World& W, std::vector<Command> Commands)
+	{
+		for (Command& C : Commands)
+		{
+			C.Tick = W.Tick();
+		}
+		W.Step(Commands);
+	}
+
+	void TestVision()
+	{
+		std::printf("[visao e nevoa]\n");
+		// o tanque revela (39,5 + 3,6) m + 1 célula = 11,775 células de 4 m: o disco pega dx² + dy² <= 138
+		World W;
+		Check(W.Init(TwoTankSetup(Cell{ 10, 10 }, Cell{ 50, 50 }, true)), "montagem com nevoa");
+		Check(W.IsCellVisible(0, 10, 10) && W.IsCellVisible(0, 21, 10) && W.IsCellVisible(0, 21, 14), "ve o proprio disco (11,4 = 137 entra)");
+		Check(!W.IsCellVisible(0, 22, 10) && !W.IsCellVisible(0, 19, 19) && W.IsCellVisible(0, 18, 18), "fora do raio nao ve (12,0 = 144 e 9,9 = 162 passam de 138; 8,8 = 128 entra)");
+		Check(W.VisionSelfCheck(), "a visao confere com uma refeita do zero");
+		Check(!W.IsCellVisible(0, 50, 50) && W.IsCellVisible(1, 50, 50), "cada time ve so o seu");
+		Check(W.IsCellExplored(0, 10, 10) && !W.IsCellExplored(0, 40, 40), "explorado = ja visto");
+		UnitView Enemy;
+		W.FindUnit(2, Enemy);
+		Check(!W.IsVisibleTo(0, Enemy.Pos), "o inimigo longe esta escondido");
+
+		// andar: o lugar de antes fica explorado, mas não mais à vista
+		Command G;
+		G.Type = CommandType::SetGroup;
+		G.Units = { 1 };
+		Command M;
+		M.Type = CommandType::Move;
+		M.Point = W.Map().CellCenter(Cell{ 40, 10 });
+		StepWith(W, { G, M });
+		for (int32_t T = 0; T < 30 * TicksPerSecond; ++T)
+		{
+			StepWith(W, {});
+		}
+		UnitView Me;
+		W.FindUnit(1, Me);
+		const Cell Now = W.Map().CellOf(Me.Pos);
+		std::printf("  o tanque foi pra celula (%d, %d)\n", Now.X, Now.Y);
+		Check(Now.X >= 38, "o tanque andou");
+		Check(!W.IsCellVisible(0, 10, 10) && W.IsCellExplored(0, 10, 10), "o lugar de onde saiu ficou explorado e escuro");
+		Check(W.IsCellVisible(0, Now.X, Now.Y), "ve onde esta agora");
+		Check(W.VisionSelfCheck(), "a visao confere depois de andar");
+
+		// ordem de atacar o que sumiu na névoa: vira ataque andando até onde ele está
+		Command A;
+		A.Type = CommandType::Attack;
+		A.Target = 2;
+		StepWith(W, { A });
+		W.FindUnit(1, Me);
+		W.FindUnit(2, Enemy);
+		Check(Me.Order == OrderType::AttackMove && Me.OrderPoint == Enemy.Pos, "atacar o que nao se ve vira ataque andando ate la");
+
+		// desligar a névoa pelo comando: o inimigo aparece pra todos, e o hash muda
+		const uint64_t Before = W.StateHash();
+		Command Off;
+		Off.Type = CommandType::SetFog;
+		Off.Target = 0;
+		StepWith(W, { Off });
+		W.FindUnit(2, Enemy);
+		Check(!W.IsFogOfWar() && W.IsVisibleTo(0, Enemy.Pos), "SetFog 0 desliga a nevoa");
+		Check(W.StateHash() != Before, "o liga/desliga entra na impressao digital");
+		Command A2 = A;
+		StepWith(W, { A2 });
+		W.FindUnit(1, Me);
+		Check(Me.Order == OrderType::Attack, "sem nevoa a ordem de atacar vale");
+
+		// o comando viaja em bytes
+		ByteWriter BW;
+		Off.Tick = 9;
+		WriteCommand(BW, Off);
+		ByteReader BR(BW.Bytes.data(), BW.Bytes.size());
+		Command Back;
+		Check(ReadCommand(BR, Back) && Back.Type == CommandType::SetFog && Back.Target == 0 && Back.Tick == 9, "SetFog ida e volta em bytes");
+		BW.Bytes.back() = 2;
+		ByteReader Bad(BW.Bytes.data(), BW.Bytes.size());
+		Check(!ReadCommand(Bad, Back), "SetFog com valor 2 e recusado");
+
+		// sem a permissão de depuração na montagem, o SetFog não faz nada
+		World W5;
+		MatchSetup S5 = TwoTankSetup(Cell{ 10, 10 }, Cell{ 50, 50 }, true);
+		S5.bAllowDebugCommands = false;
+		W5.Init(S5);
+		Command Off5;
+		Off5.Type = CommandType::SetFog;
+		Off5.Target = 0;
+		StepWith(W5, { Off5 });
+		Check(W5.IsFogOfWar(), "online (sem depuracao) o SetFog e ignorado");
+
+		// time fora das vagas: a montagem é recusada (a grade de visão é por time)
+		World W6;
+		MatchSetup S6 = TwoTankSetup(Cell{ 10, 10 }, Cell{ 50, 50 }, true);
+		S6.Players[1].Team = 200;
+		Check(!W6.Init(S6), "time 200 e recusado");
+
+		// a visão de quem morre fica 1 s e depois sai
+		World W4;
+		MatchSetup S4 = TwoTankSetup(Cell{ 30, 30 }, Cell{ 38, 30 }, true);
+		S4.Players[0].Units.push_back(S4.Players[0].Units[0]);
+		S4.Players[0].Units.back().Pos = S4.Map.CellCenter(Cell{ 30, 32 });
+		S4.Players[0].Units.push_back(S4.Players[0].Units[0]);
+		S4.Players[0].Units.back().Pos = S4.Map.CellCenter(Cell{ 30, 28 });
+		W4.Init(S4);
+		TickNumber Died = 0;
+		Vec2 DeathAt;
+		for (int32_t T = 0; T < 120 * TicksPerSecond && Died == 0; ++T)
+		{
+			StepWith(W4, {});
+			for (const SimEvent& E : W4.LastEvents())
+			{
+				if (E.Type == EventType::UnitDied && E.Value == 1)
+				{
+					Died = W4.Tick();
+					DeathAt = E.Point;
+				}
+			}
+		}
+		Check(Died > 0, "o tanque sozinho morreu");
+		Check(W4.VisionSelfCheck(), "a visao confere depois da batalha");
+		const Cell DC = W4.Map().CellOf(DeathAt);
+		const Cell Far{ std::min(DC.X + 9, 63), DC.Y };
+		const bool bRightAfter = W4.IsCellVisible(1, Far.X, Far.Y);
+		for (int32_t T = 0; T < TicksPerSecond + 2; ++T)
+		{
+			StepWith(W4, {});
+		}
+		const bool bLater = W4.IsCellVisible(1, Far.X, Far.Y);
+		std::printf("  morte no passo %u: o time dele ainda ve logo depois %d, 1 s depois %d\n", Died, int(bRightAfter), int(bLater));
+		Check(bRightAfter && !bLater, "a visao do morto fica 1 s e sai");
+	}
+
+	void TestFogBattle()
+	{
+		// a batalha 12 × 12 com névoa: ninguém atira no que o time não vê, e a visão incremental
+		// bate com uma refeita do zero a cada segundo
+		std::printf("[batalha com nevoa]\n");
+		MatchSetup S = MakeBattle(42, 12);
+		Check(S.bFogOfWar, "a batalha de teste roda com nevoa");
+		World W;
+		W.Init(S);
+		std::vector<SkirmishAI> Brains = { SkirmishAI(0), SkirmishAI(1) };
+		CommandScheduler Queue(1);
+		int32_t Shots = 0;
+		int32_t Blind = 0;
+		int32_t Checks = 0;
+		int32_t BadChecks = 0;
+		for (int32_t T = 0; T < 120 * TicksPerSecond && !W.IsMatchOver(); ++T)
+		{
+			for (SkirmishAI& B : Brains)
+			{
+				std::vector<Command> Out;
+				B.Think(W, Out);
+				for (const Command& C : Out)
+				{
+					Queue.Issue(C, W.Tick());
+				}
+			}
+			W.Step(Queue.TakeFor(W.Tick()));
+			for (const SimEvent& E : W.LastEvents())
+			{
+				if (E.Type != EventType::WeaponFired)
+				{
+					continue;
+				}
+				++Shots;
+				UnitView Shooter;
+				UnitView Target;
+				if (W.FindUnit(E.Source, Shooter) && W.FindUnit(E.Target, Target) && !W.IsVisibleTo(Shooter.Owner, Target.Pos))
+				{
+					++Blind;
+				}
+			}
+			if (W.Tick() % TicksPerSecond == 0)
+			{
+				++Checks;
+				BadChecks += W.VisionSelfCheck() ? 0 : 1;
+			}
+		}
+		std::printf("  %d tiros, %d em alvo invisivel; %d conferencias da visao, %d erradas\n", Shots, Blind, Checks, BadChecks);
+		Check(Shots > 0 && Blind == 0, "nenhum tiro em alvo que o time nao ve");
+		Check(Checks > 0 && BadChecks == 0, "a visao incremental bate com a refeita");
+	}
+
 	struct BattleResult
 	{
 		std::vector<uint64_t> Hashes;
@@ -553,6 +764,8 @@ int main(int Argc, char** Argv)
 	TestFuzz();
 	TestSpawn();
 	TestGroupSlots();
+	TestVision();
+	TestFogBattle();
 	const uint64_t Final = TestBattle();
 	if (bScale)
 	{

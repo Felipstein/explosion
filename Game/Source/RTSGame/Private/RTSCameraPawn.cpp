@@ -1,6 +1,8 @@
 #include "RTSCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Engine/World.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
@@ -42,6 +44,25 @@ void ARTSCameraPawn::FocusOn(const FVector2D& Cm)
 	Pitch = DefaultPitchDeg;
 	HeightM = TargetHeightM = DefaultHeightM;
 	UpdateCamera(0.0f);
+}
+
+void ARTSCameraPawn::JumpTo(const FVector2D& Cm)
+{
+	bGliding = false;
+	Focus = FVector(FMath::Clamp(Cm.X, BoundsCm.Min.X, BoundsCm.Max.X), FMath::Clamp(Cm.Y, BoundsCm.Min.Y, BoundsCm.Max.Y), 0.0);
+	SmoothedGroundZ = GroundZ(FVector2D(Focus.X, Focus.Y));
+	UpdateCamera(0.0f);
+}
+
+void ARTSCameraPawn::SetFogExposureFix(bool bOn)
+{
+	FPostProcessSettings& P = Camera->PostProcessSettings;
+	P.bOverride_LocalExposureBlurredLuminanceBlend = bOn;
+	float Blend = 0.0f;
+	// A/B com o visual aprovado: -RTSLEBlend=0.6 volta o padrão da Unreal
+	FParse::Value(FCommandLine::Get(), TEXT("-RTSLEBlend="), Blend);
+	P.LocalExposureBlurredLuminanceBlend = Blend;
+	Camera->PostProcessBlendWeight = 1.0f;
 }
 
 void ARTSCameraPawn::ApplyInput(const FInput& In, float DeltaSeconds)
