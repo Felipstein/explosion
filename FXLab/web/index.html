@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FXLab: fogo da carcaça</title>
+<style>
+  :root { --bg: #14110f; --panel: rgba(20, 17, 15, 0.82); --text: #efe6da; --dim: #a89c8e; --accent: #ffb35c; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  #panel { position: fixed; top: 10px; left: 10px; background: var(--panel); padding: 10px 12px; border-radius: 8px; width: 250px; }
+  #panel h1 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+  #panel .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  #panel button { background: #3a2f27; color: var(--text); border: 1px solid #5a4a3c; border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  #panel button.on { background: var(--accent); color: #1a1410; }
+  #panel label { display: grid; grid-template-columns: 92px 1fr 38px; align-items: center; gap: 6px; color: var(--dim); margin: 3px 0; }
+  #panel input[type=range] { width: 100%; }
+  #stats { color: var(--dim); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  #ref { position: fixed; right: 10px; bottom: 10px; width: 28vw; min-width: 220px; border: 1px solid #5a4a3c; border-radius: 6px; background: #000; }
+  #ref video { width: 100%; display: block; border-radius: 6px; }
+  #ref span { position: absolute; left: 6px; top: 4px; color: #ffe27a; font-size: 11px; text-shadow: 0 0 3px #000; }
+  #msg { position: fixed; left: 50%; top: 45%; transform: translate(-50%, -50%); color: var(--dim); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<div id="msg">carregando…</div>
+<div id="panel">
+  <h1>Fogo da carcaça · 6-way</h1>
+  <div class="row">
+    <button data-cam="rts" class="on">câmera RTS</button>
+    <button data-cam="low">baixa</button>
+    <button id="pause">pausar</button>
+    <button id="slow">0.25×</button>
+    <button id="save">salvar ajuste</button>
+  </div>
+  <div id="sliders"></div>
+  <div id="stats"></div>
+</div>
+<div id="ref"><span>vídeo (alvo)</span><video id="refv" muted playsinline></video></div>
+<script type="module" src="fxlab.js"></script>
+</body>
+</html>

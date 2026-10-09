@@ -44,3 +44,13 @@ Game/Content/Units/
 Game/Content/Explosions/
 Game/Content/Materials/M_FireGlare.uasset
 Game/Content/Materials/M_FlashStar.uasset
+
+# FXLab (Unreal): o laboratório de explosões. Tudo do Content/ é refeito por
+# FXLab/Tools/fxlab.ps1 setup (cozimento de captures/, tanque e areia de fora do git)
+FXLab/Binaries/
+FXLab/Intermediate/
+FXLab/Saved/
+FXLab/DerivedDataCache/
+FXLab/Content/
+FXLab/.vs/
+FXLab/*.sln
