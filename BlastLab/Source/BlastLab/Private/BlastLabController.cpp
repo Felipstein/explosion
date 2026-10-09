@@ -1,5 +1,7 @@
 #include "BlastLabController.h"
 
+#include "BlastRaymarchSubsystem.h"
+
 #include "BlastLabCamera.h"
 #include "BlastLabEnvironment.h"
 #include "BlastLabGround.h"
@@ -217,6 +219,30 @@ AExplosionVolume* ABlastLabController::DetonateAt(const FVector& Ground)
 		return nullptr;
 	}
 	AExplosionVolume* E = Sim->Detonate(Ground, Sim->SelectedWeapon);
+	// a comparação lado a lado (-RmCompare=1): a gêmea 40 m à direita na tela, com
+	// o mesmo tamanho, relógio e semente; a do clique toca a gravação de 96, a
+	// gêmea a de 128 (só a variante 0 existe em 128: as duas tocam a v0)
+	if (E && UBlastRaymarchSubsystem::CompareMode())
+	{
+		const FVector Right = PlayerCameraManager ? FRotationMatrix(PlayerCameraManager->GetCameraRotation()).GetScaledAxis(EAxis::Y) : FVector::RightVector;
+		FVector P = Ground + FVector(Right.X, Right.Y, 0.0).GetSafeNormal() * 4000.0 * FMath::Max(E->SizeScale, 1.0f);
+		P.Z = BlastLabGround::HeightAt(GetWorld(), P.X, P.Y);
+		if (AExplosionVolume* Twin = Sim->Detonate(P, Sim->SelectedWeapon))
+		{
+			Twin->Bake = E->Bake;            // a mesma gravação da Unreal: a mesma luz do fogo e a mesma sombra no chão
+			Twin->SizeScale = E->SizeScale;
+			Twin->TimeScale = E->TimeScale;
+			Twin->Seed = E->Seed;
+			Twin->Thickness = E->Thickness;
+			Twin->RaymarchBakeRes = 128;
+		}
+		E->RaymarchBakeRes = 96;
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(424242, 30.0f, FColor::Yellow,
+				TEXT("COMPARACAO: onde voce clicou = gravacao 96 (a atual)   |   40 m a direita = gravacao 128 (a nova)"));
+		}
+	}
 	if (E && bAutoWatch && !AutoExplosion)
 	{
 		AutoExplosion = E;
@@ -526,6 +552,14 @@ void ABlastLabController::TickAutoTest(float RealDt)
 					UE_LOG(LogTemp, Display, TEXT("AUTOTEST aim %s missed the ground"), *Aim);
 				}
 				UE_LOG(LogTemp, Display, TEXT("AUTOTEST aim %s ground %s"), *Aim, *Ground.ToString());
+			}
+			// -AutoSeed=<n>: o mesmo sorteio (gravação, tamanho, semente do ruído) em
+			// todas as rodadas: antes/depois com a mesma explosão
+			int32 AutoSeed = 0;
+			if (FParse::Value(FCommandLine::Get(), TEXT("AutoSeed="), AutoSeed))
+			{
+				FMath::RandInit(AutoSeed);
+				FMath::SRandInit(AutoSeed);
 			}
 			AutoExplosion = DetonateAt(Ground);
 			// onde ela cai na tela e quantos pixels valem 10 m ali (Tools/strip.py

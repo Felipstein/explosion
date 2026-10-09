@@ -56,6 +56,22 @@ como passo próprio depois do TSR e antes do bloom:
   não aparece no novo; o "pente" na borda do corte do B-2 já existia no volume
   antigo (é o desenho da deformação de 06/10); `-RmDetail2=` (2ª oitava do
   detalhe, a do ultra do WebGL) não mudou nada visível e fica desligada.
+- **A fumaça macia de perto (08–09/10).** Ficou: as **bolhas de perto** (Worley
+  que anda com a fumaça, só na fase quente e só com o voxel ≥ ~3 px na tela;
+  Nubis Cubed, Schneider 2023), sutis, +0.1 ms; `-RmDetail=0` desliga. Ficou
+  também a **comparação lado a lado no app** (`-RmCompare=1`: cada detonação
+  ganha uma gêmea 40 m à direita tocando a gravação 128³, `r128_v0.bin`) e as
+  explosões com gravações de tamanhos diferentes no mesmo quadro. Testado e
+  **sem ganho visível**: a gravação 128³ (o Felipe: "não senti diferença"),
+  afiar a borda (`-RmSharp`, tirava o contorno escuro da fuligem), e a sombra
+  fina de 0.4 m entre os rolos (um 2º cache de luz, Nubis 2015; mudava a sombra
+  em ~5% dos pixels, a fuligem escura escondia) com as oitavas de sombra de
+  verdade (só escureciam): retirados. Conclusão medida: a maciez vem da FORMA
+  gravada (a simulação do WebGL a 0.4 m espalha os redemoinhos pequenos), não da
+  luz nem da tela. Próximo (o Felipe, 09/10): **mudar quem grava**.
+- **Pra lembrar (o Felipe, 08/10):** comparar a mesma explosão gravada em 4
+  fontes (o simulador do WebGL, o mesmo simulador portado pra Unreal, o
+  EmberGen e o Houdini), todas tocadas no raymarch dentro do jogo, lado a lado.
 - Depuração: `-RmTerms=sol,céu,fogo,emissão`, `-RmDebug=1|2|3` (transmitância
   até o sol / fogo / céu), `-RmRes=` (resolução da marcha), `-RmTemporal=` (peso
   do quadro novo; 1 = sem acúmulo), `-RmLightCaches=`, `-RmSteps=`. E no teste

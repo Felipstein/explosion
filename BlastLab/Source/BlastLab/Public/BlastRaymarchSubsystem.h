@@ -29,6 +29,9 @@ public:
 	/** Esta explosão é desenhada pelo raymarch (o volume da Unreal fica escondido). */
 	static bool Handles(const AExplosionVolume* E);
 
+	/** -RmCompare=1: cada clique detona duas iguais, a de 96 e a de 128 do lado (o teste do Felipe). */
+	static bool CompareMode();
+
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;
@@ -41,9 +44,15 @@ public:
 private:
 	TSharedPtr<FBlastRaymarchExtension, ESPMode::ThreadSafe> Extension;
 	BlastRaymarch::FBakeRef Bakes[3];
+	/** A gravação de 128 (só a variante 0: o navegador não grava as três nela). */
+	BlastRaymarch::FBakeRef Bake128;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture> Noise;
+
+	/** As bolhas do detalhe de perto (Worley 128³, make_noise.py). */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture> Worley;
 
 	struct FSlot
 	{

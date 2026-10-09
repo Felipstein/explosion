@@ -32,9 +32,11 @@
 #define FUEL_F 1.0
 
 // ---- grades (BlastRaymarch.cpp) -------------------------------------------
-float Res;            // voxels da gravação por eixo (96)
-float FuelRes;        // combustível + velocidade (48)
-float MacroRes;       // ocupação macro (24)
+// o tamanho de uma vaga do pool (a maior gravação carregada); cada explosão diz
+// o tamanho da gravação dela (InstRes) e os dados ficam no canto da vaga
+float Res;            // voxels da vaga por eixo (96 ou 128)
+float FuelRes;        // combustível + velocidade (metade)
+float MacroRes;       // ocupação macro (um quarto)
 float LCRes;          // cache de luz (48)
 float Domain;         // m locais (38)
 float Slots;          // quadros no pool
@@ -51,6 +53,18 @@ Texture2D<float4> BlackBody;  // rgb normalizado (luminância 1), a = luminânci
 // gravado): D em m locais no rgb, a fração recortada (o túnel) no alfa. A
 // gravação é lida no ponto y = x − D(x), o mapa característico (Tessendorf &
 // Pelfrey; o "rest field" do Houdini), como no material do volume da Unreal.
+// O detalhe fino de perto (Nubis Cubed, Schneider SIGGRAPH 2023: a densidade
+// grossa ganha bolhas de ruído na casca, as mais finas só com a câmera perto):
+// Worley 1 − F1 periódico 128³ (make_noise.py), 4/8/16/32 células por ladrilho
+Texture3D<float4> Worley;
+float DetailErode;    // modulação da densidade na casca (± fração); 0 = sem detalhe
+float DetailTemp;     // a mesma modulação na temperatura (crostas frias na frente do fogo)
+float DetailPeriod;   // ciclo das bolhas (s): curto o bastante pra elas não esticarem na bola que sobe
+// A borda afiada (Nubis Cubed: o pow() que afia as densidades baixas depois da
+// erosão): abaixo de SharpRef a densidade cai como (d/ref)^SharpPow, então a casca
+// semitransparente de ~1 m vira um contorno curto e as bolhas da casca ganham borda
+float SharpPow;       // 0 = sem
+float SharpRef;       // densidade (unidades da fuligem) abaixo da qual afia
 Texture3D<float4> Warp0;
 Texture3D<float4> Warp1;
 Texture3D<float4> Warp2;
@@ -107,6 +121,8 @@ float4 InstBoxMax[MAX_INSTANCES];
 float4 InstFirePos[MAX_INSTANCES]; // luz do fogo gravada (m, relativo à câmera)
 float4 InstFireCol[MAX_INSTANCES]; // cor dela, unidades do WebGL (já × escala²)
 float4 InstLook[MAX_INSTANCES];    // cor da fuligem.rgb, albedo dela (a nuclear muda com o tempo: instances.js _nukeLook)
+float4 InstDetail[MAX_INSTANCES];
+float4 InstRes[MAX_INSTANCES];     // a gravação desta: voxels, combustível, macro (96/48/24 ou 128/64/32)  // o detalhe fino de perto: força das bolhas de 1.2 / 0.6 / 0.3 m, peso da fase quente
 
 // ---- tela -----------------------------------------------------------------------
 float4x4 ClipToCamera;   // clip (sem jitter) → mundo relativo à câmera (cm)
@@ -202,6 +218,15 @@ void InitLights()
 	SkyColor = max(I0 + I1 + I2, 0.0) * View.SkyLightColor.rgb / RadianceScale;
 }
 
+// a resolução da gravação da explosão sendo marchada (UseRes no começo de cada uma)
+static float GRes, GFuelRes, GMacroRes;
+void UseRes(int I)
+{
+	GRes = InstRes[I].x;
+	GFuelRes = InstRes[I].y;
+	GMacroRes = InstRes[I].z;
+}
+
 // =============================================================================
 // a gravação (js/bake.js glsl(), instances.js BAKE_HELPERS)
 
@@ -219,24 +244,24 @@ float3 PoolSize(float N) { return float3(N, N * SlotsY, N * ceil(Slots / SlotsY)
 // um quadro da gravação no voxel p (trilinear, sem vazar pro slot vizinho)
 float4 SampleA(float3 P, float Slot)
 {
-	P.yz = clamp(P.yz, 0.5, Res - 0.5);
+	P = clamp(P, 0.5, GRes - 0.5);
 	return PoolA.SampleLevel(LinearClamp, (P + SlotBase(Slot, Res)) / PoolSize(Res), 0);
 }
 
 // esvaecimento junto ao teto e às laterais da caixa gravada (o chão é chão de verdade)
 float BoxFade(float3 Vb)
 {
-	const float Top = smoothstep(0.0, Res * 0.2, Res - Vb.z);
-	const float Side = smoothstep(0.0, 5.0, min(min(Vb.x, Res - Vb.x), min(Vb.y, Res - Vb.y)));
+	const float Top = smoothstep(0.0, GRes * 0.2, GRes - Vb.z);
+	const float Side = smoothstep(0.0, 5.0 * GRes / 96.0, min(min(Vb.x, GRes - Vb.x), min(Vb.y, GRes - Vb.y)));
 	return Top * Side;
 }
 
 // velocidade (m/s, local) no voxel da gravação: bilinear na fatia z mais próxima
 float3 BakeVel(float3 VoxB, float Slot)
 {
-	float3 P = VoxB * (FuelRes / Res);
-	P.y = clamp(P.y, 0.5, FuelRes - 0.5);
-	P.z = clamp(floor(P.z), 0.0, FuelRes - 1.0) + 0.5;
+	float3 P = VoxB * (GFuelRes / GRes);
+	P.xy = clamp(P.xy, 0.5, GFuelRes - 0.5);
+	P.z = clamp(floor(P.z), 0.0, GFuelRes - 1.0) + 0.5;
 	const float3 Uvw = (P + SlotBase(Slot, FuelRes)) / PoolSize(FuelRes);
 	return (PoolF.SampleLevel(LinearClamp, Uvw, 0).gba * 2.0 - 1.0) * VelMax;
 }
@@ -244,13 +269,13 @@ float3 BakeVel(float3 VoxB, float Slot)
 float FuelAt(float3 VoxF, float Slot)
 {
 	float3 P = VoxF;
-	P.yz = clamp(P.yz, 0.5, FuelRes - 0.5);
+	P = clamp(P, 0.5, GFuelRes - 0.5);
 	return PoolF.SampleLevel(LinearClamp, (P + SlotBase(Slot, FuelRes)) / PoolSize(FuelRes), 0).r;
 }
 
 float SampleFuel(float3 Lp, int I)
 {
-	const float3 P = ToVoxel(Lp, FuelRes);
+	const float3 P = ToVoxel(Lp, GFuelRes);
 	const float Q = lerp(FuelAt(P, InstFrame[I].x), FuelAt(P, InstFrame[I].y), InstFrame[I].z);
 	return Q * Q * FUEL_F;
 }
@@ -269,22 +294,22 @@ float4 BakeAtMV(float3 Voxel, int I, float3 V, float Dith)
 
 float MacroAt(float3 Pm, float Slot)
 {
-	const int3 V = clamp(int3(floor(Pm)), 0, int(MacroRes) - 1);
+	const int3 V = clamp(int3(floor(Pm)), 0, int(GMacroRes) - 1);
 	return PoolM.Load(int4(V + int3(SlotBase(Slot, MacroRes)), 0));
 }
 
 // ocupação macro: o máximo dos dois quadros (o conteúdo no meio do intervalo está entre eles)
 float Macro2(float3 Lp, int I)
 {
-	const float3 Pm = ToVoxel(Lp, MacroRes);
+	const float3 Pm = ToVoxel(Lp, GMacroRes);
 	return max(MacroAt(Pm, InstFrame[I].x), MacroAt(Pm, InstFrame[I].y));
 }
 
 // distância (m locais) até sair do bloco macro atual
 float MacroExit(float3 Lp, float3 Dir)
 {
-	const float3 Vp = ToVoxel(Lp, MacroRes);
-	const float3 Dv = Dir * (MacroRes / Domain) + float3(abs(Dir) < 1e-8) * 1e-8;
+	const float3 Vp = ToVoxel(Lp, GMacroRes);
+	const float3 Dv = Dir * (GMacroRes / Domain) + float3(abs(Dir) < 1e-8) * 1e-8;
 	const float3 Nb = floor(Vp) + step(0.0, Dv);
 	const float3 Tb = (Nb - Vp) / Dv;
 	return max(min(min(Tb.x, Tb.y), Tb.z), 0.0);
@@ -328,16 +353,40 @@ float3 FlowNoise(float3 Lp, float3 Vel, float TSeq, float Seed, out float3 R2)
 	return R * rsqrt(max(W2, 1e-4));
 }
 
+// As bolhas (billows) que andam com a fumaça: o Worley levado pela velocidade em
+// duas fases, como o ruído de detalhe, mas num ciclo mais longo e com outro
+// deslocamento (Neyret 2003). Média zero e desvio 1 por oitava (os canais têm
+// média ~0.49 e desvio ~0.22, medidos): a explosão vista de longe não muda, só
+// ganha forma. Ladrilho de 9.6 m: G = 1.2 m, B = 0.6 m, A = 0.3 m.
+#define DETAIL_TILE_M 9.6
+float BillowDetail(float3 Lp, float3 Vel, float TSeq, float Seed, int I)
+{
+	const float3 Fd = InstDetail[I].xyz;
+	const float Ph = TSeq / DetailPeriod + 0.37;
+	float D = 0.0, W2 = 0.0;
+	[unroll] for (int K = 0; K < 2; K++)
+	{
+		const float Pk = Ph + 0.5 * K;
+		const float C = floor(Pk), Tk = Pk - C;
+		const float W = 1.0 - abs(2.0 * Tk - 1.0);
+		const float3 Off = Hash33(float3(C, K + 5.0, Seed)) * 3.0;
+		const float4 N = Worley.SampleLevel(LinearWrap, (Lp - Vel * (Tk * DetailPeriod)) / DETAIL_TILE_M + Off, 0);
+		D += W * (Fd.x * (N.g - 0.488) / 0.225 + 0.5 * Fd.y * (N.b - 0.494) / 0.223 + 0.25 * Fd.z * (N.a - 0.493) / 0.224);
+		W2 += W * W;
+	}
+	return D * rsqrt(max(W2, 1e-4));
+}
+
 // o meio num ponto local: r = fuligem, g = temperatura, b = poeira, a = transmitância do céu
 float4 SampleInst(float3 LpIn, int I, float Dith)
 {
 	// deformada: lê no ponto de onde a fumaça veio, e o túnel sai da densidade
 	const float4 Wp = WarpAt(I, LpIn);
 	const float3 Lp = LpIn - Wp.xyz;
-	const float3 Vel = BakeVel(ToVoxel(Lp, Res), InstFrame[I].x);
+	const float3 Vel = BakeVel(ToVoxel(Lp, GRes), InstFrame[I].x);
 	float3 N2;
 	const float3 N = FlowNoise(Lp, Vel, InstMisc[I].x, InstMisc[I].y, N2);
-	const float3 Voxel = ToVoxel(Lp + N * DetailAmp + N2 * DetailAmp2, Res);
+	const float3 Voxel = ToVoxel(Lp + N * DetailAmp + N2 * DetailAmp2, GRes);
 	float4 F = BakeAtMV(Voxel, I, Vel, Dith);
 	const float Nm = (N.x + N.y + N.z) * 0.577;
 	// o recorte sai primeiro onde o ruído é mais ralo: a borda do túnel sai rasgada (erosão do Nubis)
@@ -346,6 +395,22 @@ float4 SampleInst(float3 LpIn, int I, float Dith)
 	const float Er = Erode * (0.5 - 0.5 * Nm);
 	F.r = max(F.r - Er / (1.0 + F.r * 9.0), 0.0);
 	F.b = max(F.b - Er * 0.7 / (1.0 + F.b * 9.0), 0.0);
+	// as bolhas de perto: multiplicam a densidade que existe (não criam fumaça no
+	// ar), forte na casca rala e quase nada no miolo, só na fase quente (os rolos
+	// da bola de fogo; a fumaça velha fica com os fiapos do ruído acima)
+	if (InstDetail[I].x > 0.0 && InstDetail[I].w > 0.0 && F.r + F.b > 1e-4)
+	{
+		const float Bd = BillowDetail(Lp, Vel, InstMisc[I].x, InstMisc[I].y, I) * InstDetail[I].w;
+		F.r *= max(1.0 + DetailErode * Bd / (1.0 + F.r * 9.0), 0.0);
+		F.b *= max(1.0 + DetailErode * 0.7 * Bd / (1.0 + F.b * 9.0), 0.0);
+		F.g *= max(1.0 + DetailTemp * Bd, 0.0);
+	}
+	if (SharpPow > 0.0 && InstDetail[I].x > 0.0)
+	{
+		const float P = SharpPow * InstDetail[I].x;
+		F.r *= pow(saturate(F.r / SharpRef), P);
+		F.b *= pow(saturate(F.b / SharpRef), P);
+	}
 	return F;
 }
 
@@ -355,7 +420,7 @@ float4 SampleInst(float3 LpIn, int I, float Dith)
 float ExtAt(float3 LpIn, int I)
 {
 	const float4 Wp = WarpAt(I, LpIn);
-	const float3 Vb = ToVoxel(LpIn - Wp.xyz, Res);
+	const float3 Vb = ToVoxel(LpIn - Wp.xyz, GRes);
 	const float4 Q = lerp(SampleA(Vb, InstFrame[I].x), SampleA(Vb, InstFrame[I].y), InstFrame[I].z);
 	const float Fade = BoxFade(Vb);
 	const float S = Q.r * Q.r * SOOT_F * Fade, D = Q.b * Q.b * DUST_F * Fade;
@@ -420,6 +485,7 @@ void MainLightCache(uint3 Id : SV_DispatchThreadID)
 	}
 	InitLights();
 	const int I = LCInstance;
+	UseRes(I);
 	const float3 Lp = DomainMin() + (float3(Id) + 0.5) / LCRes * Domain;
 	float2 O = 1.0;
 	if (!MacroEmpty(Lp, I))
@@ -466,6 +532,7 @@ float SceneDist(float2 UvOut, float3 Rd)
 
 float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float DepthSum, inout float DepthW)
 {
+	UseRes(I);
 	float2 Hit = RayBox(0.0, Rd, InstBoxMin[I].xyz, InstBoxMax[I].xyz);
 	Hit.x = max(Hit.x, NearM);
 	Hit.y = min(Hit.y, TScene);
@@ -526,7 +593,7 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float Dep
 				* (SigSoot * (1.0 - InstLook[I].a));
 
 			// luz: do cache (marchado neste quadro) ou a transmitância do céu gravada
-			const float FadeM = BoxFade(ToVoxel(Lpw, Res));
+			const float FadeM = BoxFade(ToVoxel(Lpw, GRes));
 			const float SkyT = lerp(1.0, F.a, FadeM);
 			float SunT, FireT;
 			if (LcSlot >= 0.0)

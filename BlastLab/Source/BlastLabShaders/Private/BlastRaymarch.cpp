@@ -234,6 +234,14 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFirePos, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFireCol, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstLook, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstDetail, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstRes, [MaxInstances])
+	SHADER_PARAMETER(float, DetailErode)
+	SHADER_PARAMETER(float, DetailTemp)
+	SHADER_PARAMETER(float, DetailPeriod)
+	SHADER_PARAMETER(float, SharpPow)
+	SHADER_PARAMETER(float, SharpRef)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, Worley)
 	SHADER_PARAMETER(FMatrix44f, ClipToCamera)
 	SHADER_PARAMETER(FVector3f, CameraForward)
 	SHADER_PARAMETER(float, NearM)
@@ -297,6 +305,12 @@ namespace
 		return GraphBuilder.RegisterExternalTexture(CreateRenderTarget(Texture, Name));
 	}
 
+	/** Pixels por metro a 1 m da câmera, na altura da imagem de saída (o voxel na tela, pro detalhe de perto). */
+	float OutRectHeightForDetail(const FSceneView& View, const FIntRect& OutRect)
+	{
+		return float(OutRect.Height() * 0.5 * View.ViewMatrices.GetViewToClipNoAA().M[1][1]);
+	}
+
 	/** Os 8 cantos da caixa na tela: a fração da tela que ela cobre (0 se atrás da câmera ou fora). */
 	float ScreenFraction(const FSceneView& View, const FBox& Box)
 	{
@@ -331,37 +345,40 @@ FBlastRaymarchExtension::FBlastRaymarchExtension(const FAutoRegister& AutoRegist
 {
 }
 
-void FBlastRaymarchExtension::Submit_GameThread(TArray<FInstance>&& InInstances, TArray<FUpload>&& Uploads, FTextureResource* NoiseRes)
+void FBlastRaymarchExtension::Submit_GameThread(TArray<FInstance>&& InInstances, TArray<FUpload>&& Uploads, FTextureResource* NoiseRes,
+	FTextureResource* WorleyRes, const FIntVector& PoolRes)
 {
 	// a referência mantém a extensão viva até o comando rodar (o mundo pode fechar antes)
 	ENQUEUE_RENDER_COMMAND(BlastRaymarchSubmit)(
-		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), List = MoveTemp(InInstances), Ups = MoveTemp(Uploads), NoiseRes]
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), List = MoveTemp(InInstances), Ups = MoveTemp(Uploads), NoiseRes, WorleyRes, PoolRes]
 		(FRHICommandListImmediate& RHICmdList) mutable
 		{
-			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes);
+			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes, WorleyRes, PoolRes);
 		});
 }
 
-void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FInstance>&& List, const TArray<FUpload>& Ups, FTextureResource* NoiseRes)
+void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FInstance>&& List, const TArray<FUpload>& Ups, FTextureResource* NoiseRes,
+	FTextureResource* WorleyRes, const FIntVector& PoolRes)
 {
 	if (List.Num() || Ups.Num())
 	{
-		EnsurePools_RenderThread(RHICmdList, List.Num() ? *List[0].Bake : *Ups[0].Bake);
+		EnsurePools_RenderThread(RHICmdList, PoolRes);
 	}
 	for (const FUpload& U : Ups)
 	{
 		const FBakeData& B = *U.Bake;
-		if (B.Res != PoolDims.X || B.FuelRes != PoolDims.Y || B.MacroRes != PoolDims.Z || U.Slot < 0 || U.Slot >= MaxSlots)
+		if (B.Res > PoolDims.X || B.FuelRes > PoolDims.Y || B.MacroRes > PoolDims.Z || U.Slot < 0 || U.Slot >= MaxSlots)
 		{
-			continue;       // por enquanto um pool só, da resolução da Carga Pesada
+			continue;       // maior que a vaga: não cabe
 		}
-		// o slot s fica em y = (s % SlotsY)·N, z = (s / SlotsY)·N (BlastRaymarch.usf SlotBase)
+		// o slot s fica em y = (s % SlotsY)·N, z = (s / SlotsY)·N da VAGA (BlastRaymarch.usf SlotBase);
+		// uma gravação menor que a vaga ocupa o canto dela
 		const int32 Sy = U.Slot % SlotsY, Sz = U.Slot / SlotsY;
-		RHICmdList.UpdateTexture3D(PoolA.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * B.Res, Sz * B.Res, 0, 0, 0, B.Res, B.Res, B.Res),
+		RHICmdList.UpdateTexture3D(PoolA.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.X, Sz * PoolDims.X, 0, 0, 0, B.Res, B.Res, B.Res),
 			B.Res * 4, B.Res * B.Res * 4, B.FrameA(U.Frame));
-		RHICmdList.UpdateTexture3D(PoolF.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * B.FuelRes, Sz * B.FuelRes, 0, 0, 0, B.FuelRes, B.FuelRes, B.FuelRes),
+		RHICmdList.UpdateTexture3D(PoolF.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.Y, Sz * PoolDims.Y, 0, 0, 0, B.FuelRes, B.FuelRes, B.FuelRes),
 			B.FuelRes * 4, B.FuelRes * B.FuelRes * 4, B.FrameF(U.Frame));
-		RHICmdList.UpdateTexture3D(PoolM.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * B.MacroRes, Sz * B.MacroRes, 0, 0, 0, B.MacroRes, B.MacroRes, B.MacroRes),
+		RHICmdList.UpdateTexture3D(PoolM.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.Z, Sz * PoolDims.Z, 0, 0, 0, B.MacroRes, B.MacroRes, B.MacroRes),
 			B.MacroRes, B.MacroRes * B.MacroRes, B.FrameM(U.Frame));
 	}
 	for (FInstance& I : List)
@@ -370,11 +387,11 @@ void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHIC
 	}
 	Instances = MoveTemp(List);
 	Noise = NoiseRes ? NoiseRes->TextureRHI : nullptr;
+	Worley = WorleyRes ? WorleyRes->TextureRHI : nullptr;
 }
 
-void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FBakeData& Bake)
+void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims)
 {
-	const FIntVector Dims(Bake.Res, Bake.FuelRes, Bake.MacroRes);
 	if (PoolA.IsValid() && PoolDims == Dims)
 	{
 		return;
@@ -385,9 +402,9 @@ void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate&
 			.SetFlags(ETextureCreateFlags::ShaderResource)
 			.SetInitialState(ERHIAccess::SRVMask));
 	};
-	PoolA = Make(TEXT("BlastRaymarch.PoolA"), Bake.Res, PF_R8G8B8A8);
-	PoolF = Make(TEXT("BlastRaymarch.PoolF"), Bake.FuelRes, PF_R8G8B8A8);
-	PoolM = Make(TEXT("BlastRaymarch.PoolM"), Bake.MacroRes, PF_G8);
+	PoolA = Make(TEXT("BlastRaymarch.PoolA"), Dims.X, PF_R8G8B8A8);
+	PoolF = Make(TEXT("BlastRaymarch.PoolF"), Dims.Y, PF_R8G8B8A8);
+	PoolM = Make(TEXT("BlastRaymarch.PoolM"), Dims.Z, PF_G8);
 	if (!BlackBody.IsValid())
 	{
 		const TArray<FVector4f> Lut = BuildBlackBody();
@@ -434,9 +451,9 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	FBlastRaymarchParameters Base;
 	FMemory::Memzero(Base);
 	Base.View = View.ViewUniformBuffer;
-	Base.Res = float(B0.Res);
-	Base.FuelRes = float(B0.FuelRes);
-	Base.MacroRes = float(B0.MacroRes);
+	Base.Res = float(PoolDims.X);
+	Base.FuelRes = float(PoolDims.Y);
+	Base.MacroRes = float(PoolDims.Z);
 	Base.LCRes = float(LCRes);
 	Base.Domain = B0.Domain;
 	Base.Slots = float(MaxSlots);
@@ -486,6 +503,21 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		return T;
 	}();
 	Base.TermGain = Terms;
+	// o detalhe fino de perto: -RmDetail=0 desliga (comparação), -RmDetailTemp= a parte do fogo
+	static const float DetailErodeCfg = ParamOr(TEXT("RmDetail="), 0.5f);
+	static const float DetailTempCfg = ParamOr(TEXT("RmDetailTemp="), 0.04f);
+	// com 1 s as bolhas esticavam em riscos na bola que sobe rápido (o ruído é
+	// levado pela velocidade e a distorção cresce com |∇v|·ciclo; 08/10)
+	static const float DetailPeriodCfg = FMath::Max(ParamOr(TEXT("RmDetailPeriod="), 0.2f), 0.05f);
+	Base.DetailPeriod = DetailPeriodCfg;
+	static const float SharpPowCfg = ParamOr(TEXT("RmSharp="), 0.0f);
+	static const float SharpRefCfg = FMath::Max(ParamOr(TEXT("RmSharpRef="), 0.25f), 1e-3f);
+	Base.SharpPow = SharpPowCfg;
+	Base.SharpRef = SharpRefCfg;
+	const bool bDetail = Worley.IsValid() && DetailErodeCfg > 0.0f;
+	Base.DetailErode = DetailErodeCfg;
+	Base.DetailTemp = DetailTempCfg;
+	const float PixelsPerMeterAt1M = OutRectHeightForDetail(View, SceneColor.ViewRect);
 	static const int32 Debug = int32(ParamOr(TEXT("RmDebug="), 0.0f));
 	Base.DebugView = Debug;
 	Base.NearM = NearM;
@@ -558,6 +590,19 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			EmitGain = (1.0f - SootAlbedo) / (1.0f - Albedo);
 		}
 		Base.InstLook[N] = FVector4f(Look, Albedo);
+		Base.InstRes[N] = FVector4f(float(B.Res), float(B.FuelRes), float(B.MacroRes), 0.0f);
+		// cada oitava das bolhas entra quando o voxel da gravação (0.4 m na Carga
+		// Pesada) cobre pixels bastante pra ela aparecer sem chuviscar na marcha de
+		// meia resolução: 1.2 m a partir de ~3 px por voxel, 0.6 m de ~5, 0.3 m de
+		// ~11. Da câmera do RTS (< 2.5 px) fica desligado e não custa nada.
+		// Segunda opinião de 08/10 (agente), números do Nubis (Schneider 2015/2023).
+		if (bDetail)
+		{
+			const double DistM = FMath::Max(1.0, FMath::Sqrt(World.ComputeSquaredDistanceToPoint(CamCm)) * 0.01);
+			const float Px = float(B.Domain / B.Res * I.Scale * PixelsPerMeterAt1M / DistM);
+			const float Hot = 1.0f - FMath::SmoothStep(2.0f, 4.0f, B.TimeOfFrame(I.Frame));
+			Base.InstDetail[N] = FVector4f(FMath::SmoothStep(2.7f, 5.3f, Px), FMath::SmoothStep(5.3f, 10.7f, Px), FMath::SmoothStep(10.7f, 21.0f, Px), Hot);
+		}
 		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain, float(WarpSlot));
 		Base.InstBoxMin[N] = FVector4f(Rel(World.Min), 0.0f);
 		Base.InstBoxMax[N] = FVector4f(Rel(World.Max), 0.0f);
@@ -598,6 +643,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	FRDGTextureRef PoolMT = External(GraphBuilder, PoolM.GetReference(), TEXT("BlastRaymarch.PoolM"));
 	FRDGTextureRef NoiseT = External(GraphBuilder, Noise.GetReference(), TEXT("BlastRaymarch.Noise"));
 	FRDGTextureRef BlackBodyT = External(GraphBuilder, BlackBody.GetReference(), TEXT("BlastRaymarch.BlackBody"));
+	FRDGTextureRef WorleyT = Worley.IsValid() ? External(GraphBuilder, Worley.GetReference(), TEXT("BlastRaymarch.Worley")) : NoiseT;
 	// as que não têm deformação nunca leem o slot: o ruído fica no lugar
 	FRDGTextureRef WarpT[MaxWarps];
 	for (int32 w = 0; w < MaxWarps; ++w)
@@ -614,6 +660,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		P->PoolM = PoolMT;
 		P->Noise = NoiseT;
 		P->BlackBody = BlackBodyT;
+		P->Worley = WorleyT;
 		P->Warp0 = WarpT[0];
 		P->Warp1 = WarpT[1];
 		P->Warp2 = WarpT[2];

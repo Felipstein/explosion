@@ -83,18 +83,22 @@ public:
 	FBlastRaymarchExtension(const FAutoRegister& AutoRegister);
 
 	/** Do jogo: a lista do quadro (da mais perto pra mais longe), os quadros pra subir e o ruído. */
-	void Submit_GameThread(TArray<BlastRaymarch::FInstance>&& Instances, TArray<BlastRaymarch::FUpload>&& Uploads, FTextureResource* NoiseRes);
+	void Submit_GameThread(TArray<BlastRaymarch::FInstance>&& Instances, TArray<BlastRaymarch::FUpload>&& Uploads, FTextureResource* NoiseRes,
+		FTextureResource* WorleyRes = nullptr, const FIntVector& PoolRes = FIntVector(96, 48, 24));
 
 	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& View, FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
 
 private:
-	void Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<BlastRaymarch::FInstance>&& List, const TArray<BlastRaymarch::FUpload>& Ups, FTextureResource* NoiseRes);
+	void Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<BlastRaymarch::FInstance>&& List, const TArray<BlastRaymarch::FUpload>& Ups, FTextureResource* NoiseRes,
+		FTextureResource* WorleyRes, const FIntVector& PoolRes);
 	FScreenPassTexture Render_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs);
-	void EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const BlastRaymarch::FBakeData& Bake);
+	/** O pool no tamanho da maior gravação carregada (voxels, combustível, macro por vaga). */
+	void EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims);
 
 	// render thread
 	TArray<BlastRaymarch::FInstance> Instances;
 	TRefCountPtr<FRHITexture> Noise;      // a referência segura a textura mesmo se o recurso do UTexture for trocado
+	TRefCountPtr<FRHITexture> Worley;     // as bolhas do detalhe de perto (T_DetailWorley)
 	TRefCountPtr<FRHITexture> PoolA, PoolF, PoolM, BlackBody;
 	FIntVector PoolDims = FIntVector::ZeroValue;     // Res, FuelRes, MacroRes do pool
 	uint32 FrameCounter = 0;

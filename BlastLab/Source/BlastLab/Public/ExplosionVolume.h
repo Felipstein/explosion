@@ -192,6 +192,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	bool bHideVolume = false;
 
+	/** A gravação que o raymarch toca (0 = a padrão; 96 ou 128 na comparação lado a lado, -RmCompare=1). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	int32 RaymarchBakeRes = 0;
+
 	/** A bomba nuclear: a nuvem muda de marrom pra branca (o raymarch, BlastRaymarch.cpp). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	bool bNuclear = false;
