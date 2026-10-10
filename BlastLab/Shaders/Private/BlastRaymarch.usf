@@ -34,18 +34,26 @@
 // ---- grades (BlastRaymarch.cpp) -------------------------------------------
 // o tamanho de uma vaga do pool (a maior gravação carregada); cada explosão diz
 // o tamanho da gravação dela (InstRes) e os dados ficam no canto da vaga
-float Res;            // voxels da vaga por eixo (96 ou 128)
+float Res;            // voxels da vaga por eixo (a maior gravação carregada)
 float FuelRes;        // combustível + velocidade (metade)
 float MacroRes;       // ocupação macro (um quarto)
+float PTRes;          // tabela de blocos (um oitavo)
 float LCRes;          // cache de luz (48)
-float Domain;         // m locais (38)
 float Slots;          // quadros no pool
-float SlotsY;         // lado a lado em y (o resto empilhado em z: a textura 3D vai até 2048 por eixo)
+float SlotsY;         // lado a lado em y (o resto empilhado em z)
 float LCSlots;        // caches de luz no pool
 float VelMax;         // m/s
 
-Texture3D<float4> PoolA;      // RGBA8: √(fuligem/4), T/1.6, √(poeira/2.5), transmitância do céu
-Texture3D<float4> PoolF;      // RGBA8: combustível, velocidade (byte·2−1)·VelMax
+// A gravação em blocos esparsos (Tools/brm2.py, 09/10; o esquema do Sparse Volume
+// Texture da Unreal e do NanoVDB): cada quadro tem uma tabela com um bloco de 8³
+// voxels por entrada (o endereço dele no atlas, ou vazio), e os blocos com fumaça
+// ficam num atlas só, comum a todas as explosões, com 1 voxel de borda copiado do
+// vizinho (a filtragem trilinear não emenda errado entre blocos)
+Texture3D<uint> PoolPT;       // R32: x | y << 10 | z << 20 do bloco no atlas; 0xFFFFFFFF = vazio
+Texture3D<float4> AtlasA;     // RGBA8, blocos de 10³: √(fuligem/4), T/1.6, √(poeira/2.5), transmitância do céu
+Texture3D<float4> AtlasF;     // RGBA8, blocos de 6³ (meia resolução): combustível, velocidade (byte·2−1)·VelMax
+float3 AtlasASize;            // texels
+float3 AtlasFSize;
 Texture3D<float> PoolM;       // R8: ocupação macro
 Texture3D<float4> Noise;      // T_CurlNoise (ladrilha)
 Texture2D<float4> BlackBody;  // rgb normalizado (luminância 1), a = luminância relativa
@@ -121,8 +129,8 @@ float4 InstBoxMax[MAX_INSTANCES];
 float4 InstFirePos[MAX_INSTANCES]; // luz do fogo gravada (m, relativo à câmera)
 float4 InstFireCol[MAX_INSTANCES]; // cor dela, unidades do WebGL (já × escala²)
 float4 InstLook[MAX_INSTANCES];    // cor da fuligem.rgb, albedo dela (a nuclear muda com o tempo: instances.js _nukeLook)
-float4 InstDetail[MAX_INSTANCES];
-float4 InstRes[MAX_INSTANCES];     // a gravação desta: voxels, combustível, macro (96/48/24 ou 128/64/32)  // o detalhe fino de perto: força das bolhas de 1.2 / 0.6 / 0.3 m, peso da fase quente
+float4 InstDetail[MAX_INSTANCES];  // o detalhe fino de perto: força das bolhas de 1.2 / 0.6 / 0.3 m, peso da fase quente
+float4 InstRes[MAX_INSTANCES];     // a gravação desta: voxels, combustível, macro (96/48/24, 128/64/32, 192/96/48), domínio (m locais)
 
 // ---- tela -----------------------------------------------------------------------
 float4x4 ClipToCamera;   // clip (sem jitter) → mundo relativo à câmera (cm)
@@ -151,6 +159,32 @@ int LCInstance;
 int LCSlot;
 Texture3D<float2> PoolLC;      // sol, fogo
 RWTexture3D<float2> PoolLCOut;
+
+// ---- subida dos blocos pro atlas (o UpdateSparseVolumeTexture.usf da Unreal faz igual) ----
+StructuredBuffer<uint> BrickData;     // um RGBA8 por texel, bloco a bloco (z, y, x), como no arquivo
+StructuredBuffer<uint> BrickCoords;   // onde cada bloco vai no atlas: x | y << 10 | z << 20
+RWTexture3D<float4> AtlasOut;
+
+void ScatterBrick(uint K, uint3 L, uint Side)
+{
+	const uint C = BrickCoords[K];
+	const uint3 B = uint3(C & 1023u, (C >> 10u) & 1023u, (C >> 20u) & 1023u);
+	const uint V = BrickData[K * Side * Side * Side + (L.z * Side + L.y) * Side + L.x];
+	AtlasOut[B * Side + L] = float4(V & 255u, (V >> 8u) & 255u, (V >> 16u) & 255u, V >> 24u) / 255.0;
+}
+
+// um grupo por bloco
+[numthreads(10, 10, 10)]
+void MainScatterA(uint3 G : SV_GroupID, uint3 L : SV_GroupThreadID)
+{
+	ScatterBrick(G.x, L, 10u);
+}
+
+[numthreads(6, 6, 6)]
+void MainScatterF(uint3 G : SV_GroupID, uint3 L : SV_GroupThreadID)
+{
+	ScatterBrick(G.x, L, 6u);
+}
 
 // =============================================================================
 // utilidades (js/glsl.js)
@@ -218,34 +252,70 @@ void InitLights()
 	SkyColor = max(I0 + I1 + I2, 0.0) * View.SkyLightColor.rgb / RadianceScale;
 }
 
-// a resolução da gravação da explosão sendo marchada (UseRes no começo de cada uma)
-static float GRes, GFuelRes, GMacroRes;
+// a gravação da explosão sendo marchada (UseRes no começo de cada uma): as de
+// outros simuladores (build_raymarch_vdb.py) têm outra resolução e outro domínio
+static float GRes, GFuelRes, GMacroRes, GDomain;
 void UseRes(int I)
 {
 	GRes = InstRes[I].x;
 	GFuelRes = InstRes[I].y;
 	GMacroRes = InstRes[I].z;
+	GDomain = InstRes[I].w;
 }
+
+// O ruído de detalhe faz as vezes do que a gravação não guarda abaixo do voxel
+// (0.4 m na do WebGL): numa gravação mais fina ele encolhe junto, senão borra o
+// detalhe que ela já traz
+#define REF_VOXEL_M (38.0 / 96.0)
+float NoiseK() { return min(GDomain / GRes / REF_VOXEL_M, 1.0); }
 
 // =============================================================================
 // a gravação (js/bake.js glsl(), instances.js BAKE_HELPERS)
 
-float3 DomainMin() { return float3(-0.5 * Domain, -0.5 * Domain, 0.0); }
-float3 ToVoxel(float3 Lp, float N) { return (Lp - DomainMin()) / Domain * N; }
+float3 DomainMin() { return float3(-0.5 * GDomain, -0.5 * GDomain, 0.0); }
+float3 ToVoxel(float3 Lp, float N) { return (Lp - DomainMin()) / GDomain * N; }
 
-// o canto do slot no pool (em voxels de uma grade de N) e o tamanho do pool
+// o canto do slot no pool (em voxels de uma grade de N)
 float3 SlotBase(float Slot, float N)
 {
 	const float Sz = floor(Slot / SlotsY + 1e-3);
 	return float3(0.0, (Slot - Sz * SlotsY) * N, Sz * N);
 }
-float3 PoolSize(float N) { return float3(N, N * SlotsY, N * ceil(Slots / SlotsY)); }
 
-// um quadro da gravação no voxel p (trilinear, sem vazar pro slot vizinho)
+// O bloco do quadro (no slot) que contém o voxel p de uma grade em que o bloco
+// tem Side voxels (8 na resolução cheia, 4 na metade): onde ele está no atlas e
+// a posição de p dentro dele. Falso = bloco vazio (sem fumaça).
+#define BRICK 8.0
+bool BrickOf(float3 P, float Slot, float Side, float GridRes, out float3 Atlas, out float3 Local)
+{
+	const float3 Page = clamp(floor(P / Side), 0.0, GridRes / Side - 1.0);
+	const uint E = PoolPT.Load(int4(int3(Page + SlotBase(Slot, PTRes)), 0));
+	Atlas = float3(E & 1023u, (E >> 10u) & 1023u, (E >> 20u) & 1023u);
+	Local = P - Page * Side;
+	return E != 0xFFFFFFFFu;
+}
+
+// um quadro da gravação no voxel p (trilinear; a borda do bloco tem o vizinho)
 float4 SampleA(float3 P, float Slot)
 {
 	P = clamp(P, 0.5, GRes - 0.5);
-	return PoolA.SampleLevel(LinearClamp, (P + SlotBase(Slot, Res)) / PoolSize(Res), 0);
+	float3 B, L;
+	if (!BrickOf(P, Slot, BRICK, GRes, B, L))
+	{
+		return 0.0;
+	}
+	return AtlasA.SampleLevel(LinearClamp, (B * (BRICK + 2.0) + 1.0 + L) / AtlasASize, 0);
+}
+
+// a meia resolução (combustível, velocidade): bloco de 4³ + borda; vazio = parado, sem combustível
+float4 SampleF(float3 P, float Slot)
+{
+	float3 B, L;
+	if (!BrickOf(P, Slot, BRICK * 0.5, GFuelRes, B, L))
+	{
+		return float4(0.0, 0.5, 0.5, 0.5);
+	}
+	return AtlasF.SampleLevel(LinearClamp, (B * (BRICK * 0.5 + 2.0) + 1.0 + L) / AtlasFSize, 0);
 }
 
 // esvaecimento junto ao teto e às laterais da caixa gravada (o chão é chão de verdade)
@@ -262,15 +332,12 @@ float3 BakeVel(float3 VoxB, float Slot)
 	float3 P = VoxB * (GFuelRes / GRes);
 	P.xy = clamp(P.xy, 0.5, GFuelRes - 0.5);
 	P.z = clamp(floor(P.z), 0.0, GFuelRes - 1.0) + 0.5;
-	const float3 Uvw = (P + SlotBase(Slot, FuelRes)) / PoolSize(FuelRes);
-	return (PoolF.SampleLevel(LinearClamp, Uvw, 0).gba * 2.0 - 1.0) * VelMax;
+	return (SampleF(P, Slot).gba * 2.0 - 1.0) * VelMax;
 }
 
 float FuelAt(float3 VoxF, float Slot)
 {
-	float3 P = VoxF;
-	P = clamp(P, 0.5, GFuelRes - 0.5);
-	return PoolF.SampleLevel(LinearClamp, (P + SlotBase(Slot, FuelRes)) / PoolSize(FuelRes), 0).r;
+	return SampleF(clamp(VoxF, 0.5, GFuelRes - 0.5), Slot).r;
 }
 
 float SampleFuel(float3 Lp, int I)
@@ -309,7 +376,7 @@ float Macro2(float3 Lp, int I)
 float MacroExit(float3 Lp, float3 Dir)
 {
 	const float3 Vp = ToVoxel(Lp, GMacroRes);
-	const float3 Dv = Dir * (GMacroRes / Domain) + float3(abs(Dir) < 1e-8) * 1e-8;
+	const float3 Dv = Dir * (GMacroRes / GDomain) + float3(abs(Dir) < 1e-8) * 1e-8;
 	const float3 Nb = floor(Vp) + step(0.0, Dv);
 	const float3 Tb = (Nb - Vp) / Dv;
 	return max(min(min(Tb.x, Tb.y), Tb.z), 0.0);
@@ -322,7 +389,7 @@ float4 WarpAt(int I, float3 Lp)
 	{
 		return 0.0;
 	}
-	const float3 Uvw = saturate((Lp - DomainMin()) / Domain);
+	const float3 Uvw = saturate((Lp - DomainMin()) / GDomain);
 	return Slot < 0.5 ? Warp0.SampleLevel(LinearClamp, Uvw, 0) : Slot < 1.5 ? Warp1.SampleLevel(LinearClamp, Uvw, 0)
 		: Slot < 2.5 ? Warp2.SampleLevel(LinearClamp, Uvw, 0) : Warp3.SampleLevel(LinearClamp, Uvw, 0);
 }
@@ -386,7 +453,7 @@ float4 SampleInst(float3 LpIn, int I, float Dith)
 	const float3 Vel = BakeVel(ToVoxel(Lp, GRes), InstFrame[I].x);
 	float3 N2;
 	const float3 N = FlowNoise(Lp, Vel, InstMisc[I].x, InstMisc[I].y, N2);
-	const float3 Voxel = ToVoxel(Lp + N * DetailAmp + N2 * DetailAmp2, GRes);
+	const float3 Voxel = ToVoxel(Lp + (N * DetailAmp + N2 * DetailAmp2) * NoiseK(), GRes);
 	float4 F = BakeAtMV(Voxel, I, Vel, Dith);
 	const float Nm = (N.x + N.y + N.z) * 0.577;
 	// o recorte sai primeiro onde o ruído é mais ralo: a borda do túnel sai rasgada (erosão do Nubis)
@@ -443,7 +510,7 @@ float MacroSkip(float3 Lp, float3 Dir, int I, float Dt)
 
 float MarchLight(float3 Lp, float3 Dir, float MaxDist, int Steps, float TauCap, int I)
 {
-	float2 Hit = RayBox(Lp, Dir, DomainMin(), DomainMin() + Domain);
+	float2 Hit = RayBox(Lp, Dir, DomainMin(), DomainMin() + GDomain);
 	Hit.x = max(Hit.x, 0.0);
 	Hit.y = min(Hit.y, MaxDist);
 	if (Hit.y <= Hit.x)
@@ -486,7 +553,7 @@ void MainLightCache(uint3 Id : SV_DispatchThreadID)
 	InitLights();
 	const int I = LCInstance;
 	UseRes(I);
-	const float3 Lp = DomainMin() + (float3(Id) + 0.5) / LCRes * Domain;
+	const float3 Lp = DomainMin() + (float3(Id) + 0.5) / LCRes * GDomain;
 	float2 O = 1.0;
 	if (!MacroEmpty(Lp, I))
 	{

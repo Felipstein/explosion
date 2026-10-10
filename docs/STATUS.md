@@ -69,9 +69,35 @@ como passo próprio depois do TSR e antes do bloom:
   verdade (só escureciam): retirados. Conclusão medida: a maciez vem da FORMA
   gravada (a simulação do WebGL a 0.4 m espalha os redemoinhos pequenos), não da
   luz nem da tela. Próximo (o Felipe, 09/10): **mudar quem grava**.
-- **Pra lembrar (o Felipe, 08/10):** comparar a mesma explosão gravada em 4
-  fontes (o simulador do WebGL, o mesmo simulador portado pra Unreal, o
-  EmberGen e o Houdini), todas tocadas no raymarch dentro do jogo, lado a lado.
+- **"Mudar quem grava" (09–10/10, pedido do Felipe):** a mesma explosão gravada em
+  5 fontes (WebGL, Unreal, Blender, EmberGen, Houdini), todas tocadas no raymarch
+  dentro do jogo, lado a lado.
+  - `Tools/build_raymarch_vdb.py` (no Python do Blender): uma sequência OpenVDB
+    (EmberGen, Mantaflow) → o formato do raymarch, com a luz do céu como o WebGL
+    (reto pra cima), a velocidade quando existe e um fator de calor por fonte
+    (cada programa tem a sua unidade; iguala o calor mediano da fumaça aos 0,6 s).
+  - No app, `-RmCompare=a,b`: cada clique detona a de sempre e uma gêmea por
+    gravação (40 m à direita, 40 m à esquerda...); `-NoPanel` esconde o painel nas fotos.
+    Cada gravação tem o próprio domínio e resolução; o ruído de detalhe encolhe
+    com o voxel (`NoiseK`), pra não borrar o detalhe de uma gravação fina.
+  - 1º resultado (`captures/fonte3_perto.jpg`, `fonte_eg_perto.jpg`, `fonte3_*.mp4`;
+    detalhe < 1 m medido na silhueta): WebGL 96 0,22–0,34, WebGL 128 0,25–0,43,
+    Blender 19 cm 0,38–0,48, EmberGen da JangaFX 16 cm 0,44–0,60. A gravação fina
+    traz a borda nítida pro jogo. O Blender (Mantaflow, `Tools/blender_pyro_charge.py`,
+    13 ajustes) não faz a coluna nem o cogumelo e fica felpudo: descartado. A
+    EmberGen do teste é outra explosão (gasolina); a nossa Carga Pesada está sendo
+    simulada no EmberGen pela sessão Projeto complexo (que opera a janela).
+  - O porte do simulador pra Unreal é de 3–4 semanas (segunda opinião de 09/10):
+    a grade colocada com diferença central corta a resolução efetiva pela metade
+    (por isso a 128 quase não ganhou da 96); pressão convergida, grade MAC,
+    "disturbance" e guia pela 128. Decisão depois de ver a do EmberGen.
+- **Gravações em blocos esparsos (BRM2, 10/10).** Uma gravação fina densa não cabe
+  no jogo (192³: 2,7 GB). `Tools/brm2.py`: blocos de 8³ só onde há fumaça (+1 voxel
+  de borda, como o Sparse Volume Texture da Unreal e o NanoVDB), uma tabela por
+  quadro; os conversores já gravam assim. 96³ 213 → 95 MB, 192³ 2,7 GB → 586 MB.
+  Na placa, um atlas só pra todas as explosões (o pior caso: o quadro mais cheio × 32
+  vagas; ~107 MB só com as de 96) e a tabela por vaga; os blocos sobem num passe de
+  compute (`MainScatterA/F`). O renderizador continua lendo uma textura só.
 - Depuração: `-RmTerms=sol,céu,fogo,emissão`, `-RmDebug=1|2|3` (transmitância
   até o sol / fogo / céu), `-RmRes=` (resolução da marcha), `-RmTemporal=` (peso
   do quadro novo; 1 = sem acúmulo), `-RmLightCaches=`, `-RmSteps=`. E no teste

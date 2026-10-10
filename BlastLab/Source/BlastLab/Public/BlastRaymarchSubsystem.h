@@ -29,8 +29,10 @@ public:
 	/** Esta explosão é desenhada pelo raymarch (o volume da Unreal fica escondido). */
 	static bool Handles(const AExplosionVolume* E);
 
-	/** -RmCompare=1: cada clique detona duas iguais, a de 96 e a de 128 do lado (o teste do Felipe). */
-	static bool CompareMode();
+	/** -RmCompare=<gravação>[,<gravação>...]: cada clique detona a de sempre e, do lado, uma gêmea
+	 *  por gravação (Intermediate/Raymarch/<gravação>.bin; -RmCompare=1 = r128_v0). Vazio = desligado. */
+	static const TArray<FName>& CompareSources();
+	static bool CompareMode() { return CompareSources().Num() > 0; }
 
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
@@ -43,9 +45,9 @@ public:
 
 private:
 	TSharedPtr<FBlastRaymarchExtension, ESPMode::ThreadSafe> Extension;
-	BlastRaymarch::FBakeRef Bakes[3];
-	/** A gravação de 128 (só a variante 0: o navegador não grava as três nela). */
-	BlastRaymarch::FBakeRef Bake128;
+	/** As gravações carregadas: 0–2 = as variantes da Carga Pesada; depois, a da comparação. O índice é a chave dos quadros no pool. */
+	TArray<BlastRaymarch::FBakeRef> Sources;
+	TMap<FName, int32> SourceOf;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture> Noise;

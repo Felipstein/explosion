@@ -20,7 +20,13 @@ struct FScreenPassTexture;
  */
 namespace BlastRaymarch
 {
-	/** Uma gravação na RAM (Tools/build_raymarch_bake.py, Intermediate/Raymarch/r96_v<n>.bin). Imutável depois de carregada. */
+	/** Blocos esparsos (Tools/brm2.py): 8³ voxels por bloco, com 1 de borda no atlas. */
+	constexpr int32 Brick = 8;
+	constexpr int32 BrickA = Brick + 2;            // 10³ RGBA8 por bloco
+	constexpr int32 BrickF = Brick / 2 + 2;        // 6³ RGBA8 por bloco (meia resolução)
+
+	/** Uma gravação na RAM, em blocos esparsos (Intermediate/Raymarch/<nome>.brm2: as do WebGL, Tools/build_raymarch_bake.py
+	 *  + Tools/brm2.py; as de outros simuladores, Tools/build_raymarch_vdb.py). Imutável depois de carregada. */
 	struct BLASTLABSHADERS_API FBakeData
 	{
 		int32 Res = 0, FuelRes = 0, MacroRes = 0, Frames = 0;
@@ -28,14 +34,19 @@ namespace BlastRaymarch
 		TArray<FBox3f> Bounds;          // caixa justa por quadro (m locais)
 		TArray<FVector3f> LightPos;     // luz gravada por quadro (m locais)
 		TArray<FVector3f> LightCol;     // unidades do WebGL (1 = iluminância do sol)
+		TArray<int32> NumBricks;        // blocos com fumaça por quadro
+		TArray<int64> Offsets;          // começo de cada quadro em Data
+		int32 MaxBricks = 0;
 		TArray64<uint8> Data;
-		int64 FrameBytes = 0, BytesA = 0, BytesF = 0, BytesM = 0;
 
 		static TSharedPtr<FBakeData, ESPMode::ThreadSafe> Load(const FString& Path, FString& OutError);
 
-		const uint8* FrameA(int32 F) const { return Data.GetData() + F * FrameBytes; }
-		const uint8* FrameF(int32 F) const { return FrameA(F) + BytesA; }
-		const uint8* FrameM(int32 F) const { return FrameF(F) + BytesF; }
+		int32 PTRes() const { return Res / Brick; }
+		/** A tabela do quadro: (Res/8)³ int32, o índice do bloco na lista do quadro ou −1. */
+		const int32* FramePT(int32 F) const { return reinterpret_cast<const int32*>(Data.GetData() + Offsets[F]); }
+		const uint8* FrameM(int32 F) const { return Data.GetData() + Offsets[F] + int64(PTRes()) * PTRes() * PTRes() * 4; }
+		const uint8* FrameBricksA(int32 F) const { return FrameM(F) + int64(MacroRes) * MacroRes * MacroRes; }
+		const uint8* FrameBricksF(int32 F) const { return FrameBricksA(F) + int64(NumBricks[F]) * BrickA * BrickA * BrickA * 4; }
 
 		/** js/bake.js timeOfFrame / frameOfTime: os quadros são densos no começo. */
 		float TimeOfFrame(float F) const { return Duration * FMath::Pow(FMath::Clamp(F / float(Frames - 1), 0.0f, 1.0f), Curve); }
@@ -67,10 +78,13 @@ namespace BlastRaymarch
 		int32 Slot = 0;
 	};
 
-	// 32 quadros, 2 lado a lado em y e 16 empilhados em z (a textura 3D vai até 2048
-	// por eixo): 96 × 192 × 1536 RGBA8 = 113 MB. Duas por explosão: 16 explosões.
+	// Até 32 quadros na placa (dois por explosão: 16 explosões). Cada vaga tem a
+	// tabela de blocos e a ocupação macro do quadro (pequenas, 2 lado a lado em y
+	// e 16 empilhadas em z); os blocos de todas ficam num atlas só, do tamanho do
+	// pior caso (o quadro mais cheio das gravações carregadas × 32).
 	constexpr int32 SlotsY = 2;
 	constexpr int32 MaxSlots = 32;
+	constexpr int32 MaxAtlasBricksPerAxis = 64;   // 640³ RGBA8 = 1 GB no máximo absoluto
 	constexpr int32 MaxInstances = 16;
 	constexpr int32 MaxLightCaches = 4;
 	constexpr int32 MaxWarps = 4;           // BattleSmoke::MaxWarps
@@ -84,23 +98,35 @@ public:
 
 	/** Do jogo: a lista do quadro (da mais perto pra mais longe), os quadros pra subir e o ruído. */
 	void Submit_GameThread(TArray<BlastRaymarch::FInstance>&& Instances, TArray<BlastRaymarch::FUpload>&& Uploads, FTextureResource* NoiseRes,
-		FTextureResource* WorleyRes = nullptr, const FIntVector& PoolRes = FIntVector(96, 48, 24));
+		FTextureResource* WorleyRes = nullptr, const FIntVector& PoolRes = FIntVector(96, 48, 24), int32 MaxBricks = 1024);
 
 	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& View, FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
 
 private:
 	void Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<BlastRaymarch::FInstance>&& List, const TArray<BlastRaymarch::FUpload>& Ups, FTextureResource* NoiseRes,
-		FTextureResource* WorleyRes, const FIntVector& PoolRes);
+		FTextureResource* WorleyRes, const FIntVector& PoolRes, int32 MaxBricks);
 	FScreenPassTexture Render_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs);
-	/** O pool no tamanho da maior gravação carregada (voxels, combustível, macro por vaga). */
-	void EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims);
+	/** As vagas no tamanho da maior gravação carregada (voxels, combustível, macro) e o atlas pro pior caso de blocos. */
+	void EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims, int32 MaxBricks);
+	/** Os blocos que subiram e ainda não foram copiados pro atlas (o passe da placa, no próximo desenho). */
+	void ScatterPending(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef AtlasAT, FRDGTextureRef AtlasFT);
 
 	// render thread
 	TArray<BlastRaymarch::FInstance> Instances;
 	TRefCountPtr<FRHITexture> Noise;      // a referência segura a textura mesmo se o recurso do UTexture for trocado
 	TRefCountPtr<FRHITexture> Worley;     // as bolhas do detalhe de perto (T_DetailWorley)
-	TRefCountPtr<FRHITexture> PoolA, PoolF, PoolM, BlackBody;
+	TRefCountPtr<FRHITexture> PoolPT, PoolM, AtlasA, AtlasF, BlackBody;
 	FIntVector PoolDims = FIntVector::ZeroValue;     // Res, FuelRes, MacroRes do pool
+	FIntVector AtlasBricks = FIntVector::ZeroValue;  // blocos por eixo no atlas
+	TArray<int32> FreeBricks;                        // blocos livres do atlas (índice linear)
+	TArray<int32> SlotBricks[BlastRaymarch::MaxSlots];
+	struct FScatter
+	{
+		BlastRaymarch::FBakeRef Bake;
+		int32 Frame = 0;
+		TArray<uint32> Coords;                       // onde cada bloco do quadro vai no atlas
+	};
+	TArray<FScatter> Pending;
 	uint32 FrameCounter = 0;
 
 	// acúmulo temporal: o volume resolvido do quadro anterior e a câmera dele

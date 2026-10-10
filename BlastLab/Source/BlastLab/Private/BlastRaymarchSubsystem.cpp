@@ -61,10 +61,24 @@ namespace
 	}
 }
 
-bool UBlastRaymarchSubsystem::CompareMode()
+const TArray<FName>& UBlastRaymarchSubsystem::CompareSources()
 {
-	static const bool bOn = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("RmCompare="), V); return V != 0; }();
-	return bOn;
+	static const TArray<FName> Names = []
+	{
+		TArray<FName> Out;
+		FString S;
+		TArray<FString> P;
+		if (FParse::Value(FCommandLine::Get(), TEXT("RmCompare="), S, false) && S != TEXT("0"))
+		{
+			S.ParseIntoArray(P, TEXT(","));
+			for (const FString& N : P)
+			{
+				Out.Add(FName(N == TEXT("1") ? TEXT("r128_v0") : *N));
+			}
+		}
+		return Out;
+	}();
+	return Names;
 }
 
 bool UBlastRaymarchSubsystem::Handles(const AExplosionVolume* E)
@@ -92,37 +106,37 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		}
 	}
 #endif
-	// a de 128: quando é a padrão (-RmBake=128) ou na comparação lado a lado
-	if (BakeRes() == 128 || CompareMode())
+	auto LoadBake = [](const FString& File) -> BlastRaymarch::FBakeRef
 	{
 		FString Error;
-		Bake128 = BlastRaymarch::FBakeData::Load(FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), TEXT("r128_v0.bin")), Error);
-		if (!Bake128)
+		BlastRaymarch::FBakeRef B = BlastRaymarch::FBakeData::Load(FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), File), Error);
+		if (!B)
 		{
 			UE_LOG(LogTemp, Error, TEXT("BlastLab raymarch: %s"), *Error);
 		}
-	}
+		return B;
+	};
+	Sources.Reset();
+	SourceOf.Reset();
+	// a de 128 como padrão (-RmBake=128): as três variantes tocam a v0 dela
+	const BlastRaymarch::FBakeRef B128 = BakeRes() == 128 ? LoadBake(TEXT("r128_v0.brm2")) : nullptr;
 	for (int32 V = 0; V < 3; ++V)
 	{
-		FString Error;
-		if (BakeRes() == 128 && Bake128)
+		Sources.Add(B128 ? B128 : LoadBake(FString::Printf(TEXT("r96_v%d.brm2"), V)));
+		GLoaded[V] = Sources[V].IsValid() && Noise != nullptr;
+	}
+	// as gêmeas da comparação lado a lado
+	for (const FName Cmp : CompareSources())
+	{
+		if (BlastRaymarch::FBakeRef B = LoadBake(Cmp.ToString() + TEXT(".brm2")))
 		{
-			Bakes[V] = Bake128;
-		}
-		else
-		{
-			const FString Path = FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), FString::Printf(TEXT("r96_v%d.bin"), V));
-			Bakes[V] = BlastRaymarch::FBakeData::Load(Path, Error);
-		}
-		GLoaded[V] = Bakes[V].IsValid() && Noise != nullptr;
-		if (!Bakes[V])
-		{
-			UE_LOG(LogTemp, Error, TEXT("BlastLab raymarch: %s"), *Error);
+			SourceOf.Add(Cmp, Sources.Add(B));
+			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: comparação com %s (%d³, %.1f m, %d quadros)"), *Cmp.ToString(), B->Res, B->Domain, B->Frames);
 		}
 	}
 	Extension = FSceneViewExtensions::NewExtension<FBlastRaymarchExtension>();
 	UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: ligado (gravações %s %s %s)"),
-		Bakes[0] ? TEXT("v0") : TEXT("-"), Bakes[1] ? TEXT("v1") : TEXT("-"), Bakes[2] ? TEXT("v2") : TEXT("-"));
+		Sources[0] ? TEXT("v0") : TEXT("-"), Sources[1] ? TEXT("v1") : TEXT("-"), Sources[2] ? TEXT("v2") : TEXT("-"));
 }
 
 void UBlastRaymarchSubsystem::Deinitialize()
@@ -157,21 +171,20 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	{
 		AExplosionVolume* E = *It;
 		const int32 V = VariantOf(E);
-		if (V < 0 || !Bakes[V] || !Handles(E) || E->Age < 0.0f || E->Opacity <= 0.0f || E->IsFinished())
+		if (V < 0 || !Sources.IsValidIndex(V) || !Sources[V] || !Handles(E) || E->Age < 0.0f || E->Opacity <= 0.0f || E->IsFinished())
 		{
 			continue;
 		}
 		FLive L;
 		L.Variant = V;
-		L.I.Bake = Bakes[V];
-		if (E->RaymarchBakeRes == 128 && Bake128)
+		if (const int32* S = E->RaymarchSource.IsNone() ? nullptr : SourceOf.Find(E->RaymarchSource))
 		{
-			L.I.Bake = Bake128;
-			L.Variant = 3;           // a chave dos quadros no pool: separada das de 96
+			L.Variant = *S;          // a chave dos quadros no pool: separada das variantes
 		}
+		L.I.Bake = Sources[L.Variant];
 		L.I.FootCm = E->GetActorLocation();
 		L.I.Scale = E->SizeScale;
-		L.I.Frame = Bakes[V]->FrameOfTime(E->BakeTime());
+		L.I.Frame = L.I.Bake->FrameOfTime(E->BakeTime());
 		L.I.Seed = E->Seed;
 		L.I.Keep = E->Opacity;
 		L.I.Thickness = E->Thickness;
@@ -196,13 +209,15 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	TArray<FInstance> List;
 	TSet<int32> Needed;
 	auto Key = [](int32 V, int32 F) { return V * 1024 + F; };
-	// a vaga do pool no tamanho da maior gravação carregada
+	// a vaga do pool no tamanho da maior gravação carregada; o atlas de blocos pro quadro mais cheio delas
 	FIntVector PoolRes(0);
-	for (const BlastRaymarch::FBakeRef& B : { Bakes[0], Bakes[1], Bakes[2], Bake128 })
+	int32 MaxBricks = 0;
+	for (const BlastRaymarch::FBakeRef& B : Sources)
 	{
 		if (B)
 		{
 			PoolRes = FIntVector(FMath::Max(PoolRes.X, B->Res), FMath::Max(PoolRes.Y, B->FuelRes), FMath::Max(PoolRes.Z, B->MacroRes));
+			MaxBricks = FMath::Max(MaxBricks, B->MaxBricks);
 		}
 	}
 	for (const FLive& L : Live)
@@ -211,10 +226,11 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		Needed.Add(Key(L.Variant, F0));
 		Needed.Add(Key(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1)));
 	}
+	const int32 NumSlots = MaxSlots;
 	auto SlotFor = [&](int32 V, int32 F) -> int32
 	{
 		int32 Victim = -1;
-		for (int32 s = 0; s < MaxSlots; ++s)
+		for (int32 s = 0; s < NumSlots; ++s)
 		{
 			if (Slots[s].Variant == V && Slots[s].Frame == F)
 			{
@@ -230,7 +246,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		if (Victim >= 0)
 		{
 			Slots[Victim] = { V, F, TickCount };
-			Uploads.Add({ Bakes[V], F, Victim });
+			Uploads.Add({ Sources[V], F, Victim });
 		}
 		return Victim;
 	};
@@ -249,5 +265,5 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	bWasEmpty = List.IsEmpty();
-	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes);
+	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes, MaxBricks);
 }

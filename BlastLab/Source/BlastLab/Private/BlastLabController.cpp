@@ -86,6 +86,11 @@ void ABlastLabController::BeginPlay()
 	{
 		Panel = SNew(SBlastLabPanel).World(GetWorld()).Thumbnail(Thumbnail);
 		Viewport->AddViewportWidgetContent(Panel.ToSharedRef(), 10);
+		// -NoPanel: começa escondido (o H), pras fotos de comparação com a tela inteira
+		if (FParse::Param(FCommandLine::Get(), TEXT("NoPanel")))
+		{
+			Panel->SetVisibility(EVisibility::Collapsed);
+		}
 	}
 
 	// -TimeOfDay=<h>: começa nessa hora (testes de crepúsculo e noite); trocando
@@ -219,28 +224,34 @@ AExplosionVolume* ABlastLabController::DetonateAt(const FVector& Ground)
 		return nullptr;
 	}
 	AExplosionVolume* E = Sim->Detonate(Ground, Sim->SelectedWeapon);
-	// a comparação lado a lado (-RmCompare=1): a gêmea 40 m à direita na tela, com
-	// o mesmo tamanho, relógio e semente; a do clique toca a gravação de 96, a
-	// gêmea a de 128 (só a variante 0 existe em 128: as duas tocam a v0)
+	// a comparação lado a lado (-RmCompare=<gravação>[,...]): uma gêmea por
+	// gravação, 40 m à direita na tela, a seguinte 40 m à esquerda (e assim por
+	// diante), com o mesmo tamanho, relógio e semente; a do clique toca a gravação
+	// de sempre (a do WebGL, 96), cada gêmea a sua (r128_v0, eg_gasoline_x15, mf_charge...)
 	if (E && UBlastRaymarchSubsystem::CompareMode())
 	{
 		const FVector Right = PlayerCameraManager ? FRotationMatrix(PlayerCameraManager->GetCameraRotation()).GetScaledAxis(EAxis::Y) : FVector::RightVector;
-		FVector P = Ground + FVector(Right.X, Right.Y, 0.0).GetSafeNormal() * 4000.0 * FMath::Max(E->SizeScale, 1.0f);
-		P.Z = BlastLabGround::HeightAt(GetWorld(), P.X, P.Y);
-		if (AExplosionVolume* Twin = Sim->Detonate(P, Sim->SelectedWeapon))
+		const TArray<FName>& Sources = UBlastRaymarchSubsystem::CompareSources();
+		FString Msg = TEXT("COMPARACAO: onde voce clicou = a gravacao atual (WebGL 96)");
+		for (int32 k = 0; k < Sources.Num(); ++k)
 		{
-			Twin->Bake = E->Bake;            // a mesma gravação da Unreal: a mesma luz do fogo e a mesma sombra no chão
-			Twin->SizeScale = E->SizeScale;
-			Twin->TimeScale = E->TimeScale;
-			Twin->Seed = E->Seed;
-			Twin->Thickness = E->Thickness;
-			Twin->RaymarchBakeRes = 128;
+			const double Side = (k % 2 ? -1.0 : 1.0) * (k / 2 + 1);
+			FVector P = Ground + FVector(Right.X, Right.Y, 0.0).GetSafeNormal() * 4000.0 * Side * FMath::Max(E->SizeScale, 1.0f);
+			P.Z = BlastLabGround::HeightAt(GetWorld(), P.X, P.Y);
+			if (AExplosionVolume* Twin = Sim->Detonate(P, Sim->SelectedWeapon))
+			{
+				Twin->Bake = E->Bake;            // a mesma gravação da Unreal: a mesma luz do fogo e a mesma sombra no chão
+				Twin->SizeScale = E->SizeScale;
+				Twin->TimeScale = E->TimeScale;
+				Twin->Seed = E->Seed;
+				Twin->Thickness = E->Thickness;
+				Twin->RaymarchSource = Sources[k];
+			}
+			Msg += FString::Printf(TEXT("   |   %d m a %s = %s"), int32(40 * FMath::Abs(Side)), Side > 0.0 ? TEXT("direita") : TEXT("esquerda"), *Sources[k].ToString());
 		}
-		E->RaymarchBakeRes = 96;
 		if (GEngine)
 		{
-			GEngine->AddOnScreenDebugMessage(424242, 30.0f, FColor::Yellow,
-				TEXT("COMPARACAO: onde voce clicou = gravacao 96 (a atual)   |   40 m a direita = gravacao 128 (a nova)"));
+			GEngine->AddOnScreenDebugMessage(424242, 30.0f, FColor::Yellow, Msg);
 		}
 	}
 	if (E && bAutoWatch && !AutoExplosion)

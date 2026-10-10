@@ -119,9 +119,9 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 		OutError = FString::Printf(TEXT("não li %s (rode Tools/build_raymarch_bake.py)"), *Path);
 		return nullptr;
 	}
-	if (Raw.Num() < 8 || FMemory::Memcmp(Raw.GetData(), "BRM1", 4) != 0)
+	if (Raw.Num() < 8 || FMemory::Memcmp(Raw.GetData(), "BRM2", 4) != 0)
 	{
-		OutError = TEXT("formato desconhecido");
+		OutError = FString::Printf(TEXT("%s: formato desconhecido (as densas BRM1 viram BRM2 com Tools/brm2.py)"), *Path);
 		return nullptr;
 	}
 	const uint32 HeadLen = *reinterpret_cast<const uint32*>(Raw.GetData() + 4);
@@ -164,19 +164,35 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 	{
 		B->LightCol.Add(Vec(V, 0));
 	}
-	B->BytesA = int64(B->Res) * B->Res * B->Res * 4;
-	B->BytesF = int64(B->FuelRes) * B->FuelRes * B->FuelRes * 4;
-	B->BytesM = int64(B->MacroRes) * B->MacroRes * B->MacroRes;
-	B->FrameBytes = B->BytesA + B->BytesF + B->BytesM;
-	const int64 Offset = 8 + int64(HeadLen);
-	if (B->Frames < 2 || Raw.Num() != Offset + B->FrameBytes * B->Frames || B->Bounds.Num() != B->Frames
-		|| B->LightPos.Num() != B->Frames || B->LightCol.Num() != B->Frames)
+	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("frameBricks")))
 	{
-		OutError = TEXT("tamanho inesperado");
+		B->NumBricks.Add(int32(V->AsNumber()));
+		B->MaxBricks = FMath::Max(B->MaxBricks, B->NumBricks.Last());
+	}
+	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("frameOffsets")))
+	{
+		B->Offsets.Add(int64(V->AsNumber()));
+	}
+	const int64 Offset = 8 + int64(HeadLen);
+	const int64 Body = Raw.Num() - Offset;
+	bool bOk = B->Frames >= 2 && J->GetIntegerField(TEXT("brick")) == Brick && B->Res % Brick == 0 && B->FuelRes * 2 == B->Res
+		&& B->Bounds.Num() == B->Frames && B->LightPos.Num() == B->Frames && B->LightCol.Num() == B->Frames
+		&& B->NumBricks.Num() == B->Frames && B->Offsets.Num() == B->Frames;
+	// cada quadro: tabela, macro, blocos A, blocos F, um atrás do outro
+	for (int32 F = 0; bOk && F < B->Frames; ++F)
+	{
+		const int64 Size = int64(B->PTRes()) * B->PTRes() * B->PTRes() * 4 + int64(B->MacroRes) * B->MacroRes * B->MacroRes
+			+ int64(B->NumBricks[F]) * (BrickA * BrickA * BrickA + BrickF * BrickF * BrickF) * 4;
+		const int64 End = F + 1 < B->Frames ? B->Offsets[F + 1] : Body;
+		bOk = B->Offsets[F] + Size == End;
+	}
+	if (!bOk)
+	{
+		OutError = FString::Printf(TEXT("%s: tamanho inesperado"), *Path);
 		return nullptr;
 	}
-	B->Data.SetNumUninitialized(B->FrameBytes * B->Frames);
-	FMemory::Memcpy(B->Data.GetData(), Raw.GetData() + Offset, B->Data.Num());
+	B->Data.SetNumUninitialized(Body);
+	FMemory::Memcpy(B->Data.GetData(), Raw.GetData() + Offset, Body);
 	return B;
 }
 
@@ -187,8 +203,10 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, Res)
 	SHADER_PARAMETER(float, FuelRes)
 	SHADER_PARAMETER(float, MacroRes)
+	SHADER_PARAMETER(float, PTRes)
+	SHADER_PARAMETER(FVector3f, AtlasASize)
+	SHADER_PARAMETER(FVector3f, AtlasFSize)
 	SHADER_PARAMETER(float, LCRes)
-	SHADER_PARAMETER(float, Domain)
 	SHADER_PARAMETER(float, Slots)
 	SHADER_PARAMETER(float, SlotsY)
 	SHADER_PARAMETER(float, LCSlots)
@@ -252,8 +270,9 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, Jitter)
 	SHADER_PARAMETER(int32, LCInstance)
 	SHADER_PARAMETER(int32, LCSlot)
-	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, PoolA)
-	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, PoolF)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<uint>, PoolPT)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, AtlasA)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, AtlasF)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float>, PoolM)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, Noise)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, BlackBody)
@@ -293,6 +312,29 @@ END_SHADER_PARAMETER_STRUCT()
 	};                                                                                                \
 	IMPLEMENT_GLOBAL_SHADER(Name, "/BlastLab/Private/BlastRaymarch.usf", Entry, SF_Compute);
 
+// a subida dos blocos pro atlas: um grupo por bloco
+BEGIN_SHADER_PARAMETER_STRUCT(FBlastScatterParameters, )
+	SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BrickData)
+	SHADER_PARAMETER_RDG_BUFFER_SRV(StructuredBuffer<uint>, BrickCoords)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float4>, AtlasOut)
+END_SHADER_PARAMETER_STRUCT()
+
+#define BLAST_SCATTER_SHADER(Name, Entry)                                                             \
+	class Name : public FGlobalShader                                                                 \
+	{                                                                                                 \
+	public:                                                                                           \
+		DECLARE_GLOBAL_SHADER(Name);                                                                  \
+		using FParameters = FBlastScatterParameters;                                                  \
+		SHADER_USE_PARAMETER_STRUCT(Name, FGlobalShader);                                             \
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)    \
+		{                                                                                             \
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);              \
+		}                                                                                             \
+	};                                                                                                \
+	IMPLEMENT_GLOBAL_SHADER(Name, "/BlastLab/Private/BlastRaymarch.usf", Entry, SF_Compute);
+
+BLAST_SCATTER_SHADER(FBlastScatterACS, "MainScatterA")
+BLAST_SCATTER_SHADER(FBlastScatterFCS, "MainScatterF")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchLightCacheCS, "MainLightCache")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchMarchCS, "MainMarch")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchTemporalCS, "MainTemporal")
@@ -346,24 +388,35 @@ FBlastRaymarchExtension::FBlastRaymarchExtension(const FAutoRegister& AutoRegist
 }
 
 void FBlastRaymarchExtension::Submit_GameThread(TArray<FInstance>&& InInstances, TArray<FUpload>&& Uploads, FTextureResource* NoiseRes,
-	FTextureResource* WorleyRes, const FIntVector& PoolRes)
+	FTextureResource* WorleyRes, const FIntVector& PoolRes, int32 MaxBricks)
 {
 	// a referência mantém a extensão viva até o comando rodar (o mundo pode fechar antes)
 	ENQUEUE_RENDER_COMMAND(BlastRaymarchSubmit)(
-		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), List = MoveTemp(InInstances), Ups = MoveTemp(Uploads), NoiseRes, WorleyRes, PoolRes]
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), List = MoveTemp(InInstances), Ups = MoveTemp(Uploads), NoiseRes, WorleyRes, PoolRes, MaxBricks]
 		(FRHICommandListImmediate& RHICmdList) mutable
 		{
-			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes, WorleyRes, PoolRes);
+			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes, WorleyRes, PoolRes, MaxBricks);
 		});
 }
 
 void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FInstance>&& List, const TArray<FUpload>& Ups, FTextureResource* NoiseRes,
-	FTextureResource* WorleyRes, const FIntVector& PoolRes)
+	FTextureResource* WorleyRes, const FIntVector& PoolRes, int32 MaxBricks)
 {
 	if (List.Num() || Ups.Num())
 	{
-		EnsurePools_RenderThread(RHICmdList, PoolRes);
+		EnsurePools_RenderThread(RHICmdList, PoolRes, MaxBricks);
 	}
+	// primeiro devolve os blocos dos quadros que saem, depois reserva os dos que entram
+	for (const FUpload& U : Ups)
+	{
+		if (U.Slot >= 0 && U.Slot < MaxSlots)
+		{
+			FreeBricks.Append(SlotBricks[U.Slot]);
+			SlotBricks[U.Slot].Reset();
+		}
+	}
+	const int32 PT = PoolDims.X / Brick;
+	TArray<uint32> Table;
 	for (const FUpload& U : Ups)
 	{
 		const FBakeData& B = *U.Bake;
@@ -371,15 +424,46 @@ void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHIC
 		{
 			continue;       // maior que a vaga: não cabe
 		}
+		const int32 K = B.NumBricks[U.Frame];
+		const int32 Pt = B.PTRes();
+		FScatter S;
+		if (K > FreeBricks.Num())
+		{
+			// não deveria acontecer (o atlas é do pior caso): o quadro fica vazio em vez de ler blocos de outro
+			UE_LOG(LogTemp, Warning, TEXT("BlastRaymarch: atlas cheio (%d blocos pedidos, %d livres)"), K, FreeBricks.Num());
+		}
+		else
+		{
+			SlotBricks[U.Slot].Append(FreeBricks.GetData() + FreeBricks.Num() - K, K);
+			FreeBricks.SetNum(FreeBricks.Num() - K, EAllowShrinking::No);
+			S.Coords.SetNumUninitialized(K);
+			for (int32 k = 0; k < K; ++k)
+			{
+				const int32 L = SlotBricks[U.Slot][k];
+				const int32 X = L % AtlasBricks.X, Y = (L / AtlasBricks.X) % AtlasBricks.Y, Z = L / (AtlasBricks.X * AtlasBricks.Y);
+				S.Coords[k] = uint32(X) | (uint32(Y) << 10) | (uint32(Z) << 20);
+			}
+		}
+		// a tabela do quadro com os endereços no atlas
+		const int32* Src = B.FramePT(U.Frame);
+		Table.SetNumUninitialized(Pt * Pt * Pt);
+		for (int32 i = 0; i < Table.Num(); ++i)
+		{
+			Table[i] = Src[i] >= 0 && Src[i] < S.Coords.Num() ? S.Coords[Src[i]] : 0xFFFFFFFFu;
+		}
 		// o slot s fica em y = (s % SlotsY)·N, z = (s / SlotsY)·N da VAGA (BlastRaymarch.usf SlotBase);
 		// uma gravação menor que a vaga ocupa o canto dela
 		const int32 Sy = U.Slot % SlotsY, Sz = U.Slot / SlotsY;
-		RHICmdList.UpdateTexture3D(PoolA.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.X, Sz * PoolDims.X, 0, 0, 0, B.Res, B.Res, B.Res),
-			B.Res * 4, B.Res * B.Res * 4, B.FrameA(U.Frame));
-		RHICmdList.UpdateTexture3D(PoolF.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.Y, Sz * PoolDims.Y, 0, 0, 0, B.FuelRes, B.FuelRes, B.FuelRes),
-			B.FuelRes * 4, B.FuelRes * B.FuelRes * 4, B.FrameF(U.Frame));
+		RHICmdList.UpdateTexture3D(PoolPT.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PT, Sz * PT, 0, 0, 0, Pt, Pt, Pt),
+			Pt * 4, Pt * Pt * 4, reinterpret_cast<const uint8*>(Table.GetData()));
 		RHICmdList.UpdateTexture3D(PoolM.GetReference(), 0, FUpdateTextureRegion3D(0, Sy * PoolDims.Z, Sz * PoolDims.Z, 0, 0, 0, B.MacroRes, B.MacroRes, B.MacroRes),
 			B.MacroRes, B.MacroRes * B.MacroRes, B.FrameM(U.Frame));
+		if (S.Coords.Num())
+		{
+			S.Bake = U.Bake;
+			S.Frame = U.Frame;
+			Pending.Add(MoveTemp(S));
+		}
 	}
 	for (FInstance& I : List)
 	{
@@ -390,21 +474,75 @@ void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHIC
 	Worley = WorleyRes ? WorleyRes->TextureRHI : nullptr;
 }
 
-void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims)
+void FBlastRaymarchExtension::ScatterPending(FRDGBuilder& GraphBuilder, const FSceneView& View, FRDGTextureRef AtlasAT, FRDGTextureRef AtlasFT)
 {
-	if (PoolA.IsValid() && PoolDims == Dims)
+	for (const FScatter& S : Pending)
+	{
+		const FBakeData& B = *S.Bake;
+		const int32 K = S.Coords.Num();
+		FRDGBufferRef Coords = CreateStructuredBuffer(GraphBuilder, TEXT("BlastRaymarch.BrickCoords"), sizeof(uint32), K, S.Coords.GetData(), K * sizeof(uint32));
+		const struct { const uint8* Data; int32 Side; FRDGTextureRef Atlas; } Parts[2] = {
+			{ B.FrameBricksA(S.Frame), BrickA, AtlasAT }, { B.FrameBricksF(S.Frame), BrickF, AtlasFT } };
+		for (int32 p = 0; p < 2; ++p)
+		{
+			const uint32 Texels = uint32(K) * Parts[p].Side * Parts[p].Side * Parts[p].Side;
+			FRDGBufferRef Data = CreateStructuredBuffer(GraphBuilder, TEXT("BlastRaymarch.BrickData"), sizeof(uint32), Texels, Parts[p].Data, uint64(Texels) * 4);
+			FBlastScatterParameters* P = GraphBuilder.AllocParameters<FBlastScatterParameters>();
+			P->BrickData = GraphBuilder.CreateSRV(Data);
+			P->BrickCoords = GraphBuilder.CreateSRV(Coords);
+			P->AtlasOut = GraphBuilder.CreateUAV(Parts[p].Atlas);
+			if (p == 0)
+			{
+				TShaderMapRef<FBlastScatterACS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ScatterA %d", K), Shader, P, FIntVector(K, 1, 1));
+			}
+			else
+			{
+				TShaderMapRef<FBlastScatterFCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+				FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ScatterF %d", K), Shader, P, FIntVector(K, 1, 1));
+			}
+		}
+	}
+	Pending.Reset();
+}
+
+void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims, int32 MaxBricks)
+{
+	// o atlas pro pior caso: todas as vagas com o quadro mais cheio das gravações carregadas
+	const int32 Side = FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * MaxSlots, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
+	if (PoolPT.IsValid() && PoolDims == Dims && AtlasBricks.X >= Side)
 	{
 		return;
 	}
 	PoolDims = Dims;
 	auto Make = [&](const TCHAR* Name, int32 N, EPixelFormat Format) {
-		return RHICmdList.CreateTexture(FRHITextureCreateDesc::Create3D(Name, N, N * SlotsY, N * ((MaxSlots + SlotsY - 1) / SlotsY), Format)
+		return RHICmdList.CreateTexture(FRHITextureCreateDesc::Create3D(Name, N, N * SlotsY, N * FMath::DivideAndRoundUp(MaxSlots, SlotsY), Format)
 			.SetFlags(ETextureCreateFlags::ShaderResource)
 			.SetInitialState(ERHIAccess::SRVMask));
 	};
-	PoolA = Make(TEXT("BlastRaymarch.PoolA"), Dims.X, PF_R8G8B8A8);
-	PoolF = Make(TEXT("BlastRaymarch.PoolF"), Dims.Y, PF_R8G8B8A8);
+	PoolPT = Make(TEXT("BlastRaymarch.PoolPT"), Dims.X / Brick, PF_R32_UINT);
 	PoolM = Make(TEXT("BlastRaymarch.PoolM"), Dims.Z, PF_G8);
+	AtlasBricks = FIntVector(Side);
+	auto MakeAtlas = [&](const TCHAR* Name, int32 N) {
+		return RHICmdList.CreateTexture(FRHITextureCreateDesc::Create3D(Name, Side * N, Side * N, Side * N, PF_R8G8B8A8)
+			.SetFlags(ETextureCreateFlags::ShaderResource | ETextureCreateFlags::UAV)
+			.SetInitialState(ERHIAccess::SRVMask));
+	};
+	AtlasA = MakeAtlas(TEXT("BlastRaymarch.AtlasA"), BrickA);
+	AtlasF = MakeAtlas(TEXT("BlastRaymarch.AtlasF"), BrickF);
+	// as vagas antigas apontavam pro atlas anterior: todas recomeçam vazias (o jogo sobe de novo o que precisar)
+	FreeBricks.Reset(Side * Side * Side);
+	for (int32 i = Side * Side * Side - 1; i >= 0; --i)
+	{
+		FreeBricks.Add(i);
+	}
+	for (TArray<int32>& S : SlotBricks)
+	{
+		S.Reset();
+	}
+	Pending.Reset();
+	UE_LOG(LogTemp, Display, TEXT("BlastRaymarch: atlas de %d³ blocos (%d MB), vagas de %d³"), Side,
+		int32((int64(Side * BrickA) * Side * BrickA * Side * BrickA + int64(Side * BrickF) * Side * BrickF * Side * BrickF) * 4 >> 20), Dims.X);
 	if (!BlackBody.IsValid())
 	{
 		const TArray<FVector4f> Lut = BuildBlackBody();
@@ -430,7 +568,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 {
 	const FScreenPassTexture SceneColor = FScreenPassTexture::CopyFromSlice(GraphBuilder, Inputs.GetInput(EPostProcessMaterialInput::SceneColor));
 	const FRDGTextureRef Depth = Inputs.SceneTextures.SceneTextures ? Inputs.SceneTextures.SceneTextures->GetParameters()->SceneDepthTexture : nullptr;
-	if (!Instances.Num() || !PoolA.IsValid() || !Noise.IsValid() || !Depth || !SceneColor.IsValid())
+	if (!Instances.Num() || !PoolPT.IsValid() || !AtlasA.IsValid() || !Noise.IsValid() || !Depth || !SceneColor.IsValid())
 	{
 		return SceneColor;
 	}
@@ -439,7 +577,6 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	const FVector CamCm = View.ViewMatrices.GetViewOrigin();
 	auto Rel = [&](const FVector& Cm) { return FVector3f((Cm - CamCm) * 0.01); };
 	const FBakeData& B0 = *Instances[0].Bake;
-	const float Cell = B0.Domain / B0.Res;
 	static const int32 StepsCfg = int32(ParamOr(TEXT("RmSteps="), float(Steps)));
 	static const int32 LightCachesCfg = FMath::Clamp(int32(ParamOr(TEXT("RmLightCaches="), float(MaxLightCaches))), 0, MaxLightCaches);
 	static const float MvScale = ParamOr(TEXT("RmMV="), 1.0f);
@@ -455,7 +592,9 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.FuelRes = float(PoolDims.Y);
 	Base.MacroRes = float(PoolDims.Z);
 	Base.LCRes = float(LCRes);
-	Base.Domain = B0.Domain;
+	Base.PTRes = float(PoolDims.X / Brick);
+	Base.AtlasASize = FVector3f(FIntVector(AtlasBricks * BrickA));
+	Base.AtlasFSize = FVector3f(FIntVector(AtlasBricks * BrickF));
 	Base.Slots = float(MaxSlots);
 	Base.SlotsY = float(SlotsY);
 	Base.LCSlots = float(MaxLightCaches);
@@ -557,7 +696,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			WarpSlot = NumWarps;
 			WarpTex[NumWarps++] = I.WarpRHI.GetReference();
 		}
-		const float Pad = DetailAmp + Base.DetailAmp2 + 2.0f * Cell + (WarpSlot >= 0 ? WarpMaxLocalM : 0.0f);
+		const float Pad = DetailAmp + Base.DetailAmp2 + 2.0f * B.Domain / B.Res + (WarpSlot >= 0 ? WarpMaxLocalM : 0.0f);
 		Local.Min = FVector3f::Max(DMin, Local.Min - Pad);
 		Local.Max = FVector3f::Min(DMax, Local.Max + Pad);
 		const FBox World(I.FootCm + FVector(Local.Min) * (I.Scale * 100.0), I.FootCm + FVector(Local.Max) * (I.Scale * 100.0));
@@ -590,7 +729,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			EmitGain = (1.0f - SootAlbedo) / (1.0f - Albedo);
 		}
 		Base.InstLook[N] = FVector4f(Look, Albedo);
-		Base.InstRes[N] = FVector4f(float(B.Res), float(B.FuelRes), float(B.MacroRes), 0.0f);
+		Base.InstRes[N] = FVector4f(float(B.Res), float(B.FuelRes), float(B.MacroRes), B.Domain);
 		// cada oitava das bolhas entra quando o voxel da gravação (0.4 m na Carga
 		// Pesada) cobre pixels bastante pra ela aparecer sem chuviscar na marcha de
 		// meia resolução: 1.2 m a partir de ~3 px por voxel, 0.6 m de ~5, 0.3 m de
@@ -638,8 +777,11 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.LinearClamp = TStaticSamplerState<SF_Trilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
 	Base.LinearWrap = TStaticSamplerState<SF_Trilinear, AM_Wrap, AM_Wrap, AM_Wrap>::GetRHI();
 
-	FRDGTextureRef PoolAT = External(GraphBuilder, PoolA.GetReference(), TEXT("BlastRaymarch.PoolA"));
-	FRDGTextureRef PoolFT = External(GraphBuilder, PoolF.GetReference(), TEXT("BlastRaymarch.PoolF"));
+	FRDGTextureRef PoolPTT = External(GraphBuilder, PoolPT.GetReference(), TEXT("BlastRaymarch.PoolPT"));
+	FRDGTextureRef AtlasAT = External(GraphBuilder, AtlasA.GetReference(), TEXT("BlastRaymarch.AtlasA"));
+	FRDGTextureRef AtlasFT = External(GraphBuilder, AtlasF.GetReference(), TEXT("BlastRaymarch.AtlasF"));
+	// os blocos dos quadros que acabaram de subir, antes de qualquer leitura
+	ScatterPending(GraphBuilder, View, AtlasAT, AtlasFT);
 	FRDGTextureRef PoolMT = External(GraphBuilder, PoolM.GetReference(), TEXT("BlastRaymarch.PoolM"));
 	FRDGTextureRef NoiseT = External(GraphBuilder, Noise.GetReference(), TEXT("BlastRaymarch.Noise"));
 	FRDGTextureRef BlackBodyT = External(GraphBuilder, BlackBody.GetReference(), TEXT("BlastRaymarch.BlackBody"));
@@ -655,8 +797,9 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	auto Common = [&](FBlastRaymarchParameters* P)
 	{
 		*P = Base;
-		P->PoolA = PoolAT;
-		P->PoolF = PoolFT;
+		P->PoolPT = PoolPTT;
+		P->AtlasA = AtlasAT;
+		P->AtlasF = AtlasFT;
 		P->PoolM = PoolMT;
 		P->Noise = NoiseT;
 		P->BlackBody = BlackBodyT;

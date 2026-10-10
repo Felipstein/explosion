@@ -9,7 +9,8 @@ conversão antiga (convert_bake.py) jogava fora a transmitância do céu, que a
 marcha do WebGL usa.
 
 Entrada: reference/webgl/assets/bake/r<res>-<hash>.bin (js/bake.js pack()).
-Saída (fora do git): Intermediate/Raymarch/r<res>_v<variante>.bin
+Saída (fora do git): Intermediate/Raymarch/r<res>_v<variante>.brm2 (em blocos esparsos, brm2.py;
+a densa .bin do meio do caminho é apagada)
   'BRM1' · uint32 tamanho do cabeçalho · cabeçalho JSON (com folga) ·
   por quadro: A · F · M
   A  res³ RGBA8: √(fuligem/4), temperatura/1.6, √(poeira/2.5), transmitância do céu
@@ -32,6 +33,9 @@ import struct
 import sys
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import brm2  # noqa: E402
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(TOOLS, '..'))
@@ -153,8 +157,12 @@ def main():
                 f.write(ff)
                 f.write(fm)
         occ = [float((np.frombuffer(fm, np.uint8) > 1).mean()) for _, _, fm in frames_out]
-        print('%s: %d quadros, %.0f MB, macro ocupado %.1f%%–%.1f%%' % (
-            path, frames, os.path.getsize(path) / 2 ** 20, 100 * min(occ), 100 * max(occ)))
+        head1, frames1 = brm2.read_brm1(path)
+        out = os.path.splitext(path)[0] + '.brm2'
+        counts = brm2.write(out, head1, frames1)
+        os.remove(path)
+        print('%s: %d quadros, %.0f MB, macro ocupado %.1f%%–%.1f%%, blocos por quadro até %d' % (
+            out, frames, os.path.getsize(out) / 2 ** 20, 100 * min(occ), 100 * max(occ), max(counts)))
 
 
 if __name__ == '__main__':
