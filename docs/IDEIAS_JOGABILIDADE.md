@@ -203,6 +203,8 @@ no nosso jogo, pras pessoas precisarem ir pra luta!"
 (`captures/concept/43_usa_base/dozer_ideas_gpt.webp`, desenho 4): "pode ser uma versão de dozer mais poderoso que a
 gente pode pensar na jogabilidade pra deixar o negócio mais gostosinho".
 
+**A cara dele:** o trator grande com o braço robótico que segura os painéis de parede (`captures/concept/43_usa_base/dozer_final_v1_gpt.webp`, 11/10). Ficou maior que o tanque, o que não serve pro Dozer básico mas casa com o engenheiro pesado.
+
 **Propostas da sessão de arte (pra discutir):**
 - **Ele é a unidade das obras da ideia 2:**
   - o muro, o pátio e a estrada saem mais rápido com ele;
