@@ -66,16 +66,18 @@ namespace BlastRaymarch
 		float Keep = 1.0f;             // fração ainda visível (o sumiço no fim, o aquecimento)
 		float Thickness = 1.0f;
 		bool bNuclear = false;                       // a cor da nuvem nuclear (instances.js _nukeLook)
+		float Flash = 0.0f;                          // o clarão neste quadro (0–1): a média de exp(−t/τ) no intervalo do quadro
 		FTextureResource* Warp = nullptr;            // a deformação pelo que passa (UBattleSmokeSubsystem), ou nada
 		TRefCountPtr<FRHITexture> WarpRHI;           // (render thread)
 	};
 
-	/** Um quadro pra subir pro slot antes de desenhar. */
+	/** Um quadro pra subir pro slot antes de desenhar (ou, bEvict, só devolver os blocos do slot ao atlas). */
 	struct FUpload
 	{
 		FBakeRef Bake;
 		int32 Frame = 0;
 		int32 Slot = 0;
+		bool bEvict = false;
 	};
 
 	// Até 32 quadros na placa (dois por explosão: 16 explosões). Cada vaga tem a
@@ -84,7 +86,14 @@ namespace BlastRaymarch
 	// pior caso (o quadro mais cheio das gravações carregadas × 32).
 	constexpr int32 SlotsY = 2;
 	constexpr int32 MaxSlots = 32;
-	constexpr int32 MaxAtlasBricksPerAxis = 64;   // 640³ RGBA8 = 1 GB no máximo absoluto
+	// 500³ RGBA8 = 500 MB (+ 108 MB da meia resolução) no máximo: a Carga Pesada do EmberGen
+	// (até 7 592 blocos por quadro) pediria 1,2 GB pro pior caso das 32 vagas cheias dela
+	constexpr int32 MaxAtlasBricksPerAxis = 50;
+	/** Blocos por eixo do atlas pro quadro mais cheio das gravações carregadas (o jogo e o render usam a mesma conta). */
+	inline int32 AtlasSide(int32 MaxBricks)
+	{
+		return FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * MaxSlots, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
+	}
 	constexpr int32 MaxInstances = 16;
 	constexpr int32 MaxLightCaches = 4;
 	constexpr int32 MaxWarps = 4;           // BattleSmoke::MaxWarps

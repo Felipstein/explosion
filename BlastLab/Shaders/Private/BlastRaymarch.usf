@@ -73,6 +73,9 @@ float DetailPeriod;   // ciclo das bolhas (s): curto o bastante pra elas não es
 // semitransparente de ~1 m vira um contorno curto e as bolhas da casca ganham borda
 float SharpPow;       // 0 = sem
 float SharpRef;       // densidade (unidades da fuligem) abaixo da qual afia
+// O clarão da detonação (BlastRaymarch.cpp): o quanto dele em cada explosão vem em InstFirePos.w
+float FlashGain;      // a emissão × (1 + FlashGain · clarão)
+float FlashDT;        // o miolo quente esquenta FlashDT · clarão (unidades de temperatura da gravação; +500 K)
 Texture3D<float4> Warp0;
 Texture3D<float4> Warp1;
 Texture3D<float4> Warp2;
@@ -649,14 +652,16 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float Dep
 			const float Albedo = lerp(DustAlbedo, InstLook[I].a, WS);
 
 			// corpo negro com o reforço na frente de chama (onde ainda há combustível)
-			const float TN = saturate(F.g * TempScale);
+			// no clarão, só o miolo que já é fogo esquenta (a casca fria não acende)
+			const float Fl = InstFirePos[I].w;
+			const float TN = saturate((F.g + FlashDT * Fl * smoothstep(0.12, 0.45, F.g)) * TempScale);
 			const float4 Bb = BlackBody.SampleLevel(LinearClamp, float2(TN, 0.5), 0);
 			float Flame = 1.0;
 			if (F.g > 0.12)
 			{
 				Flame += FlameBoost * smoothstep(0.02, 0.35, SampleFuel(Lpw, I));
 			}
-			const float3 Emit = Bb.rgb * (pow(max(Bb.a, 0.0), EmissionCurve) * EmissionGain * InstLight[I].z * Flame)
+			const float3 Emit = Bb.rgb * (pow(max(Bb.a, 0.0), EmissionCurve) * EmissionGain * InstLight[I].z * Flame * (1.0 + FlashGain * Fl))
 				* (SigSoot * (1.0 - InstLook[I].a));
 
 			// luz: do cache (marchado neste quadro) ou a transmitância do céu gravada

@@ -63,6 +63,9 @@ private:
 	void PassShell();
 	void PassBomber();
 	template <int32 Level> void Quality();
+	/** O teste do clarão: 0 = o modo, 1 = a duração, 2 = a força (blast.Flash*), com o ajuste na tela. */
+	void CycleFlash(int32 Which);
+	template <int32 Which> void FlashCycle() { CycleFlash(Which); }
 
 	void TickAutoTest(float DeltaTime);
 

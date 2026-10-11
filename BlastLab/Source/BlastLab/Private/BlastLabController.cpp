@@ -17,6 +17,7 @@
 #include "ExplosionVolume.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/GameModeBase.h"
+#include "HAL/IConsoleManager.h"
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
@@ -194,6 +195,52 @@ void ABlastLabController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ABlastLabController::Quality<1>);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ABlastLabController::Quality<2>);
 	InputComponent->BindKey(EKeys::Four, IE_Pressed, this, &ABlastLabController::Quality<3>);
+	// depuração do clarão (10/10): G liga e desliga, J a duração, K a força (blast.Flash*, BlastRaymarch.cpp)
+	InputComponent->BindKey(EKeys::G, IE_Pressed, this, &ABlastLabController::FlashCycle<0>);
+	InputComponent->BindKey(EKeys::J, IE_Pressed, this, &ABlastLabController::FlashCycle<1>);
+	InputComponent->BindKey(EKeys::K, IE_Pressed, this, &ABlastLabController::FlashCycle<2>);
+}
+
+void ABlastLabController::CycleFlash(int32 Which)
+{
+	IConsoleManager& CM = IConsoleManager::Get();
+	IConsoleVariable* VMode = CM.FindConsoleVariable(TEXT("blast.FlashMode"));
+	IConsoleVariable* VTau = CM.FindConsoleVariable(TEXT("blast.FlashTau"));
+	IConsoleVariable* VStrength = CM.FindConsoleVariable(TEXT("blast.FlashStrength"));
+	if (!VMode || !VTau || !VStrength)
+	{
+		return;
+	}
+	static const float Taus[] = { 0.06f, 0.10f, 0.16f };
+	static const float Strengths[] = { 1.0f, 2.0f, 4.0f };
+	auto Next = [](const float* Values, int32 Num, float Current)
+	{
+		int32 i = 0;
+		while (i < Num && !FMath::IsNearlyEqual(Values[i], Current, 1e-3f))
+		{
+			++i;
+		}
+		return Values[(i + 1) % Num];
+	};
+	if (Which == 0)
+	{
+		VMode->Set(VMode->GetInt() == 0 ? 1 : 0, ECVF_SetByConsole);
+	}
+	else if (Which == 1)
+	{
+		VTau->Set(Next(Taus, 3, VTau->GetFloat()), ECVF_SetByConsole);
+	}
+	else
+	{
+		VStrength->Set(Next(Strengths, 3, VStrength->GetFloat()), ECVF_SetByConsole);
+	}
+	static const TCHAR* Modes[] = { TEXT("ligado"), TEXT("desligado") };
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(424243, 60.0f, FColor::Cyan, FString::Printf(
+			TEXT("CLARAO DO FOGO:  [G] %s   |   [J] duracao = %.0f ms   |   [K] forca = %.0fx"),
+			Modes[FMath::Clamp(VMode->GetInt(), 0, 1)], VTau->GetFloat() * 1000.0f, VStrength->GetFloat()));
+	}
 }
 
 // ---- terreno sob o cursor --------------------------------------------------------

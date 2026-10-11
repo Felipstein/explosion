@@ -25,6 +25,16 @@ DECLARE_GPU_STAT_NAMED(BlastRaymarch, TEXT("BlastRaymarch"));
 
 using namespace BlastRaymarch;
 
+// O clarão (10/10): o do próprio fogo (o Felipe testou ao vivo os dois jeitos e ficou com esse; o
+// brilho curto separado cortava no chão), τ 100 ms no relógio da gravação e força 2×. Depuração no app:
+// G liga e desliga, J a duração, K a força (BlastLabController).
+static TAutoConsoleVariable<int32> CVarFlashMode(TEXT("blast.FlashMode"), 0,
+	TEXT("O clarão do fogo: 0 = ligado, 1 = desligado"), ECVF_RenderThreadSafe);
+static TAutoConsoleVariable<float> CVarFlashTau(TEXT("blast.FlashTau"), 0.10f,
+	TEXT("A queda do clarão (s da gravação)"), ECVF_RenderThreadSafe);
+static TAutoConsoleVariable<float> CVarFlashStrength(TEXT("blast.FlashStrength"), 2.0f,
+	TEXT("A força do clarão (1, 2, 4)"), ECVF_RenderThreadSafe);
+
 namespace
 {
 	// reference/webgl/js/instances.js params e VOL_DEFAULTS (os comentários de lá
@@ -259,6 +269,8 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, DetailPeriod)
 	SHADER_PARAMETER(float, SharpPow)
 	SHADER_PARAMETER(float, SharpRef)
+	SHADER_PARAMETER(float, FlashGain)
+	SHADER_PARAMETER(float, FlashDT)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, Worley)
 	SHADER_PARAMETER(FMatrix44f, ClipToCamera)
 	SHADER_PARAMETER(FVector3f, CameraForward)
@@ -419,6 +431,10 @@ void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHIC
 	TArray<uint32> Table;
 	for (const FUpload& U : Ups)
 	{
+		if (U.bEvict || !U.Bake)
+		{
+			continue;       // só devolveu os blocos (o jogo tirou o quadro velho da vaga)
+		}
 		const FBakeData& B = *U.Bake;
 		if (B.Res > PoolDims.X || B.FuelRes > PoolDims.Y || B.MacroRes > PoolDims.Z || U.Slot < 0 || U.Slot >= MaxSlots)
 		{
@@ -508,8 +524,9 @@ void FBlastRaymarchExtension::ScatterPending(FRDGBuilder& GraphBuilder, const FS
 
 void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate& RHICmdList, const FIntVector& Dims, int32 MaxBricks)
 {
-	// o atlas pro pior caso: todas as vagas com o quadro mais cheio das gravações carregadas
-	const int32 Side = FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * MaxSlots, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
+	// o atlas pro pior caso: todas as vagas com o quadro mais cheio das gravações carregadas (com teto;
+	// o jogo tira das vagas os quadros velhos quando os blocos não cabem, UBlastRaymarchSubsystem::Tick)
+	const int32 Side = AtlasSide(MaxBricks);
 	if (PoolPT.IsValid() && PoolDims == Dims && AtlasBricks.X >= Side)
 	{
 		return;
@@ -653,6 +670,17 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	static const float SharpRefCfg = FMath::Max(ParamOr(TEXT("RmSharpRef="), 0.25f), 1e-3f);
 	Base.SharpPow = SharpPowCfg;
 	Base.SharpRef = SharpRefCfg;
+	// o clarão (10/10; Jimenez, SIGGRAPH 2014: o halo é o bloom do próprio fogo, sem sprite): nos primeiros
+	// ~0.1–0.2 s da gravação (τ 100 ms, blast.FlashTau) o miolo quente esquenta +500 K (passa por amarelo-branco: 2000 → 2500 K é ~×5 de
+	// luminância de corpo negro, ~×2 depois da curva da emissão) e a emissão × (1 + 3·força·clarão), força 2× (o Felipe escolheu ao vivo, 10/10). -RmFlashGain=0 -RmFlashDT=0 desligam (comparação)
+	// a força (blast.FlashStrength 1/2/4) sobe o ganho e o calor juntos
+	static const float FlashGainCfg = ParamOr(TEXT("RmFlashGain="), 3.0f);
+	static const float FlashDTCfg = ParamOr(TEXT("RmFlashDT="), 500.0f / 3600.0f / TempScale);
+	const int32 FlashMode = CVarFlashMode.GetValueOnRenderThread();
+	const float FlashStrength = FMath::Max(CVarFlashStrength.GetValueOnRenderThread(), 0.0f);
+	const bool bFireFlash = FlashMode == 0;
+	Base.FlashGain = bFireFlash ? FlashGainCfg * FlashStrength : 0.0f;
+	Base.FlashDT = bFireFlash ? FlashDTCfg * FMath::Sqrt(FlashStrength) : 0.0f;
 	const bool bDetail = Worley.IsValid() && DetailErodeCfg > 0.0f;
 	Base.DetailErode = DetailErodeCfg;
 	Base.DetailTemp = DetailTempCfg;
@@ -664,6 +692,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 
 	// as explosões: caixa justa, passos pelo tamanho na tela, cache de luz pras maiores
 	struct FVis { int32 Index; float Frac; };
+	float MaxFlash = 0.0f;
 	TArray<FVis> Vis;
 	int32 N = 0;
 	FRHITexture* WarpTex[MaxWarps] = {};
@@ -745,7 +774,8 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain, float(WarpSlot));
 		Base.InstBoxMin[N] = FVector4f(Rel(World.Min), 0.0f);
 		Base.InstBoxMax[N] = FVector4f(Rel(World.Max), 0.0f);
-		Base.InstFirePos[N] = FVector4f(Foot + LP * I.Scale, 0.0f);
+		Base.InstFirePos[N] = FVector4f(Foot + LP * I.Scale, I.Flash);
+		MaxFlash = FMath::Max(MaxFlash, I.Flash);
 		Base.InstFireCol[N] = FVector4f(LC, 0.0f);
 		Vis.Add({ N, Frac });
 		++N;
@@ -860,7 +890,9 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		// metros relativos à câmera de agora → mundo (cm) → clip do quadro anterior (em double, depois float)
 		P->CamToPrevClip = FMatrix44f(FScaleMatrix(100.0) * FTranslationMatrix(CamCm) * PrevWorldToClip);
 		P->HistValid = bHistory ? 1.0f : 0.0f;
-		P->HistAlpha = HistAlpha;
+		// no clarão o quadro novo pesa mais: o acúmulo atrasaria e achataria o pico (revisor de 10/10);
+		// pela metade, a granulação da marcha não aparece nas outras explosões durante os ~0.1 s
+		P->HistAlpha = FMath::Max(HistAlpha, FMath::Min(0.5f * MaxFlash * (Base.FlashGain > 0.0f ? 1.0f : 0.0f), 1.0f));
 		TShaderMapRef<FBlastRaymarchTemporalCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch Temporal"), Shader, P,
 			FComputeShaderUtils::GetGroupCount(Half, FIntPoint(8, 8)));

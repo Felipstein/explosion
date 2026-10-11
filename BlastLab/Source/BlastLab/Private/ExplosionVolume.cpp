@@ -1,4 +1,4 @@
-﻿#include "ExplosionVolume.h"
+#include "ExplosionVolume.h"
 
 #include "BlastRaymarchSubsystem.h"
 
@@ -43,6 +43,8 @@ namespace
 	// Clarão da detonação (js/main.js env.flashGain/flashTau; js/instances.js
 	// lights(): flashGain·s²·exp(−t/flashTau), cor 1 : 0.86 : 0.64).
 	constexpr float FlashGain = 180.0f;
+	// 35 ms: com 60 ms (10/10) a luz sem sombra ficava à vista atravessando os objetos (o Felipe achou);
+	// mais longa só quando ela fizer sombra (a etapa 2 do clarão)
 	constexpr float FlashTau = 0.035f;
 	// O clarão tem luz própria (FlashLight) que some em ~0.15 s (§4d A4: "o
 	// chão volta ao normal até 0.15 s"); o alcance vai até 1% do ambiente.
@@ -58,13 +60,6 @@ namespace
 	// física desde 07/10), cai ~14× até 0.9 s e ~60× até 1.2 s, perto da física
 	// (bola de 2000 K que cai ~100× até 1 s, docs/CONCEITO_EXPLOSOES pesquisa 02)
 	constexpr float LightCurveK = 1.0f / 0.44f;
-	// O ofuscamento da bola: halo de ~2.5× a bola, miolo a ~3× o branco do dia
-	// no pico, pelo quadrado da luz física relativa ao pico (forte até ~0.5 s,
-	// some até ~0.7 s, antes da casca escurecer)
-	const TCHAR* GlarePath = TEXT("/Game/Materials/M_FireGlare.M_FireGlare");
-	// 45 m: com 30 m ele era tímido na câmera baixa (rodada 2: no vídeo o
-	// ofuscamento borra ~1 diâmetro em volta da bola de 0 a 0.6 s)
-	constexpr float GlareSizeCm = 4500.0f, GlareLum = 1.5e4f;
 
 	// Duas luzes, como no WebGL, que usava uma queda pro cenário e outra dentro
 	// do próprio volume. Uma luz só, a 1/d², iluminava a fumaça colada nela 15×
@@ -276,12 +271,6 @@ AExplosionVolume::AExplosionVolume()
 	FlashStar->SetRelativeLocation(FVector(0.0f, 0.0f, 300.0f));
 	FlashStar->SetCastShadow(false);
 	FlashStar->SetVisibility(false);
-
-	FireGlare = CreateDefaultSubobject<UMaterialBillboardComponent>(TEXT("FireGlare"));
-	FireGlare->SetupAttachment(Foot);
-	FireGlare->SetRelativeLocation(FVector(0.0f, 0.0f, 500.0f));
-	FireGlare->SetCastShadow(false);
-	FireGlare->SetVisibility(false);
 }
 
 void AExplosionVolume::BeginPlay()
@@ -297,11 +286,6 @@ void AExplosionVolume::BeginPlay()
 		StarMaterial = UMaterialInstanceDynamic::Create(Star, this);
 		StarMaterial->SetScalarParameterValue(TEXT("Seed"), FMath::FRand());
 		FlashStar->AddElement(StarMaterial, nullptr, false, StarSizeCm, StarSizeCm, nullptr);
-	}
-	if (UMaterialInterface* Glare = LoadObject<UMaterialInterface>(nullptr, GlarePath))
-	{
-		GlareMaterial = UMaterialInstanceDynamic::Create(Glare, this);
-		FireGlare->AddElement(GlareMaterial, nullptr, false, GlareSizeCm, GlareSizeCm, nullptr);
 	}
 }
 
@@ -668,7 +652,6 @@ void AExplosionVolume::UpdateLights(float T)
 	FlashStar->SetVisibility(bOn && T < StarEnd && StarMaterial != nullptr);
 	if (!bOn)
 	{
-		FireGlare->SetVisibility(false);
 		return;
 	}
 	const float Area = SizeScale * SizeScale;      // a luz vai com a área (W^(2/3))
@@ -709,40 +692,11 @@ void AExplosionVolume::UpdateLights(float T)
 		}
 	}
 	const float RawPeak = FMath::Max3(Color.R, Color.G, Color.B);
-	float Rel = 0.0f;                              // a luz física relativa ao pico (0–1)
 	if (BakeLightPeak > 0.0f && RawPeak > 0.0f)
 	{
-		Rel = FMath::Pow(RawPeak / BakeLightPeak, LightCurveK);
 		Color *= FMath::Pow(RawPeak / BakeLightPeak, LightCurveK - 1.0f);
 	}
 	const float Peak = FMath::Max3(Color.R, Color.G, Color.B);
-	// o ofuscamento: no centro da luz, pelo quadrado dela
-	const float Glare = bFlash && bGlare ? GlareLum * Rel * Rel : 0.0f;
-	// o núcleo do clarão (FlashCoreM): o mesmo halo, do tamanho de ~1 tanque, só nos
-	// primeiros 0.15 s, no pé da bola
-	const bool bCore = bFlash && FlashCoreM > 0.0f && T < 3.0f * FlashCoreTauS;
-	const bool bGlareOn = GlareMaterial != nullptr && (bCore || Glare > 0.02f * GlareLum);
-	FireGlare->SetVisibility(bGlareOn);
-	if (bGlareOn)
-	{
-		// o tamanho do sprite (cm do mundo) só quando troca de modo: cada troca refaz o render
-		const float WantSize = bCore ? FlashCoreM * 100.0f : GlareSizeCm;
-		if (FireGlare->Elements.Num() && !FMath::IsNearlyEqual(FireGlare->Elements[0].BaseSizeX, WantSize))
-		{
-			FireGlare->Elements[0].BaseSizeX = FireGlare->Elements[0].BaseSizeY = WantSize;
-			FireGlare->MarkRenderStateDirty();
-		}
-		if (bCore)
-		{
-			GlareMaterial->SetScalarParameterValue(TEXT("Intensity"), FlashCoreLum * FMath::Exp(-T / FlashCoreTauS));
-			FireGlare->SetRelativeLocation(FVector(0.0f, 0.0f, 0.5f * FlashCoreM * 100.0f / FMath::Max(SizeScale, 0.01f)));
-		}
-		else
-		{
-			GlareMaterial->SetScalarParameterValue(TEXT("Intensity"), Glare);
-			FireGlare->SetRelativeLocation(Position);
-		}
-	}
 	const FLinearColor Tint = Peak > 1e-6f ? FLinearColor(Color.R / Peak, Color.G / Peak, Color.B / Peak) : FLinearColor::Black;
 	static const float VolumeLightTest = CommandLineScale(TEXT("-ExplosionVolumeLight="));
 	const float VolumeCandela = VolumeLightFactor * VolumeLightTest * LuxPerUnit * Area * LightScale * VolumeLightScale;

@@ -91,6 +91,24 @@ como passo próprio depois do TSR e antes do bloom:
     a grade colocada com diferença central corta a resolução efetiva pela metade
     (por isso a 128 quase não ganhou da 96); pressão convergida, grade MAC,
     "disturbance" e guia pela 128. Decisão depois de ver a do EmberGen.
+- **O clarão refeito (10/10, item 2 da lista do Felipe: "gambiarra").** Saíram o disco
+  M_FireGlare de 45 m (no teste ele aparecia como um quadrado bege de borda reta e
+  clareava a tela inteira ~⅓ s) e o núcleo de 14 m da morte de tanque. O clarão sai
+  do próprio fogo no raymarch (Jimenez, SIGGRAPH 2014: o halo é o bloom do HDR):
+  o miolo quente esquenta +500 K e a emissão sobe, caindo com τ 100 ms no relógio da
+  gravação, força 2× (o Felipe testou ao vivo e escolheu; o brilho curto separado
+  saiu porque cortava no chão nas armas pequenas). O jogo manda a média do clarão no
+  intervalo do quadro (não some a 30 qps) e o acúmulo temporal pesa menos durante ele.
+  A luz curta do chão segue em 35 ms sem sombra (a sombra dela é o próximo item).
+  Depuração no app: G liga/desliga, J a duração, K a força (`blast.Flash*`). Folha e
+  vídeo: `captures/clarao_cima_ab.jpg`, `clarao_ab_cima.mp4`.
+- **Atlas sem quadros vazios:** com uma gravação grande (a do EmberGen, até 7 592 blocos
+  por quadro) o atlas enchia de quadros velhos e a explosão sumia por instantes; o jogo
+  agora tira das vagas os quadros menos usados quando os blocos não cabem (teto do
+  atlas 500 MB). A Carga Pesada simulada no EmberGen pela sessão Projeto complexo
+  (192³, 19,8 cm) entrou na comparação (`eg_charge`, `captures/fonte_egc_*`): couve-flor
+  nítida, mas mais larga e com o fogo apagando antes de 1 s. O Blender foi descartado;
+  o Houdini foi pro backlog; o porte do simulador pra Unreal não por enquanto.
 - **Gravações em blocos esparsos (BRM2, 10/10).** Uma gravação fina densa não cabe
   no jogo (192³: 2,7 GB). `Tools/brm2.py`: blocos de 8³ só onde há fumaça (+1 voxel
   de borda, como o Sparse Volume Texture da Unreal e o NanoVDB), uma tabela por

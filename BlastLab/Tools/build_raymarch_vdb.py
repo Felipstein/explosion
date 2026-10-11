@@ -24,7 +24,7 @@ Mantaflow (density, flame, temperature, velocity; o calor dele vai a ~1, com os
 fatores do convert_pyro_vdb.py pra ele: calor × 0.30 + chama × 1.3).
 
 Rodar (no Python do Blender, que traz openvdb e numpy):
-  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor]
+  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem]
 (a pasta do Mantaflow é a cache/data dele). Sai em BlastLab/Intermediate/Raymarch/<nome>.brm2 (em blocos,
 brm2.py; a densa intermediária .bin é apagada no fim).
 """
@@ -51,13 +51,15 @@ FPS = float(argv[5]) if len(argv) > 5 else 36.0
 # a temperatura de cada programa vem numa unidade: um fator que iguala o calor mediano da fumaça aos
 # 0,6 s ao da gravação do WebGL (0,72; 09/10: EmberGen da JangaFX × 4, Mantaflow da carga × 0,5)
 TEMP_K = float(argv[6]) if len(argv) > 6 else 1.0
+# a fuligem também (10/10): o fator que iguala a escuridão média da silhueta (Σ fuligem·ds de lado)
+# à da gravação do WebGL; a Carga Pesada do EmberGen (densidade até ~0,3) leva 3,6
+SOOT_FACTOR = float(argv[7]) if len(argv) > 7 else 0.35   # convert_pyro_vdb.py (07/10)
 CURVE = 1.4                 # quadros mais densos no começo (js/bake.js timeOfFrame)
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(TOOLS, '..'))
 OUT = os.path.join(PROJECT, 'Intermediate', 'Raymarch')
 
 # convert_pyro_vdb.py (07/10): EmberGen e Mantaflow
-SOOT_K = 0.35
 TEMP = {'flames': (0.40, 0.55), 'flame': (0.30, 1.3)}
 # BlastRaymarch.cpp (os do WebGL)
 SOOT_EXT, DUST_EXT, ERODE_MEAN = 13.5, 5.5, 0.042 * 0.5
@@ -122,7 +124,9 @@ def main():
         hi = [max(hi[i], b[i]) for i in range(3)]
     flame = 'flames' if 'flames' in names else 'flame'
     temp_heat, temp_flame = TEMP[flame]
-    has_vel = 'velocity' in names
+    # a velocidade vem numa grade vetorial (Mantaflow) ou em três escalares (EmberGen: velocity_x/_y/_z)
+    vel_names = ['velocity'] if 'velocity' in names else (['velocity_x', 'velocity_y', 'velocity_z'] if 'velocity_x' in names else [])
+    has_vel = bool(vel_names)
     lo[2] = min(lo[2], 0)
     dims = [hi[i] - lo[i] + 1 for i in range(3)]
     side = max(dims)
@@ -143,7 +147,7 @@ def main():
         return c
 
     def fields(path):
-        g = read(path, ['density', flame, 'temperature', 'velocity'])
+        g = read(path, ['density', flame, 'temperature'] + vel_names)
         out = []
         for name in ('density', flame, 'temperature'):
             a = np.zeros(dims, dtype=np.float32)
@@ -151,9 +155,17 @@ def main():
                 g[name].copyToArray(a, ijk=tuple(lo))
             out.append(cube(a))
         vel = None
-        if has_vel and g['velocity'] is not None:
+        if len(vel_names) == 1 and g['velocity'] is not None:
             a = np.zeros(dims + [3], dtype=np.float32)
             g['velocity'].copyToArray(a, ijk=tuple(lo))
+            vel = cube(a)
+            vel[..., 1] *= -1.0
+        elif len(vel_names) == 3 and all(g[v] is not None for v in vel_names):
+            a = np.zeros(dims + [3], dtype=np.float32)
+            for c, v in enumerate(vel_names):
+                comp = np.zeros(dims, dtype=np.float32)
+                g[v].copyToArray(comp, ijk=tuple(lo))
+                a[..., c] = comp
             vel = cube(a)
             vel[..., 1] *= -1.0
         return out + [vel]
@@ -169,7 +181,7 @@ def main():
             t = dur * (q / (FRAMES - 1)) ** CURVE
             src = files[min(len(files) - 1, int(round(t * FPS)))]
             den, fl, heat, vel = fields(src)
-            soot = np.clip(den * SOOT_K, 0.0, 4.0)
+            soot = np.clip(den * SOOT_FACTOR, 0.0, 4.0)
             temp = np.clip((heat * temp_heat + fl * temp_flame) * TEMP_K, 0.0, 1.6)
             fuel = np.clip(fl, 0.0, 1.0)
             empty = (soot < 0.003) & (fuel < 0.05)

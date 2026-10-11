@@ -233,17 +233,12 @@ AExplosionVolume* UBlastLabSimulation::Detonate(const FVector& Ground, int32 Wea
 	}
 	if (E)
 	{
-		E->bGlare = BodyMaterial == nullptr;           // o halo só no corpo do WebGL (ExplosionVolume.h)
 		if (W.bTankDeath && BodyMaterial)
 		{
 			ApplyGasolineBallLook(E);
-			// O primeiro segundo (painel, rodada f/p): o clarão branco enche o quadro
-			// por 2–3 quadros, a luz do clarão cai em 0.2–0.3 s e acende o chão em volta
-			// (o "anel de luz" do vídeo é o chão iluminado, não um disco desenhado)
-			// rodada s2: de 0.07 a 0.3 s o núcleo branco do vídeo ocupa ~1.5–2 tanques e
-			// ofusca o tanque e o chão em volta; o de 9.5 m era pequeno
-			E->FlashCoreM = 14.0f;                     // ~1.8 tanque
-			E->FlashCoreTauS = 0.1f;
+			// O primeiro segundo (painel, rodada f/p): a luz do clarão cai em 0.2–0.3 s e
+			// acende o chão em volta (o "anel de luz" do vídeo é o chão iluminado, não um
+			// disco desenhado; o núcleo branco de 14 m saiu em 10/10, ExplosionVolume.h bFlash)
 			E->FlashTauS = 0.08f;
 			E->FlashHeightCm = 100.0f;
 		}
@@ -764,7 +759,6 @@ void UBlastLabSimulation::SpawnWreckBall(FWreckFire& W)
 	E->Opacity = 0.0f;
 	E->Thickness = 1.0f / Scale;            // tão opaca por metro quanto a bola grande (a fuligem gravada é por voxel)
 	E->bFlash = false;
-	E->bGlare = false;
 	E->LightScale = WreckBallLightScale;
 	E->bSceneShadow = false;
 	E->SkirtHeight = 0.0f;                  // sem a saia de poeira

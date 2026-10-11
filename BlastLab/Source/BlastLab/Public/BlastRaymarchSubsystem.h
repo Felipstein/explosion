@@ -61,8 +61,10 @@ private:
 		int32 Variant = -1;
 		int32 Frame = -1;
 		uint64 LastUse = 0;
+		int32 Bricks = 0;       // blocos do atlas que o quadro ocupa
 	};
 	FSlot Slots[BlastRaymarch::MaxSlots];
+	int32 UsedBricks = 0;
 	uint64 TickCount = 0;
 	TSet<TWeakObjectPtr<AExplosionVolume>> WarpLogged;
 	bool bWasEmpty = true;

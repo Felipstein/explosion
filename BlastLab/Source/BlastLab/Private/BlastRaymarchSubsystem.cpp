@@ -1,6 +1,7 @@
 #include "BlastRaymarchSubsystem.h"
 
 #include "Engine/Texture.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "ExplosionBake.h"
@@ -189,6 +190,20 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.Keep = E->Opacity;
 		L.I.Thickness = E->Thickness;
 		L.I.bNuclear = E->bNuclear;
+		// O clarão (10/10): a fase branca da bola real dura ~15–20 ms numa carga de
+		// 1–2 t, mas assim ele passava em 1 quadro (o Felipe: "mal vejo o branco");
+		// os artistas esticam pra 2–3 quadros até ~0.1 s (o Zero Hour, ~0.17 s): τ 100 ms (ele escolheu, 10/10)
+		// no relógio da gravação (escala com o tamanho). Num quadro só
+		// ela se perderia a 30 qps ou num tranco: vai a média de exp(−t/τ) no
+		// intervalo que o quadro cobriu, que conserva a energia do clarão.
+		if (E->bFlash)
+		{
+			IConsoleVariable* CVarTau = IConsoleManager::Get().FindConsoleVariable(TEXT("blast.FlashTau"));   // BlastRaymarch.cpp, trocável ao vivo (G/J/K no app)
+			const float FlashTau = FMath::Max(CVarTau ? CVarTau->GetFloat() : 0.10f, 1e-3f);
+			const float T1 = E->BakeTime();
+			const float T0 = FMath::Max(T1 - DeltaTime / FMath::Max(E->TimeScale > 0.0f ? E->TimeScale : E->SizeScale, 0.01f), 0.0f);
+			L.I.Flash = T1 - T0 > 1e-5f ? FlashTau * (FMath::Exp(-T0 / FlashTau) - FMath::Exp(-T1 / FlashTau)) / (T1 - T0) : FMath::Exp(-T1 / FlashTau);
+		}
 		L.I.Warp = E->GetWarp() ? E->GetWarp()->GetResource() : nullptr;
 		if (L.I.Warp && !WarpLogged.Contains(E))
 		{
@@ -227,6 +242,10 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		Needed.Add(Key(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1)));
 	}
 	const int32 NumSlots = MaxSlots;
+	// os blocos do atlas: o que não couber faz sair das vagas os quadros velhos (os menos usados que
+	// nenhuma explosão precisa agora), como as próprias vagas já fazem
+	const int32 Side = AtlasSide(MaxBricks);
+	const int32 Capacity = Side * Side * Side;
 	auto SlotFor = [&](int32 V, int32 F) -> int32
 	{
 		int32 Victim = -1;
@@ -245,7 +264,32 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		}
 		if (Victim >= 0)
 		{
-			Slots[Victim] = { V, F, TickCount };
+			UsedBricks -= Slots[Victim].Bricks;
+			const int32 Need = Sources[V]->NumBricks[F];
+			while (UsedBricks + Need > Capacity)
+			{
+				int32 Old = -1;
+				for (int32 s = 0; s < NumSlots; ++s)
+				{
+					if (s != Victim && Slots[s].Bricks > 0 && !Needed.Contains(Key(Slots[s].Variant, Slots[s].Frame))
+						&& (Old < 0 || Slots[s].LastUse < Slots[Old].LastUse))
+					{
+						Old = s;
+					}
+				}
+				if (Old < 0)
+				{
+					break;      // só sobraram quadros em uso: o render avisa que o atlas encheu
+				}
+				UsedBricks -= Slots[Old].Bricks;
+				Slots[Old] = FSlot();
+				FUpload Evict;
+				Evict.Slot = Old;
+				Evict.bEvict = true;
+				Uploads.Add(Evict);
+			}
+			UsedBricks += Need;
+			Slots[Victim] = { V, F, TickCount, Need };
 			Uploads.Add({ Sources[V], F, Victim });
 		}
 		return Victim;
