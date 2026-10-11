@@ -30,6 +30,7 @@ A arquitetura inteira (peças, caminho de cada imagem, onde cada mundo encaixa n
 | `usa_vs_china_gemini.webp` | **A atmosfera mais forte:** a poeira acesa pelo sol, o chão rachado, a luz contra; a USA clara e a China escura se separam bem. |
 | `china_vs_gla_gemini.webp` | **A leitura das facções:** China escura e GLA cor de areia no mesmo chão, cada uma lendo pelo claro e escuro. Luz limpa, sombra nítida. |
 | `close_game_cam_gpt.webp` | **De perto, o escolhido pelo Felipe:** o detalhe de tanque, chão e muro. A cor bate com `day_game_cam` (medido). Ignorar o desfoque de miniatura em cima e embaixo; a câmera está mais baixa e mais perto que a do jogo. |
+| `close_ground_light_gemini.webp` | **De perto, o alvo de luz e de chão (11/10):** o tanque da USA ao lado de um Dozer (o Dozer é só rascunho, não é alvo de modelo). O Felipe: "parece muito a nossa gameplay final". Pro look, **a luz**: sol baixo, sombra longa e macia, cor desbotada. Pro WorldForge, **o chão**: areia batida com marca de esteira e pneu, seixos e moitas secas espalhados, e a ondulação suave do vento. |
 
 ### `more/`: as outras da golden hour (apoio)
 
