@@ -1,5 +1,6 @@
-// Cópia do BlastLab (BlastLab/Source/BlastLab/Public/ExplosionVolume.h, 08/10/2026) pro jogo. A original continua
-// sendo a referência: mudanças de aparência nascem lá e são trazidas pra cá.
+// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
+// BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
+// de aparência nascem lá e são trazidas pra cá.
 #pragma once
 
 #include "GameFramework/Actor.h"
@@ -94,10 +95,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
 	TObjectPtr<UMaterialBillboardComponent> FlashStar;
 
-	/** O ofuscamento da bola branca (0.1–0.5 s), pela curva da emissão (M_FireGlare). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BlastLab")
-	TObjectPtr<UMaterialBillboardComponent> FireGlare;
-
 	/** O relógio da gravação (0 = o do tamanho, SizeScale): a morte de tanque toca sem esticar. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float TimeScale = 0.0f;
@@ -126,18 +123,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float LoopLife = 0.0f;
 
-	/** O clarão e o ofuscamento da detonação (um fogo contínuo não tem). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
-	bool bFlash = true;
-
 	/**
-	 * O halo de ofuscamento (M_FireGlare, disco virado pra câmera). Só no corpo
-	 * do WebGL: na EG a curva da luz fica alta ~1 s e o halo lavava a bola inteira
-	 * de creme (A/B de 07/10, captures/ue/_ab_emission_eg.jpg); o brilho dela vem
-	 * do próprio fogo e do bloom.
+	 * O clarão da detonação (um fogo contínuo não tem): a luz curta que acende o
+	 * chão (FlashLight) e, no raymarch, o fogo mais quente e mais forte nos
+	 * primeiros ~20 ms (BlastRaymarch.cpp, o clarão). O brilho em volta é o bloom
+	 * do próprio fogo: os discos virados pra câmera (M_FireGlare de 45 m e o
+	 * núcleo de 14 m da morte de tanque) saíram em 10/10 ("gambiarra", lavavam a
+	 * tela e tapavam as unidades; Jimenez, SIGGRAPH 2014).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
-	bool bGlare = true;
+	bool bFlash = true;
 
 	/**
 	 * Mais fuligem e fogo por metro só no começo (× EarlyThickness em t = 0,
@@ -168,19 +163,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float EmissionDip = 1.0f;
 
-	/**
-	 * O núcleo do clarão (0–0.15 s): o halo M_FireGlare do tamanho de FlashCoreM
-	 * (~1.2 tanque), a FlashCoreLum cd/m² caindo com τ 0.05 s. No vídeo o clarão
-	 * branco enche o quadro nos 2 primeiros quadros; sem ele a morte de tanque
-	 * abria com uma bolinha contida (painel da sessão de arte, rodada f).
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
-	float FlashCoreM = 0.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
-	float FlashCoreLum = 2.0e5f;
-	/** A queda do núcleo (s): visível até ~3τ. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
-	float FlashCoreTauS = 0.05f;
 	/** A queda da luz do clarão (s; 0 = a padrão, 35 ms) e a altura dela (cm; 0 = a padrão, 3 m): baixa, ela acende o chão em volta. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float FlashTauS = 0.0f;
@@ -193,6 +175,10 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	bool bHideVolume = false;
+
+	/** A bomba nuclear: a nuvem muda de marrom pra branca (o raymarch, BlastRaymarch.cpp). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
+	bool bNuclear = false;
 
 	/** Achata (< 1) a gravação na vertical: o anel de poeira rente ao chão. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
@@ -258,6 +244,7 @@ public:
 	 */
 	void SetWarp(UTexture* Warp);
 	bool IsWarped() const { return WarpTexture != nullptr; }
+	UTexture* GetWarp() const { return WarpTexture; }
 
 	/** Caixa da fumaça no quadro gravado atual, no mundo (cm). */
 	FBox SmokeBoxWorld() const;
@@ -289,8 +276,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> StarMaterial;
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> GlareMaterial;
 	/** O pico da luz gravada (o maior canal de LightColor), pra levar a curva à física. */
 	float BakeLightPeak = -1.0f;
 	virtual void BeginPlay() override;

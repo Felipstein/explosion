@@ -64,6 +64,47 @@ namespace
 	/** O tranco do tiro: o canhão empurra o casco pra trás (graus por passo). */
 	constexpr float FireKickDeg = 1.2f;
 	constexpr float WreckFireSeconds = 30.0f;
+
+	// a obra e o prédio (dados de primitiva do M_Structure, Game/Tools/import_provisional.py)
+	constexpr int32 DataPlayerColor = 0;   // 0–3
+	constexpr int32 DataPower = 4;
+	constexpr int32 DataCut = 5;           // metros acima do pivô
+	/** A solda na obra: faíscas por segundo e a luz de cada uma (pequena: é detalhe, não clarão). */
+	constexpr float SparksPerSecond = 14.0f;
+	constexpr float SparkCandela = 7.0e4f;
+	/** O prédio destruído afunda até esta fração da altura (o ZH derruba o modelo no chão). */
+	constexpr float StructureSinkFraction = 0.42f;
+	constexpr float StructureSinkSeconds = 3.5f;
+
+	uint32 NextRandom(uint32& Seed)
+	{
+		Seed ^= Seed << 13; Seed ^= Seed >> 17; Seed ^= Seed << 5;
+		return Seed;
+	}
+
+	float Random01(uint32& Seed)
+	{
+		return float(NextRandom(Seed) & 0xFFFFFF) / float(0x1000000);
+	}
+
+	/** O material da obra de um material da base (MI_Body → MI_Body_Build) e o caminho de volta. */
+	UMaterialInterface* BuildTwin(UMaterialInterface* M, bool bBuild)
+	{
+		if (!M)
+		{
+			return nullptr;
+		}
+		const FString Name = M->GetName();
+		const bool bIsBuild = Name.EndsWith(TEXT("_Build"));
+		if (bIsBuild == bBuild || !Name.StartsWith(TEXT("MI_")))
+		{
+			return M;
+		}
+		const FString Twin = bBuild ? Name + TEXT("_Build") : Name.LeftChop(6);
+		const FString Path = FString::Printf(TEXT("/Game/Structures/Materials/%s.%s"), *Twin, *Twin);
+		UMaterialInterface* Out = LoadObject<UMaterialInterface>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		return Out ? Out : M;
+	}
 }
 
 ARTSUnitActor::ARTSUnitActor()
@@ -124,13 +165,81 @@ void ARTSUnitActor::AddParts(const TArray<FString>& Paths, USceneComponent* Pare
 	}
 }
 
+UStaticMeshComponent* ARTSUnitActor::AddPart(UStaticMesh* Mesh, USceneComponent* Parent)
+{
+	UStaticMeshComponent* Part = NewObject<UStaticMeshComponent>(this);
+	Part->SetupAttachment(Parent);
+	Part->SetStaticMesh(Mesh);
+	Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Part->SetMobility(EComponentMobility::Movable);
+	Part->SetCanEverAffectNavigation(false);
+	Part->RegisterComponent();
+	return Part;
+}
+
 void ARTSUnitActor::Setup(uint32 InSimId, const FRTSUnitVisual& Visual)
 {
 	SimId = InSimId;
+	SparkSeed = CosmeticHash(InSimId) | 1u;
 	RadiusCm = Visual.RadiusM * 100.0f;
 	MuzzleHeightCm = Visual.MuzzleHeightM * 100.0f;
 	AddParts(Visual.HullMeshes, Body, HullParts);
 	AddParts(Visual.TurretMeshes, TurretPivot, TurretParts);
+	// o que gira sozinho: um pivô no eixo, a malha com a origem nele
+	for (const FRTSSpinPart& Spin : Visual.SpinParts)
+	{
+		if (UStaticMesh* Mesh = LoadMesh(Spin.Mesh))
+		{
+			USceneComponent* Pivot = NewObject<USceneComponent>(this);
+			Pivot->SetupAttachment(Body);
+			Pivot->SetRelativeLocation(Spin.AtCm);
+			Pivot->RegisterComponent();
+			SpinPivots.Add(Pivot);
+			SpinParts.Add(AddPart(Mesh, Pivot));
+			SpinRpm.Add(Spin.Rpm);
+			SpinAngleDeg.Add(float(CosmeticHash(InSimId + SpinPivots.Num()) % 360));
+		}
+	}
+	if (!Visual.ScaffoldMesh.IsEmpty())
+	{
+		if (UStaticMesh* Mesh = LoadMesh(Visual.ScaffoldMesh))
+		{
+			Scaffold = AddPart(Mesh, Body);
+			Scaffold->SetVisibility(false);
+		}
+	}
+	if (!Visual.BladeMesh.IsEmpty())
+	{
+		if (UStaticMesh* Mesh = LoadMesh(Visual.BladeMesh))
+		{
+			BladePivot = NewObject<USceneComponent>(this);
+			BladePivot->SetupAttachment(Body);
+			BladePivot->SetRelativeLocation(Visual.BladeAtCm);
+			BladePivot->RegisterComponent();
+			HullParts.Add(AddPart(Mesh, BladePivot));
+		}
+	}
+	if (!Visual.CargoMesh.IsEmpty())
+	{
+		if (UStaticMesh* Mesh = LoadMesh(Visual.CargoMesh))
+		{
+			for (const FVector& Slot : Visual.CargoSlotsCm)
+			{
+				UStaticMeshComponent* Crate = AddPart(Mesh, Body);
+				Crate->SetRelativeLocation(Slot);
+				Crate->SetVisibility(false);
+				CargoParts.Add(Crate);
+			}
+		}
+	}
+	// prédio: a área e a altura (a obra corta até ela; as faíscas correm na borda)
+	bStructure = !Visual.ScaffoldMesh.IsEmpty();
+	if (HullParts.Num() && HullParts[0]->GetStaticMesh())
+	{
+		const FBox Box = HullParts[0]->GetStaticMesh()->GetBoundingBox();
+		HeightCm = FMath::Max(100.0f, float(Box.Max.Z));
+		FootprintCm = FBox2D(FVector2D(Box.Min.X, Box.Min.Y), FVector2D(Box.Max.X, Box.Max.Y));
+	}
 	// a boca do cano: a ponta da malha do cano (as peças saem no lugar, com origem no centro do tanque)
 	for (const UStaticMeshComponent* Part : TurretParts)
 	{
@@ -141,11 +250,185 @@ void ARTSUnitActor::Setup(uint32 InSimId, const FRTSUnitVisual& Visual)
 	}
 }
 
+void ARTSUnitActor::SetPlayerColor(const FLinearColor& Color)
+{
+	TInlineComponentArray<UStaticMeshComponent*> Parts(this);
+	for (UStaticMeshComponent* Part : Parts)
+	{
+		Part->SetCustomPrimitiveDataVector4(DataPlayerColor, FVector4(Color.R, Color.G, Color.B, 1.0f));
+	}
+}
+
+void ARTSUnitActor::SetPartsFloat(int32 Index, float Value)
+{
+	TInlineComponentArray<UStaticMeshComponent*> Parts(this);
+	for (UStaticMeshComponent* Part : Parts)
+	{
+		Part->SetCustomPrimitiveDataFloat(Index, Value);
+	}
+}
+
+void ARTSUnitActor::SetBuildLook(bool bBuild)
+{
+	if (bBuild == bBuildLook)
+	{
+		return;
+	}
+	bBuildLook = bBuild;
+	// a obra usa o material que corta acima da altura feita (com a solda no corte); pronto,
+	// volta o opaco (o recorte custa no Nanite: só enquanto constrói)
+	for (UStaticMeshComponent* Part : HullParts)
+	{
+		for (int32 Slot = 0; Slot < Part->GetNumMaterials(); ++Slot)
+		{
+			Part->SetMaterial(Slot, BuildTwin(Part->GetMaterial(Slot), bBuild));
+		}
+	}
+	if (Scaffold)
+	{
+		Scaffold->SetVisibility(bBuild);
+	}
+	for (UStaticMeshComponent* Spin : SpinParts)
+	{
+		Spin->SetVisibility(!bBuild);
+	}
+	if (!bBuild)
+	{
+		SetPartsFloat(DataCut, 1000.0f);
+		LastCutSent = -1.0f;
+	}
+}
+
+void ARTSUnitActor::SetStructureState(float InBuildFraction, bool bInPowered)
+{
+	if (bDead)
+	{
+		return;
+	}
+	const bool bWasBuilding = BuildFraction < 1.0f;
+	BuildFraction = FMath::Clamp(InBuildFraction, 0.0f, 1.0f);
+	bPowered = bInPowered;
+	const bool bBuilding = BuildFraction < 1.0f;
+	SetBuildLook(bBuilding);
+	if (bBuilding)
+	{
+		// a altura feita, em metros acima do pivô (a laje já vem pronta: ela é o alicerce)
+		const float Cut = FMath::Lerp(0.3f, HeightCm / 100.0f + 0.5f, BuildFraction);
+		if (FMath::Abs(Cut - LastCutSent) > 0.005f)
+		{
+			SetPartsFloat(DataCut, Cut);
+			LastCutSent = Cut;
+		}
+		PowerShown = 0.0f;
+		PowerOnClock = 0.0f;
+	}
+	else if (bWasBuilding)
+	{
+		PowerOnClock = 0.0f;   // inauguração: as luzes acendem piscando
+	}
+}
+
+void ARTSUnitActor::SetCargo(int32 Boxes)
+{
+	if (Boxes == CargoShown)
+	{
+		return;
+	}
+	CargoShown = Boxes;
+	for (int32 K = 0; K < CargoParts.Num(); ++K)
+	{
+		CargoParts[K]->SetVisibility(K < Boxes);
+	}
+}
+
+void ARTSUnitActor::SetWorking(bool bInWorking)
+{
+	bWorking = bInWorking;
+}
+
+void ARTSUnitActor::TickStructure(float DeltaSeconds)
+{
+	// as luzes: acendem piscando como lâmpada de galpão (0,9 s), apagam em 0,3 s
+	const bool bLit = bPowered && BuildFraction >= 1.0f;
+	if (bLit)
+	{
+		PowerOnClock += DeltaSeconds;
+		const float T = PowerOnClock;
+		PowerShown = T >= 0.9f ? 1.0f : (FMath::Frac(T * 7.3f + 0.13f * FMath::Sin(T * 41.0f)) > 0.45f ? FMath::Min(1.0f, 0.35f + T) : 0.05f);
+	}
+	else
+	{
+		PowerShown = FMath::Max(0.0f, PowerShown - DeltaSeconds / 0.3f);
+		if (BuildFraction >= 1.0f)
+		{
+			PowerOnClock = 0.0f;
+		}
+	}
+	if (FMath::Abs(PowerShown - LastPowerSent) > 0.01f)
+	{
+		SetPartsFloat(DataPower, PowerShown);
+		LastPowerSent = PowerShown;
+	}
+	// o que gira: devagar até parar sem energia (o radar do ZH desliga no apagão)
+	for (int32 K = 0; K < SpinPivots.Num(); ++K)
+	{
+		SpinAngleDeg[K] = FMath::Fmod(SpinAngleDeg[K] + SpinRpm[K] * 6.0f * PowerShown * DeltaSeconds, 360.0f);
+		SpinPivots[K]->SetRelativeRotation(FRotator(0.0f, SpinAngleDeg[K], 0.0f));
+	}
+	// a solda na obra: faíscas na borda do corte
+	if (BuildFraction < 1.0f && !bFogHidden)
+	{
+		SparkClock += DeltaSeconds * SparksPerSecond;
+		while (SparkClock >= 1.0f)
+		{
+			SparkClock -= 1.0f;
+			const float Side = Random01(SparkSeed) * 4.0f;
+			const float Along = FMath::Frac(Side);
+			const FVector2D Lo = FootprintCm.Min * 0.8;
+			const FVector2D Hi = FootprintCm.Max * 0.8;
+			FVector2D P;
+			switch (int32(Side))
+			{
+			case 0: P = FVector2D(FMath::Lerp(Lo.X, Hi.X, Along), Lo.Y); break;
+			case 1: P = FVector2D(Hi.X, FMath::Lerp(Lo.Y, Hi.Y, Along)); break;
+			case 2: P = FVector2D(FMath::Lerp(Hi.X, Lo.X, Along), Hi.Y); break;
+			default: P = FVector2D(Lo.X, FMath::Lerp(Hi.Y, Lo.Y, Along)); break;
+			}
+			// a solda é nas paredes: acima delas (mastro, antena) não solta faísca no ar
+			const float Z = FMath::Clamp(LastCutSent * 100.0f - 10.0f, 30.0f, HeightCm * 0.65f);
+			const FVector At = Body->GetComponentTransform().TransformPosition(FVector(P.X, P.Y, Z));
+			// o brilho e, em metade delas, a gota caindo: um risco de 25 cm (o traçante de 6 m virava laser, 10/10;
+			// só o brilho de 14 cm ficou fraco demais pra ver de cima)
+			ARTSEffect::SpawnFlash(GetWorld(), At, 24.0f, SparkCandela, 0.09f, FLinearColor(5.0f, 2.6f, 0.8f));
+			if (Random01(SparkSeed) < 0.6f)
+			{
+				const FVector Drop(Random01(SparkSeed) * 140.0f - 70.0f, Random01(SparkSeed) * 140.0f - 70.0f, -60.0f - Random01(SparkSeed) * 120.0f);
+				ARTSEffect::SpawnStreak(GetWorld(), At, At + Drop, 520.0f, 25.0f, 3.5f, FLinearColor(6.0f, 3.0f, 0.9f));
+			}
+		}
+	}
+}
+
 void ARTSUnitActor::SetPose(const FVector& Location, float HullYawDeg, float TurretYawWorldDeg, const FVector& GroundNormal, float DeltaSeconds)
 {
 	if (bDead)
 	{
 		return;
+	}
+	if (bStructure)
+	{
+		// prédio não balança nem inclina: fica no nível do lote (a laje desce até 3 m)
+		SetActorLocation(Location);
+		Body->SetWorldRotation(FRotator(0.0f, HullYawDeg, 0.0f));
+		return;
+	}
+	// o Dozer: a lâmina desce e raspa quando ele trabalha, sobe quando anda
+	if (BladePivot)
+	{
+		BladeAmount = FMath::FInterpTo(BladeAmount, bWorking ? 1.0f : 0.0f, DeltaSeconds, 3.0f);
+		BladeClock += DeltaSeconds;
+		const float Pitch = BladeAmount * (4.0f + 5.0f * FMath::Sin(BladeClock * 2.4f)) - (1.0f - BladeAmount) * 3.0f;
+		BladePivot->SetRelativeRotation(FRotator(Pitch, 0.0f, 0.0f));
 	}
 	// velocidade e aceleração do casco (do desenho interpolado), pra rodas e suspensão
 	const FVector Forward = FRotator(0.0f, HullYawDeg, 0.0f).Vector();
@@ -266,9 +549,21 @@ void ARTSUnitActor::Die()
 	Char();
 	// o clarão e a bola são da explosão (BlastFx, a Carga Pesada aprovada); aqui só a carcaça
 	FireLight->SetVisibility(bWreckLive);
+	if (bStructure)
+	{
+		// a obra destruída fica do tamanho que estava (o recorte continua); o andaime cai
+		if (Scaffold)
+		{
+			Scaffold->SetVisibility(false);
+		}
+		SetPartsFloat(DataPower, 0.0f);
+		FireLight->SetRelativeLocation(FVector(0.0f, 0.0f, HeightCm * 0.4f));
+		FireLight->SetAttenuationRadius(FMath::Max(2400.0f, FootprintCm.GetSize().Size() * 1.2f));
+		return;
+	}
 	// a torre voa em ~1 de cada 3 mortes (munição detonando), não em toda (Vanguard ADR-0027)
 	const uint32 H = CosmeticHash(SimId);
-	if (H % 3 == 0)
+	if (H % 3 == 0 && TurretParts.Num())
 	{
 		bTurretFlying = true;
 		const float Angle = float(H % 360);
@@ -302,6 +597,37 @@ void ARTSUnitActor::Char()
 	{
 		Burn(Part);
 	}
+	for (UStaticMeshComponent* Part : SpinParts)
+	{
+		Burn(Part);
+	}
+	if (bStructure)
+	{
+		// o M_Structure não tem os parâmetros do M_UnitPBR: a cor e o brilho vêm da instância dinâmica
+		auto BurnStructure = [](UStaticMeshComponent* Part)
+		{
+			for (int32 Slot = 0; Slot < Part->GetNumMaterials(); ++Slot)
+			{
+				if (UMaterialInstanceDynamic* MID = Part->CreateDynamicMaterialInstance(Slot))
+				{
+					MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.035f, 0.032f, 0.029f, 1.0f));
+					MID->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
+					MID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+					MID->SetScalarParameterValue(TEXT("PlayerMask"), 0.0f);
+					MID->SetScalarParameterValue(TEXT("EmissiveNits"), 0.0f);
+					MID->SetScalarParameterValue(TEXT("Weld"), 0.0f);
+				}
+			}
+		};
+		for (UStaticMeshComponent* Part : HullParts)
+		{
+			BurnStructure(Part);
+		}
+		for (UStaticMeshComponent* Part : SpinParts)
+		{
+			BurnStructure(Part);
+		}
+	}
 }
 
 void ARTSUnitActor::Tick(float DeltaSeconds)
@@ -310,9 +636,24 @@ void ARTSUnitActor::Tick(float DeltaSeconds)
 	RecoilCm = FMath::Max(0.0f, RecoilCm - DeltaSeconds * 120.0f);
 	if (!bDead)
 	{
+		if (bStructure)
+		{
+			TickStructure(DeltaSeconds);
+		}
 		return;
 	}
 	DeathAge += DeltaSeconds;
+	if (bStructure && DeathAge < StructureSinkSeconds + 0.1f)
+	{
+		// desaba: afunda no chão (mais rápido no começo) e inclina um pouco pro lado
+		const float T = FMath::Clamp(DeathAge / StructureSinkSeconds, 0.0f, 1.0f);
+		const float Ease = 1.0f - FMath::Square(1.0f - T);
+		SinkCm = HeightCm * StructureSinkFraction * Ease;
+		const uint32 H = CosmeticHash(SimId);
+		const float Lean = (float(H % 5) - 2.0f) * 1.2f * Ease;
+		Body->SetRelativeLocation(FVector(0.0f, 0.0f, -SinkCm));
+		Body->SetRelativeRotation(FRotator(Lean, Body->GetRelativeRotation().Yaw, -Lean * 0.6f));
+	}
 	if (bTurretFlying)
 	{
 		TurretVelocity.Z -= GravityCm * DeltaSeconds;

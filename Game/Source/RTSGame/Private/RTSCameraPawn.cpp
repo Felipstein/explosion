@@ -40,10 +40,22 @@ void ARTSCameraPawn::FocusOn(const FVector2D& Cm)
 {
 	Focus = FVector(Cm.X, Cm.Y, 0.0);
 	SmoothedGroundZ = GroundZ(Cm);
-	Yaw = DefaultYawDeg;
-	Pitch = DefaultPitchDeg;
-	HeightM = TargetHeightM = DefaultHeightM;
+	Yaw = YawShown = DefaultYawDeg;
+	FreePitch = FreePitchShown = 0.0f;
+	DistanceM = TargetDistanceM = DefaultDistanceM;
 	UpdateCamera(0.0f);
+}
+
+float ARTSCameraPawn::CurvePitch(float D) const
+{
+	// dois trechos suaves passando pelo padrão (o ZH): perto → padrão → longe
+	if (D <= DefaultDistanceM)
+	{
+		const float T = FMath::Clamp((D - MinDistanceM) / FMath::Max(DefaultDistanceM - MinDistanceM, 1.0f), 0.0f, 1.0f);
+		return FMath::Lerp(NearPitchDeg, DefaultPitchDeg, FMath::SmoothStep(0.0f, 1.0f, T));
+	}
+	const float T = FMath::Clamp((D - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
+	return FMath::Lerp(DefaultPitchDeg, FarPitchDeg, FMath::SmoothStep(0.0f, 1.0f, T));
 }
 
 void ARTSCameraPawn::JumpTo(const FVector2D& Cm)
@@ -77,19 +89,22 @@ void ARTSCameraPawn::ApplyInput(const FInput& In, float DeltaSeconds)
 	}
 	if (In.bReset)
 	{
-		Yaw = DefaultYawDeg;
-		Pitch = DefaultPitchDeg;
-		TargetHeightM = DefaultHeightM;
+		// volta o giro (pelo caminho mais curto), a inclinação e o zoom do padrão
+		Yaw = YawShown + FMath::FindDeltaAngleDegrees(YawShown, DefaultYawDeg);
+		FreePitch = 0.0f;
+		TargetDistanceM = DefaultDistanceM;
 	}
-	Yaw = FRotator::NormalizeAxis(Yaw + In.YawDelta);
-	Pitch = FMath::Clamp(Pitch + In.PitchDelta, MinPitchDeg, MaxPitchDeg);
+	Yaw += In.YawDelta;
+	// o botão do meio deita por cima da curva; o total fica entre quase horizontal e quase de cima
+	const float Curve = CurvePitch(TargetDistanceM);
+	FreePitch = FMath::Clamp(FreePitch + In.PitchDelta, MinFreePitchDeg - Curve, MaxFreePitchDeg - Curve);
 	// zoom em passos multiplicativos (cada clique da roda ~12%)
-	TargetHeightM = FMath::Clamp(TargetHeightM * FMath::Pow(0.88f, In.ZoomSteps), MinHeightM, MaxHeightM);
+	TargetDistanceM = FMath::Clamp(TargetDistanceM * FMath::Pow(0.88f, In.ZoomSteps), MinDistanceM, MaxDistanceM);
 
 	// a rolagem segue a vista: "frente" é pra onde a câmera olha, no chão
 	const FVector Forward = FRotator(0.0f, Yaw, 0.0f).Vector();
 	const FVector Right = FRotator(0.0f, Yaw + 90.0f, 0.0f).Vector();
-	const float VisibleWidthCm = 2.0f * (HeightM * 100.0f / FMath::Sin(FMath::DegreesToRadians(Pitch))) * FMath::Tan(FMath::DegreesToRadians(FieldOfViewDeg * 0.5f));
+	const float VisibleWidthCm = 2.0f * DistanceM * 100.0f * FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5f));
 	const FVector2D Axis = In.PanAxis + In.DragPan;
 	const FVector Move = (Right * Axis.X + Forward * Axis.Y) * VisibleWidthCm * PanScreensPerSecond * DeltaSeconds;
 	Focus += FVector(Move.X, Move.Y, 0.0);
@@ -105,9 +120,9 @@ void ARTSCameraPawn::Tick(float DeltaSeconds)
 		// o fundo do menu: passeio lento e alto sobre o mapa, girando
 		MenuTime += DeltaSeconds;
 		const float Angle = MenuTime * 2.0f;
-		Yaw = FRotator::NormalizeAxis(DefaultYawDeg + Angle);
-		Pitch = 24.0f;
-		TargetHeightM = HeightM = 95.0f;
+		Yaw = YawShown = FRotator::NormalizeAxis(DefaultYawDeg + Angle);
+		FreePitch = FreePitchShown = 0.0f;
+		TargetDistanceM = DistanceM = 95.0f / FMath::Sin(FMath::DegreesToRadians(24.0f));
 		const FVector2D Orbit = FVector2D(FMath::Cos(FMath::DegreesToRadians(Angle)), FMath::Sin(FMath::DegreesToRadians(Angle))) * 9000.0;
 		Focus = FVector(Orbit.X, Orbit.Y, 0.0);
 	}
@@ -121,12 +136,29 @@ void ARTSCameraPawn::Tick(float DeltaSeconds)
 
 void ARTSCameraPawn::UpdateCamera(float DeltaSeconds)
 {
-	HeightM = DeltaSeconds > 0.0f ? FMath::FInterpTo(HeightM, TargetHeightM, DeltaSeconds, 10.0f) : TargetHeightM;
+	DistanceM = DeltaSeconds > 0.0f ? FMath::FInterpTo(DistanceM, TargetDistanceM, DeltaSeconds, 10.0f) : TargetDistanceM;
+	// o giro e o deitar suaves, como o WorldForge (exponencial, independente da taxa de quadros)
+	const float K = DeltaSeconds > 0.0f ? 1.0f - FMath::Exp(-12.0f * DeltaSeconds) : 1.0f;
+	YawShown += (Yaw - YawShown) * K;
+	FreePitchShown += (FreePitch - FreePitchShown) * K;
+	const float Curve = bMenuMode ? 24.0f : CurvePitch(DistanceM);
+	Pitch = FMath::Clamp(Curve + FreePitchShown, MinFreePitchDeg, MaxFreePitchDeg);
 	const float Ground = GroundZ(FVector2D(Focus.X, Focus.Y));
 	SmoothedGroundZ = DeltaSeconds > 0.0f ? FMath::FInterpTo(SmoothedGroundZ, Ground, DeltaSeconds, 4.0f) : Ground;
-	const FRotator View(-Pitch, Yaw, 0.0f);
-	const float DistanceCm = HeightM * 100.0f / FMath::Sin(FMath::DegreesToRadians(Pitch));
+	const FRotator View(-Pitch, YawShown, 0.0f);
 	const FVector Target(Focus.X, Focus.Y, SmoothedGroundZ);
-	SetActorLocationAndRotation(Target - View.Vector() * DistanceCm, View);
-	Camera->SetFieldOfView(FieldOfViewDeg);
+	// a câmera gira em volta do ponto olhado na mesma distância: deitada, ela desce perto do chão
+	// (a vista das artes); nunca abaixo do relevo embaixo dela
+	FVector Eye = Target - View.Vector() * DistanceM * 100.0f;
+	const float Floor = GroundZ(FVector2D(Eye.X, Eye.Y)) + 300.0f;
+	if (!bMenuMode && Eye.Z < Floor)
+	{
+		Eye.Z = Floor;
+	}
+	SetActorLocationAndRotation(Eye, bMenuMode ? View : (Target - Eye).Rotation());
+	// o campo de visão: mais fechado de longe, mais aberto com a câmera deitada
+	const float Zoom = FMath::Clamp((DistanceM - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
+	const float Low = FMath::Clamp((25.0f - Pitch) / 20.0f, 0.0f, 1.0f);
+	const float Fov = FMath::Lerp(FMath::Lerp(FieldOfViewDeg, FarFieldOfViewDeg, Zoom), LowPitchFieldOfViewDeg, FMath::SmoothStep(0.0f, 1.0f, Low));
+	Camera->SetFieldOfView(bMenuMode ? FieldOfViewDeg : Fov);
 }

@@ -21,6 +21,8 @@ public:
 
 	/** Traçante do projétil, de From até To na velocidade dada (cm/s). */
 	static void SpawnTracer(UWorld* World, const FVector& From, const FVector& To, float SpeedCmPerS);
+	/** Risco curto e fino (a faísca da solda): o traçante com comprimento, espessura e cor próprios, sem luz. */
+	static void SpawnStreak(UWorld* World, const FVector& From, const FVector& To, float SpeedCmPerS, float LengthCm, float ThicknessCm, const FLinearColor& Radiance);
 	/** Clarão: bola emissiva que cresce e some + luz. RadiusCm do brilho, CandelaPeak da luz. */
 	static void SpawnFlash(UWorld* World, const FVector& At, float RadiusCm, float CandelaPeak, float LifeSeconds, const FLinearColor& Radiance);
 
@@ -41,4 +43,5 @@ private:
 	FVector From = FVector::ZeroVector;
 	FVector To = FVector::ZeroVector;
 	float Speed = 10000.0f;
+	float Length = 600.0f;
 };

@@ -125,13 +125,16 @@ int main(int Argc, char** Argv)
 			}
 			continue;
 		}
-		const bool bChanged = !bHasLast || V.Order != Last.Order || V.Engage != Last.Engage || V.FireTarget != Last.FireTarget
+		UnitView Target;
+		const int32_t TargetLeft = V.TaskTarget != NoEntity && W.FindUnit(V.TaskTarget, Target) ? Target.BuildLeft : -1;
+		const bool bChanged = !bHasLast || V.Order != Last.Order || V.Engage != Last.Engage || V.FireTarget != Last.FireTarget || V.Task != Last.Task
+			|| (W.Tick() % 150 == 0 && V.Task != UnitTask::None)
 			|| (V.PathLeft == 0) != (Last.PathLeft == 0) || V.OrderPoint.X.Raw != Last.OrderPoint.X.Raw || V.OrderPoint.Y.Raw != Last.OrderPoint.Y.Raw;
 		if (bChanged)
 		{
-			std::printf("passo %5u  (%.1f, %.1f)  %s -> (%.0f, %.0f)  persegue %u  mira %u  caminho %d  vel %.2f\n",
+			std::printf("passo %5u  (%.1f, %.1f)  %s -> (%.0f, %.0f)  persegue %u  mira %u  caminho %d  vel %.2f  def %d  tarefa %d alvo %u (obra falta %d)\n",
 				W.Tick(), V.Pos.X.ToDouble(), V.Pos.Y.ToDouble(), OrderName(V.Order), V.OrderPoint.X.ToDouble(), V.OrderPoint.Y.ToDouble(),
-				V.Engage, V.FireTarget, V.PathLeft, V.Speed.ToDouble());
+				V.Engage, V.FireTarget, V.PathLeft, V.Speed.ToDouble(), int(V.Def), int(V.Task), V.TaskTarget, TargetLeft);
 		}
 		if (Portrait != 0 && W.Tick() == Portrait)
 		{

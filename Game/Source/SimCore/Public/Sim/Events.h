@@ -19,6 +19,12 @@ namespace Sim
 		UnitDied,         // Target morreu em Point; Source = quem matou (pode ser NoEntity)
 		PlayerDefeated,   // Value = jogador
 		MatchOver,        // Value = time vencedor (−1 = empate)
+		StructurePlaced,  // obra nova Target em Point (Source = o Dozer)
+		StructureCompleted, // a obra Target ficou pronta
+		StructureCancelled, // a obra Target foi cancelada (some sem explodir)
+		UnitProduced,     // o prédio Source soltou a unidade Target
+		SupplyDelivered,  // o caminhão Source entregou Value $ no centro Target
+		CargoDropped,     // o caminhão destruído soltou a carga em Point: a pilha é o depósito Value
 	};
 
 	struct SimEvent

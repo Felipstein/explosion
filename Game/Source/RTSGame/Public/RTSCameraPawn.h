@@ -52,14 +52,25 @@ public:
 
 	virtual void Tick(float DeltaSeconds) override;
 
+	/**
+	 * O zoom inclina a câmera (Red Alert 3): de perto ela deita um pouco, sem mostrar o horizonte;
+	 * de longe olha mais de cima. A inclinação do padrão é a do ZH (37,5°, a SAGE desde o Generals).
+	 * O zoom é a distância da câmera ao ponto olhado; os três pontos da curva são (distância, graus).
+	 */
 	UPROPERTY(Config) float DefaultPitchDeg = 37.5f;
 	UPROPERTY(Config) float DefaultYawDeg = 45.0f;
-	UPROPERTY(Config) float MinHeightM = 31.6f;
-	UPROPERTY(Config) float MaxHeightM = 81.6f;
-	UPROPERTY(Config) float DefaultHeightM = 61.1f;
+	UPROPERTY(Config) float MinDistanceM = 67.0f;
+	UPROPERTY(Config) float MaxDistanceM = 118.0f;
+	UPROPERTY(Config) float DefaultDistanceM = 100.4f;   // = os 61,1 m de altura de antes a 37,5°
+	UPROPERTY(Config) float NearPitchDeg = 28.0f;
+	UPROPERTY(Config) float FarPitchDeg = 44.0f;
+	/** O botão do meio deita a câmera por cima da curva (como o WorldForge), até quase a horizontal. */
+	UPROPERTY(Config) float MinFreePitchDeg = 3.0f;
+	UPROPERTY(Config) float MaxFreePitchDeg = 80.0f;
+	/** O campo de visão: um pouco mais fechado de longe (menos distorção na borda), mais aberto com a câmera deitada (a vista das artes). */
 	UPROPERTY(Config) float FieldOfViewDeg = 50.0f;
-	UPROPERTY(Config) float MinPitchDeg = 12.0f;
-	UPROPERTY(Config) float MaxPitchDeg = 75.0f;
+	UPROPERTY(Config) float FarFieldOfViewDeg = 46.0f;
+	UPROPERTY(Config) float LowPitchFieldOfViewDeg = 58.0f;
 	/** Velocidade de rolagem: fração da largura visível por segundo. */
 	UPROPERTY(Config) float PanScreensPerSecond = 1.1f;
 
@@ -70,10 +81,18 @@ private:
 	UPROPERTY() TObjectPtr<UCameraComponent> Camera;
 
 	FVector Focus = FVector::ZeroVector;
+	/** A inclinação da curva do zoom pra esta distância. */
+	float CurvePitch(float DistanceM) const;
+
 	float Yaw = 45.0f;
+	float YawShown = 45.0f;
+	/** O quanto o botão do meio deitou (ou levantou) a câmera por cima da curva do zoom. */
+	float FreePitch = 0.0f;
+	float FreePitchShown = 0.0f;
+	/** A inclinação de fato (a curva + o botão do meio), a que o quadro usa. */
 	float Pitch = 37.5f;
-	float HeightM = 61.1f;
-	float TargetHeightM = 61.1f;
+	float DistanceM = 100.4f;
+	float TargetDistanceM = 100.4f;
 	float SmoothedGroundZ = 0.0f;
 	bool bMenuMode = false;
 	bool bGliding = false;

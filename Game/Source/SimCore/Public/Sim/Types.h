@@ -20,5 +20,5 @@ namespace Sim
 	constexpr int32_t MaxGroupSize = 500;
 
 	/** Versão das regras da simulação: replay de outra versão não reproduz. */
-	constexpr uint32_t SimVersion = 3;
+	constexpr uint32_t SimVersion = 5;   // 5 (11/10): o Dozer sai do lote pelo lado livre
 }

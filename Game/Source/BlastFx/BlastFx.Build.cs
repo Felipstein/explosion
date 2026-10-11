@@ -8,6 +8,6 @@ public class BlastFx : ModuleRules
 	public BlastFx(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "RTSShaders", "RenderCore", "RHI", "Renderer" });
 	}
 }

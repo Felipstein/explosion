@@ -117,6 +117,9 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 		const float GY = (H(I, J + 1) - H(I, J - 1)) / (2.0f * Info.SampleM);
 		return GX * GX + GY * GY > Info.MaxSlope * Info.MaxSlope || H(I, J) == NoGround;
 	};
+	// a menor e a maior altura de cada célula, em decímetros: a regra de construir no plano (ZH)
+	M.MinDm.assign(M.Pass.size(), 0);
+	M.MaxDm.assign(M.Pass.size(), 0);
 	for (int32 CY = 0; CY < CellsPerSide; ++CY)
 	{
 		for (int32 CX = 0; CX < CellsPerSide; ++CX)
@@ -124,14 +127,21 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 			// as amostras dentro da célula (3×3 com célula de 4 m e amostra de 2 m)
 			int32 Cliffs = 0;
 			int32 Count = 0;
+			float Lo = TNumericLimits<float>::Max();
+			float Hi = TNumericLimits<float>::Lowest();
 			for (int32 DJ = 0; DJ <= Step; ++DJ)
 			{
 				for (int32 DI = 0; DI <= Step; ++DI)
 				{
 					Cliffs += IsCliff(CX * Step + DI, CY * Step + DJ) ? 1 : 0;
 					++Count;
+					const float Z = H(CX * Step + DI, CY * Step + DJ);
+					Lo = FMath::Min(Lo, Z);
+					Hi = FMath::Max(Hi, Z);
 				}
 			}
+			M.MinDm[size_t(M.Index(CX, CY))] = int16(FMath::Clamp(FMath::FloorToInt(Lo * 10.0f), -32000, 32000));
+			M.MaxDm[size_t(M.Index(CX, CY))] = int16(FMath::Clamp(FMath::CeilToInt(Hi * 10.0f), -32000, 32000));
 			const float Center = H(CX * Step + Step / 2, CY * Step + Step / 2);
 			uint8 Pass = uint8(Sim::CellPass::Open);
 			if (Center < Info.WaterBelowM)

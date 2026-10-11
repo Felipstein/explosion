@@ -1,11 +1,17 @@
 #include "RTSHUD.h"
 
+#include "RTSNetSession.h"
+
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
 #include "CanvasItem.h"
 #include "Engine/Texture2D.h"
+#include "Fonts/FontMeasure.h"
+#include "Fonts/SlateFontInfo.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Rendering/SlateRenderer.h"
 #include "RTSCameraPawn.h"
 #include "RTSFogOfWar.h"
 #include "RTSGameData.h"
@@ -14,6 +20,10 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+
+// O jogo é em inglês por padrão (decisão do Felipe, 09/10). Todo texto da tela passa por
+// LOCTEXT, pra que o português e outras línguas entrem depois como tradução.
+#define LOCTEXT_NAMESPACE "RTSHUD"
 
 namespace
 {
@@ -25,8 +35,6 @@ namespace
 	const FLinearColor MoveGreen(0.35f, 1.0f, 0.4f, 1.0f);
 	const FLinearColor AttackRed(1.0f, 0.25f, 0.2f, 1.0f);
 
-	/** O anel fica um pouco por fora do casco (o tanque tem 7,9 m: raio de colisão 3,6 m × 1,3). */
-	constexpr float RingScale = 1.3f;
 	constexpr float ResultDelaySeconds = 3.0f;
 	constexpr float ObjectiveSeconds = 7.0f;
 	constexpr float HelpSeconds = 30.0f;
@@ -63,18 +71,22 @@ namespace
 	}
 
 	/**
-	 * A fonte da engine (Roboto, guardada em tempo de execução: desenhada já no tamanho
-	 * pedido, sem borrar). A do estilo do Slate não aparecia no canvas (teste t2, 08/10).
-	 * Size em pontos (96 dpi = 1,333 px por ponto).
+	 * A fonte da engine: a Roboto composta, com Regular e Bold de verdade. O Canvas só
+	 * rasteriza no tamanho da FSlateFontInfo que recebe (CanvasItem.cpp,
+	 * DrawStringInternal_RuntimeCache: GetCharacterList(FontInfo, DPIScale)), e a escala do
+	 * item só estica o quadradinho de cada letra. Antes a fonte saía no tamanho legado e era
+	 * esticada, com o negrito feito de duas cópias a 0,6 px: o texto borrava (09/10).
+	 * Size em pontos, como no Slate (96 dpi = 1,333 px por ponto).
 	 */
-	UFont* LabelFont()
+	FSlateFontInfo LabelFont(int32 Size, bool bBold)
 	{
-		return GEngine->GetLargeFont();
+		return FSlateFontInfo(GEngine->GetLargeFont(), Size, bBold ? FName(TEXT("Bold")) : FName(TEXT("Regular")));
 	}
 
-	float LabelScale(const UFont* Font, int32 Size)
+	/** Posição em pixel inteiro da tela (a letra rasterizada cai em cima dos pixels, sem filtrar). */
+	float SnapPx(float V, float Dpi)
 	{
-		return float(Size) * 1.333f / float(FMath::Max(1, Font ? Font->LegacyFontSize : 16));
+		return FMath::RoundToFloat(V * Dpi) / Dpi;
 	}
 }
 
@@ -84,7 +96,14 @@ FVector2D ARTSHUD::MousePos() const
 	float Y = -1.0f;
 	if (PlayerOwner)
 	{
-		PlayerOwner->GetMousePosition(X, Y);
+		if (const ARTSPlayerController* RTSPC = Cast<ARTSPlayerController>(PlayerOwner))
+		{
+			RTSPC->ReadMouse(X, Y);
+		}
+		else
+		{
+			PlayerOwner->GetMousePosition(X, Y);
+		}
 	}
 	return FVector2D(X, Y);
 }
@@ -121,25 +140,30 @@ void ARTSHUD::DrawPanel(float X, float Y, float W, float H, const FLinearColor& 
 
 FVector2D ARTSHUD::MeasureLabel(const FString& Text, int32 Size, bool bBold) const
 {
-	UFont* Font = LabelFont();
-	float W = 0.0f;
-	float H = 0.0f;
-	const_cast<ARTSHUD*>(this)->GetTextSize(Text, W, H, Font, LabelScale(Font, Size));
-	return FVector2D(W, H);
+	// a mesma medida que o Canvas usa por dentro (CanvasItem.cpp, GetTextSizeInternal): sai em
+	// pixels da tela, e o HUD trabalha em pixels do canvas
+	const float Dpi = Canvas ? Canvas->GetDPIScale() : 1.0f;
+	if (!FSlateApplication::IsInitialized())
+	{
+		return FVector2D::ZeroVector;
+	}
+	const TSharedRef<FSlateFontMeasure> Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	return Measure->Measure(Text, LabelFont(Size, bBold), Dpi) / Dpi;
 }
 
 FVector2D ARTSHUD::DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter, bool bBold)
 {
-	UFont* Font = LabelFont();
-	const float Scale = LabelScale(Font, Size);
 	const FVector2D Extent = MeasureLabel(Text, Size, bBold);
-	const float DrawX = bCenter ? X - Extent.X * 0.5f : X;
-	DrawText(Text, FLinearColor(0.0f, 0.0f, 0.0f, 0.65f * Color.A), DrawX + 1.5f, Y + 1.5f, Font, Scale);
-	if (bBold)
+	if (!Canvas)
 	{
-		DrawText(Text, Color, DrawX + 0.6f, Y, Font, Scale);   // negrito barato: o mesmo texto deslocado
+		return Extent;
 	}
-	DrawText(Text, Color, DrawX, Y, Font, Scale);
+	const float Dpi = Canvas->GetDPIScale();
+	const float DrawX = bCenter ? X - Extent.X * 0.5f : X;
+	FCanvasTextItem Item(FVector2D(SnapPx(DrawX, Dpi), SnapPx(Y, Dpi)), FText::FromString(Text), LabelFont(Size, bBold), Color);
+	// sombra de pixel inteiro: 1 px no texto do jogo, 2 px nos títulos grandes
+	Item.EnableShadow(FLinearColor(0.0f, 0.0f, 0.0f, 0.65f * Color.A), FVector2D(Size >= 24 ? 2.0f : 1.0f));
+	Canvas->DrawItem(Item);
 	return Extent;
 }
 
@@ -151,6 +175,24 @@ void ARTSHUD::DrawButton(FName Id, const FString& Label, float X, float Y, float
 	DrawRect(bHover ? Accent : FLinearColor(1, 1, 1, 0.16f), X, Y, 3.0f, H);
 	const FVector2D Extent = MeasureLabel(Label, 15, true);
 	DrawLabel(Label, X + 24.0f, Y + (H - Extent.Y) * 0.5f, 15, bHover ? FLinearColor::White : TextColor, false, true);
+	Buttons.Add({ Id, Box });
+}
+
+void ARTSHUD::DrawSmallButton(FName Id, const FString& Label, float X, float Y, float W, float H, const FLinearColor* Swatch)
+{
+	const FBox2D Box(FVector2D(X, Y), FVector2D(X + W, Y + H));
+	const bool bHover = Box.IsInside(MousePos());
+	DrawPanel(X, Y, W, H, bHover ? ButtonHover : ButtonFill);
+	DrawRect(bHover ? Accent : FLinearColor(1, 1, 1, 0.16f), X, Y + H - 2.0f, W, 2.0f);
+	if (Swatch)
+	{
+		DrawPanel(X + 6.0f, Y + 6.0f, W - 12.0f, H - 12.0f, *Swatch);
+	}
+	else
+	{
+		const FVector2D Extent = MeasureLabel(Label, 12, true);
+		DrawLabel(Label, X + (W - Extent.X) * 0.5f, Y + (H - Extent.Y) * 0.5f, 12, bHover ? FLinearColor::White : TextColor, false, true);
+	}
 	Buttons.Add({ Id, Box });
 }
 
@@ -173,8 +215,10 @@ void ARTSHUD::DrawHUD()
 	{
 		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0, 0, 0, 0.6f));
 		const bool bError = !PC->GetError().IsEmpty();
-		DrawLabel(bError ? PC->GetError() : TEXT("Montando a partida…"), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.45f, 15, bError ? AttackRed : TextColor, true);
-		DrawButton(TEXT("menu"), TEXT("VOLTAR AO MENU"), Canvas->SizeX * 0.5f - 170.0f, Canvas->SizeY * 0.55f, 340.0f, 52.0f);
+		const bool bAwaitNet = Match && Match->IsAwaitingNetSetup();
+		DrawLabel(bError ? PC->GetError() : (bAwaitNet ? LOCTEXT("ReceivingMatch", "Receiving the match from the host…").ToString() : LOCTEXT("SettingUp", "Setting up the match…").ToString()),
+			Canvas->SizeX * 0.5f, Canvas->SizeY * 0.45f, 15, bError ? AttackRed : TextColor, true);
+		DrawButton(TEXT("menu"), LOCTEXT("ReturnToMenu", "RETURN TO MENU").ToString(), Canvas->SizeX * 0.5f - 170.0f, Canvas->SizeY * 0.55f, 340.0f, 52.0f);
 		return;
 	}
 	DrawMatch(PC, Match);
@@ -200,18 +244,202 @@ void ARTSHUD::DrawMenu(ARTSPlayerController* PC)
 	Y += 16.0f;
 	DrawLabel(TEXT("USA  ·  CHINA  ·  GLA"), X, Y, 13, Accent, false, true);
 	Y += 26.0f;
-	DrawLabel(TEXT("protótipo  ·  skirmish local"), X, Y, 12, DimText);
+	DrawLabel(LOCTEXT("Tagline", "prototype  ·  local skirmish").ToString(), X, Y, 12, DimText);
 
-	Y = H * 0.50f;
-	DrawButton(TEXT("skirmish"), TEXT("JOGAR SKIRMISH"), X, Y, PanelW - X * 2.0f, 58.0f);
-	DrawLabel(TEXT("Deserto (salina)  ·  você × IA  ·  6 tanques cada"), X + 2.0f, Y + 68.0f, 11, DimText);
+	const URTSNetSession* Net = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSNetSession>() : nullptr;
+	const float BW = PanelW - X * 2.0f;
+	if (Net && PC->GetMenuPage() != ARTSPlayerController::EMenuPage::Main)
+	{
+		DrawLanMenu(PC, *Net, X, H * 0.42f, BW);
+		return;
+	}
+
+	Y = H * 0.44f;
+	DrawButton(TEXT("skirmish"), LOCTEXT("PlaySkirmish", "PLAY SKIRMISH").ToString(), X, Y, BW, 58.0f);
+	DrawLabel(LOCTEXT("SkirmishInfo2", "Desert (salt flats)  ·  you vs AI  ·  base, economy, tanks").ToString(), X + 2.0f, Y + 68.0f, 11, DimText);
+	Y += 96.0f;
+	DrawButton(TEXT("multiplayer"), LOCTEXT("Multiplayer", "MULTIPLAYER (LAN)").ToString(), X, Y, BW, 58.0f);
+	DrawLabel(LOCTEXT("MultiplayerInfo", "host or join a game on your local network").ToString(), X + 2.0f, Y + 68.0f, 11, DimText);
 	Y += 96.0f;
 	const URTSSessionSubsystem* Session = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
-	const bool bFog = !Session || Session->bFogOfWar;
-	DrawButton(TEXT("fogsetting"), bFog ? TEXT("NÉVOA DE GUERRA: LIGADA") : TEXT("NÉVOA DE GUERRA: DESLIGADA"), X, Y, PanelW - X * 2.0f, 44.0f);
-	DrawLabel(TEXT("depuração: F9 liga e desliga dentro da partida"), X + 2.0f, Y + 52.0f, 10, DimText);
+	const ERTSFogMode Fog = Session ? Session->FogMode : ERTSFogMode::Explored;
+	DrawButton(TEXT("fogsetting"), FogModeText(Fog), X, Y, PanelW - X * 2.0f, 44.0f);
+	DrawLabel(FogModeHint(Fog), X + 2.0f, Y + 52.0f, 10, DimText);
 	Y += 96.0f;
-	DrawButton(TEXT("quit"), TEXT("SAIR"), X, Y, PanelW - X * 2.0f, 58.0f);
+	DrawButton(TEXT("quit"), LOCTEXT("Quit", "QUIT").ToString(), X, Y, PanelW - X * 2.0f, 58.0f);
+}
+
+FString ARTSHUD::FogModeText(ERTSFogMode Mode)
+{
+	return Mode == ERTSFogMode::Explored ? LOCTEXT("FogExplored", "FOG: EXPLORED MAP").ToString()
+		: (Mode == ERTSFogMode::Black ? LOCTEXT("FogBlack", "FOG: BLACK").ToString() : LOCTEXT("FogOffButton", "FOG: OFF").ToString());
+}
+
+FString ARTSHUD::FogModeHint(ERTSFogMode Mode)
+{
+	return Mode == ERTSFogMode::Explored ? LOCTEXT("FogExploredHint", "the map is visible; enemies only where you can see").ToString()
+		: (Mode == ERTSFogMode::Black ? LOCTEXT("FogBlackHint", "what you never saw stays black").ToString() : LOCTEXT("FogOffHint", "everything visible").ToString());
+}
+
+void ARTSHUD::DrawLanMenu(ARTSPlayerController* PC, const URTSNetSession& Net, float X, float Y, float BW)
+{
+	if (PC->GetMenuPage() == ARTSPlayerController::EMenuPage::Lan)
+	{
+		DrawLabel(LOCTEXT("LanTitle", "MULTIPLAYER  ·  LAN").ToString(), X, Y, 18, TextColor, false, true);
+		Y += 44.0f;
+		DrawButton(TEXT("lan_host"), LOCTEXT("HostGame", "HOST GAME").ToString(), X, Y, BW, 58.0f);
+		Y += 84.0f;
+		DrawLabel(LOCTEXT("GamesOnNetwork", "Games on your network").ToString(), X + 2.0f, Y, 12, DimText);
+		Y += 26.0f;
+		const TArray<FRTSLanGame>& Games = Net.FoundGames();
+		if (Games.IsEmpty())
+		{
+			DrawLabel(LOCTEXT("Searching", "Searching...").ToString(), X + 2.0f, Y + 6.0f, 12, DimText);
+			Y += 44.0f;
+		}
+		for (int32 K = 0; K < Games.Num() && K < 5; ++K)
+		{
+			const FRTSLanGame& G = Games[K];
+			const FString Label = FText::Format(LOCTEXT("JoinGame", "JOIN  {0}   {1}/8"), FText::FromString(G.Name), FText::AsNumber(G.Players)).ToString();
+			if (G.bOpen)
+			{
+				DrawButton(FName(*FString::Printf(TEXT("lan_join_%d"), K)), Label, X, Y, BW, 46.0f);
+			}
+			else
+			{
+				DrawLabel(Label + TEXT("   ") + LOCTEXT("InProgress", "(in progress or other version)").ToString(), X + 2.0f, Y + 12.0f, 12, DimText);
+			}
+			Y += 56.0f;
+		}
+		Y += 20.0f;
+		DrawButton(TEXT("lan_back"), LOCTEXT("Back", "BACK").ToString(), X, Y, BW, 50.0f);
+		return;
+	}
+	// a sala de espera
+	DrawLabel(LOCTEXT("LobbyTitle", "LOBBY  ·  LAN").ToString(), X, Y, 18, TextColor, false, true);
+	Y += 40.0f;
+	DrawLabel(LOCTEXT("LobbyMap", "Desert (salt flats)  ·  base, economy, tanks").ToString(), X + 2.0f, Y, 12, DimText);
+	Y += 34.0f;
+	const bool bHost = Net.IsHost();
+	// as colunas da sala (como a do ZH): jogador · time · cor · (tirar a IA)
+	const float TeamX = X + BW - 156.0f;
+	const float ColorX = X + BW - 96.0f;
+	const float KickX = X + BW - 34.0f;
+	DrawLabel(LOCTEXT("ColPlayer", "PLAYER").ToString(), X + 16.0f, Y, 10, DimText);
+	DrawLabel(LOCTEXT("ColTeam", "TEAM").ToString(), TeamX + 12.0f, Y, 10, DimText);
+	DrawLabel(LOCTEXT("ColColor", "COLOR").ToString(), ColorX + 8.0f, Y, 10, DimText);
+	Y += 18.0f;
+	for (const FRTSNetMember& M : Net.Members())
+	{
+		const FLinearColor C = URTSMatchSubsystem::PaletteColor(M.Color);
+		const bool bMe = M.Slot == Net.LocalSlot();
+		const float RowH = 40.0f;
+		DrawPanel(X, Y, BW, RowH, FLinearColor(0.03f, 0.035f, 0.045f, 0.85f));
+		DrawPanel(X, Y, 6.0f, RowH, C);
+		// o nome em cima, as marcas embaixo (o nome do PC pode ser comprido)
+		DrawLabel(M.bAI ? LOCTEXT("AiName", "Computer").ToString() : M.Name.Left(16), X + 16.0f, Y + 4.0f, 14, M.bInLobby ? TextColor : DimText);
+		FString RowTags;
+		RowTags += M.Slot == 0 ? LOCTEXT("HostTag", "host").ToString() + TEXT("   ") : FString();
+		RowTags += bMe ? LOCTEXT("YouTag", "you").ToString() + TEXT("   ") : FString();
+		RowTags += M.bAI ? LOCTEXT("AiTag", "AI").ToString() + TEXT("   ") : FString();
+		RowTags += !M.bInLobby ? LOCTEXT("InMatchTag", "still on the results").ToString() : FString();
+		DrawLabel(RowTags, X + 16.0f, Y + 23.0f, 10, DimText);
+		// o time: o seu (qualquer um) ou o de qualquer vaga (o anfitrião); o resto só mostra
+		const FString TeamText = M.Team == 0 ? TEXT("-") : FString::Printf(TEXT("%d"), M.Team);
+		if (bMe || bHost)
+		{
+			DrawSmallButton(FName(*FString::Printf(TEXT("lan_team_%d"), M.Slot)), TeamText, TeamX, Y + 6.0f, 52.0f, 28.0f);
+		}
+		else
+		{
+			const FVector2D Extent = MeasureLabel(TeamText, 13, true);
+			DrawLabel(TeamText, TeamX + (52.0f - Extent.X) * 0.5f, Y + 12.0f, 13, TextColor, false, true);
+		}
+		// a cor: o próprio quadrado é o botão (a sua, ou a da IA pro anfitrião)
+		if (bMe || (bHost && M.bAI))
+		{
+			DrawSmallButton(FName(*FString::Printf(TEXT("lan_color_%d"), M.Slot)), FString(), ColorX, Y + 6.0f, 52.0f, 28.0f, &C);
+		}
+		else
+		{
+			DrawPanel(ColorX + 6.0f, Y + 12.0f, 40.0f, 16.0f, C);
+		}
+		if (bHost && M.bAI)
+		{
+			DrawSmallButton(FName(*FString::Printf(TEXT("lan_kick_%d"), M.Slot)), TEXT("X"), KickX, Y + 6.0f, 28.0f, 28.0f);
+		}
+		Y += RowH + 4.0f;
+	}
+	Y += 6.0f;
+	// a névoa (o anfitrião escolhe; os outros vêem), a IA e o sorteio dos times
+	if (bHost)
+	{
+		DrawSmallButton(TEXT("lan_fog"), FogModeText(Net.GetFogMode()), X, Y, 164.0f, 34.0f);
+		if (Net.PlayerCount() < Net.SlotLimit())
+		{
+			DrawSmallButton(TEXT("lan_add_ai"), LOCTEXT("AddAi", "+ AI").ToString(), X + 170.0f, Y, 60.0f, 34.0f);
+		}
+		DrawSmallButton(TEXT("lan_random"), LOCTEXT("RandomTeams", "RANDOM TEAMS").ToString(), X + BW - 116.0f, Y, 116.0f, 34.0f);
+		Y += 44.0f;
+	}
+	else
+	{
+		DrawLabel(FogModeText(Net.GetFogMode()), X + 2.0f, Y + 4.0f, 12, DimText);
+		Y += 30.0f;
+	}
+	FString Status = Net.StatusText();
+	if (!Net.EveryoneInLobby())
+	{
+		Status = LOCTEXT("WaitingResults", "Waiting for everyone to come back to the lobby...").ToString();
+	}
+	else if (bHost && Net.PlayerCount() >= 2 && !Net.CanStart())
+	{
+		Status = LOCTEXT("NeedTwoSides", "Everyone is on the same team: make at least 2 sides").ToString();
+	}
+	DrawLabel(Status, X + 2.0f, Y, 12, DimText);
+	Y += 30.0f;
+	if (bHost && Net.CanStart())
+	{
+		DrawButton(TEXT("lan_start"), LOCTEXT("StartGame", "START").ToString(), X, Y, BW, 58.0f);
+		Y += 72.0f;
+	}
+	DrawButton(TEXT("lan_leave"), LOCTEXT("Leave", "LEAVE").ToString(), X, Y, BW, 50.0f);
+}
+
+void ARTSHUD::DrawNetStatus(URTSMatchSubsystem* Match)
+{
+	const URTSNetSession* Net = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSNetSession>() : nullptr;
+	if (!Match->IsNetMatch() || !Net)
+	{
+		return;
+	}
+	const float W = Canvas->SizeX;
+	const float H = Canvas->SizeY;
+	if (Net->IsDesynced())
+	{
+		// as simulações divergiram: o defeito mais grave da rede, na cara (o log tem o passo)
+		DrawPanel(W * 0.5f - 300.0f, H * 0.16f, 600.0f, 46.0f, FLinearColor(0.35f, 0.02f, 0.02f, 0.9f));
+		DrawLabel(FText::Format(LOCTEXT("Desync", "DESYNC at step {0}: the games diverged"), FText::AsNumber(Net->GetDesyncTick())).ToString(),
+			W * 0.5f, H * 0.16f + 13.0f, 15, TextColor, true);
+	}
+	else if (Net->IsPeerLost())
+	{
+		DrawPanel(W * 0.5f - 240.0f, H * 0.16f, 480.0f, 46.0f, FLinearColor(0.25f, 0.12f, 0.02f, 0.9f));
+		DrawLabel(LOCTEXT("PeerLost", "Connection lost").ToString(), W * 0.5f, H * 0.16f + 13.0f, 15, TextColor, true);
+	}
+	else if (Match->IsWaitingForPlayers())
+	{
+		DrawPanel(W * 0.5f - 240.0f, H * 0.16f, 480.0f, 46.0f, FLinearColor(0.02f, 0.03f, 0.05f, 0.85f));
+		DrawLabel(LOCTEXT("WaitingOthers", "Waiting for the other players...").ToString(), W * 0.5f, H * 0.16f + 13.0f, 15, TextColor, true);
+	}
+	if (Net->IsHost())
+	{
+		DrawLabel(FText::Format(LOCTEXT("LanPing", "LAN  ·  ping {0} ms"), FText::AsNumber(Net->WorstRttMs())).ToString(), W - 170.0f, 48.0f, 11, DimText);
+	}
+	else
+	{
+		DrawLabel(LOCTEXT("LanClient", "LAN").ToString(), W - 170.0f, 48.0f, 11, DimText);
+	}
 }
 
 void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
@@ -220,7 +448,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	{
 		// a tela de carregar continua (a mesma da troca de mapa) até a cena estar pronta
 		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0.012f, 0.014f, 0.017f, 1.0f));
-		DrawLabel(TEXT("CARREGANDO"), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f - 30.0f, 26, FLinearColor(0.92f, 0.93f, 0.95f), true, true);
+		DrawLabel(LOCTEXT("Loading", "LOADING").ToString(), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f - 30.0f, 26, FLinearColor(0.92f, 0.93f, 0.95f), true, true);
 		const int32 Dots = int32(FPlatformTime::Seconds() * 3.0) % 4;
 		DrawLabel(FString::ChrN(Dots, TEXT('.')), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f + 12.0f, 20, FLinearColor(0.92f, 0.93f, 0.95f, 0.7f), true);
 		return;
@@ -243,12 +471,32 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	if (PC->IsAttackMoveArmed())
 	{
 		const FVector2D M = MousePos();
-		DrawLabel(TEXT("ATAQUE ANDANDO"), M.X + 20.0f, M.Y + 16.0f, 11, AttackRed, false, true);
+		DrawLabel(LOCTEXT("AttackMoveArmed", "ATTACK MOVE").ToString(), M.X + 20.0f, M.Y + 16.0f, 11, AttackRed, false, true);
 	}
 
-	DrawTopBar(Match);
-	DrawEnemyArrow(Match);
+	const bool bEconomy = HasEconomy(Match);
+	if (bEconomy)
+	{
+		DrawRallyPoints(PC, Match);
+		DrawPlacementGhost(PC, Match);
+		DrawDockHover(PC, Match);
+		DrawMoneyPopups(Match, GetWorld()->GetDeltaSeconds());
+		DrawEconomyTopBar(Match);
+		if (Match->IsLocalDefeated())
+		{
+			DrawObserverPanel(Match);
+		}
+		else
+		{
+			DrawCommandPanel(PC, Match);
+		}
+	}
+	else
+	{
+		DrawTopBar(Match);
+	}
 	DrawMinimap(PC, Match);
+	DrawDefeats(Match);
 	const bool bPlaying = Match->Result() == ERTSMatchResult::Playing;
 	if (bPlaying && Match->SecondsSinceStart() < ObjectiveSeconds)
 	{
@@ -256,7 +504,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	}
 	if (bPlaying && Match->MatchSeconds() < HelpSeconds && PC->OrdersGiven() < 2)
 	{
-		DrawLabel(TEXT("Esquerdo: selecionar e ordenar   ·   Direito: tirar seleção / arrastar rola   ·   A: ataque andando   ·   S: parar   ·   Ctrl+número: grupo   ·   Esc: pausa"),
+		DrawLabel(LOCTEXT("HelpLine", "Left: select and order   ·   Right: deselect / drag to scroll   ·   A: attack move   ·   S: stop   ·   Ctrl+number: group   ·   Esc: pause").ToString(),
 			Canvas->SizeX * 0.5f, Canvas->SizeY - 34.0f, 10, WithAlpha(DimText, 0.85f), true);
 	}
 	if (PC->ShowDebug())
@@ -264,6 +512,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		DrawLabel(Match->DebugLine(), 16.0f, 46.0f, 10, Accent);
 	}
 
+	DrawNetStatus(Match);
 	if (!bPlaying && Match->SecondsSinceEnd() > ResultDelaySeconds)
 	{
 		DrawResult(Match);
@@ -311,45 +560,41 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	{
 		if (!Match->IsUnitShown(U.Id))
 		{
-			continue;   // na névoa: nem anel nem barra
+			continue;   // na névoa: sem barra
 		}
-		const FRTSUnitVisual* Visual = Match->VisualOf(U.Def);
-		const float RadiusCm = (Visual ? Visual->RadiusM : 3.0f) * 100.0f * RingScale;
 		const FVector Ground(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + 25.0f);
 		const bool bSelected = Selected.Contains(U.Id);
 		const bool bHover = PC->GetHoverId() == U.Id;
-		const bool bEnemy = Match->IsEnemyOfLocal(U.Owner);
 		const FLinearColor Team = URTSMatchSubsystem::PlayerColor(U.Owner);
-		if (bSelected)
-		{
-			DrawGroundRing(Ground, RadiusCm, Brighten(Team, 0.45f), 2.5f);
-		}
-		else if (bHover)
-		{
-			DrawGroundRing(Ground, RadiusCm, Brighten(Team, 0.3f), 2.0f);
-		}
-		else
-		{
-			DrawGroundRing(Ground, RadiusCm, WithAlpha(Team, bEnemy ? 0.6f : 0.5f), bEnemy ? 2.0f : 1.5f);
-		}
+		// sem anel no chão: o ZH não tem nenhum (Drawable::onSelected só pisca a unidade,
+		// flashAsSelected). A seleção e o mouse por cima aparecem pela barra de vida
+		// (Drawable::drawHealthBar). Os anéis saíram a pedido do Felipe (09/10).
 
 		const float Ratio = float(U.Hp) / float(U.MaxHp);
-		if (!bSelected && !bHover && Ratio >= 1.0f)
+		// a obra própria mostra o progresso o tempo todo (o ZH escreve "% em construção")
+		const bool bBuilding = U.bStructure && U.BuildFraction < 1.0f && U.Owner == Match->LocalPlayer();
+		if (!bSelected && !bHover && Ratio >= 1.0f && !bBuilding)
 		{
 			continue;
 		}
+		// prédio: a barra mais alta (acima do telhado) e mais larga
 		FVector2D Top;
-		if (!PlayerOwner->ProjectWorldLocationToScreen(Ground + FVector(0, 0, 430.0f), Top))
+		if (!PlayerOwner->ProjectWorldLocationToScreen(Ground + FVector(0, 0, U.bStructure ? 1300.0f : 430.0f), Top))
 		{
 			continue;
 		}
-		const float BarW = 54.0f;
-		const float BarH = 5.0f;
+		const float BarW = U.bStructure ? 110.0f : 54.0f;
+		const float BarH = U.bStructure ? 7.0f : 5.0f;
 		const float X = Top.X - BarW * 0.5f;
 		const float Y = Top.Y - 12.0f;
 		DrawPanel(X - 1.0f, Y - 1.0f, BarW + 2.0f, BarH + 2.0f, WithAlpha(Team, 0.95f));
 		DrawPanel(X, Y, BarW, BarH, FLinearColor(0, 0, 0, 0.75f));
 		DrawPanel(X, Y, BarW * FMath::Clamp(Ratio, 0.0f, 1.0f), BarH, HealthColor(Ratio));
+		if (bBuilding)
+		{
+			DrawPanel(X, Y + BarH + 3.0f, BarW, 4.0f, FLinearColor(0, 0, 0, 0.75f));
+			DrawPanel(X, Y + BarH + 3.0f, BarW * U.BuildFraction, 4.0f, FLinearColor(0.98f, 0.80f, 0.20f));
+		}
 	}
 }
 
@@ -376,9 +621,9 @@ void ARTSHUD::DrawTopBar(URTSMatchSubsystem* Match)
 	const float W = Canvas->SizeX;
 	DrawPanel(W * 0.5f - 240.0f, 0.0f, 480.0f, 36.0f, FLinearColor(0.015f, 0.018f, 0.022f, 0.6f));
 	DrawLabel(Clock(Match->MatchSeconds()), W * 0.5f, 7.0f, 13, TextColor, true, true);
-	DrawLabel(FString::Printf(TEXT("Seus tanques  %d"), Mine), W * 0.5f - 220.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(Match->LocalPlayer()), 0.35f), false, true);
-	const FString Right = Match->IsFogShown() ? FString::Printf(TEXT("Destruídos  %d"), Match->UnitsKilled()) : FString::Printf(TEXT("Inimigo  %d"), Theirs);
-	DrawLabel(Right, W * 0.5f + 120.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(1), 0.35f), false, true);
+	DrawLabel(FText::Format(LOCTEXT("YourTanks", "Your Tanks  {0}"), Mine).ToString(), W * 0.5f - 220.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(Match->LocalPlayer()), 0.35f), false, true);
+	const FString Right = Match->IsFogShown() ? FText::Format(LOCTEXT("Destroyed", "Destroyed  {0}"), Match->UnitsKilled()).ToString() : FText::Format(LOCTEXT("EnemyCount", "Enemy  {0}"), Theirs).ToString();
+	DrawLabel(Right, W * 0.5f + 120.0f, 9.0f, 11, Brighten(URTSMatchSubsystem::PlayerColor(Match->LocalPlayer() == 0 ? 1 : 0), 0.35f), false, true);
 }
 
 void ARTSHUD::DrawObjective(URTSMatchSubsystem* Match)
@@ -392,100 +637,9 @@ void ARTSHUD::DrawObjective(URTSMatchSubsystem* Match)
 	const float W = Canvas->SizeX;
 	const float Y = Canvas->SizeY * 0.2f;
 	DrawPanel(W * 0.5f - 300.0f, Y - 14.0f, 600.0f, 112.0f, FLinearColor(0.01f, 0.012f, 0.015f, 0.5f * Alpha));
-	const float TitleY = Y + DrawLabel(TEXT("OBJETIVO"), W * 0.5f, Y, 11, WithAlpha(Accent, Alpha), true, true).Y + 2.0f;
-	const float SubY = TitleY + DrawLabel(TEXT("Destrua os 6 tanques inimigos"), W * 0.5f, TitleY, 20, WithAlpha(TextColor, Alpha), true, true).Y + 6.0f;
-	DrawLabel(TEXT("eles vêm de lá — siga a seta vermelha"), W * 0.5f, SubY, 11, WithAlpha(DimText, Alpha), true);
-}
-
-void ARTSHUD::DrawEnemyArrow(URTSMatchSubsystem* Match)
-{
-	// só quando nenhum inimigo aparece na tela: a seta na borda aponta pro mais perto do centro da vista
-	const FRTSBakedMap* Map = Match->BakedMap();
-	TArray<FRTSUnitState> Units;
-	Match->GetUnits(Units);
-	const float W = Canvas->SizeX;
-	const float H = Canvas->SizeY;
-	const FBox2D Screen(FVector2D(0, 0), FVector2D(W, H));
-	FVector Origin;
-	FVector Dir;
-	if (!PlayerOwner->DeprojectScreenPositionToWorld(W * 0.5f, H * 0.5f, Origin, Dir) || FMath::Abs(Dir.Z) < 1e-3)
-	{
-		return;
-	}
-	const float GroundZ = Map ? Map->GroundZCm(FVector2D(Origin.X, Origin.Y)) : 0.0f;
-	const FVector Center = Origin + Dir * ((GroundZ - Origin.Z) / Dir.Z);
-	const FRTSUnitState* Nearest = nullptr;
-	double Best = 0.0;
-	for (const FRTSUnitState& U : Units)
-	{
-		if (!Match->IsEnemyOfLocal(U.Owner) || !Match->IsUnitShown(U.Id))
-		{
-			continue;
-		}
-		FVector2D S;
-		const FVector P(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f);
-		if (PlayerOwner->ProjectWorldLocationToScreen(P, S) && Screen.IsInside(S))
-		{
-			return;   // tem inimigo à vista
-		}
-		const double D = FVector2D::Distance(U.PosCm, FVector2D(Center.X, Center.Y));
-		if (!Nearest || D < Best)
-		{
-			Nearest = &U;
-			Best = D;
-		}
-	}
-	FVector2D TargetCm;
-	bool bBase = false;
-	if (Nearest)
-	{
-		TargetCm = Nearest->PosCm;
-	}
-	else
-	{
-		// nada à vista: com névoa, aponta a largada do inimigo (todo mundo conhece pelo mapa) até ela ser vista
-		URTSFogOfWar* Fog = Match->GetFog();
-		const FVector2D Start = Match->PlayerStartCm(1);
-		if (!Match->IsFogShown() || !Fog || Fog->IsExplored(Start))
-		{
-			return;
-		}
-		TargetCm = Start;
-		Best = FVector2D::Distance(Start, FVector2D(Center.X, Center.Y));
-		bBase = true;
-	}
-	// a direção na tela: a do inimigo projetado (ou a do chão, girada pela vista)
-	const FVector Target(TargetCm.X, TargetCm.Y, Map ? Map->GroundZCm(TargetCm) : 0.0f);
-	FVector2D S;
-	FVector2D D2;
-	if (PlayerOwner->ProjectWorldLocationToScreen(Target, S))
-	{
-		D2 = (S - FVector2D(W * 0.5f, H * 0.5f)).GetSafeNormal();
-	}
-	else
-	{
-		const FRotator CamRot = PlayerOwner->PlayerCameraManager ? PlayerOwner->PlayerCameraManager->GetCameraRotation() : FRotator::ZeroRotator;
-		const FVector Local = FRotator(0.0f, CamRot.Yaw, 0.0f).UnrotateVector(Target - Center);
-		D2 = FVector2D(Local.Y, -Local.X).GetSafeNormal();
-	}
-	if (D2.IsNearlyZero())
-	{
-		return;
-	}
-	// o ponto na borda (recuado 46 px) na direção do inimigo
-	const float Inset = 46.0f;
-	const double Sx = FMath::Abs(D2.X) > 1e-6 ? (W * 0.5f - Inset) / FMath::Abs(D2.X) : 1e9;
-	const double Sy = FMath::Abs(D2.Y) > 1e-6 ? (H * 0.5f - Inset) / FMath::Abs(D2.Y) : 1e9;
-	const FVector2D Tip = FVector2D(W * 0.5f, H * 0.5f) + D2 * FMath::Min(Sx, Sy);
-	const FVector2D Side(-D2.Y, D2.X);
-	const FVector2D Back = Tip - D2 * 26.0;
-	const FLinearColor C = WithAlpha(AttackRed, 0.9f);
-	DrawLine(Tip.X, Tip.Y, Back.X + Side.X * 13.0, Back.Y + Side.Y * 13.0, C, 3.0f);
-	DrawLine(Tip.X, Tip.Y, Back.X - Side.X * 13.0, Back.Y - Side.Y * 13.0, C, 3.0f);
-	DrawLine(Back.X + Side.X * 13.0, Back.Y + Side.Y * 13.0, Back.X - Side.X * 13.0, Back.Y - Side.Y * 13.0, C, 3.0f);
-	const FVector2D LabelAt = Back - D2 * 18.0;
-	DrawLabel(bBase ? FString::Printf(TEXT("base inimiga  %d m"), FMath::RoundToInt(Best / 100.0)) : FString::Printf(TEXT("%d m"), FMath::RoundToInt(Best / 100.0)),
-		LabelAt.X, LabelAt.Y - 8.0f, 10, C, true, true);
+	const float TitleY = Y + DrawLabel(LOCTEXT("Objective", "OBJECTIVE").ToString(), W * 0.5f, Y, 11, WithAlpha(Accent, Alpha), true, true).Y + 2.0f;
+	const float SubY = TitleY + DrawLabel((HasEconomy(Match) ? LOCTEXT("ObjectiveBase", "Destroy the enemy base") : LOCTEXT("ObjectiveText", "Destroy the 6 enemy tanks")).ToString(), W * 0.5f, TitleY, 20, WithAlpha(TextColor, Alpha), true, true).Y + 6.0f;
+	DrawLabel((HasEconomy(Match) ? LOCTEXT("ObjectiveBaseHint", "Select the Dozer and build: Power Plant, Supply Center, War Factory") : LOCTEXT("ObjectiveHint", "they're coming from there — follow the red arrow")).ToString(), W * 0.5f, SubY, 11, WithAlpha(DimText, Alpha), true);
 }
 
 void ARTSHUD::DrawPause()
@@ -493,12 +647,12 @@ void ARTSHUD::DrawPause()
 	const float W = Canvas->SizeX;
 	const float H = Canvas->SizeY;
 	DrawPanel(0, 0, W, H, FLinearColor(0, 0, 0, 0.55f));
-	DrawLabel(TEXT("PAUSADO"), W * 0.5f, H * 0.32f, 36, TextColor, true, true);
-	DrawButton(TEXT("resume"), TEXT("CONTINUAR"), W * 0.5f - 170.0f, H * 0.45f, 340.0f, 54.0f);
-	DrawButton(TEXT("menu"), TEXT("SAIR PARA O MENU"), W * 0.5f - 170.0f, H * 0.45f + 70.0f, 340.0f, 54.0f);
+	DrawLabel(LOCTEXT("Paused", "PAUSED").ToString(), W * 0.5f, H * 0.32f, 36, TextColor, true, true);
+	DrawButton(TEXT("resume"), LOCTEXT("Resume", "RESUME").ToString(), W * 0.5f - 170.0f, H * 0.45f, 340.0f, 54.0f);
+	DrawButton(TEXT("menu"), LOCTEXT("QuitToMenu", "QUIT TO MENU").ToString(), W * 0.5f - 170.0f, H * 0.45f + 70.0f, 340.0f, 54.0f);
 	const URTSMatchSubsystem* Match = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
 	const bool bFog = Match && Match->IsFogOn();
-	DrawButton(TEXT("fog"), bFog ? TEXT("NÉVOA: LIGADA  (F9)") : TEXT("NÉVOA: DESLIGADA  (F9)"), W * 0.5f - 170.0f, H * 0.45f + 140.0f, 340.0f, 44.0f);
+	DrawButton(TEXT("fog"), bFog ? LOCTEXT("FogOn", "FOG: ON  (F9)").ToString() : LOCTEXT("FogOff", "FOG: OFF  (F9)").ToString(), W * 0.5f - 170.0f, H * 0.45f + 140.0f, 340.0f, 44.0f);
 }
 
 void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)
@@ -510,12 +664,18 @@ void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)
 	const float Top = H * 0.12f;
 	DrawPanel(0, Top, W, H * 0.24f, FLinearColor(0, 0, 0, 0.5f * Alpha));
 	const ERTSMatchResult R = Match->Result();
-	const FString Title = R == ERTSMatchResult::Victory ? TEXT("VITÓRIA") : (R == ERTSMatchResult::Defeat ? TEXT("DERROTA") : TEXT("EMPATE"));
+	const FString Title = R == ERTSMatchResult::Victory ? LOCTEXT("Victory", "VICTORY").ToString() : (R == ERTSMatchResult::Defeat ? LOCTEXT("Defeat", "DEFEAT").ToString() : LOCTEXT("Draw", "DRAW").ToString());
 	const FLinearColor Color = R == ERTSMatchResult::Victory ? FLinearColor(0.45f, 0.95f, 0.5f) : (R == ERTSMatchResult::Defeat ? AttackRed : TextColor);
 	DrawLabel(Title, W * 0.5f, Top + 18.0f, 44, WithAlpha(Color, Alpha), true, true);
-	DrawLabel(FString::Printf(TEXT("%s de partida   ·   %d destruídos   ·   %d perdidos   ·   replay salvo"),
-		*Clock(Match->MatchSeconds()), Match->UnitsKilled(), Match->UnitsLost()), W * 0.5f, Top + 92.0f, 12, WithAlpha(DimText, Alpha), true);
-	DrawButton(TEXT("menu"), TEXT("VOLTAR AO MENU"), W * 0.5f - 170.0f, Top + H * 0.24f + 18.0f, 340.0f, 54.0f);
+	DrawLabel(FText::Format(LOCTEXT("ResultLine", "{0} match time   ·   {1} destroyed   ·   {2} lost   ·   replay saved"),
+		FText::FromString(Clock(Match->MatchSeconds())), Match->UnitsKilled(), Match->UnitsLost()).ToString(), W * 0.5f, Top + 92.0f, 12, WithAlpha(DimText, Alpha), true);
+	if (Match->IsNetMatch())
+	{
+		// a partida em rede: todos voltam pra mesma sala (o anfitrião leva os outros junto)
+		DrawButton(TEXT("lobby"), LOCTEXT("ReturnToLobby", "RETURN TO LOBBY").ToString(), W * 0.5f - 170.0f, Top + H * 0.24f + 18.0f, 340.0f, 54.0f);
+		return;
+	}
+	DrawButton(TEXT("menu"), LOCTEXT("ReturnToMenu", "RETURN TO MENU").ToString(), W * 0.5f - 170.0f, Top + H * 0.24f + 18.0f, 340.0f, 54.0f);
 }
 
 // ---------------------------------------------------------------- minimapa
@@ -647,6 +807,21 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	// unidades (inimigo só à vista), na cor do jogador; selecionado com borda clara
 	// ~5 px a 900 linhas: o tanque de 8 m tem 1,5 px no mapa de 1 km, então o ponto é maior que ele
 	const float Dot = FMath::Max(4.0f, F / 55.0f);
+	// os depósitos de suprimento: estáticos e de todos, então sempre à vista (como a prévia do mapa
+	// do ZH marca os SUPPLY_SOURCE); a pilha que caiu só onde se vê
+	for (int32 K = 0; K < Match->DockCount(); ++K)
+	{
+		FRTSDockState D;
+		if (!Match->GetDock(K, D) || D.Boxes <= 0 || (D.bPile && !Match->IsPointShown(D.PosCm)))
+		{
+			continue;
+		}
+		FVector2D P;
+		WorldToMinimapScreen(D.PosCm, P);
+		const float S = D.bPile ? Dot * 0.8f : Dot * 1.4f;
+		DrawPanel(P.X - S * 0.5f - 1.0f, P.Y - S * 0.5f - 1.0f, S + 2.0f, S + 2.0f, FLinearColor(0.0f, 0.0f, 0.0f, 0.8f));
+		DrawPanel(P.X - S * 0.5f, P.Y - S * 0.5f, S, S, FLinearColor(0.98f, 0.82f, 0.30f, 0.95f));
+	}
 	TArray<FRTSUnitState> Units;
 	Match->GetUnits(Units);
 	const TArray<uint32>& Selected = PC->GetSelection();
@@ -658,10 +833,18 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		}
 		FVector2D P;
 		WorldToMinimapScreen(U.PosCm, P);
+		// prédio: um quadrado maior, do tamanho dele no mapa (e nunca menor que 1,7 ponto)
+		float S = Dot;
+		if (U.bStructure)
+		{
+			FRTSDefInfo D;
+			const float SizeM = Match->GetDef(U.Def, D) ? float(FMath::Max(D.SizeM.X, D.SizeM.Y)) : 30.0f;
+			S = FMath::Max(Dot * 1.7f, SizeM * 100.0f / float(FMath::Max(MinimapSizeCm.X, 1.0)) * MinimapSide);
+		}
 		// contorno: claro no selecionado, escuro no resto (lê em cima da areia e da salina)
 		const FLinearColor Outline = Selected.Contains(U.Id) ? FLinearColor(0.95f, 0.97f, 1.0f, 0.95f) : FLinearColor(0.0f, 0.0f, 0.0f, 0.8f);
-		DrawPanel(P.X - Dot * 0.5f - 1.0f, P.Y - Dot * 0.5f - 1.0f, Dot + 2.0f, Dot + 2.0f, Outline);
-		DrawPanel(P.X - Dot * 0.5f, P.Y - Dot * 0.5f, Dot, Dot, Brighten(URTSMatchSubsystem::PlayerColor(U.Owner), 0.15f));
+		DrawPanel(P.X - S * 0.5f - 1.0f, P.Y - S * 0.5f - 1.0f, S + 2.0f, S + 2.0f, Outline);
+		DrawPanel(P.X - S * 0.5f, P.Y - S * 0.5f, S, S, Brighten(URTSMatchSubsystem::PlayerColor(U.Owner), U.bStructure ? 0.0f : 0.15f));
 	}
 
 	// a caixa da câmera: os 4 cantos da tela no plano do chão em volta do foco
@@ -732,6 +915,8 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	}
 	if (PC->AttackMessageAlpha() > 0.0f)
 	{
-		DrawLabel(TEXT("Unidade sob ataque  (Espaço vai até lá)"), X0 + 2.0f, Y0 - 22.0f, 11, WithAlpha(AttackRed, PC->AttackMessageAlpha()), false, true);
+		DrawLabel(LOCTEXT("UnderAttack", "Unit under attack  (Space to go there)").ToString(), X0 + 2.0f, Y0 - 22.0f, 11, WithAlpha(AttackRed, PC->AttackMessageAlpha()), false, true);
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

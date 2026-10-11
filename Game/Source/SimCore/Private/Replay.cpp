@@ -10,6 +10,8 @@ namespace Sim
 		constexpr size_t MaxKeyLength = 64;
 		constexpr uint16_t MaxUnitDefs = 1024;
 		constexpr uint16_t MaxStartingUnits = 10000;
+		constexpr uint16_t MaxListLength = 64;
+		constexpr uint16_t MaxDocks = 1024;
 
 		enum class Record : uint8_t
 		{
@@ -60,6 +62,24 @@ namespace Sim
 			WriteI32(W, D.Weapon.ReloadTicks);
 			WriteI32(W, D.Weapon.AimToleranceBam);
 			WriteFix(W, D.Weapon.ProjectileStep);
+			W.U8(uint8_t(D.Kind));
+			WriteI32(W, D.Cost);
+			WriteI32(W, D.BuildTicks);
+			WriteI32(W, D.Energy);
+			WriteFix(W, D.HalfX);
+			WriteFix(W, D.HalfY);
+			for (const std::vector<uint16_t>* List : { &D.Produces, &D.Constructs, &D.FreeUnits, &D.Requires })
+			{
+				W.U16(uint16_t(List->size()));
+				for (const uint16_t K : *List)
+				{
+					W.U16(K);
+				}
+			}
+			WriteI32(W, D.SupplyBoxes);
+			W.U8(D.bSupplyCenter ? 1 : 0);
+			W.U8(D.bCountsForVictory ? 1 : 0);
+			WriteFix(W, D.ExitLane);
 		}
 
 		bool ReadDef(ByteReader& R, UnitDef& D)
@@ -79,6 +99,37 @@ namespace Sim
 			}
 			D.Armor = ArmorType(Armor);
 			D.Weapon.Type = DamageType(Damage);
+			uint8_t Kind = 0;
+			uint8_t Center = 0;
+			if (!R.U8(Kind) || Kind >= uint8_t(ObjectKind::Count) || !ReadI32(R, D.Cost) || !ReadI32(R, D.BuildTicks)
+				|| !ReadI32(R, D.Energy) || !ReadFix(R, D.HalfX) || !ReadFix(R, D.HalfY))
+			{
+				return false;
+			}
+			D.Kind = ObjectKind(Kind);
+			for (std::vector<uint16_t>* List : { &D.Produces, &D.Constructs, &D.FreeUnits, &D.Requires })
+			{
+				uint16_t Count = 0;
+				if (!R.U16(Count) || Count > MaxListLength)
+				{
+					return false;
+				}
+				List->resize(Count);
+				for (uint16_t& K : *List)
+				{
+					if (!R.U16(K) || K >= MaxUnitDefs)
+					{
+						return false;
+					}
+				}
+			}
+			uint8_t Victory = 0;
+			if (!ReadI32(R, D.SupplyBoxes) || !R.U8(Center) || Center > 1 || !R.U8(Victory) || Victory > 1 || !ReadFix(R, D.ExitLane))
+			{
+				return false;
+			}
+			D.bSupplyCenter = Center != 0;
+			D.bCountsForVictory = Victory != 0;
 			return true;
 		}
 	}
@@ -92,6 +143,15 @@ namespace Sim
 		WriteFix(W, S.Map.Origin.X);
 		WriteFix(W, S.Map.Origin.Y);
 		W.Raw(S.Map.Pass.data(), S.Map.Pass.size());
+		W.U8(S.Map.HasHeights() ? 1 : 0);
+		if (S.Map.HasHeights())
+		{
+			for (size_t I = 0; I < S.Map.Pass.size(); ++I)
+			{
+				W.U16(uint16_t(S.Map.MinDm[I]));
+				W.U16(uint16_t(S.Map.MaxDm[I]));
+			}
+		}
 
 		W.U16(uint16_t(S.Rules.Units.size()));
 		for (const UnitDef& D : S.Rules.Units)
@@ -104,6 +164,25 @@ namespace Sim
 			{
 				WriteI32(W, S.Rules.Armor.Percent[A][T]);
 			}
+		}
+		const EconomyRules& E = S.Rules.Economy;
+		for (const int32_t V : { E.StartingMoney, E.BoxValue, E.TicksPerBox, E.CenterTicks, E.MaxQueue, E.LowPowerMinPermille,
+			E.LowPowerMaxPermille, E.MaxFlatnessCm, E.DockClearCells })
+		{
+			WriteI32(W, V);
+		}
+		for (const Fix V : { E.DockScanDistance, E.EdgeMargin, E.SupplyCenterDockGap, E.DropPileHalf })
+		{
+			WriteFix(W, V);
+		}
+		W.U16(uint16_t(S.Docks.size()));
+		for (const SupplyDockSetup& D : S.Docks)
+		{
+			WriteFix(W, D.Pos.X);
+			WriteFix(W, D.Pos.Y);
+			WriteFix(W, D.HalfX);
+			WriteFix(W, D.HalfY);
+			WriteI32(W, D.Boxes);
 		}
 
 		W.U8(uint8_t(S.Players.size()));
@@ -149,6 +228,27 @@ namespace Sim
 				return false;
 			}
 		}
+		uint8_t bHeights = 0;
+		if (!R.U8(bHeights) || bHeights > 1)
+		{
+			return false;
+		}
+		if (bHeights)
+		{
+			Out.Map.MinDm.resize(Out.Map.Pass.size());
+			Out.Map.MaxDm.resize(Out.Map.Pass.size());
+			for (size_t I = 0; I < Out.Map.Pass.size(); ++I)
+			{
+				uint16_t Lo = 0;
+				uint16_t Hi = 0;
+				if (!R.U16(Lo) || !R.U16(Hi))
+				{
+					return false;
+				}
+				Out.Map.MinDm[I] = int16_t(Lo);
+				Out.Map.MaxDm[I] = int16_t(Hi);
+			}
+		}
 
 		uint16_t DefCount = 0;
 		if (!R.U16(DefCount) || DefCount > MaxUnitDefs)
@@ -171,6 +271,35 @@ namespace Sim
 				{
 					return false;
 				}
+			}
+		}
+		EconomyRules& E = Out.Rules.Economy;
+		for (int32_t* V : { &E.StartingMoney, &E.BoxValue, &E.TicksPerBox, &E.CenterTicks, &E.MaxQueue, &E.LowPowerMinPermille,
+			&E.LowPowerMaxPermille, &E.MaxFlatnessCm, &E.DockClearCells })
+		{
+			if (!ReadI32(R, *V))
+			{
+				return false;
+			}
+		}
+		for (Fix* V : { &E.DockScanDistance, &E.EdgeMargin, &E.SupplyCenterDockGap, &E.DropPileHalf })
+		{
+			if (!ReadFix(R, *V))
+			{
+				return false;
+			}
+		}
+		uint16_t DockCount = 0;
+		if (!R.U16(DockCount) || DockCount > MaxDocks)
+		{
+			return false;
+		}
+		Out.Docks.resize(DockCount);
+		for (SupplyDockSetup& D : Out.Docks)
+		{
+			if (!ReadFix(R, D.Pos.X) || !ReadFix(R, D.Pos.Y) || !ReadFix(R, D.HalfX) || !ReadFix(R, D.HalfY) || !ReadI32(R, D.Boxes))
+			{
+				return false;
 			}
 		}
 

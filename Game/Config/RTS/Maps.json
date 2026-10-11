@@ -9,11 +9,76 @@
 			"sample_m": 2,
 			"max_slope": 0.78,
 			"water_below_m": -1.5,
-			"starts": [ [ -282.6, -335.7 ], [ 282.6, 335.7 ] ],
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
 			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
 			"skirmish_gap_m": 520,
-			"obstacle_meshes": [ "boulder", "namaqualand_rocks", "namaqualand_cliff", "DatePalm", "concrete_road_barrier" ],
-			"skirmish": { "units_per_player": [ [ "usa_mbt", 6 ] ] }
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
 		}
 	]
 }

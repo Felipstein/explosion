@@ -10,7 +10,12 @@ namespace Sim
 		D.Key = S.Key;
 		D.MaxHp = S.MaxHp;
 		D.Armor = S.Armor;
-		D.Radius = Fix::FromMilli(S.RadiusMm);
+		D.Kind = S.Kind;
+		D.HalfX = Fix::FromMilli(S.SizeXMm) / 2;
+		D.HalfY = Fix::FromMilli(S.SizeYMm) / 2;
+		// prédio sem raio no dado: o círculo inscrito no lado menor (é o que a arma mede até a parede)
+		const int32_t StructureRadiusMm = (S.SizeXMm < S.SizeYMm ? S.SizeXMm : S.SizeYMm) / 2;
+		D.Radius = Fix::FromMilli(S.RadiusMm > 0 || S.Kind != ObjectKind::Structure ? S.RadiusMm : StructureRadiusMm);
 		D.PathRadius = Fix::FromMilli(S.PathRadiusMm > 0 ? S.PathRadiusMm : S.RadiusMm);
 		D.MaxSpeed = PerTickFromMilliPerSecond(S.SpeedMmPerS);
 		D.Accel = PerTick2FromMilliPerSecond2(S.AccelMmPerS2);
@@ -25,6 +30,13 @@ namespace Sim
 		D.Weapon.ReloadTicks = TicksFromMs(S.Weapon.ReloadMs);
 		D.Weapon.AimToleranceBam = Angle::FromMilliDeg(S.Weapon.AimToleranceMilliDeg).Bam;
 		D.Weapon.ProjectileStep = PerTickFromMilliPerSecond(S.Weapon.ProjectileSpeedMmPerS);
+		D.Cost = S.Cost;
+		D.BuildTicks = TicksFromMs(S.BuildTimeMs);
+		D.Energy = S.Energy;
+		D.SupplyBoxes = S.SupplyBoxes;
+		D.bSupplyCenter = S.bSupplyCenter;
+		D.bCountsForVictory = S.bCountsForVictory;
+		D.ExitLane = Fix::FromMilli(S.ExitLaneMm);
 		return D;
 	}
 
@@ -38,6 +50,53 @@ namespace Sim
 			}
 		}
 		return -1;
+	}
+
+	bool Ruleset::Build(const std::vector<UnitSpec>& Specs, const ArmorTable& InArmor, const EconomyRules& InEconomy, Ruleset& Out, std::string* OutError)
+	{
+		Out = Ruleset();
+		Out.Armor = InArmor;
+		Out.Economy = InEconomy;
+		for (const UnitSpec& S : Specs)
+		{
+			Out.Units.push_back(UnitDef::FromSpec(S));
+		}
+		const auto Resolve = [&](const UnitSpec& S, const std::vector<std::string>& Keys, std::vector<uint16_t>& Into, bool bWantStructure)
+		{
+			for (const std::string& K : Keys)
+			{
+				const int32_t Index = Out.FindUnit(K);
+				if (Index < 0 || Out.Units[size_t(Index)].IsStructure() != bWantStructure)
+				{
+					if (OutError)
+					{
+						*OutError = S.Key + ": " + (Index < 0 ? "chave desconhecida " : "tipo errado em ") + K;
+					}
+					return false;
+				}
+				Into.push_back(uint16_t(Index));
+			}
+			return true;
+		};
+		for (size_t I = 0; I < Specs.size(); ++I)
+		{
+			UnitDef& D = Out.Units[I];
+			// prédio treina unidade, o Dozer constrói prédio e o prédio pronto solta unidade
+			if (!Resolve(Specs[I], Specs[I].Produces, D.Produces, false) || !Resolve(Specs[I], Specs[I].Constructs, D.Constructs, true)
+				|| !Resolve(Specs[I], Specs[I].FreeUnits, D.FreeUnits, false) || !Resolve(Specs[I], Specs[I].Requires, D.Requires, true))
+			{
+				return false;
+			}
+			if (D.IsStructure() && (D.HalfX.Raw <= 0 || D.HalfY.Raw <= 0))
+			{
+				if (OutError)
+				{
+					*OutError = D.Key + ": prédio sem tamanho no chão";
+				}
+				return false;
+			}
+		}
+		return true;
 	}
 
 	uint64_t Ruleset::Hash() const
@@ -64,6 +123,24 @@ namespace Sim
 			H.Add(D.Weapon.ReloadTicks);
 			H.Add(D.Weapon.AimToleranceBam);
 			H.Add(D.Weapon.ProjectileStep);
+			H.Add(uint8_t(D.Kind));
+			H.Add(D.Cost);
+			H.Add(D.BuildTicks);
+			H.Add(D.Energy);
+			H.Add(D.HalfX);
+			H.Add(D.HalfY);
+			for (const std::vector<uint16_t>* List : { &D.Produces, &D.Constructs, &D.FreeUnits, &D.Requires })
+			{
+				H.Add(uint64_t(List->size()));
+				for (const uint16_t K : *List)
+				{
+					H.Add(K);
+				}
+			}
+			H.Add(D.SupplyBoxes);
+			H.Add(D.bSupplyCenter);
+			H.Add(D.bCountsForVictory);
+			H.Add(D.ExitLane);
 		}
 		for (int A = 0; A < int(ArmorType::Count); ++A)
 		{
@@ -72,6 +149,19 @@ namespace Sim
 				H.Add(Armor.Percent[A][T]);
 			}
 		}
+		H.Add(Economy.StartingMoney);
+		H.Add(Economy.BoxValue);
+		H.Add(Economy.TicksPerBox);
+		H.Add(Economy.CenterTicks);
+		H.Add(Economy.DockScanDistance);
+		H.Add(Economy.MaxQueue);
+		H.Add(Economy.LowPowerMinPermille);
+		H.Add(Economy.LowPowerMaxPermille);
+		H.Add(Economy.MaxFlatnessCm);
+		H.Add(Economy.EdgeMargin);
+		H.Add(Economy.SupplyCenterDockGap);
+		H.Add(Economy.DockClearCells);
+		H.Add(Economy.DropPileHalf);
 		return H.Value();
 	}
 }

@@ -93,6 +93,32 @@ void ARTSEffect::SpawnTracer(UWorld* World, const FVector& InFrom, const FVector
 	E->Light->SetIntensity(2.0e5f);
 }
 
+void ARTSEffect::SpawnStreak(UWorld* World, const FVector& InFrom, const FVector& InTo, float SpeedCmPerS, float LengthCm, float ThicknessCm, const FLinearColor& InRadiance)
+{
+	if (!World || SpeedCmPerS <= 0.0f)
+	{
+		return;
+	}
+	const FVector Dir = (InTo - InFrom).GetSafeNormal();
+	ARTSEffect* E = World->SpawnActor<ARTSEffect>(InFrom, FRotationMatrix::MakeFromZ(Dir).Rotator());
+	if (!E)
+	{
+		return;
+	}
+	E->Kind = EKind::Tracer;
+	E->From = InFrom;
+	E->To = InTo;
+	E->Speed = SpeedCmPerS;
+	E->Length = LengthCm;
+	E->Life = FVector::Dist(InFrom, InTo) / SpeedCmPerS;
+	E->Radiance = InRadiance;
+	E->Mesh->SetStaticMesh(Cylinder());
+	E->Mesh->SetMaterial(0, EmissiveMaterial());
+	E->Mesh->SetWorldScale3D(FVector(ThicknessCm / 100.0f, ThicknessCm / 100.0f, LengthCm / 100.0f));
+	SetRadiance(E->Mesh, InRadiance);
+	E->Light->SetVisibility(false);
+}
+
 void ARTSEffect::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -114,5 +140,5 @@ void ARTSEffect::Tick(float DeltaSeconds)
 	// traçante: anda até o alvo; o meio do risco fica meio comprimento atrás da ponta
 	const FVector Dir = (To - From).GetSafeNormal();
 	const FVector Tip = From + Dir * FMath::Min(Speed * Age, FVector::Dist(From, To));
-	SetActorLocation(Tip - Dir * (TracerLengthCm * 0.5f));
+	SetActorLocation(Tip - Dir * (Length * 0.5f));
 }

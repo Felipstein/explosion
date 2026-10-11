@@ -36,6 +36,9 @@ public:
 	/** A célula do ponto está à vista agora (sem suavização; com bReveal, tudo está). */
 	bool IsVisibleNow(const FVector2D& Cm) const;
 	bool IsExplored(const FVector2D& Cm) const;
+	/** A névoa "explorada" (o C&C em skirmish e multiplayer): o que nunca foi visto aparece como já
+	 *  explorado, escurecido; as unidades fora da visão continuam sumindo. Só desenho. */
+	void SetStartExplored(bool bOn) { bStartExplored = bOn; bHasLevels = false; }
 	UTexture2D* VisionTexture() const { return Vision; }
 	FVector2D MapMinCm() const { return MinCm; }
 	FVector2D MapSizeCm() const { return SizeCm; }
@@ -70,6 +73,7 @@ private:
 	TArray<float> Level;          // nível da tela por célula (0..1)
 	TArray<uint8> Raw;            // 0/1/2 da simulação
 	bool bRevealAll = false;
+	bool bStartExplored = false;
 	bool bHasLevels = false;
 	bool bMinimapDirty = true;
 	double LastCompose = -1.0;

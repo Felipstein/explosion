@@ -2,7 +2,7 @@
 
 #include "Sim/SimApi.h"
 
-// Dados de design das unidades e armas.
+// Dados de design das unidades, dos prédios e das armas.
 //
 // Os números entram em unidades de gente (m/s, graus/s, milissegundos), como
 // inteiros em milésimos (UnitSpec). Na carga viram valores por passo (UnitDef),
@@ -28,6 +28,15 @@ namespace Sim
 	enum class ArmorType : uint8_t
 	{
 		Tank,
+		Structure,
+		Count
+	};
+
+	/** Tudo é objeto, como no ZH: a unidade anda; o prédio fica parado e ocupa células da grade. */
+	enum class ObjectKind : uint8_t
+	{
+		Unit,
+		Structure,
 		Count
 	};
 
@@ -42,13 +51,13 @@ namespace Sim
 		int32_t ProjectileSpeedMmPerS = 0; // 0 = acerta no passo seguinte
 	};
 
-	/** Unidade em unidades de gente, inteiros em milésimos. */
+	/** Unidade ou prédio em unidades de gente, inteiros em milésimos. */
 	struct UnitSpec
 	{
 		std::string Key;                   // nome estável ("usa_mbt"): os dados e o desenho se acham por ele
 		int32_t MaxHp = 0;
 		ArmorType Armor = ArmorType::Tank;
-		int32_t RadiusMm = 0;              // raio de colisão entre unidades
+		int32_t RadiusMm = 0;              // raio de colisão entre unidades (prédio: 0 = sai do tamanho)
 		int32_t PathRadiusMm = 0;          // meia largura contra o terreno (passa em vão mais estreito que o raio)
 		int32_t SpeedMmPerS = 0;
 		int32_t AccelMmPerS2 = 0;
@@ -57,7 +66,23 @@ namespace Sim
 		int32_t TurretTurnMilliDegPerS = 0;
 		int32_t TurretIdleReturnMs = 0;    // parada sem alvo, a torre volta pra frente depois disto
 		int32_t SightMm = 0;               // raio em que ela procura inimigo sozinha
-		WeaponSpec Weapon;
+		WeaponSpec Weapon;                 // dano 0 = desarmada (Dozer, caminhão, prédio)
+
+		// produção e economia (números do ZH 1.04, em docs/JOGO.md)
+		ObjectKind Kind = ObjectKind::Unit;
+		int32_t Cost = 0;                  // $ (BuildCost)
+		int32_t BuildTimeMs = 0;           // treinar ou construir (BuildTime)
+		int32_t Energy = 0;                // prédio pronto: + gera, − consome (EnergyProduction)
+		int32_t SizeXMm = 0;               // prédio: lados no chão, virado pra +X (ocupa células inteiras)
+		int32_t SizeYMm = 0;
+		std::vector<std::string> Produces;   // prédio: o que treina (CommandSet)
+		std::vector<std::string> Constructs; // unidade: os prédios que constrói (o Dozer)
+		std::vector<std::string> FreeUnits;  // nascem quando o prédio fica pronto (OCL do ZH)
+		int32_t SupplyBoxes = 0;           // caminhão: caixas por viagem
+		bool bSupplyCenter = false;        // prédio que recebe as caixas
+		std::vector<std::string> Requires;   // prédios prontos que o jogador precisa ter (Prerequisites)
+		bool bCountsForVictory = false;    // prédio que segura o jogador vivo (MP_COUNT_FOR_VICTORY)
+		int32_t ExitLaneMm = 0;            // fábrica: faixa livre na frente da porta (FactoryExitWidth)
 	};
 
 	/** Arma em valores por passo: o que a simulação usa. */
@@ -87,6 +112,27 @@ namespace Sim
 		Fix Sight;
 		WeaponDef Weapon;
 
+		ObjectKind Kind = ObjectKind::Unit;
+		int32_t Cost = 0;
+		int32_t BuildTicks = 0;
+		int32_t Energy = 0;
+		/** Prédio virado pra +X: meio lado em X e em Y (as células que ocupa saem daqui). */
+		Fix HalfX;
+		Fix HalfY;
+		std::vector<uint16_t> Produces;
+		std::vector<uint16_t> Constructs;
+		std::vector<uint16_t> FreeUnits;
+		int32_t SupplyBoxes = 0;
+		bool bSupplyCenter = false;
+		std::vector<uint16_t> Requires;
+		bool bCountsForVictory = false;
+		Fix ExitLane;
+
+		bool IsStructure() const { return Kind == ObjectKind::Structure; }
+		bool HasWeapon() const { return Weapon.Damage > 0 && Weapon.Range.Raw > 0; }
+		bool CanConstruct() const { return !Constructs.empty(); }
+
+		/** Converte os números. As listas (Produces...) ficam vazias: quem resolve as chaves é o Ruleset::Build. */
 		static UnitDef FromSpec(const UnitSpec& S);
 	};
 
@@ -99,14 +145,37 @@ namespace Sim
 		void Set(ArmorType A, DamageType D, int32_t P) { Percent[int(A)][int(D)] = P; }
 	};
 
+	/** As regras da economia (ZH 1.04: GameData.ini, SupplyTruckAIUpdate, ProductionUpdate, BuildAssistant). */
+	struct EconomyRules
+	{
+		int32_t StartingMoney = 0;
+		int32_t BoxValue = 0;              // $ por caixa entregue
+		int32_t TicksPerBox = 0;           // no depósito: espera antes de cada caixa (SupplyWarehouseActionDelay)
+		int32_t CenterTicks = 0;           // no centro: espera antes de entregar tudo (SupplyCenterActionDelay)
+		Fix DockScanDistance;              // até onde o caminhão procura depósito (SupplyWarehouseScanDistance)
+		int32_t MaxQueue = 9;              // itens na fila de um prédio
+		// energia faltando (r = gerada ÷ gasta): o ritmo é r, preso entre estes dois (ThingTemplate)
+		int32_t LowPowerMinPermille = 500;
+		int32_t LowPowerMaxPermille = 800;
+		int32_t MaxFlatnessCm = 0;         // diferença de altura máxima embaixo do prédio (0 = não confere)
+		Fix EdgeMargin;                    // o prédio longe da borda do mapa
+		Fix SupplyCenterDockGap;           // o centro de suprimentos longe do depósito
+		int32_t DockClearCells = 1;        // todo prédio deixa estas células livres em volta do depósito
+		Fix DropPileHalf;                  // meia largura da pilha que o caminhão destruído solta
+	};
+
 	struct SIMCORE_API Ruleset
 	{
 		std::vector<UnitDef> Units;
 		ArmorTable Armor;
+		EconomyRules Economy;
 
 		/** Índice da unidade pela chave, −1 se não existir. */
 		int32_t FindUnit(const std::string& Key) const;
 		uint64_t Hash() const;
+
+		/** Monta as regras a partir dos dados: converte cada unidade e resolve as chaves das listas. */
+		static bool Build(const std::vector<UnitSpec>& Specs, const ArmorTable& InArmor, const EconomyRules& InEconomy, Ruleset& Out, std::string* OutError = nullptr);
 	};
 
 	// Conversões de unidades de gente pra valores por passo (arredondando pro mais perto).

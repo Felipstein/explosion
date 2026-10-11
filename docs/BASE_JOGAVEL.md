@@ -17,7 +17,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 
 **O alvo:**
 - **Em movimento:** `captures/concept/33_video/gameplay_v2.mp4` (folha `gameplay_v2_sheet.jpg`), a confirmar com o Felipe. Mostra a War Factory USA com tanques no pátio e saindo, poeira atrás de cada tanque, anel de poeira na explosão, fumaça preta e carcaças queimando.
-- **Parado:** a foto oficial `docs/concept/scenes/game_shot_usa_vs_gla.webp` e as folhas do diretor de arte, `captures/game/quadro_alvo_vs_jogo.jpg` e `captures/game/morte_alvo_vs_jogo.jpg`.
+- **Parado:** a foto oficial `docs/concept/scenes/desert_golden_hour/more/game_shot_usa_vs_gla.webp` e as folhas do diretor de arte, `captures/game/quadro_alvo_vs_jogo.jpg` e `captures/game/morte_alvo_vs_jogo.jpg`.
 - **Os 7 defeitos da 1ª gameplay** (diretor de arte, 08/10):
   1. morte branca;
   2. os dois lados iguais;
@@ -35,6 +35,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 | "C&C Zero Hour conceitual modernizado" | arte, diretor de arte e o **FXLab** (o fogo da carcaça). O tiro e o arsenal foram **pausados** pelo Felipe nela: vão pras sessões de explosão |
 | "Fluxo de explosão realista AAA" | BlastLab |
 | "Gerador de mundo RTS" | WorldForge |
+| Gráficos (nova, 09/10) | o look do quadro inteiro (luz, céu, névoa, exposição, curva de cor, pós, padrão de material) pra ficar idêntico aos game shots; vira plugin comum pro jogo, o "ver na versão final" do WorldForge e o BlastLab. Entrada: `docs/GRAFICOS.md` |
 | "Projeto complexo" | ExplosionLab, noutro repositório: `C:\Users\luisf\explosion-lab` |
 
 ---
@@ -42,7 +43,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 ## 0. Prioridade, em cima de tudo
 
 - [~] **Minimapa, que responde pela névoa** (jogo, começado em 08/10)
-  - [x] **Feito e testado pelo Felipe (08/10, "ficou bom"), sem commit:** foto de cima na tela de carregar, losango alinhado com a câmera padrão, pontos na cor do jogador, caixa da câmera (cores do ZH), névoa, clique do ZH (o minimapa fica com o gesto inteiro), o "sob ataque" do ZH e o Espaço. Detalhes em `docs/JOGO.md` Parte 6.
+  - [x] **Feito e testado pelo Felipe (08/10, "ficou bom"), commit `e927a02`:** foto de cima na tela de carregar, losango alinhado com a câmera padrão, pontos na cor do jogador, caixa da câmera (cores do ZH), névoa, clique do ZH (o minimapa fica com o gesto inteiro), o "sob ataque" do ZH e o Espaço. Detalhes em `docs/JOGO.md` Parte 6.
   - **O que mostra:**
     - o mapa pronto visto de cima: captura ortográfica do mapa final, porque o `minimap.png` do WorldForge é o do rascunho;
     - as unidades e a fábrica como pontos na cor do jogador;
@@ -52,8 +53,8 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - **Alertas:** pisca "sob ataque" no ponto do minimapa e da borda da tela; a fábrica avisa quando o tanque fica pronto.
   - **Decisão do Felipe:** sempre ligado, ou só com radar, como no ZH?
 - [~] **Névoa de guerra** (jogo, começada em 08/10): simulação e desenho
-  - [x] **Na simulação, feito e testado pelo Felipe (08/10), sem commit:** visão por time em inteiros (`Vision.h`), disco de 39,5 m carimbado como no ZH, explorado, a visão do morto fica 1 s, ordem de ataque em alvo invisível recusada, o comando `SetFog` de depuração (entra no replay e na impressão digital). A IA de teste **não** foi mexida (o Felipe: IA fica pra depois).
-  - [x] **No desenho, feito e testado pelo Felipe (08/10), sem commit:** a passada própria que escurece só o opaco, antes das explosões (como o W3DShroud do ZH), com os níveis do ZH (0, 127/255, 255; 1 nível por segundo), a borda suave, a exposição local só bilateral, o que some na névoa e os vazamentos do HUD fechados. No fim, o mapa se revela.
+  - [x] **Na simulação, feito e testado pelo Felipe (08/10), commit `e927a02`:** visão por time em inteiros (`Vision.h`), disco de 39,5 m carimbado como no ZH, explorado, a visão do morto fica 1 s, ordem de ataque em alvo invisível recusada, o comando `SetFog` de depuração (entra no replay e na impressão digital). A IA de teste **não** foi mexida (o Felipe: IA fica pra depois).
+  - [x] **No desenho, feito e testado pelo Felipe (08/10), commit `e927a02`:** a passada própria que escurece só o opaco, antes das explosões (como o W3DShroud do ZH), com os níveis do ZH (0, 127/255, 255; 1 nível por segundo), a borda suave, a exposição local só bilateral, o que some na névoa e os vazamentos do HUD fechados. No fim, o mapa se revela.
   - [x] **Liga e desliga de debug** (pedido do Felipe, testado em 08/10): F9, botão na pausa e no menu principal. A regra vai pela fila só no skirmish local (`bAllowDebugCommands`); online, vira regra da sala.
   - **Na simulação:** visão por time numa grade de 4 m, em inteiros, com dois estados: vista agora e já explorada. Ela é igual em todos os PCs por causa do lockstep.
     - Só se mira no que é visível.
@@ -82,8 +83,8 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - a batalha escondida muda, que vem com o som;
   - o custo da passada da névoa, a medir com a placa livre.
 - [ ] **Minimapa também na sala de espera:** mapa com as bases e a escolha da largada.
-- [ ] **Multiplayer de verdade** (jogo). Ver a seção 1.
-- [ ] **War Factory funcionando** (jogo, na simulação; o modelo vem da arte). Ver a seção 1.
+- [~] **Multiplayer de verdade** (jogo, 10/10: LAN pronta, sem o teste do Felipe). Feito: menu MULTIPLAYER (LAN), sala com até 8, cor por jogador, névoa do anfitrião, a montagem do anfitrião pra todos, lockstep com a impressão digital, volta de todos pra sala, mapa com 4 bases (`docs/MULTIPLAYER.md` Parte 7). Em 11/10: times na sala (aliados lado a lado, vitória do time), IA nas vagas, espectador de quem cai, névoa em 3 tipos (explorada, preta, desligada), a seta "enemy base" fora. Falta: pausa, queda com espera, reconexão, barras de carregamento, sinal no mapa, dar dinheiro, o online (último do jogo). Ver a seção 1.
+- [~] **War Factory funcionando, com a mecânica original do ZH** (jogo, 10/10, sem o teste do Felipe): Command Center + Dozer, energia, construção, depósitos e caminhão, a fila da fábrica, a carga que cai, vitória por base, modelos provisórios. O que está feito: `docs/ECONOMIA.md` Parte 5. Ver a seção 1.
 
 ---
 
@@ -114,18 +115,18 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Como testar com uma placa só:**
   - 2º jogador sem placa (`-nullrhi`) ou a simulação pura fazendo o jogador remoto. Duas Unreal com janela derrubam a 1660 (`docs/GPU.md`).
   - Pro Felipe testar clicando: 2º PC, 1º jogo empacotado (marco M1c, nunca feito) e o aviso do firewall, que só ele aceita.
-- [ ] **War Factory na simulação:**
+- [~] **War Factory na simulação** (feito 10/10, `docs/ECONOMIA.md` Parte 5):
   - prédio com área ocupada na grade, vida, dono e armadura de estrutura;
   - posta na base de cada jogador (as largadas do `Maps.json` hoje nem são usadas).
-- [ ] **Fila de produção sem custo:**
+- [~] **Fila de produção** (feita 10/10 com custo, como no ZH; a porta e a saída pela faixa da fábrica):
   - comandos pra produzir, cancelar e marcar o ponto de encontro;
   - tempo por tanque (conferir o BuildTime do Crusader no ZH 1.04) e teto de fila;
   - a porta abre antes, o tanque nasce dentro e sai até a frente (UnitCreatePoint / NaturalRallyPoint no ZH), e espera se a saída estiver bloqueada;
   - a saída cai na região ligada;
   - bandeira e linha do ponto de encontro com a fábrica selecionada;
   - porcentagem da produção.
-- [ ] **Fábrica destruída:** perde a fila e para de produzir (ZH, Vanguard).
-- [ ] **Vitória com a fábrica** (regra a decidir). Com fábrica produzindo sem economia, a partida pode não acabar.
+- [~] **Fábrica destruída** (feito 10/10): para de produzir e **devolve o dinheiro da fila** (ZH `ProductionUpdate.cpp:1130`; a nota antiga "perde a fila" estava errada, revisão de 10/10).
+- [~] **Vitória com base** (feito 10/10, a regra do ZH: perde quem fica sem prédio). Com fábrica produzindo sem economia, a partida pode não acabar.
 - [ ] **IA com fábrica:** usa a fila e o ponto de encontro. No multiplayer, roda no anfitrião mandando comandos como um jogador. Decidir se a base tem vagas de IA.
 - [ ] **Carcaça e passagem.** Decidido em 06/10: a carcaça **fica no mapa como cobertura** nos testes e no jogo vira opção da sala. Falta: ela virar obstáculo na simulação (hoje os tanques atravessam, porque ela só existe no desenho) e a opção na sala de espera.
 - [ ] **Vegetação baixa** amassa ou dobra quando o tanque passa (jogo + WorldForge, dono do material da vegetação).
@@ -135,7 +136,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Ligar no jogo o que os efeitos novos pedem:** o plugin Niagara, o ProceduralMeshComponent e o Json (fogo do FXLab, destroços do BlastLab) e um módulo de shader global carregado cedo (raymarch).
 - [ ] **Evento único, como o FXList do ZH:** efeito, pulso de luz, tremor, som e marca saem do mesmo evento; clarão em t = 0, som e tremor em d/343 s do ponto de mira.
 - [x] Simulação determinística, skirmish, colunas do grupo e nascer fora de platô isolado (commit `e7de5ce`).
-- [~] **Tela de carregar que espera a cena pronta** (t7: 4,1 s) e a correção do teste do resultado. Sem commit, esperando o OK.
+- [x] **Tela de carregar que espera a cena pronta** (t7: 4,1 s) e a correção do teste do resultado (commit `e927a02`).
 
 ### Visual feito no jogo
 - [ ] **Cor do jogador no tanque:**
@@ -162,7 +163,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Contato com o chão:** sombra de contato e uma mancha escura macia sob cada tanque. A 140 px, a fresta escura embaixo do casco é o que diz "pesado".
 - [ ] **Tremor de câmera** só nas explosões grandes perto do centro. O clique usa a câmera sem tremor, e explosão escondida não treme.
 - [ ] **Estados de dano:** marcas no material conforme a vida cai. Fumaça fina abaixo de 50% e escura com chama abaixo de 15%; as fumaças vêm do FXLab.
-- [ ] **Fábrica viva no desenho:** um ator do prédio anima portão, ponte rolante, braço e ventiladores e acende as luzes, ligado aos eventos de produção; mais a entrada do prédio no `import_units.py` e o link de Buildings no `game.ps1`.
+- [~] **Fábrica viva no desenho** (10/10, provisório: ventiladores girando, luzes que acendem e apagam com a energia, a obra subindo com andaime e solda; falta portão, ponte rolante e braço ligados à produção): um ator do prédio anima portão, ponte rolante, braço e ventiladores e acende as luzes, ligado aos eventos de produção; mais a entrada do prédio no `import_units.py` e o link de Buildings no `game.ps1`.
 - [ ] **Paleta das cores dos jogadores** (8, como no ZH): testada no deserto e no zoom mais afastado; as mesmas no tanque, na fábrica, no minimapa e no HUD; cor única por vaga na sala (dois USA sairiam azuis).
 - [ ] **Lado legível sem o anel no inimigo:** no USA contra USA sobra só a cor em detalhes pequenos. Testar no zoom máximo (81,6 m); se não der, o inimigo ganha uma marca mínima na cor.
 - [ ] **Sujeira acumulada:** o tanque que andou e lutou fica empoeirado (CoH3).
@@ -172,7 +173,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Menu e opções:** botões Multiplayer e Opções; preset, resolução, limite de quadros, volumes e teclas; preset **Auto** que mede a nossa cena (o detector da Unreal joga a 1660 no máximo, e a meta de 60 qps depende dele).
 - [ ] **Áudio do lado do código:** ouvinte no ponto de mira a ~12 m, limite de cópias por som, mixagem que abaixa o resto, batalha escondida muda.
 - [ ] **Legibilidade medida como critério:** quanto fumaça, explosão e névoa cobrem de uma unidade; o tanque contra cada chão (ΔE ≥ 20 ou contraste 3:1). A salina clara apaga a USA cinza-clara.
-- [ ] **HUD final:**
+- [~] **HUD final** (o foco do jogo desde 09/10; o plano, com as fontes, está em `docs/HUD.md`: a barra do ZH modernizada, em Slate). Já feito: o texto nítido e a saída dos anéis do chão.
   - painel da fábrica (fila, botão do tanque), sala de espera e tela de conexão;
   - cursor próprio e fonte final (a licença vai no `CREDITOS.md`);
   - tela de carregar com arte.
@@ -195,15 +196,15 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Medir o mapa por preset no jogo.** O "ultra" do jogo é o cine (16× os raios do Lumen): rever.
 - [ ] **Água igual à revisada:** no jogo, os reflexos do Lumen estão desligados até o alta. Fazer o A/B.
 - [ ] **Congelar a versão dos assets.** Os links físicos quebram calados quando outra sessão regrava um arquivo, e no multiplayer os dois PCs precisam do mesmo conteúdo.
-- [ ] **Usar a fila da placa** (`C:\Users\luisf\.gpu_queue\gpu_queue.ps1`, que o `docs/GPU.md` prefere) no `game.ps1`: feito (o teste e o jogo do Felipe seguram a placa até fechar; sem a fila, cai na trava). Sem commit.
+- [x] **Usar a fila da placa** (`C:\Users\luisf\.gpu_queue\gpu_queue.ps1`, que o `docs/GPU.md` prefere) no `game.ps1`: o teste e o jogo do Felipe seguram a placa até fechar; sem a fila, cai na trava (commit `e927a02`).
 - [ ] Cada peça aprovada que chegar entra com folha lado a lado contra o alvo, **em vídeo**.
 
 ---
 
 ## 2. Arte e FXLab (sessão "C&C Zero Hour conceitual modernizado")
 
-- [ ] **War Factory USA em 3D** (não existe; é o maior gargalo). O Felipe decidiu modelar **à mão** (08/10); falta decidir quem: ele no Blender ou a arte por script.
-  - ficha de produção de 1 página antes de modelar: escala pelo tanque de 7,9 m (largura do prédio e do vão, 5–6 tanques é o limite), planta encaixada na grade de 4 m (vira a área ocupada na simulação, que nenhum documento define), pivô no chão, altura que não tape unidade na câmera de 37,5°, vista de cima primeiro, orçamento de triângulos e textura;
+- [ ] **War Factory USA em 3D** (não existe; é o maior gargalo). O Felipe decidiu modelar **à mão**, ele mesmo no Blender (08/10; a modelagem por script da arte foi rejeitada: "massa de modelar"). Antes, ele aprende numa casa civil.
+  - [~] ficha de produção feita (`docs/PRODUCAO_3D.md`, 08/10) + modelo-base do Blender (`art/tools/make_template.py` → `captures/art3d/RTS_Base.blend`), cobrindo: escala pelo tanque de 7,9 m (largura do prédio e do vão, 5–6 tanques é o limite), planta encaixada na grade de 4 m (vira a área ocupada na simulação, que nenhum documento define), pivô no chão, altura que não tape unidade na câmera de 37,5°, vista de cima primeiro, orçamento de triângulos e textura;
   - a folha tem a 3/4 de trás; faltam a elevação de trás e o lado oposto;
   - peças separadas: os **2 ventiladores grandes do teto** (o maior elemento visto de cima), ponte rolante amarela, braço robótico, bandeira e domo;
   - **portão:** a arte aprovada é um galpão aberto, sem portão. A regra do ZH (porta abre, tanque sai) pede portão novo (enrolável?) ou outro sinal (luz, a ponte baixando o tanque). Isso muda arte aprovada: decisão do Felipe;
@@ -217,7 +218,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - máscara da cor: a lona do cesto é a maior área vista de cima; passar no teste de visão de longe;
   - texturas de dano e queimado, a carcaça e as antenas.
 - [ ] **Se for USA contra GLA:** tanque GLA e Oficina GLA em 3D (as fichas já estão aprovadas).
-- [~] **Fogo da carcaça, aprovado no FXLab**, levar pro jogo:
+- [~] **Fogo da carcaça do FXLab** ("o melhor até agora", salvo; **não aprovado como final**, Felipe 09/10), levar pro jogo:
   - no deserto com a luz do jogo ficou igual ao aprovado (14:39 de 08/10; o Felipe: "fez um ótimo trabalho com o fogo"); parados: o vídeo no deserto e a medida com 1+1 e 3+3;
   - ciclo de vida: pico, cauda e apagar (hoje solta sem fim);
   - emissor em Niagara (hoje é C++ com malha procedural), textura comprimida (BC6H/BC7) e várias carcaças ao mesmo tempo;
@@ -233,11 +234,14 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Fumaça de dano** pro tanque ferido, a mesma da carcaça, menor.
 - [ ] **Calor** (distorção sobre fogo e tiro) e **brasas** subindo da carcaça e da cratera.
 - [ ] **Respingo** de tiro na água.
-- [ ] **Kit civil do deserto** pros mapas (pedido do Felipe pra 1ª gameplay jogável): casas de vila modulares, veículos civis abandonados, postes, cercas e sacos de areia. Falta decidir quem modela e quem põe no mapa.
-- [ ] **Ícone do tanque** pro botão do painel da fábrica.
+- [~] **Kit civil do deserto** pros mapas (pedido do Felipe pra 1ª gameplay jogável): casas de vila modulares, veículos civis abandonados, postes, cercas e sacos de areia.
+  - fichas aprovadas (08/10): casa de 1 andar, 2 andares, varanda, comprida e muro com portão, em `docs/concept/buildings/civil/` (tiradas da cena do jogo); referência de todas as casas das cenas em `docs/concept/towns/`;
+  - kit pronto: os pagos da Fab foram descartados (custo) e os grátis do Sketchfab achados ruins (09/10, `captures/art3d/kits/`); **o Felipe modela à mão**, começando pela casa de 1 andar (`captures/art3d/civ_house_1story/`, com as 5 vistas);
+  - 6 variações a mais (quartinho no teto, ruína, pátio, fortificada, mesquita, loja): **adiadas** por ele.
+- [ ] **Ícone do tanque** pro botão do painel da fábrica e o **retrato da unidade** (unit portrait) do tanque, o que aparece no painel quando ele está selecionado.
 - [ ] **Se for USA contra GLA, além dos modelos:** as bandeirinhas verdes (cor do jogador do GLA) balançando no vento; a morte do GLA com outra assinatura (sucata, rodas, fumaça preta oleosa); a Oficina solta o tanque por rampa subterrânea (outra saída); o amarelo do GLA some no deserto (fica pra interface); a máscara da Oficina marcada à mão.
-- [ ] **Alinhar a sessão de arte com esta lista:** ela ainda planeja pela "fatia jogável" do `JOGO.md` (Centro de Comando, Dozer, suprimentos) e dá USA contra USA como certo.
-- [ ] **Arte de referência do HUD, do minimapa e da névoa** (explorado contra nunca visto). Hoje não existe nenhuma aprovada.
+- [~] **Alinhar a sessão de arte com esta lista** (09/10): a arte leu a lista; o 1º teste é uma War Factory por lado, sem Centro de Comando, Dozer nem suprimento (decisão do Felipe, 08/10).
+- [~] **Arte de referência do HUD, do minimapa e da névoa** (explorado contra nunca visto). Pedida em 09/10 com as medidas do ZH (`captures/concept/hud/PEDIDO.md`). Os prompts dos 3 estados já estão com o Felipe; a aprovada vai pra `docs/concept/hud/`.
 - [ ] **Som**, a especificação, que está adiada:
   - tiro, impacto, morte, motor e esteira;
   - fábrica produzindo e "unidade pronta";
@@ -262,7 +266,8 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **A fumaça não cobre as unidades:** sobe e sai do nível delas em segundos (defeito 7).
 - [ ] **Batalha grande:** mais de 16 explosões juntas, e o tranco com 12.
 - [ ] Atualizar a memória `project-raymarch-portado`, que ainda diz "não aprovado".
-- [~] **A fila real dela:** 1º o detalhe fino da fumaça de perto (em curso: mexe no `BlastRaymarch.usf` que o jogo vai levar, então portar antes de fechar gera cópia velha); 2º o clarão.
+- [~] **A fila real dela:** 1º o detalhe fino da fumaça de perto (mexe no `BlastRaymarch.usf` que o jogo vai levar, então portar antes de fechar gera cópia velha); 2º o clarão.
+  - 09/10: as bolhas de perto entraram (commit `bedd4e7`); 128³, sombra fina e borda afiada não mudaram nada visível. A maciez vem da simulação gravada, então agora é **"mudar quem grava"**: a mesma explosão do WebGL, EmberGen, Blender (e depois Unreal e Houdini) tocada no mesmo raymarch, lado a lado (`-RmCompare=`, `Tools/build_raymarch_vdb.py`). Em curso.
 - [ ] **Anel de poeira da morte como peça própria:** o raymarch não tem a saia de poeira; levar só a bola perde o anel do alvo (claro, rente ao chão, some em ~1,5 s). Candidato: o cartão deitado `shockwave_top` do FXLab. Hoje o volume antigo deixa uma rosca escura no nível das unidades por dezenas de segundos.
 - [ ] **Morte de tanque:** custa 32/41 ms na câmera de RTS (precisa caber nos 60 qps com várias juntas) e ainda está no volume antigo no próprio BlastLab (duas fumaças na mesma batalha).
 - [ ] **Variação da morte por sorteio:** explode já ou queima 2 s antes, sub-explosões, 4 sementes; senão 10 mortes iguais se repetem.
@@ -319,12 +324,12 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
     - as duas correções do jogo.
 17. **O Vanguard** (`C:\Users\luisf\newcnc`) continua como referência de leitura?
 18. **Sol do jogo:** elevação, direção em relação à câmera e cor, junto da curva de tom. Cada peça foi aprovada sob um sol: o fogo da carcaça a 10°, o mapa a 20°, o tiro bate com a arte a ~30°, as explosões às 16 h com poeira no ar. No alvo a luz é contraluz quente, com sombras pra baixo-esquerda e preenchidas; no jogo o sol vem da esquerda e a sombra sai escura e azulada.
-19. **Quem monta o cenário de luz de referência** que vira o plugin comum de ambiente (BlastLab, WorldForge e jogo). Nenhuma sessão recebe isso antes de ele decidir.
+19. **Quem monta o cenário de luz de referência** que vira o plugin comum de ambiente (BlastLab, WorldForge e jogo): **decidido (09/10), a sessão nova de gráficos** (`docs/GRAFICOS.md`).
 20. **Geração automática** pra arte (codex login / APIs), sem colar cada prompt.
 21. **EmberGen pago** (hoje em teste) só se as gravações CC0 da JangaFX não bastarem.
 22. **O que é "trilhas":** marca de esteira, rastro de poeira ou traçante?
 23. **WorldForge:** os pedidos do jogo entram antes ou depois do que já está na fila dela (ferramentas de edição, Desert Fury)?
-24. **Cratera como cobertura**, com o veículo passando mais devagar (mexe na simulação).
+24. **Cratera como cobertura**, com o veículo passando mais devagar (mexe na simulação). Mesmo sistema da **mureta que protege o tanque** (ideia de 09/10): as ideias de jogabilidade pra depois ficam em `docs/IDEIAS_JOGABILIDADE.md`.
 25. **Teste final da base visual:** um roteiro (tanque morre a ~55 m da fábrica, ao pôr do sol), gravado em vídeo com som e comparado ao vídeo do Veo.
 
 ---

@@ -2,18 +2,28 @@
 	"_about": "Dados de design das unidades. Valores em metros/segundos/graus. Números do Zero Hour 1.04 (INI originais, 3 fontes conferidas em 07/10/2026) convertidos com 1 unidade do ZH = 0,2633 m (o Crusader tem 30 unidades de comprimento, o nosso tanque 7,9 m). O jogo relê ao começar cada partida.",
 	"meters_per_zh_unit": 0.2633,
 	"armor": {
-		"tank": { "armor_piercing": 100, "small_arms": 25, "explosive": 100 }
+		"tank": {
+			"armor_piercing": 100,
+			"small_arms": 25,
+			"explosive": 100
+		},
+		"structure": {
+			"armor_piercing": 100,
+			"small_arms": 50,
+			"explosive": 100,
+			"_source": "StructureArmor (Armor.ini): DEFAULT 100%, SMALL_ARMS 50%"
+		}
 	},
 	"units": [
 		{
 			"key": "usa_mbt",
-			"name": "Tanque básico USA",
+			"name": "Battle Tank",
 			"_source": "AmericaTankCrusader / CrusaderLocomotor / CrusaderTankGun / TankArmor (ZH 1.04)",
 			"max_hp": 480,
 			"armor": "tank",
 			"radius_m": 3.6,
 			"path_radius_m": 2.0,
-			"speed_mps": 7.90,
+			"speed_mps": 7.9,
 			"accel_mps2": 263.3,
 			"brake_mps2": 263.3,
 			"turn_dps": 180,
@@ -40,7 +50,481 @@
 					"/Game/Units/USA_MBT/SM_USA_MBT_Barrel/StaticMeshes/SM_USA_MBT_Barrel"
 				],
 				"muzzle_height_m": 2.08
+			},
+			"cost": 900,
+			"build_time_s": 10,
+			"requires": [
+				"usa_war_factory"
+			]
+		},
+		{
+			"key": "usa_command_center",
+			"name": "Command Center",
+			"_source": "AmericaCommandCenter (FB:1132-1328)",
+			"kind": "structure",
+			"max_hp": 5000,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 79.0,
+			"size_m": [
+				31.6,
+				36.9
+			],
+			"cost": 2000,
+			"build_time_s": 45,
+			"energy": 0,
+			"counts_for_victory": true,
+			"visual": {
+				"hull": [
+					"/Game/Structures/command_center/command_center/StaticMeshes/command_center"
+				],
+				"turret": [],
+				"spin": [
+					{
+						"mesh": "/Game/Structures/command_center/command_center_radar/StaticMeshes/command_center_radar",
+						"at_m": [
+							-6.0,
+							-12.6,
+							12.9
+						],
+						"rpm": 6
+					}
+				],
+				"scaffold": "/Game/Structures/command_center/command_center_scaffold/StaticMeshes/command_center_scaffold",
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
+			},
+			"produces": [
+				"usa_dozer"
+			],
+			"exit_lane_m": 6.6
+		},
+		{
+			"key": "usa_power_plant",
+			"name": "Cold Fusion Reactor",
+			"_source": "AmericaPowerPlant (FB:4814-4902)",
+			"kind": "structure",
+			"max_hp": 800,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 52.7,
+			"size_m": [
+				11.6,
+				15.8
+			],
+			"cost": 800,
+			"build_time_s": 10,
+			"energy": 5,
+			"counts_for_victory": true,
+			"visual": {
+				"hull": [
+					"/Game/Structures/power_plant/power_plant/StaticMeshes/power_plant"
+				],
+				"turret": [],
+				"scaffold": "/Game/Structures/power_plant/power_plant_scaffold/StaticMeshes/power_plant_scaffold",
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
+			}
+		},
+		{
+			"key": "usa_supply_center",
+			"name": "Supply Center",
+			"_source": "AmericaSupplyCenter (FB:18710-18809) com o custo, o caminhão grátis e a produção do ChinaSupplyCenter (FB:21222-21281)",
+			"kind": "structure",
+			"max_hp": 2000,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 52.7,
+			"size_m": [
+				23.2,
+				23.7
+			],
+			"cost": 1500,
+			"build_time_s": 10,
+			"energy": -1,
+			"counts_for_victory": true,
+			"visual": {
+				"hull": [
+					"/Game/Structures/supply_center/supply_center/StaticMeshes/supply_center"
+				],
+				"turret": [],
+				"scaffold": "/Game/Structures/supply_center/supply_center_scaffold/StaticMeshes/supply_center_scaffold",
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
+			},
+			"requires": [
+				"usa_power_plant"
+			],
+			"supply_center": true,
+			"free_units": [
+				"usa_supply_truck"
+			],
+			"produces": [
+				"usa_supply_truck"
+			],
+			"exit_lane_m": 6.6,
+			"_exit_lane_m": "nosso: a porta do caminhão fica livre (o ZH não tem faixa no centro)"
+		},
+		{
+			"key": "usa_war_factory",
+			"name": "War Factory",
+			"_source": "AmericaWarFactory (FB:24920-25022)",
+			"kind": "structure",
+			"max_hp": 2000,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 52.7,
+			"size_m": [
+				27.9,
+				31.6
+			],
+			"cost": 2000,
+			"build_time_s": 15,
+			"energy": -1,
+			"counts_for_victory": true,
+			"visual": {
+				"hull": [
+					"/Game/Structures/war_factory/war_factory/StaticMeshes/war_factory"
+				],
+				"turret": [],
+				"spin": [
+					{
+						"mesh": "/Game/Structures/war_factory/war_factory_fan/StaticMeshes/war_factory_fan",
+						"at_m": [
+							-3.5,
+							3.4,
+							9.3
+						],
+						"rpm": 38
+					},
+					{
+						"mesh": "/Game/Structures/war_factory/war_factory_fan/StaticMeshes/war_factory_fan",
+						"at_m": [
+							-3.5,
+							-3.4,
+							9.3
+						],
+						"rpm": 44
+					}
+				],
+				"scaffold": "/Game/Structures/war_factory/war_factory_scaffold/StaticMeshes/war_factory_scaffold",
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
+			},
+			"requires": [
+				"usa_supply_center"
+			],
+			"produces": [
+				"usa_mbt"
+			],
+			"exit_lane_m": 6.6
+		},
+		{
+			"key": "usa_dozer",
+			"name": "Dozer",
+			"_source": "AmericaVehicleDozer (AV:1682-1801), DozerLocomotor (LO:3532-3536)",
+			"max_hp": 250,
+			"armor": "tank",
+			"radius_m": 3.6,
+			"path_radius_m": 2.0,
+			"speed_mps": 7.9,
+			"accel_mps2": 7.9,
+			"brake_mps2": 7.9,
+			"turn_dps": 90,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 52.7,
+			"cost": 1000,
+			"build_time_s": 5,
+			"constructs": [
+				"usa_power_plant",
+				"usa_supply_center",
+				"usa_war_factory",
+				"usa_command_center"
+			],
+			"visual": {
+				"hull": [
+					"/Game/Structures/dozer/dozer/StaticMeshes/dozer",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_l",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_r",
+					"/Game/Units/USA_MBT/SM_USA_MBT_Wheels/StaticMeshes/wheel_*"
+				],
+				"turret": [],
+				"blade": {
+					"mesh": "/Game/Structures/dozer/dozer_blade/StaticMeshes/dozer_blade",
+					"at_m": [
+						-0.6,
+						0.0,
+						1.1
+					]
+				},
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
+			}
+		},
+		{
+			"key": "usa_supply_truck",
+			"name": "Supply Truck",
+			"_source": "ChinaVehicleSupplyTruck (CV:2003-2105), SupplyTruckLocomotor (LO:1056-1060)",
+			"max_hp": 300,
+			"armor": "tank",
+			"radius_m": 4.0,
+			"path_radius_m": 1.9,
+			"speed_mps": 10.5,
+			"accel_mps2": 63.2,
+			"brake_mps2": 63.2,
+			"turn_dps": 90,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 39.5,
+			"cost": 600,
+			"build_time_s": 10,
+			"supply_boxes": 4,
+			"visual": {
+				"hull": [
+					"/Game/Structures/supply_truck/supply_truck/StaticMeshes/supply_truck",
+					"/Game/Structures/supply_truck/supply_truck_wheels/StaticMeshes/wheel_*"
+				],
+				"turret": [],
+				"cargo": {
+					"mesh": "/Game/Structures/supply_crate/supply_crate/StaticMeshes/supply_crate",
+					"slots_m": [
+						[
+							-3.55,
+							0.0,
+							1.38
+						],
+						[
+							-2.0,
+							0.0,
+							1.38
+						],
+						[
+							-0.45,
+							0.0,
+							1.38
+						],
+						[
+							1.1,
+							0.0,
+							1.38
+						]
+					]
+				},
+				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
 			}
 		}
-	]
+	],
+	"_about_economy": "Economia e construção do ZH 1.04 (docs/ECONOMIA.md, Parte 1: INI originais + código GPL). Os prédios são da USA; o caminhão e o Supply Center seguem o conjunto da China (decisão do Felipe, 10/10: o coletor é um caminhão). Tamanhos = Geometry do ZH × 2 × 0,2633.",
+	"economy": {
+		"_source": "GameData.ini (multiplayer.ini: 10 000 padrão; ValuePerSupplyBox 75; MaxLowEnergyProductionSpeed 0.8 / MinLowEnergyProductionSpeed 0.5; AllowedHeightVariationForBuilding 10 u; MinDistFromEdgeOfMapForBuild 30 u; SupplyCenterCloseRadius 20 u), ChinaVehicle.ini (SupplyWarehouseActionDelay 1000 ms por caixa, SupplyCenterActionDelay 400 ms, SupplyWarehouseScanDistance 700 u), ProductionUpdate.cpp (fila de 9), CivilianBuilding.ini (SupplyPileSmall: raio 16 u)",
+		"starting_money": 10000,
+		"box_value": 75,
+		"seconds_per_box": 1.0,
+		"center_s": 0.4,
+		"dock_scan_m": 184.3,
+		"max_queue": 9,
+		"low_power_min": 0.5,
+		"low_power_max": 0.8,
+		"max_flatness_m": 2.63,
+		"edge_margin_m": 7.9,
+		"supply_center_dock_gap_m": 5.27,
+		"dock_clear_cells": 1,
+		"_dock_clear_cells": "nosso: todo prédio deixa 1 célula livre em volta da doca (na nossa grade, cercar a doca a travaria; revisão de 10/10)",
+		"drop_pile_m": 8.4,
+		"_drop_pile_m": "a carga que cai: a pilha tem o tamanho do SupplyPileSmall"
+	},
+	"supply_dock_visual": {
+		"_about": "O depósito (ZH SupplyDock) e a pilha da carga que cai. As caixas somem na proporção do estoque, as de cima primeiro (W3DSupplyDraw do ZH); a pilha mostra uma caixa por caixa. pads_m = as vagas pintadas no pátio; stack_m = a pilha em cada vaga (4 embaixo e 1 em cima); pile_m = x, y, z (m) e giro (graus), as de cima primeiro. Em coordenadas da Unreal (o Y é o contrário do Blender).",
+		"mesh": "/Game/Structures/supply_dock/supply_dock/StaticMeshes/supply_dock",
+		"crate": "/Game/Structures/supply_crate/supply_crate/StaticMeshes/supply_crate",
+		"pads_m": [
+			[
+				-9.6,
+				12.6
+			],
+			[
+				-9.6,
+				8.4
+			],
+			[
+				-9.6,
+				4.2
+			],
+			[
+				-9.6,
+				-0.0
+			],
+			[
+				-4.8,
+				12.6
+			],
+			[
+				-4.8,
+				8.4
+			],
+			[
+				-4.8,
+				4.2
+			],
+			[
+				-4.8,
+				-0.0
+			],
+			[
+				0.0,
+				12.6
+			],
+			[
+				0.0,
+				8.4
+			],
+			[
+				0.0,
+				4.2
+			],
+			[
+				0.0,
+				-0.0
+			],
+			[
+				0.0,
+				-4.2
+			],
+			[
+				0.0,
+				-8.4
+			],
+			[
+				4.8,
+				12.6
+			],
+			[
+				4.8,
+				8.4
+			],
+			[
+				4.8,
+				4.2
+			],
+			[
+				4.8,
+				-0.0
+			],
+			[
+				4.8,
+				-4.2
+			],
+			[
+				4.8,
+				-8.4
+			],
+			[
+				9.6,
+				12.6
+			],
+			[
+				9.6,
+				8.4
+			],
+			[
+				9.6,
+				4.2
+			],
+			[
+				9.6,
+				-0.0
+			],
+			[
+				9.6,
+				-4.2
+			],
+			[
+				9.6,
+				-8.4
+			]
+		],
+		"stack_m": [
+			[
+				-0.75,
+				-0.65,
+				0.22
+			],
+			[
+				0.75,
+				-0.65,
+				0.22
+			],
+			[
+				-0.75,
+				0.65,
+				0.22
+			],
+			[
+				0.75,
+				0.65,
+				0.22
+			],
+			[
+				0.0,
+				0.0,
+				1.24
+			]
+		],
+		"pile_m": [
+			[
+				0.6,
+				-0.1,
+				1.02,
+				25
+			],
+			[
+				-1.5,
+				0.7,
+				0.0,
+				70
+			],
+			[
+				1.1,
+				1.5,
+				0.0,
+				5
+			],
+			[
+				1.7,
+				-0.6,
+				0.0,
+				-25
+			],
+			[
+				0.0,
+				0.0,
+				0.0,
+				10
+			]
+		]
+	}
 }

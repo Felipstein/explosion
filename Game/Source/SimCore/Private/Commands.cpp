@@ -29,6 +29,28 @@ namespace Sim
 		case CommandType::SetFog:
 			W.U8(C.Target != 0 ? 1 : 0);
 			break;
+		case CommandType::Produce:
+		case CommandType::CancelProduce:
+			W.U32(C.Target);
+			W.U32(uint32_t(C.Value));
+			break;
+		case CommandType::Build:
+			W.U32(C.Target);
+			W.U32(uint32_t(C.Value));
+			W.I64(C.Point.X.Raw);
+			W.I64(C.Point.Y.Raw);
+			break;
+		case CommandType::CancelBuild:
+			W.U32(C.Target);
+			break;
+		case CommandType::SetRally:
+			W.U32(C.Target);
+			W.I64(C.Point.X.Raw);
+			W.I64(C.Point.Y.Raw);
+			break;
+		case CommandType::Gather:
+			W.U32(uint32_t(C.Value));
+			break;
 		}
 	}
 
@@ -79,6 +101,41 @@ namespace Sim
 				return false;
 			}
 			Out.Target = On;
+			return true;
+		}
+		case CommandType::Produce:
+		case CommandType::CancelProduce:
+		{
+			uint32_t V = 0;
+			if (!R.U32(Out.Target) || !R.U32(V) || V > 0xFFFF)
+			{
+				return false;
+			}
+			Out.Value = int32_t(V);
+			return true;
+		}
+		case CommandType::Build:
+		{
+			uint32_t V = 0;
+			if (!R.U32(Out.Target) || !R.U32(V) || V > 0x3FFFF || !R.I64(Out.Point.X.Raw) || !R.I64(Out.Point.Y.Raw))
+			{
+				return false;
+			}
+			Out.Value = int32_t(V);
+			return true;
+		}
+		case CommandType::CancelBuild:
+			return R.U32(Out.Target);
+		case CommandType::SetRally:
+			return R.U32(Out.Target) && R.I64(Out.Point.X.Raw) && R.I64(Out.Point.Y.Raw);
+		case CommandType::Gather:
+		{
+			uint32_t V = 0;
+			if (!R.U32(V) || V > 0xFFFF)
+			{
+				return false;
+			}
+			Out.Value = int32_t(V);
 			return true;
 		}
 		}

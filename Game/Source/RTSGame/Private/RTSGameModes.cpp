@@ -6,6 +6,7 @@
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
 #include "RTSSessionSubsystem.h"
+#include "RTSNetSession.h"
 
 ARTSMenuGameMode::ARTSMenuGameMode()
 {
@@ -27,12 +28,18 @@ void ARTSSkirmishGameMode::StartPlay()
 	URTSMatchSubsystem* Match = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
 	ARTSPlayerController* PC = Cast<ARTSPlayerController>(GetWorld()->GetFirstPlayerController());
 	FString Error;
-	if (!Match->StartSkirmish(URTSSessionSubsystem::SkirmishMapName(), Error))
+	const URTSNetSession* Net = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSNetSession>() : nullptr;
+	if (Net && Net->IsActive() && !Net->IsHost())
+	{
+		// cliente da LAN: a partida começa quando a montagem do anfitrião chegar (URTSMatchSubsystem::Tick)
+		Match->AwaitNetSetup(URTSSessionSubsystem::SkirmishMapName());
+	}
+	else if (!Match->StartSkirmish(URTSSessionSubsystem::SkirmishMapName(), Error))
 	{
 		UE_LOG(LogTemp, Error, TEXT("RTS: não deu pra montar a partida: %s"), *Error);
 		if (PC)
 		{
-			PC->SetError(FString::Printf(TEXT("Não deu pra montar a partida: %s"), *Error));
+			PC->SetError(FText::Format(NSLOCTEXT("RTSHUD", "SetupFailed", "Couldn't set up the match: {0}"), FText::FromString(Error)).ToString());
 		}
 	}
 	else if (PC)

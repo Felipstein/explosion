@@ -1,6 +1,9 @@
 #include "RTSPlayerController.h"
 
+#include "RTSNetSession.h"
+
 #include "HAL/PlatformTime.h"
+#include "Misc/Paths.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/GameViewportClient.h"
@@ -77,7 +80,7 @@ bool ARTSPlayerController::IsDragging(FVector2D& OutA, FVector2D& OutB) const
 {
 	float X = 0.0f;
 	float Y = 0.0f;
-	if (!bLeftDown || !GetMousePosition(X, Y))
+	if (!bLeftDown || !ReadMouse(X, Y))
 	{
 		return false;
 	}
@@ -131,9 +134,96 @@ void ARTSPlayerController::ApplyQuality(int32 Level)
 void ARTSPlayerController::OnButton(FName Id)
 {
 	URTSSessionSubsystem* Session = GetGameInstance()->GetSubsystem<URTSSessionSubsystem>();
+	URTSNetSession* Net = GetGameInstance()->GetSubsystem<URTSNetSession>();
+	const FString IdText = Id.ToString();
 	if (Id == TEXT("skirmish"))
 	{
 		Session->StartSkirmish();
+	}
+	// a LAN: criar a sala, achar as da rede, a sala de espera
+	else if (Id == TEXT("multiplayer"))
+	{
+		MenuPage = EMenuPage::Lan;
+		Net->StartBrowsing();
+	}
+	else if (Id == TEXT("lan_back"))
+	{
+		Net->Leave();
+		Net->StopBrowsing();
+		MenuPage = EMenuPage::Main;
+	}
+	else if (Id == TEXT("lan_host"))
+	{
+		FString NetError;
+		if (Net->Host(NetError))
+		{
+			MenuPage = EMenuPage::Lobby;
+		}
+	}
+	else if (IdText.StartsWith(TEXT("lan_join_")))
+	{
+		const int32 K = FCString::Atoi(*IdText.Mid(9));
+		if (Net->FoundGames().IsValidIndex(K))
+		{
+			const FRTSLanGame G = Net->FoundGames()[K];
+			FString NetError;
+			if (Net->Join(G.Ip, G.Port, NetError))
+			{
+				MenuPage = EMenuPage::Lobby;
+			}
+		}
+	}
+	else if (Id == TEXT("lan_start"))
+	{
+		Net->StartMatch();
+	}
+	else if (Id == TEXT("lan_color"))
+	{
+		Net->CycleColor();
+	}
+	// a sala: o time e a cor de cada linha (a sua; o anfitrião mexe em todas e nas IAs)
+	else if (IdText.StartsWith(TEXT("lan_team_")))
+	{
+		Net->CycleTeam(uint8(FCString::Atoi(*IdText.Mid(9))));
+	}
+	else if (IdText.StartsWith(TEXT("lan_color_")))
+	{
+		const uint8 Slot = uint8(FCString::Atoi(*IdText.Mid(10)));
+		if (Slot == Net->LocalSlot())
+		{
+			Net->CycleColor();
+		}
+		else
+		{
+			Net->CycleColorOf(Slot);
+		}
+	}
+	else if (IdText.StartsWith(TEXT("lan_kick_")))
+	{
+		Net->RemoveAI(uint8(FCString::Atoi(*IdText.Mid(9))));
+	}
+	else if (Id == TEXT("lan_add_ai"))
+	{
+		Net->AddAI();
+	}
+	else if (Id == TEXT("lan_random"))
+	{
+		Net->RandomTeams();
+	}
+	else if (Id == TEXT("lan_fog"))
+	{
+		Net->SetFogMode(URTSSessionSubsystem::NextFogMode(Net->GetFogMode()));
+	}
+	else if (Id == TEXT("lobby"))
+	{
+		// a partida em rede acabou: todos voltam pra mesma sala (o anfitrião leva os outros junto)
+		Net->BackToLobby();
+		Session->ReturnToLobby();
+	}
+	else if (Id == TEXT("lan_leave"))
+	{
+		Net->Leave();
+		MenuPage = EMenuPage::Lan;
 	}
 	else if (Id == TEXT("quit"))
 	{
@@ -160,15 +250,111 @@ void ARTSPlayerController::OnButton(FName Id)
 	}
 	else if (Id == TEXT("fogsetting"))
 	{
-		Session->bFogOfWar = !Session->bFogOfWar;
+		Session->FogMode = URTSSessionSubsystem::NextFogMode(Session->FogMode);
+	}
+	else if (URTSMatchSubsystem* M = Match())
+	{
+		// o painel provisório da economia: eco_<ação>_<número>
+		const FString S = Id.ToString();
+		FString Action;
+		FString Arg;
+		if (S.StartsWith(TEXT("eco_")) && S.Mid(4).Split(TEXT("_"), &Action, &Arg))
+		{
+			const int32 N = FCString::Atoi(*Arg);
+			const uint32 Structure = SelectedStructure();
+			if (Action == TEXT("produce") && Structure != 0)
+			{
+				M->OrderProduce(Structure, uint16(N));
+				++Orders;
+			}
+			else if (Action == TEXT("cancelq") && Structure != 0)
+			{
+				M->OrderCancelProduce(Structure, N);
+			}
+			else if (Action == TEXT("build"))
+			{
+				BeginPlacing(N);
+			}
+			else if (Action == TEXT("cancelbuild") && Structure != 0)
+			{
+				M->OrderCancelBuild(Structure);
+			}
+		}
 	}
 }
 
 void ARTSPlayerController::TickMenu()
 {
+	URTSNetSession* Net = GetGameInstance()->GetSubsystem<URTSNetSession>();
+	// de volta da partida em rede: o menu abre na mesma sala
+	if (!bNetAutoDone && Net && Net->IsActive())
+	{
+		bNetAutoDone = true;
+		MenuPage = EMenuPage::Lobby;
+	}
+	// o teste da LAN sem clicar: -RTSNetHost cria a sala; -RTSNetJoin=<ip> entra direto (depois do
+	// arquivo -RTSNetJoinGate=, se tiver: o anfitrião do teste escolhe a cor antes dos outros entrarem)
+	FString Gate;
+	const bool bGateClosed = FParse::Value(FCommandLine::Get(), TEXT("-RTSNetJoinGate="), Gate) && !FPaths::FileExists(Gate);
+	if (!bNetAutoDone && Net && !bGateClosed)
+	{
+		bNetAutoDone = true;
+		FString JoinIp;
+		FString NetError;
+		if (FParse::Value(FCommandLine::Get(), TEXT("-RTSNetJoin="), JoinIp) && Net->Join(JoinIp, URTSNetSession::GamePort, NetError))
+		{
+			MenuPage = EMenuPage::Lobby;
+		}
+		else if (FParse::Param(FCommandLine::Get(), TEXT("RTSNetHost")) && Net->Host(NetError))
+		{
+			MenuPage = EMenuPage::Lobby;
+			if (FParse::Param(FCommandLine::Get(), TEXT("RTSNetNoFog")))
+			{
+				Net->SetFogMode(ERTSFogMode::Off);
+			}
+		}
+	}
+	if (Net && Net->IsActive() && FParse::Param(FCommandLine::Get(), TEXT("RTSNetBot")))
+	{
+		// o robô do teste na sala: o anfitrião começa com -RTSNetAutoStart=<n> jogadores; depois de
+		// uma partida, todos de volta na sala, sai (o teste conferiu que voltaram)
+		int32 AutoStart = 0;
+		const double Now = FPlatformTime::Seconds();
+		if (Net->MatchesPlayed() == 0 && Net->IsHost() && FParse::Value(FCommandLine::Get(), TEXT("-RTSNetAutoStart="), AutoStart)
+			&& Net->PlayerCount() >= AutoStart && Net->EveryoneInLobby() && Net->GetPhase() == ERTSNetPhase::Lobby)
+		{
+			if (BotStartAt == 0.0)
+			{
+				BotStartAt = Now + 3.0;   // os nomes e cores chegam em todos antes
+			}
+			else if (Now >= BotStartAt)
+			{
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN robô: %d na sala, começando"), Net->PlayerCount());
+				Net->StartMatch();
+			}
+		}
+		if (Net->MatchesPlayed() > 0 && Net->GetPhase() == ERTSNetPhase::Lobby && (!Net->IsHost() || Net->EveryoneInLobby()))
+		{
+			if (BotExitAt == 0.0)
+			{
+				BotExitAt = Now + 10.0;
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN robô: de volta na sala com %d jogadores; saindo em 10 s"), Net->PlayerCount());
+			}
+			else if (Now >= BotExitAt)
+			{
+				FPlatformMisc::RequestExit(false);
+			}
+		}
+	}
+	// a sala caiu (o anfitrião saiu, recusou): volta pra lista
+	if (MenuPage == EMenuPage::Lobby && Net && !Net->IsActive())
+	{
+		MenuPage = EMenuPage::Lan;
+		Net->StartBrowsing();
+	}
 	float X = 0.0f;
 	float Y = 0.0f;
-	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && GetMousePosition(X, Y))
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && ReadMouse(X, Y))
 	{
 		if (ARTSHUD* HUD = GetRTSHUD())
 		{
@@ -187,7 +373,7 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(GetPawn());
 	float MX = 0.0f;
 	float MY = 0.0f;
-	const bool bHasMouse = GetMousePosition(MX, MY);
+	const bool bHasMouse = ReadMouse(MX, MY);
 	const FVector2D Mouse(MX, MY);
 
 	for (int32 I = Markers.Num() - 1; I >= 0; --I)
@@ -200,11 +386,23 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	}
 
 	const bool bOver = M && M->Result() != ERTSMatchResult::Playing;
+	if (M && M->IsLocalDefeated())
+	{
+		// quem caiu só assiste: nada selecionado, nada pra pôr no chão
+		Selected.Reset();
+		PlacingDef = -1;
+	}
 	if (WasInputKeyJustPressed(EKeys::F9) && M)
 	{
 		M->ToggleFogReveal();   // depuração: a névoa liga e desliga na hora
 	}
-	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver)
+	// o Esc desiste de posicionar o prédio antes de abrir a pausa
+	const bool bEscCancelsPlacement = PlacingDef >= 0 && WasInputKeyJustPressed(EKeys::Escape);
+	if (bEscCancelsPlacement)
+	{
+		PlacingDef = -1;
+	}
+	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement)
 	{
 		bPauseMenu = !bPauseMenu;
 		if (M)
@@ -244,8 +442,10 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		TickCamera(DeltaTime, Cam);
 	}
 	PruneSelection();
+	const bool bPlacing = TickPlacement(Mouse, bHasMouse);
+	UpdateGhost();
 
-	if (WasInputKeyJustPressed(EKeys::A) && !Selected.IsEmpty())
+	if (WasInputKeyJustPressed(EKeys::A) && !Selected.IsEmpty() && !bPlacing)
 	{
 		bAttackMoveArmed = true;
 	}
@@ -283,8 +483,18 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	}
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse && MinimapGesture == EMinimapGesture::None)
 	{
-		bLeftDown = true;
-		LeftDownPos = Mouse;
+		// o painel da economia vem antes do mundo: clicar num botão nunca vira ordem no chão
+		const ARTSHUD* PanelHUD = GetRTSHUD();
+		const FName Button = PanelHUD ? PanelHUD->ButtonAt(Mouse) : NAME_None;
+		if (!Button.IsNone())
+		{
+			OnButton(Button);
+		}
+		else if (!bPlacing)
+		{
+			bLeftDown = true;
+			LeftDownPos = Mouse;
+		}
 	}
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton))
 	{
@@ -312,7 +522,7 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	GetViewportSize(W, H);
 	float MX = 0.0f;
 	float MY = 0.0f;
-	const bool bHasMouse = GetMousePosition(MX, MY);
+	const bool bHasMouse = ReadMouse(MX, MY);
 	const FVector2D Mouse(MX, MY);
 
 	// setas (ADR-0003): ↑↓ rolam, ←→ giram; A e S são ordens, então não há WASD
@@ -351,9 +561,17 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	{
 		if (bRightDown && !bRightScrolling)
 		{
-			UE_LOG(LogTemp, Log, TEXT("RTS clique: direito desfez a seleção em (%.0f, %.0f)"), Mouse.X, Mouse.Y);
-			Selected.Reset();
-			bAttackMoveArmed = false;
+			if (PlacingDef >= 0)
+			{
+				// posicionando: o clique simples desiste do prédio e mantém a seleção (o arraste só rola)
+				PlacingDef = -1;
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("RTS clique: direito desfez a seleção em (%.0f, %.0f)"), Mouse.X, Mouse.Y);
+				Selected.Reset();
+				bAttackMoveArmed = false;
+			}
 		}
 		bRightDown = false;
 		bRightScrolling = false;
@@ -366,7 +584,9 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	const bool bZoomOut = IsInputKeyDown(EKeys::Hyphen) || IsInputKeyDown(EKeys::Subtract) || IsInputKeyDown(EKeys::PageDown);
 	In.ZoomSteps += ((bZoomIn ? 1.0f : 0.0f) - (bZoomOut ? 1.0f : 0.0f)) * KeyboardZoomStepsPerSec * DeltaTime;
 
-	// botão do meio: gira (com Alt, inclina); dois cliques voltam ao padrão
+	// botão do meio: pros lados gira, pra cima e pra baixo deita a câmera até a vista quase de lado das
+	// artes (o Felipe, 10/10: "nossas gameplays podem ficar na horizontal também"); dois cliques voltam
+	// ao padrão
 	if (WasInputKeyJustPressed(EKeys::MiddleMouseButton) && bHasMouse)
 	{
 		const double Now = FPlatformTime::Seconds();
@@ -377,17 +597,13 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	}
 	if (bMiddleDown && bHasMouse)
 	{
-		// gira mais rápido quanto mais longe do ponto apertado (ZH/Vanguard); com Alt, inclina
-		// (o modo cinematográfico das artes, fora do jogo competitivo)
-		const FVector2D Offset = Mouse - MiddleAnchor;
-		if (IsInputKeyDown(EKeys::LeftAlt) || IsInputKeyDown(EKeys::RightAlt))
-		{
-			In.PitchDelta = -FMath::Clamp(float(Offset.Y) / RotateRefPx, -RotateMaxFactor, RotateMaxFactor) * 40.0f * DeltaTime;
-		}
-		else if (FMath::Abs(Offset.X) > DragThresholdPx)
-		{
-			In.YawDelta += FMath::Clamp(float(Offset.X) / RotateRefPx, -RotateMaxFactor, RotateMaxFactor) * RotateDegPerSec * DeltaTime;
-		}
+		// pelo movimento do mouse, como o WorldForge e o BlastLab (o Felipe, 10/10: "tem que ser algo
+		// parecido"): 0,3° de giro e 0,2° de inclinação por pixel; pra cima deita até quase a horizontal.
+		// O modo antigo (a velocidade pela distância do ponto apertado) era ruim de controlar
+		const FVector2D Delta = Mouse - MiddleAnchor;
+		In.YawDelta += float(Delta.X) * 0.3f;
+		In.PitchDelta += float(Delta.Y) * 0.2f;
+		MiddleAnchor = Mouse;
 	}
 	if (WasInputKeyJustReleased(EKeys::MiddleMouseButton))
 	{
@@ -459,7 +675,12 @@ void ARTSPlayerController::TickMinimap(float DeltaTime, ARTSCameraPawn* Cam, con
 		MinimapGesture = EMinimapGesture::None;
 	}
 	// Espaço: a câmera vai pro último "sob ataque" (ZH: não precisa de radar pra isso)
-	if (WasInputKeyJustPressed(EKeys::SpaceBar) && bHasAlert && Cam)
+	FVector2D LastActionCm;
+	if (WasInputKeyJustPressed(EKeys::SpaceBar) && Cam && M && M->IsLocalDefeated() && M->LastActionCm(LastActionCm))
+	{
+		Cam->JumpTo(LastActionCm);   // o espectador: a última morte à vista (o "último evento" do ZH)
+	}
+	else if (WasInputKeyJustPressed(EKeys::SpaceBar) && bHasAlert && Cam)
 	{
 		Cam->JumpTo(LastAlertCm);
 	}
@@ -539,6 +760,10 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 	}
 
 	const uint32 Hit = PickUnit(Mouse);
+	if (HandleEconomyClick(Mouse, Hit))
+	{
+		return;   // ponto de encontro, coletar, retomar a obra
+	}
 	FRTSUnitState U;
 	if (Hit != 0 && M->GetUnit(Hit, U))
 	{
@@ -598,9 +823,9 @@ void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& 
 	TArray<uint32> Found;
 	for (const FRTSUnitState& U : Units)
 	{
-		if (U.Owner != M->LocalPlayer())
+		if (U.Owner != M->LocalPlayer() || U.bStructure)
 		{
-			continue;   // a caixa só pega unidade própria (ADR-0004)
+			continue;   // a caixa só pega unidade própria (ADR-0004), e prédio não (ZH)
 		}
 		FVector2D Screen;
 		const FVector World(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + PickHeightCm);
@@ -727,9 +952,9 @@ uint32 ARTSPlayerController::PickUnit(const FVector2D& Mouse) const
 	float BestScore = TNumericLimits<float>::Max();
 	for (const FRTSUnitState& U : Units)
 	{
-		if (!M->IsUnitShown(U.Id))
+		if (!M->IsUnitShown(U.Id) || U.bStructure)
 		{
-			continue;   // na névoa não se clica (o ZH não deixa)
+			continue;   // na névoa não se clica (o ZH não deixa); prédio é pela área no chão, abaixo
 		}
 		const FRTSUnitVisual* Visual = M->VisualOf(U.Def);
 		const float RadiusCm = Visual ? Visual->RadiusM * 100.0f : 300.0f;
@@ -747,6 +972,11 @@ uint32 ARTSPlayerController::PickUnit(const FVector2D& Mouse) const
 			BestScore = Dist / RadiusPx;
 			Best = U.Id;
 		}
+	}
+	FVector Ground;
+	if (Best == 0 && GroundUnderCursor(Mouse, Ground))
+	{
+		Best = StructureAt(Ground);
 	}
 	return Best;
 }
@@ -794,4 +1024,15 @@ void ARTSPlayerController::AddMarker(const FVector& At, bool bAttack)
 	Marker.World = At;
 	Marker.bAttack = bAttack;
 	Markers.Add(Marker);
+}
+
+bool ARTSPlayerController::ReadMouse(float& X, float& Y) const
+{
+	if (bTestMouse)
+	{
+		X = float(TestMouse.X);
+		Y = float(TestMouse.Y);
+		return true;
+	}
+	return GetMousePosition(X, Y);
 }

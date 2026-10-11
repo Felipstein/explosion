@@ -12,6 +12,8 @@ namespace Sim
 		Origin = InOrigin;
 		Pass.assign(size_t(Width) * size_t(Height), uint8_t(CellPass::Open));
 		Clearance.assign(Pass.size(), 0);
+		MinDm.clear();
+		MaxDm.clear();
 	}
 
 	void SimMap::ComputeClearance()
@@ -85,6 +87,11 @@ namespace Sim
 		H.Add(CellSize);
 		H.Add(Origin);
 		H.AddBytes(Pass.data(), Pass.size());
+		H.Add(uint64_t(MinDm.size()));
+		for (size_t I = 0; I < MinDm.size() && I < MaxDm.size(); ++I)
+		{
+			H.Add(uint64_t(uint16_t(MinDm[I])) | (uint64_t(uint16_t(MaxDm[I])) << 16));
+		}
 		return H.Value();
 	}
 }

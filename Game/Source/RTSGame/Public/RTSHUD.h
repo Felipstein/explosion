@@ -15,6 +15,8 @@
 class ARTSPlayerController;
 class URTSMatchSubsystem;
 
+enum class ERTSFogMode : uint8;
+
 UCLASS()
 class RTSGAME_API ARTSHUD : public AHUD
 {
@@ -49,7 +51,6 @@ private:
 	void DrawMarkers(ARTSPlayerController* PC);
 	void DrawTopBar(URTSMatchSubsystem* Match);
 	void DrawObjective(URTSMatchSubsystem* Match);
-	void DrawEnemyArrow(URTSMatchSubsystem* Match);
 	void DrawPause();
 	void DrawResult(URTSMatchSubsystem* Match);
 	void DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
@@ -58,11 +59,50 @@ private:
 	void DrawClippedLine(FVector2D A, FVector2D B, const FLinearColor& Color, float Thickness);
 
 	void DrawGroundRing(const FVector& Center, float RadiusCm, const FLinearColor& Color, float Thickness);
+
+	// economia e construção, o HUD provisório (RTSHUDEconomy.cpp; o de verdade sai da arte: docs/HUD.md)
+	/** O topo com base: dinheiro, energia, relógio e quem segue em campo. */
+	void DrawEconomyTopBar(URTSMatchSubsystem* Match);
+	/** O painel do canto de baixo à direita: botões do prédio ou do Dozer, a fila e a obra. */
+	void DrawCommandPanel(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** Quem caiu assiste: a lista dos jogadores no lugar da barra de comando. */
+	void DrawObserverPanel(URTSMatchSubsystem* Match);
+	/** "Fulano foi derrotado" pra todos, e a faixa do espectador. */
+	void DrawDefeats(URTSMatchSubsystem* Match);
+	/** O fantasma do prédio sob o mouse (verde ou vermelho, com o motivo) e a faixa da porta. */
+	void DrawPlacementGhost(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** A bandeira do ponto de encontro dos prédios selecionados. */
+	void DrawRallyPoints(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** O "+$300" que sobe do centro de suprimentos. */
+	void DrawMoneyPopups(URTSMatchSubsystem* Match, float DeltaSeconds);
+	/** O valor que sobra no depósito sob o mouse (o ZH mostra a dica com o dinheiro). */
+	void DrawDockHover(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** Retângulo no chão, seguindo o relevo. */
+	void DrawGroundRect(const FVector2D& CenterCm, const FVector2D& HalfCm, const FLinearColor& Color, float Thickness);
+	/** Botão pequeno do painel; apagado não reage ao mouse mas segue clicável (a simulação recusa). */
+	void DrawPanelButton(FName Id, const FString& Label, const FString& Sub, float X, float Y, float W, float H, bool bEnabled);
+	/** A partida tem base (economia): o topo e o painel mudam. */
+	bool HasEconomy(URTSMatchSubsystem* Match) const;
+	void DrawLanMenu(ARTSPlayerController* PC, const class URTSNetSession& Net, float X, float Y, float BW);
+	static FString FogModeText(ERTSFogMode Mode);
+	static FString FogModeHint(ERTSFogMode Mode);
+	void DrawNetStatus(URTSMatchSubsystem* Match);
+
+	struct FPopup
+	{
+		FVector2D Cm = FVector2D::ZeroVector;
+		int32 Amount = 0;
+		float Age = 0.0f;
+	};
+	TArray<FPopup> Popups;
+	double LastPopupTime = -1.0;
 	void DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color);
 	/** Texto com sombra; Size em pontos do Slate. Devolve o tamanho desenhado (px). */
 	FVector2D DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter = false, bool bBold = false);
 	FVector2D MeasureLabel(const FString& Text, int32 Size, bool bBold) const;
 	void DrawButton(FName Id, const FString& Label, float X, float Y, float W, float H);
+	/** O botão pequeno da sala: o texto centrado e menor; com Swatch, o quadrado de cor dentro (o botão da cor). */
+	void DrawSmallButton(FName Id, const FString& Label, float X, float Y, float W, float H, const FLinearColor* Swatch = nullptr);
 	FVector2D MousePos() const;
 
 	TArray<FButton> Buttons;

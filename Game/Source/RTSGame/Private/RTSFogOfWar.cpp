@@ -111,7 +111,7 @@ void URTSFogOfWar::Update(const std::vector<uint8>& InVision, bool bReveal, floa
 	bool bChanged = false;
 	for (int32 I = 0; I < W * H; ++I)
 	{
-		const float Target = bReveal ? VisibleLevel : (Raw[I] >= 2 ? VisibleLevel : (Raw[I] == 1 ? ExploredLevel : NeverSeenLevel));
+		const float Target = bReveal ? VisibleLevel : (Raw[I] >= 2 ? VisibleLevel : (Raw[I] == 1 || bStartExplored ? ExploredLevel : NeverSeenLevel));
 		// a 1ª vez já no valor final: os próprios tanques não surgem do preto na abertura
 		const float Now = bHasLevels ? (Level[I] < Target ? FMath::Min(Level[I] + Step, Target) : FMath::Max(Level[I] - Step, Target)) : Target;
 		if (Now != Level[I])
@@ -166,7 +166,7 @@ bool URTSFogOfWar::IsVisibleNow(const FVector2D& Cm) const
 
 bool URTSFogOfWar::IsExplored(const FVector2D& Cm) const
 {
-	if (bRevealAll)
+	if (bRevealAll || bStartExplored)
 	{
 		return true;
 	}

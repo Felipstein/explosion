@@ -10,6 +10,13 @@
 
 class APlayerController;
 
+/** A névoa da partida (o botão do menu e da sala):
+ *  - Off: sem névoa;
+ *  - Black: o que nunca foi visto fica preto (o "shroud");
+ *  - Explored: o mapa aparece desde o começo, escurecido fora da visão; só as unidades fora da
+ *    visão somem (o "fog of war" do C&C em skirmish e multiplayer; no AoE, "Explored"). */
+enum class ERTSFogMode : uint8 { Off, Black, Explored };
+
 UCLASS()
 class RTSGAME_API URTSSessionSubsystem : public UGameInstanceSubsystem
 {
@@ -21,8 +28,11 @@ public:
 
 	void StartSkirmish();
 	void ReturnToMenu();
+	/** A partida em rede acabou: o menu, já na sala (a sessão continua). */
+	void ReturnToLobby();
 	void Quit(APlayerController* PC);
 
-	/** A próxima partida começa com névoa de guerra (o botão do menu; depuração enquanto é teste). */
-	bool bFogOfWar = true;
+	/** A névoa da próxima partida (o botão do menu; na LAN, o do anfitrião). */
+	ERTSFogMode FogMode = ERTSFogMode::Explored;
+	static ERTSFogMode NextFogMode(ERTSFogMode M) { return M == ERTSFogMode::Explored ? ERTSFogMode::Black : (M == ERTSFogMode::Black ? ERTSFogMode::Off : ERTSFogMode::Explored); }
 };

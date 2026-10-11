@@ -4,18 +4,29 @@
 #   game.ps1 compile          # compila o C++ (SimCore + RTSGame)
 #   game.ps1 worlds           # traz o mapa do deserto (WorldForge) e o tanque (BlastLab) por link físico
 #   game.ps1 content          # monta os materiais do jogo (Tools/build_content.py)
-#   game.ps1 view [baixa|media|alta|ultra]   # abre o jogo no menu (padrão: alta)
+#   game.ps1 models           # os modelos provisórios da base: Blender (blender_provisional.py) + Unreal (import_provisional.py)
+#   game.ps1 view [baixa|media|alta|ultra]   # abre o jogo no menu (padrão: alta), em tela cheia sem borda
 #   game.ps1 editor           # abre o editor no projeto
 #   game.ps1 simtest          # testes da simulação, sem a Unreal (Tools/simtest.ps1)
 #
 # Teste automático (sem clicar: abre, joga sozinho, tira fotos e fecha):
-#   game.ps1 view -Folder teste1 [-Script skirmish]
+#   game.ps1 package                  (o jogo empacotado pro Windows em captures/dist/Windows; o Linux roda pelo Proton)
+#   game.ps1 view -Folder teste1 [-Script base|skirmish|lanhost|lanclient] [-Players 4] [-NoFog]
+#       base = a partida com base do ZH (o padrão); lanhost = a LAN: este jogo cria a sala, fica
+#       vermelho e os outros (sem placa, o robô jogando) entram; lanclient = este jogo entra na sala
+#       de um anfitrião sem placa; -Players = quantos na sala (com as IAs); -AI = IAs que o
+#       anfitrião põe (lanhost); -Teams = 2 contra 2 (a gente e as IAs de um lado); -NoFog = sem névoa
 # Fotos em captures\game\<Folder>\, log em captures\game\<Folder>.log
 param(
   [Parameter(Mandatory = $true)][string]$Command,
   [string]$Target = '',
   [string]$Folder = '',
-  [string]$Script = 'skirmish',
+  [string]$Script = 'base',
+  [int]$Players = 2,
+  [int]$AI = 0,
+  [switch]$Teams,
+  [switch]$NoFog,
+  [switch]$Packaged,
   [switch]$Record,
   [string]$Res = '1600x900',
   [string]$Extra = ''
@@ -55,7 +66,8 @@ function Compile {
 # A placa é uma só (docs/GPU.md): entra na fila comum das sessões (quem chega primeiro usa
 # primeiro; com só a trava, quem confere mais vezes ganhava e o teste esperava pra sempre),
 # abre o jogo, renova a cada 5 min enquanto ele roda e sai da fila no fim, também em erro.
-function RunWithGpu([string]$Owner, [string[]]$GameArgs) {
+function RunWithGpu([string]$Owner, [string[]]$GameArgs, [string]$Exe = '') {
+  if (-not $Exe) { $Exe = Join-Path $Engine 'UnrealEditor.exe' }
   $queue = 'C:\Users\luisf\.gpu_queue\gpu_queue.ps1'
   $lock = Join-Path $Repo 'captures\.gpu_lock'
   if (Test-Path $queue) {
@@ -65,7 +77,7 @@ function RunWithGpu([string]$Owner, [string[]]$GameArgs) {
     Set-Content $lock "$Owner | $(Get-Date -Format s)"
   }
   try {
-    $p = Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $GameArgs -PassThru
+    $p = Start-Process $Exe -ArgumentList $GameArgs -PassThru
     $touched = Get-Date
     while (-not $p.HasExited) {
       Start-Sleep 5
@@ -118,6 +130,10 @@ function Worlds {
   LinkTree (Join-Path $bl 'Explosions') (Join-Path $gc 'Explosions')
   LinkFile (Join-Path $bl 'Materials\M_FireGlare.uasset') (Join-Path $gc 'Materials\M_FireGlare.uasset')
   LinkFile (Join-Path $bl 'Materials\M_FlashStar.uasset') (Join-Path $gc 'Materials\M_FlashStar.uasset')
+  Write-Host 'gravações da Carga Pesada pro raymarch (BlastLab Intermediate/Raymarch; só as r96, as outras são comparação):'
+  foreach ($v in 0..2) {
+    LinkFile (Join-Path $Repo "BlastLab\Intermediate\Raymarch\r96_v$v.brm2") (Join-Path $Root "Intermediate\Raymarch\r96_v$v.brm2")
+  }
 }
 
 switch ($Command) {
@@ -125,15 +141,50 @@ switch ($Command) {
   'compile' { Compile }
   'worlds' { Worlds }
   'content' { RunUnrealPython 'Tools\build_content.py' }
+  'models' {
+    # o Blender gera os GLB (na CPU, não usa a placa) e a Unreal importa sem janela
+    # (sem 2>&1: no PowerShell 5.1 o aviso que o Blender escreve no stderr vira erro e para o script)
+    $blender = 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe'
+    $out = Join-Path $Captures 'prov'
+    & $blender -b --factory-startup -P (Join-Path $PSScriptRoot 'blender_provisional.py') -- $out |
+      Where-Object { $_ -match '^PROV|Error|Traceback' } | ForEach-Object { $_ }
+    if ($LASTEXITCODE -ne 0) { Write-Error 'Blender falhou'; exit 1 }
+    RunUnrealPython 'Tools\import_provisional.py'
+  }
   'py' { RunUnrealPython $Target }
   'simtest' { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'simtest.ps1') }
   'editor' { Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList "`"$Project`"" }
+  'package' {
+    # o jogo empacotado pro Windows (e pro Linux pelo Proton da Steam: o mesmo programa nos dois,
+    # a mesma conta da simulação): captures/dist/Windows, fora do git. Cozinha na CPU, sem a placa.
+    # (os links do mapa e das gravações do raymarch vêm do 'game.ps1 worlds', já feitos; refazer aqui
+    # falha com um jogo aberto segurando os arquivos)
+    $uat = Join-Path $UE 'Build\BatchFiles\RunUAT.bat'
+    $dist = Join-Path $Repo 'captures\dist'
+    $log = Join-Path $Repo 'captures\dist_package.log'
+    New-Item -ItemType Directory -Force $dist | Out-Null
+    & $uat BuildCookRun "-project=$Project" -noP4 -platform=Win64 -clientconfig=Development -build -cook -stage -pak -iostore -compressed -prereqs `
+      -map=/Game/Maps/World_TestSalt2 "-stagingdirectory=$dist" -nocompileeditor -skipbuildeditor -unattended -utf8output *> $log
+    $code = $LASTEXITCODE
+    Select-String -Path $log -Pattern 'BUILD SUCCESSFUL|BUILD FAILED|Error:|error C|AutomationTool exiting' | Select-Object -Last 15 | ForEach-Object { $_.Line }
+    if ($code -ne 0) { Write-Error "o pacote falhou (código $code): $log"; exit 1 }
+    $win = Join-Path $dist 'Windows'
+    "pacote: $win ({0:N1} GB)" -f ((Get-ChildItem $win -Recurse -File | Measure-Object Length -Sum).Sum / 1GB)
+  }
   'view' {
     # baixa/média/alta/ultra = Médio/Alto/Épico/Cinematic do motor (como no BlastLab)
     $levels = @{ baixa = '1'; media = '2'; alta = '3'; ultra = 'cine' }
     $q = if ($Target) { $levels[$Target] } else { '3' }
     $rx, $ry = $Res -split 'x'
-    $a = @("`"$Project`"", '-game', '-windowed', "-ResX=$rx", "-ResY=$ry", "-ExecCmds=`"Scalability $q`"", '-nosplash')
+    $a = @("`"$Project`"", '-game', "-ExecCmds=`"Scalability $q`"", '-nosplash')
+    if ($Folder) {
+      $a += '-windowed', "-ResX=$rx", "-ResY=$ry"   # o teste: janela de tamanho fixo, fotos comparáveis
+    } else {
+      # o Felipe joga em tela cheia sem borda, na resolução do monitor (09/10: "tela cheia sempre").
+      # A resolução vem da placa (pixels de verdade, sem a escala do Windows); "wf" = janela cheia.
+      $vc = Get-CimInstance Win32_VideoController | Where-Object { $_.CurrentHorizontalResolution } | Select-Object -First 1
+      $a += if ($vc) { "-Res=$($vc.CurrentHorizontalResolution)x$($vc.CurrentVerticalResolution)wf" } else { '-Res=1920x1080wf' }
+    }
     if ($Extra) { $a += $Extra }
     if ($Folder) {
       $dest = Join-Path $Captures $Folder
@@ -143,7 +194,57 @@ switch ($Command) {
       $a += "-RTSAutoTest=$Script", "-RTSCapture=$dest", "-abslog=$log", '-unattended'
       # gravação: passo fixo de 1/30 s (cada quadro = um passo da simulação), uma foto por quadro do combate
       if ($Record) { $a += '-RTSRecord', '-benchmark', '-fps=30' }
-      RunWithGpu "RTSGame | teste $Folder" $a
+      # o teste da LAN com uma placa só: os outros jogadores sem placa (-nullrhi), com o robô jogando
+      # por eles pela rede; este jogo com janela é jogado pelo teste automático (anfitrião ou cliente)
+      $bots = @()
+      if ($Script -eq 'lanhost' -or $Script -eq 'lanclient') {
+        $a += "-RTSNetPlayers=$Players"
+        if ($NoFog) { $a += '-RTSTestNoFog' }
+        if ($AI -gt 0) { $a += "-RTSNetAI=$AI" }
+        if ($Teams) { $a += '-RTSTestTeams' }
+        $gate = Join-Path $Captures "$Folder.lan_gate"
+        if (Test-Path $gate) { Remove-Item $gate -Force }
+        $botArgs = @()
+        if ($Script -eq 'lanhost') {
+          # os robôs só entram depois que o anfitrião escolheu a cor (o arquivo que o teste cria)
+          $a += "-RTSNetGate=$gate"
+          for ($k = 1; $k -lt ($Players - $AI); $k++) { $botArgs += , @('-RTSNetJoin=127.0.0.1', "-RTSNetJoinGate=$gate") }
+        } else {
+          $hostArgs = @('-RTSNetHost', "-RTSNetAutoStart=$Players")
+          if ($NoFog) { $hostArgs += '-RTSNetNoFog' }
+          $botArgs += , $hostArgs
+          for ($k = 2; $k -lt $Players; $k++) { $botArgs += , @('-RTSNetJoin=127.0.0.1') }
+        }
+        for ($k = 0; $k -lt $botArgs.Count; $k++) {
+          $botLog = Join-Path $Captures "$Folder.bot$k.log"
+          $args1 = @("`"$Project`"", '-game', '-nullrhi', '-nosound', '-RTSNetBot', "-abslog=$botLog", '-unattended') + $botArgs[$k]
+          $p = Start-Process -FilePath (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $args1 -PassThru -WindowStyle Minimized
+          $bots += [pscustomobject]@{ Proc = $p; Log = $botLog; Name = "bot $k" }
+          Write-Host "bot $k sem placa ($($botArgs[$k] -join ' ')): pid $($p.Id), log $botLog"
+        }
+      }
+      try {
+        if ($Packaged) {
+          # o jogo empacotado (game.ps1 package): o mesmo teste, sem o projeto nem o -game
+          $exe = Join-Path $Repo 'captures\dist\Windows\RTSGame.exe'
+          RunWithGpu "RTSGame | teste $Folder (pacote)" @($a | Select-Object -Skip 2) $exe
+        } else {
+          RunWithGpu "RTSGame | teste $Folder" $a
+        }
+      } finally {
+        if ($bots.Count) {
+          # os robôs saem sozinhos 10 s depois de voltar pra sala; quem ficou, só pelo PID que abri
+          $deadline = (Get-Date).AddSeconds(25)
+          while ((Get-Date) -lt $deadline -and ($bots | Where-Object { -not $_.Proc.HasExited })) { Start-Sleep -Seconds 1 }
+          foreach ($b in $bots) { if (-not $b.Proc.HasExited) { Stop-Process -Id $b.Proc.Id -Force } }
+        }
+        if ($gate -and (Test-Path $gate)) { Remove-Item $gate -Force }
+      }
+      foreach ($b in $bots) {
+        if (Test-Path $b.Log) {
+          Select-String -Path $b.Log -Pattern 'RTS LAN|RTS sem placa|DESSINCRONIA|Fatal error|Unhandled Exception' | ForEach-Object { "$($b.Name): " + ($_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '') }
+        }
+      }
       Select-String -Path $log -Pattern 'RTS' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
       $frames = Join-Path $dest 'frames'
       if ($Record -and (Test-Path $frames)) {

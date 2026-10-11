@@ -13,6 +13,8 @@
 #include "GameFramework/PlayerController.h"
 #include "RTSPlayerController.generated.h"
 
+class UStaticMeshComponent;
+
 class ARTSCameraPawn;
 class ARTSHUD;
 class URTSMatchSubsystem;
@@ -53,6 +55,9 @@ public:
 
 	// leitura pro HUD
 	bool IsMenu() const { return bMenu; }
+	/** A página do menu: a principal, a da LAN (criar ou achar partida) e a sala de espera. */
+	enum class EMenuPage : uint8 { Main, Lan, Lobby };
+	EMenuPage GetMenuPage() const { return MenuPage; }
 	bool IsPauseMenuOpen() const { return bPauseMenu; }
 	bool IsAttackMoveArmed() const { return bAttackMoveArmed; }
 	bool IsDragging(FVector2D& OutA, FVector2D& OutB) const;
@@ -73,6 +78,26 @@ public:
 
 	const TArray<FRTSMinimapPulse>& GetMinimapPulses() const { return MinimapPulses; }
 	const TArray<FRTSMinimapPing>& GetMinimapPings() const { return MinimapPings; }
+	// economia e construção (HUD provisório, docs/ECONOMIA.md)
+	/** Posicionando um prédio: o tipo (−1 = não) e o lado pra onde ele olha. */
+	int32 GetPlacingDef() const { return PlacingDef; }
+	/**
+	 * O mouse que o jogo lê: o de verdade, ou o do teste automático. O teste leva o cursor do
+	 * Windows junto, mas o Felipe usando o PC ao mesmo tempo tirava ele da janela entre o
+	 * "mover" e o "apertar", e o clique saía sem posição (base6/base7, 10/10).
+	 */
+	bool ReadMouse(float& X, float& Y) const;
+	void SetTestMouse(const FVector2D& Pixel) { bTestMouse = true; TestMouse = Pixel; }
+	/** O teste: a unidade ou o prédio debaixo desse ponto da tela (0 = chão livre). */
+	uint32 UnitUnderScreen(const FVector2D& Screen) const { return PickUnit(Screen); }
+	int32 GetPlacingDir() const { return PlacingDir; }
+	/** O chão sob o mouse (o fantasma do prédio). */
+	bool GetCursorGround(FVector& Out) const;
+	/** O primeiro prédio próprio da seleção (o painel mostra ele). */
+	uint32 SelectedStructure() const;
+	/** As unidades da seleção que constroem (Dozers) ou que coletam (caminhões). */
+	void SelectedWith(bool bConstructors, TArray<uint32>& Out) const;
+
 	/** O letreiro "Unidade sob ataque" (some em 3 s). */
 	float AttackMessageAlpha() const { return FMath::Clamp(1.0f - (AttackMessageAge - 2.5f) / 0.5f, 0.0f, 1.0f) * (AttackMessageAge < 3.0f ? 1.0f : 0.0f); }
 
@@ -92,10 +117,31 @@ private:
 	void PruneSelection();
 	void AddMarker(const FVector& At, bool bAttack);
 	void ApplyQuality(int32 Level);
+	// economia e construção (RTSPlayerEconomy.cpp)
+	void BeginPlacing(int32 Def);
+	/** O modo de posicionar pega o clique e o Esc; true = a entrada foi dele neste quadro. */
+	bool TickPlacement(const FVector2D& Mouse, bool bHasMouse);
+	/** Clique esquerdo no chão com seleção: ponto de encontro, coletar, retomar a obra. true = tratou. */
+	bool HandleEconomyClick(const FVector2D& Mouse, uint32 Hit);
+	int32 DockAt(const FVector& Ground) const;
+	uint32 StructureAt(const FVector& Ground) const;
+	/** O fantasma do prédio no lugar: o modelo em holograma, verde se cabe, vermelho se não. */
+	void UpdateGhost();
+	int32 PlacingDef = -1;
+	int32 PlacingDir = 0;
+	bool bTestMouse = false;
+	FVector2D TestMouse = FVector2D::ZeroVector;
+	UPROPERTY() TObjectPtr<AActor> Ghost;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> GhostMesh;
+	int32 GhostDef = -1;
 	URTSMatchSubsystem* Match() const;
 	ARTSHUD* GetRTSHUD() const;
 
 	bool bMenu = true;
+	EMenuPage MenuPage = EMenuPage::Main;
+	bool bNetAutoDone = false;
+	double BotStartAt = 0.0;
+	double BotExitAt = 0.0;
 	bool bPauseMenu = false;
 	bool bAttackMoveArmed = false;
 	bool bShowDebug = false;

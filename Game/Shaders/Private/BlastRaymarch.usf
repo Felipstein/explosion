@@ -1,0 +1,842 @@
+// Cópia do BlastLab (commit a14c45a, 10/10/2026): BlastLab/Shaders/Private/BlastRaymarch.usf.
+// BlastRaymarch.usf — o raymarch das explosões gravadas do WebGL, portado.
+//
+// Porte de reference/webgl/js/instances.js (shLight e shSingle) e do composite
+// de js/volumeRender.js, com as mesmas constantes (ver BlastRaymarch.cpp). O
+// Heterogeneous Volume da Unreal saiu borrado e caro na GTX 1660 (07/10); o
+// do WebGL fazia a mesma explosão nítida em ~5 ms. O que ele faz:
+// - pula o espaço vazio por uma grade macro (blocos de 4 voxels, dilatada);
+// - mistura os dois quadros gravados levando cada um pelos vetores de
+//   movimento (flipbook com vetores, em 3D);
+// - ruído de detalhe que ANDA com a fumaça (duas fases defasadas, Vlachos 2010 /
+//   Neyret 2003) e erosão da borda;
+// - cache de luz por explosão (48³): transmitância até o sol e até o fogo;
+// - espalhamento múltiplo por oitavas (Wrenninge et al. 2013), fase HG dupla,
+//   emissão de corpo negro (Planck × CIE) com reforço na frente de chama;
+// - meia resolução com jitter interleaved-gradient e upsample pela
+//   profundidade mais parecida (sem halo nas silhuetas).
+//
+// Espaço: metros, relativo à câmera (o mundo transladado da Unreal / 100).
+// Espaço LOCAL de uma explosão: metros na escala da Carga Pesada, origem no
+// pé, z pra cima; domínio [−D/2, D/2]² × [0, D]. Radiância nas unidades do
+// WebGL (1 = iluminância do sol) até o composite, que leva a cd/m².
+
+#include "/Engine/Private/Common.ush"
+
+#define MAX_INSTANCES 16
+#define MAX_STEPS 96
+#define PI_F 3.14159265
+
+#define SOOT_F 4.0
+#define TEMP_F 1.6
+#define DUST_F 2.5
+#define FUEL_F 1.0
+
+// ---- grades (BlastRaymarch.cpp) -------------------------------------------
+// o tamanho de uma vaga do pool (a maior gravação carregada); cada explosão diz
+// o tamanho da gravação dela (InstRes) e os dados ficam no canto da vaga
+float Res;            // voxels da vaga por eixo (a maior gravação carregada)
+float FuelRes;        // combustível + velocidade (metade)
+float MacroRes;       // ocupação macro (um quarto)
+float PTRes;          // tabela de blocos (um oitavo)
+float LCRes;          // cache de luz (48)
+float Slots;          // quadros no pool
+float SlotsY;         // lado a lado em y (o resto empilhado em z)
+float LCSlots;        // caches de luz no pool
+float VelMax;         // m/s
+
+// A gravação em blocos esparsos (Tools/brm2.py, 09/10; o esquema do Sparse Volume
+// Texture da Unreal e do NanoVDB): cada quadro tem uma tabela com um bloco de 8³
+// voxels por entrada (o endereço dele no atlas, ou vazio), e os blocos com fumaça
+// ficam num atlas só, comum a todas as explosões, com 1 voxel de borda copiado do
+// vizinho (a filtragem trilinear não emenda errado entre blocos)
+Texture3D<uint> PoolPT;       // R32: x | y << 10 | z << 20 do bloco no atlas; 0xFFFFFFFF = vazio
+Texture3D<float4> AtlasA;     // RGBA8, blocos de 10³: √(fuligem/4), T/1.6, √(poeira/2.5), transmitância do céu
+Texture3D<float4> AtlasF;     // RGBA8, blocos de 6³ (meia resolução): combustível, velocidade (byte·2−1)·VelMax
+float3 AtlasASize;            // texels
+float3 AtlasFSize;
+Texture3D<float> PoolM;       // R8: ocupação macro
+Texture3D<float4> Noise;      // T_CurlNoise (ladrilha)
+Texture2D<float4> BlackBody;  // rgb normalizado (luminância 1), a = luminância relativa
+// A deformação pelo que passa (BattleSmoke.usf MainWarp, 64³ sobre o domínio
+// gravado): D em m locais no rgb, a fração recortada (o túnel) no alfa. A
+// gravação é lida no ponto y = x − D(x), o mapa característico (Tessendorf &
+// Pelfrey; o "rest field" do Houdini), como no material do volume da Unreal.
+// O detalhe fino de perto (Nubis Cubed, Schneider SIGGRAPH 2023: a densidade
+// grossa ganha bolhas de ruído na casca, as mais finas só com a câmera perto):
+// Worley 1 − F1 periódico 128³ (make_noise.py), 4/8/16/32 células por ladrilho
+Texture3D<float4> Worley;
+float DetailErode;    // modulação da densidade na casca (± fração); 0 = sem detalhe
+float DetailTemp;     // a mesma modulação na temperatura (crostas frias na frente do fogo)
+float DetailPeriod;   // ciclo das bolhas (s): curto o bastante pra elas não esticarem na bola que sobe
+// A borda afiada (Nubis Cubed: o pow() que afia as densidades baixas depois da
+// erosão): abaixo de SharpRef a densidade cai como (d/ref)^SharpPow, então a casca
+// semitransparente de ~1 m vira um contorno curto e as bolhas da casca ganham borda
+float SharpPow;       // 0 = sem
+float SharpRef;       // densidade (unidades da fuligem) abaixo da qual afia
+// O clarão da detonação (BlastRaymarch.cpp): o quanto dele em cada explosão vem em InstFirePos.w
+float FlashGain;      // a emissão × (1 + FlashGain · clarão)
+float FlashDT;        // o miolo quente esquenta FlashDT · clarão (unidades de temperatura da gravação; +500 K)
+Texture3D<float4> Warp0;
+Texture3D<float4> Warp1;
+Texture3D<float4> Warp2;
+Texture3D<float4> Warp3;
+SamplerState LinearClamp;
+SamplerState LinearWrap;
+
+// ---- parâmetros do WebGL (instances.js params) ------------------------------
+float SootExt;
+float DustExt;
+float SootAlbedo;
+float DustAlbedo;
+float3 SootColor;
+float3 DustColor;
+float EmissionGain;
+float EmissionCurve;
+float TempScale;
+float FlameBoost;
+float PhaseG;
+float PhaseBack;
+float PhaseMix;
+float SunOcclude;
+float DetailAmp;
+float DetailScale;
+float DetailDens;
+float Erode;
+float FlowPeriod;
+float DetailAmp2;   // 2ª oitava do detalhe (m locais; o WebGL usava 0.11 só na qualidade máxima, main.js det2)
+float SkyGain;
+float FireGain;
+float MsExt;
+float MsScatter;
+float MsPhase;
+int MsOctaves;
+int SunSteps;
+int FireSteps;
+
+// ---- luz da cena (InitLights, da View: a mesma que acende o resto da cena) -------
+static float3 KeyDir;     // pra luz-chave (sol ou lua, a mais forte)
+static float3 KeyColor;   // iluminância dela no chão, unidades do WebGL
+static float3 SkyColor;   // céu do hemisfério de cima / π, unidades do WebGL (envSkyUp)
+float RadianceScale;      // unidades do WebGL → cd/m² (128 000: js/atmosphere.js, E_lux / E_render)
+float4 TermGain;          // depuração (-RmTerms=sol,céu,fogo,emissão): 1 = o termo inteiro
+int DebugView;            // depuração (-RmDebug=): 1 = transmitância até o sol (branco = sol passa), 2 = até o fogo, 3 = do céu
+
+// ---- instâncias, da mais perto pra mais longe --------------------------------
+int NumInstances;
+float4 InstFoot[MAX_INSTANCES];    // pé (m, relativo à câmera).xyz, escala
+float4 InstFrame[MAX_INSTANCES];   // slot do quadro de baixo, slot do de cima, fração, k (voxels por m/s)
+float4 InstMisc[MAX_INSTANCES];    // tempo da gravação (s), seed, fração mantida × espessura, passos
+float4 InstLight[MAX_INSTANCES];   // slot do cache de luz (<0 = sem), espessura, ganho da emissão, slot da deformação (<0 = sem)
+float4 InstBoxMin[MAX_INSTANCES];  // caixa justa no mundo (m, relativo à câmera)
+float4 InstBoxMax[MAX_INSTANCES];
+float4 InstFirePos[MAX_INSTANCES]; // luz do fogo gravada (m, relativo à câmera)
+float4 InstFireCol[MAX_INSTANCES]; // cor dela, unidades do WebGL (já × escala²)
+float4 InstLook[MAX_INSTANCES];    // cor da fuligem.rgb, albedo dela (a nuclear muda com o tempo: instances.js _nukeLook)
+float4 InstDetail[MAX_INSTANCES];  // o detalhe fino de perto: força das bolhas de 1.2 / 0.6 / 0.3 m, peso da fase quente
+float4 InstRes[MAX_INSTANCES];     // a gravação desta: voxels, combustível, macro (96/48/24, 128/64/32, 192/96/48), domínio (m locais)
+
+// ---- tela -----------------------------------------------------------------------
+float4x4 ClipToCamera;   // clip (sem jitter) → mundo relativo à câmera (cm)
+float3 CameraForward;
+float NearM;
+uint2 HalfSize;          // a marcha
+uint2 OutMin;   // o retângulo da cena na saída (depois do TSR)
+uint2 OutSize;
+uint2 OutExtent;         // o tamanho da textura de saída
+float Jitter;
+Texture2D<float> SceneDepth;   // na resolução interna (antes do TSR)
+Texture2D<float4> SceneColorIn;
+Texture2D<float4> VolIn;       // meia resolução: radiância, transmitância
+Texture2D<float2> VolDepthIn;  // x = a distância da cena usada em cada texel, y = a profundidade média do volume
+Texture2D<float4> HistIn;      // o volume resolvido do quadro anterior (acúmulo temporal)
+RWTexture2D<float4> VolOut;
+RWTexture2D<float2> VolDepthOut;
+RWTexture2D<float4> HistOut;
+float4x4 CamToPrevClip;  // ponto relativo à câmera (m) → clip do quadro anterior (sem jitter)
+float HistValid;         // 0 = sem história (primeiro quadro, mudou o tamanho, pulou quadro)
+float HistAlpha;         // peso do quadro novo
+RWTexture2D<float4> SceneColorOut;
+
+// ---- cache de luz -------------------------------------------------------------
+int LCInstance;
+int LCSlot;
+Texture3D<float2> PoolLC;      // sol, fogo
+RWTexture3D<float2> PoolLCOut;
+
+// ---- subida dos blocos pro atlas (o UpdateSparseVolumeTexture.usf da Unreal faz igual) ----
+StructuredBuffer<uint> BrickData;     // um RGBA8 por texel, bloco a bloco (z, y, x), como no arquivo
+StructuredBuffer<uint> BrickCoords;   // onde cada bloco vai no atlas: x | y << 10 | z << 20
+RWTexture3D<float4> AtlasOut;
+
+void ScatterBrick(uint K, uint3 L, uint Side)
+{
+	const uint C = BrickCoords[K];
+	const uint3 B = uint3(C & 1023u, (C >> 10u) & 1023u, (C >> 20u) & 1023u);
+	const uint V = BrickData[K * Side * Side * Side + (L.z * Side + L.y) * Side + L.x];
+	AtlasOut[B * Side + L] = float4(V & 255u, (V >> 8u) & 255u, (V >> 16u) & 255u, V >> 24u) / 255.0;
+}
+
+// um grupo por bloco
+[numthreads(10, 10, 10)]
+void MainScatterA(uint3 G : SV_GroupID, uint3 L : SV_GroupThreadID)
+{
+	ScatterBrick(G.x, L, 10u);
+}
+
+[numthreads(6, 6, 6)]
+void MainScatterF(uint3 G : SV_GroupID, uint3 L : SV_GroupThreadID)
+{
+	ScatterBrick(G.x, L, 6u);
+}
+
+// =============================================================================
+// utilidades (js/glsl.js)
+
+float3 Hash33(float3 p)
+{
+	p = float3(dot(p, float3(127.1, 311.7, 74.7)),
+	           dot(p, float3(269.5, 183.3, 246.1)),
+	           dot(p, float3(113.5, 271.9, 124.6)));
+	return frac(sin(p) * 43758.5453123) * 2.0 - 1.0;
+}
+
+// dithering interleaved-gradient (Jimenez)
+float IGNoise(float2 p)
+{
+	return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+float PhaseHG(float CosT, float G)
+{
+	const float G2 = G * G;
+	const float D = 1.0 + G2 - 2.0 * G * CosT;
+	return (1.0 - G2) / (4.0 * PI_F * max(D * sqrt(max(D, 1e-4)), 1e-4));
+}
+
+float PhaseDual(float CosT, float G0, float G1, float W)
+{
+	return lerp(PhaseHG(CosT, G0), PhaseHG(CosT, -G1), W);
+}
+
+float2 RayBox(float3 Ro, float3 Rd, float3 BMin, float3 BMax)
+{
+	const float3 Inv = 1.0 / (Rd + float3(abs(Rd) < 1e-8) * 1e-8);
+	const float3 T0 = (BMin - Ro) * Inv, T1 = (BMax - Ro) * Inv;
+	const float3 Tn = min(T0, T1), Tf = max(T0, T1);
+	return float2(max(max(Tn.x, Tn.y), Tn.z), min(min(Tf.x, Tf.y), Tf.z));
+}
+
+// A luz-chave do WebGL é uma só (o sol de dia, a lua à noite): a mais forte das
+// duas luzes da atmosfera, com a transmitância da atmosfera até o chão. O céu é
+// a irradiância difusa do SkyLight num chão virado pra cima, ÷ π (o que um
+// Lambert de albedo 1 devolve: BasePassPixelShader, GetSkySHDiffuse · SkyLightColor).
+void InitLights()
+{
+	const float3 Sun = View.AtmosphereLightIlluminanceOnGroundPostTransmittance[0].rgb;
+	const float3 Moon = View.AtmosphereLightIlluminanceOnGroundPostTransmittance[1].rgb;
+	const bool bMoon = dot(Moon, 1.0) > dot(Sun, 1.0);
+	KeyDir = normalize((bMoon ? View.AtmosphereLightDirection[1].xyz : View.AtmosphereLightDirection[0].xyz) + 1e-6);
+	// A cor da luz-chave do WebGL é a irradiância num chão HORIZONTAL (js/atmosphere.js,
+	// texel 0: iluminância × transmitância × max(dir.y, 0)), e a fumaça usa como se
+	// fosse a luz de frente: às 15h, com o sol a 26°, ela recebe 0.44 do sol. É a
+	// fumaça preta aprovada (como o céu, um "erro" que se reproduz, não se corrige);
+	// com a luz inteira ela saía bege (rodada de 08/10, captures/cmp_250.jpg).
+	KeyColor = (bMoon ? Moon : Sun) * max(KeyDir.z, 0.0) / RadianceScale;
+	const float4 N = float4(0.0, 0.0, 1.0, 1.0);
+	float3 I0, I1;
+	I0.x = dot(View.SkyIrradianceEnvironmentMap[0], N);
+	I0.y = dot(View.SkyIrradianceEnvironmentMap[1], N);
+	I0.z = dot(View.SkyIrradianceEnvironmentMap[2], N);
+	const float4 VB = N.xyzz * N.yzzx;
+	I1.x = dot(View.SkyIrradianceEnvironmentMap[3], VB);
+	I1.y = dot(View.SkyIrradianceEnvironmentMap[4], VB);
+	I1.z = dot(View.SkyIrradianceEnvironmentMap[5], VB);
+	const float3 I2 = View.SkyIrradianceEnvironmentMap[6].xyz * (N.x * N.x - N.y * N.y);
+	SkyColor = max(I0 + I1 + I2, 0.0) * View.SkyLightColor.rgb / RadianceScale;
+}
+
+// a gravação da explosão sendo marchada (UseRes no começo de cada uma): as de
+// outros simuladores (build_raymarch_vdb.py) têm outra resolução e outro domínio
+static float GRes, GFuelRes, GMacroRes, GDomain;
+void UseRes(int I)
+{
+	GRes = InstRes[I].x;
+	GFuelRes = InstRes[I].y;
+	GMacroRes = InstRes[I].z;
+	GDomain = InstRes[I].w;
+}
+
+// O ruído de detalhe faz as vezes do que a gravação não guarda abaixo do voxel
+// (0.4 m na do WebGL): numa gravação mais fina ele encolhe junto, senão borra o
+// detalhe que ela já traz
+#define REF_VOXEL_M (38.0 / 96.0)
+float NoiseK() { return min(GDomain / GRes / REF_VOXEL_M, 1.0); }
+
+// =============================================================================
+// a gravação (js/bake.js glsl(), instances.js BAKE_HELPERS)
+
+float3 DomainMin() { return float3(-0.5 * GDomain, -0.5 * GDomain, 0.0); }
+float3 ToVoxel(float3 Lp, float N) { return (Lp - DomainMin()) / GDomain * N; }
+
+// o canto do slot no pool (em voxels de uma grade de N)
+float3 SlotBase(float Slot, float N)
+{
+	const float Sz = floor(Slot / SlotsY + 1e-3);
+	return float3(0.0, (Slot - Sz * SlotsY) * N, Sz * N);
+}
+
+// O bloco do quadro (no slot) que contém o voxel p de uma grade em que o bloco
+// tem Side voxels (8 na resolução cheia, 4 na metade): onde ele está no atlas e
+// a posição de p dentro dele. Falso = bloco vazio (sem fumaça).
+#define BRICK 8.0
+bool BrickOf(float3 P, float Slot, float Side, float GridRes, out float3 Atlas, out float3 Local)
+{
+	const float3 Page = clamp(floor(P / Side), 0.0, GridRes / Side - 1.0);
+	const uint E = PoolPT.Load(int4(int3(Page + SlotBase(Slot, PTRes)), 0));
+	Atlas = float3(E & 1023u, (E >> 10u) & 1023u, (E >> 20u) & 1023u);
+	Local = P - Page * Side;
+	return E != 0xFFFFFFFFu;
+}
+
+// um quadro da gravação no voxel p (trilinear; a borda do bloco tem o vizinho)
+float4 SampleA(float3 P, float Slot)
+{
+	P = clamp(P, 0.5, GRes - 0.5);
+	float3 B, L;
+	if (!BrickOf(P, Slot, BRICK, GRes, B, L))
+	{
+		return 0.0;
+	}
+	return AtlasA.SampleLevel(LinearClamp, (B * (BRICK + 2.0) + 1.0 + L) / AtlasASize, 0);
+}
+
+// a meia resolução (combustível, velocidade): bloco de 4³ + borda; vazio = parado, sem combustível
+float4 SampleF(float3 P, float Slot)
+{
+	float3 B, L;
+	if (!BrickOf(P, Slot, BRICK * 0.5, GFuelRes, B, L))
+	{
+		return float4(0.0, 0.5, 0.5, 0.5);
+	}
+	return AtlasF.SampleLevel(LinearClamp, (B * (BRICK * 0.5 + 2.0) + 1.0 + L) / AtlasFSize, 0);
+}
+
+// esvaecimento junto ao teto e às laterais da caixa gravada (o chão é chão de verdade)
+float BoxFade(float3 Vb)
+{
+	const float Top = smoothstep(0.0, GRes * 0.2, GRes - Vb.z);
+	const float Side = smoothstep(0.0, 5.0 * GRes / 96.0, min(min(Vb.x, GRes - Vb.x), min(Vb.y, GRes - Vb.y)));
+	return Top * Side;
+}
+
+// velocidade (m/s, local) no voxel da gravação: bilinear na fatia z mais próxima
+float3 BakeVel(float3 VoxB, float Slot)
+{
+	float3 P = VoxB * (GFuelRes / GRes);
+	P.xy = clamp(P.xy, 0.5, GFuelRes - 0.5);
+	P.z = clamp(floor(P.z), 0.0, GFuelRes - 1.0) + 0.5;
+	return (SampleF(P, Slot).gba * 2.0 - 1.0) * VelMax;
+}
+
+float FuelAt(float3 VoxF, float Slot)
+{
+	return SampleF(clamp(VoxF, 0.5, GFuelRes - 0.5), Slot).r;
+}
+
+float SampleFuel(float3 Lp, int I)
+{
+	const float3 P = ToVoxel(Lp, GFuelRes);
+	const float Q = lerp(FuelAt(P, InstFrame[I].x), FuelAt(P, InstFrame[I].y), InstFrame[I].z);
+	return Q * Q * FUEL_F;
+}
+
+// interpolação COM MOVIMENTO entre os quadros: o de baixo é levado pra frente,
+// o de cima trazido pra trás, e só então se misturam
+float4 BakeAtMV(float3 Voxel, int I, float3 V, float Dith)
+{
+	const float A = InstFrame[I].z, K = InstFrame[I].w;
+	const float4 Qa = SampleA(Voxel - V * (A * K), InstFrame[I].x);
+	const float4 Qb = SampleA(Voxel + V * ((1.0 - A) * K), InstFrame[I].y);
+	float4 Q = lerp(Qa, Qb, A);
+	Q.rgb = max(Q.rgb + Dith, 0.0);
+	return float4(Q.r * Q.r * SOOT_F, Q.g * TEMP_F, Q.b * Q.b * DUST_F, Q.a);
+}
+
+float MacroAt(float3 Pm, float Slot)
+{
+	const int3 V = clamp(int3(floor(Pm)), 0, int(GMacroRes) - 1);
+	return PoolM.Load(int4(V + int3(SlotBase(Slot, MacroRes)), 0));
+}
+
+// ocupação macro: o máximo dos dois quadros (o conteúdo no meio do intervalo está entre eles)
+float Macro2(float3 Lp, int I)
+{
+	const float3 Pm = ToVoxel(Lp, GMacroRes);
+	return max(MacroAt(Pm, InstFrame[I].x), MacroAt(Pm, InstFrame[I].y));
+}
+
+// distância (m locais) até sair do bloco macro atual
+float MacroExit(float3 Lp, float3 Dir)
+{
+	const float3 Vp = ToVoxel(Lp, GMacroRes);
+	const float3 Dv = Dir * (GMacroRes / GDomain) + float3(abs(Dir) < 1e-8) * 1e-8;
+	const float3 Nb = floor(Vp) + step(0.0, Dv);
+	const float3 Tb = (Nb - Vp) / Dv;
+	return max(min(min(Tb.x, Tb.y), Tb.z), 0.0);
+}
+
+float4 WarpAt(int I, float3 Lp)
+{
+	const float Slot = InstLight[I].w;
+	if (Slot < 0.0)
+	{
+		return 0.0;
+	}
+	const float3 Uvw = saturate((Lp - DomainMin()) / GDomain);
+	return Slot < 0.5 ? Warp0.SampleLevel(LinearClamp, Uvw, 0) : Slot < 1.5 ? Warp1.SampleLevel(LinearClamp, Uvw, 0)
+		: Slot < 2.5 ? Warp2.SampleLevel(LinearClamp, Uvw, 0) : Warp3.SampleLevel(LinearClamp, Uvw, 0);
+}
+
+// ruído de detalhe que anda com a fumaça (flow map em duas fases)
+float3 FlowNoise(float3 Lp, float3 Vel, float TSeq, float Seed, out float3 R2)
+{
+	const float Ph = TSeq / FlowPeriod;
+	float3 R = 0.0;
+	float W2 = 0.0;
+	R2 = 0.0;
+	[unroll] for (int K = 0; K < 2; K++)
+	{
+		const float Pk = Ph + 0.5 * K;
+		const float C = floor(Pk), Tk = Pk - C;
+		const float W = 1.0 - abs(2.0 * Tk - 1.0);
+		const float3 Off = float3(Seed * 7.3, Seed * 5.1, Seed * 3.1) + Hash33(float3(C, K, Seed)) * 17.0;
+		const float3 Fp = (Lp - Vel * (Tk * FlowPeriod)) * DetailScale + Off;
+		R += W * (Noise.SampleLevel(LinearWrap, Fp, 0).xyz * 2.0 - 1.0);
+		if (DetailAmp2 > 0.0)
+		{
+			// a mesma advecção, 3.1× mais fina (volumeRender.js sampleMedium)
+			R2 += W * (Noise.SampleLevel(LinearWrap, Fp * 3.1 + 0.41, 0).xyz * 2.0 - 1.0);
+		}
+		W2 += W * W;
+	}
+	R2 *= rsqrt(max(W2, 1e-4));
+	return R * rsqrt(max(W2, 1e-4));
+}
+
+// As bolhas (billows) que andam com a fumaça: o Worley levado pela velocidade em
+// duas fases, como o ruído de detalhe, mas num ciclo mais longo e com outro
+// deslocamento (Neyret 2003). Média zero e desvio 1 por oitava (os canais têm
+// média ~0.49 e desvio ~0.22, medidos): a explosão vista de longe não muda, só
+// ganha forma. Ladrilho de 9.6 m: G = 1.2 m, B = 0.6 m, A = 0.3 m.
+#define DETAIL_TILE_M 9.6
+float BillowDetail(float3 Lp, float3 Vel, float TSeq, float Seed, int I)
+{
+	const float3 Fd = InstDetail[I].xyz;
+	const float Ph = TSeq / DetailPeriod + 0.37;
+	float D = 0.0, W2 = 0.0;
+	[unroll] for (int K = 0; K < 2; K++)
+	{
+		const float Pk = Ph + 0.5 * K;
+		const float C = floor(Pk), Tk = Pk - C;
+		const float W = 1.0 - abs(2.0 * Tk - 1.0);
+		const float3 Off = Hash33(float3(C, K + 5.0, Seed)) * 3.0;
+		const float4 N = Worley.SampleLevel(LinearWrap, (Lp - Vel * (Tk * DetailPeriod)) / DETAIL_TILE_M + Off, 0);
+		D += W * (Fd.x * (N.g - 0.488) / 0.225 + 0.5 * Fd.y * (N.b - 0.494) / 0.223 + 0.25 * Fd.z * (N.a - 0.493) / 0.224);
+		W2 += W * W;
+	}
+	return D * rsqrt(max(W2, 1e-4));
+}
+
+// o meio num ponto local: r = fuligem, g = temperatura, b = poeira, a = transmitância do céu
+float4 SampleInst(float3 LpIn, int I, float Dith)
+{
+	// deformada: lê no ponto de onde a fumaça veio, e o túnel sai da densidade
+	const float4 Wp = WarpAt(I, LpIn);
+	const float3 Lp = LpIn - Wp.xyz;
+	const float3 Vel = BakeVel(ToVoxel(Lp, GRes), InstFrame[I].x);
+	float3 N2;
+	const float3 N = FlowNoise(Lp, Vel, InstMisc[I].x, InstMisc[I].y, N2);
+	const float3 Voxel = ToVoxel(Lp + (N * DetailAmp + N2 * DetailAmp2) * NoiseK(), GRes);
+	float4 F = BakeAtMV(Voxel, I, Vel, Dith);
+	const float Nm = (N.x + N.y + N.z) * 0.577;
+	// o recorte sai primeiro onde o ruído é mais ralo: a borda do túnel sai rasgada (erosão do Nubis)
+	const float Kept = saturate(1.0 - saturate(Wp.w) * (1.0 + (0.5 - 0.5 * Nm)));
+	F.rb *= (1.0 + DetailDens * Nm) * BoxFade(Voxel) * InstMisc[I].z * Kept;
+	const float Er = Erode * (0.5 - 0.5 * Nm);
+	F.r = max(F.r - Er / (1.0 + F.r * 9.0), 0.0);
+	F.b = max(F.b - Er * 0.7 / (1.0 + F.b * 9.0), 0.0);
+	// as bolhas de perto: multiplicam a densidade que existe (não criam fumaça no
+	// ar), forte na casca rala e quase nada no miolo, só na fase quente (os rolos
+	// da bola de fogo; a fumaça velha fica com os fiapos do ruído acima)
+	if (InstDetail[I].x > 0.0 && InstDetail[I].w > 0.0 && F.r + F.b > 1e-4)
+	{
+		const float Bd = BillowDetail(Lp, Vel, InstMisc[I].x, InstMisc[I].y, I) * InstDetail[I].w;
+		F.r *= max(1.0 + DetailErode * Bd / (1.0 + F.r * 9.0), 0.0);
+		F.b *= max(1.0 + DetailErode * 0.7 * Bd / (1.0 + F.b * 9.0), 0.0);
+		F.g *= max(1.0 + DetailTemp * Bd, 0.0);
+	}
+	if (SharpPow > 0.0 && InstDetail[I].x > 0.0)
+	{
+		const float P = SharpPow * InstDetail[I].x;
+		F.r *= pow(saturate(F.r / SharpRef), P);
+		F.b *= pow(saturate(F.b / SharpRef), P);
+	}
+	return F;
+}
+
+// =============================================================================
+// cache de luz (instances.js shLight): transmitância de cada célula até o sol e até o fogo
+
+float ExtAt(float3 LpIn, int I)
+{
+	const float4 Wp = WarpAt(I, LpIn);
+	const float3 Vb = ToVoxel(LpIn - Wp.xyz, GRes);
+	const float4 Q = lerp(SampleA(Vb, InstFrame[I].x), SampleA(Vb, InstFrame[I].y), InstFrame[I].z);
+	const float Fade = BoxFade(Vb);
+	const float S = Q.r * Q.r * SOOT_F * Fade, D = Q.b * Q.b * DUST_F * Fade;
+	const float ErodeMean = Erode * 0.5;
+	const float R = max(S - ErodeMean / (1.0 + S * 9.0), 0.0);
+	const float A = max(D - ErodeMean * 0.7 / (1.0 + D * 9.0), 0.0);
+	return (SootExt * R + DustExt * A) * InstMisc[I].z * saturate(1.0 - 1.5 * saturate(Wp.w));
+}
+
+// espaço vazio: deformada, o macro é lido no ponto de origem e o salto é de um
+// passo (a saída do bloco no espaço deformado não é a do raio)
+bool MacroEmpty(float3 Lp, int I)
+{
+	return Macro2(Lp - WarpAt(I, Lp).xyz, I) < 0.004;
+}
+float MacroSkip(float3 Lp, float3 Dir, int I, float Dt)
+{
+	return InstLight[I].w >= 0.0 ? Dt : MacroExit(Lp, Dir) + 1e-3;
+}
+
+float MarchLight(float3 Lp, float3 Dir, float MaxDist, int Steps, float TauCap, int I)
+{
+	float2 Hit = RayBox(Lp, Dir, DomainMin(), DomainMin() + GDomain);
+	Hit.x = max(Hit.x, 0.0);
+	Hit.y = min(Hit.y, MaxDist);
+	if (Hit.y <= Hit.x)
+	{
+		return 1.0;
+	}
+	const float Dt = (Hit.y - Hit.x) / float(Steps);
+	const float Scale = InstFoot[I].w;
+	float Tau = 0.0, T = Hit.x + Dt * 0.5;
+	for (int K = 0; K < 48; K++)
+	{
+		if (T >= Hit.y)
+		{
+			break;
+		}
+		const float3 P = Lp + Dir * T;
+		if (MacroEmpty(P, I))
+		{
+			T += MacroSkip(P, Dir, I, Dt);
+			continue;
+		}
+		Tau += ExtAt(P, I) * Dt * Scale;
+		if (Tau > TauCap)
+		{
+			break;
+		}
+		T += Dt;
+	}
+	return exp(-min(Tau, TauCap));
+}
+
+[numthreads(4, 4, 4)]
+void MainLightCache(uint3 Id : SV_DispatchThreadID)
+{
+	const uint N = uint(LCRes);
+	if (any(Id >= N))
+	{
+		return;
+	}
+	InitLights();
+	const int I = LCInstance;
+	UseRes(I);
+	const float3 Lp = DomainMin() + (float3(Id) + 0.5) / LCRes * GDomain;
+	float2 O = 1.0;
+	if (!MacroEmpty(Lp, I))
+	{
+		const float3 FireL = (InstFirePos[I].xyz - InstFoot[I].xyz) / InstFoot[I].w;
+		const float3 Tf = FireL - Lp;
+		const float Fd = length(Tf);
+		O.x = MarchLight(Lp, KeyDir, 1e4, SunSteps, 60.0, I);
+		// tauCap baixo: a luz pontual no centróide atravessaria a bola de fogo inteira
+		O.y = Fd < 1e-3 ? 1.0 : MarchLight(Lp, Tf / Fd, Fd, FireSteps, 2.2, I);
+	}
+	PoolLCOut[uint3(Id.x, Id.y, Id.z + uint(LCSlot) * N)] = O;
+}
+
+float2 LightCacheAt(float3 Lp, float Slot)
+{
+	float3 P = ToVoxel(Lp, LCRes);
+	P.z = clamp(P.z, 0.5, LCRes - 0.5) + Slot * LCRes;
+	return PoolLC.SampleLevel(LinearClamp, P / float3(LCRes, LCRes, LCRes * LCSlots), 0);
+}
+
+// =============================================================================
+// a marcha (instances.js shSingle), meia resolução
+
+float3 RayDir(float2 UvOut)
+{
+	const float2 Ndc = float2(UvOut.x * 2.0 - 1.0, 1.0 - UvOut.y * 2.0);
+	const float4 P = mul(float4(Ndc, 1.0, 1.0), ClipToCamera);
+	return normalize(P.xyz / P.w);
+}
+
+// distância da câmera até a cena (m) no ponto da tela UvOut, ao longo de Rd
+float SceneDist(float2 UvOut, float3 Rd)
+{
+	const float2 Pix = View.ViewRectMin.xy + UvOut * View.ViewSizeAndInvSize.xy;
+	const float DeviceZ = SceneDepth.Load(int3(int2(Pix), 0));
+	if (DeviceZ <= 1e-7)
+	{
+		return 1e9;
+	}
+	const float ViewZ = ConvertFromDeviceZ(DeviceZ) * 0.01;
+	return ViewZ / max(dot(Rd, CameraForward), 1e-4);
+}
+
+float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float DepthSum, inout float DepthW)
+{
+	UseRes(I);
+	float2 Hit = RayBox(0.0, Rd, InstBoxMin[I].xyz, InstBoxMax[I].xyz);
+	Hit.x = max(Hit.x, NearM);
+	Hit.y = min(Hit.y, TScene);
+	if (Hit.y <= Hit.x)
+	{
+		return float4(0.0, 0.0, 0.0, 1.0);
+	}
+	const int Steps = int(InstMisc[I].w);
+	const float Span = Hit.y - Hit.x;
+	const float Dt = Span / float(Steps);
+	float T = Hit.x + Dt * IGNoise(Pix + Jitter * 71.13);
+	const float3 Foot = InstFoot[I].xyz;
+	const float Scale = InstFoot[I].w;
+	const float Thick = InstLight[I].y;
+	const float LcSlot = InstLight[I].x;
+	const float3 FirePos = InstFirePos[I].xyz;
+	const float3 FireColor = InstFireCol[I].rgb;
+
+	const float CosSun = dot(Rd, KeyDir);
+	const float PhSun = PhaseDual(CosSun, PhaseG, PhaseBack, PhaseMix);
+	const float PhIso = 1.0 / (4.0 * PI_F);
+
+	float3 L = 0.0;
+	float Tr[4] = { 1.0, 1.0, 1.0, 1.0 };
+	for (int S = 0; S < MAX_STEPS; S++)
+	{
+		if (S >= Steps || T >= Hit.y || Tr[0] < 0.004)
+		{
+			break;
+		}
+		const float3 W = Rd * T;
+		const float3 Lpw = (W - Foot) / Scale;
+		// pula espaço vazio pelo macro gravado
+		if (MacroEmpty(Lpw, I))
+		{
+			T += MacroSkip(Lpw, Rd, I, Dt / Scale) * Scale;
+			continue;
+		}
+		const float Dith = (IGNoise(Pix + float(S) * float2(5.588, 3.17)) - 0.5) / 255.0;
+		const float4 F = SampleInst(Lpw, I, Dith);
+		if (F.r + F.b > 1e-4)
+		{
+			const float SigSoot = SootExt * F.r * Thick, SigDust = DustExt * F.b * Thick;
+			const float SigT = SigSoot + SigDust;
+			const float WS = SigSoot / max(SigT, 1e-5);
+			const float3 ScatCol = lerp(DustColor, InstLook[I].rgb, WS);
+			const float Albedo = lerp(DustAlbedo, InstLook[I].a, WS);
+
+			// corpo negro com o reforço na frente de chama (onde ainda há combustível)
+			// no clarão, só o miolo que já é fogo esquenta (a casca fria não acende)
+			const float Fl = InstFirePos[I].w;
+			const float TN = saturate((F.g + FlashDT * Fl * smoothstep(0.12, 0.45, F.g)) * TempScale);
+			const float4 Bb = BlackBody.SampleLevel(LinearClamp, float2(TN, 0.5), 0);
+			float Flame = 1.0;
+			if (F.g > 0.12)
+			{
+				Flame += FlameBoost * smoothstep(0.02, 0.35, SampleFuel(Lpw, I));
+			}
+			const float3 Emit = Bb.rgb * (pow(max(Bb.a, 0.0), EmissionCurve) * EmissionGain * InstLight[I].z * Flame * (1.0 + FlashGain * Fl))
+				* (SigSoot * (1.0 - InstLook[I].a));
+
+			// luz: do cache (marchado neste quadro) ou a transmitância do céu gravada
+			const float FadeM = BoxFade(ToVoxel(Lpw, GRes));
+			const float SkyT = lerp(1.0, F.a, FadeM);
+			float SunT, FireT;
+			if (LcSlot >= 0.0)
+			{
+				const float2 Lc = LightCacheAt(Lpw, LcSlot);
+				SunT = lerp(1.0, Lc.x, FadeM);
+				FireT = lerp(1.0, Lc.y, FadeM);
+			}
+			else
+			{
+				SunT = pow(SkyT, SunOcclude);
+				FireT = SkyT;
+			}
+			if (DebugView > 0)
+			{
+				// a transmitância como brilho próprio de um meio cinza (0.05 = um chão claro ao sol)
+				const float V = DebugView == 1 ? SunT : (DebugView == 2 ? FireT : SkyT);
+				const float TrStep = exp(-SigT * Dt);
+				L += Tr[0] * V * 0.05 * (1.0 - TrStep);
+				Tr[0] *= TrStep;
+				T += Dt;
+				continue;
+			}
+			const float Fd = length(FirePos - W);
+			const float3 FireIrr = FireColor * FireGain * FireT / (1.0 + Fd * Fd * 0.05);
+
+			// oitavas de espalhamento múltiplo
+			float Ae = 1.0, Ab = 1.0, Ap = 1.0;
+			[unroll] for (int O = 0; O < 4; O++)
+			{
+				if (O < MsOctaves)
+				{
+					const float Sig = SigT * Ae;
+					const float Sc = Sig * Albedo * Ab;
+					const float Ph = lerp(PhIso, PhSun, Ap);
+					const float TSun = lerp(1.0, SunT, Ap);
+					const float TSky = lerp(1.0, SkyT, Ap * 0.7 + 0.3);
+					const float3 Src = ScatCol * Sc * (KeyColor * (TSun * Ph * TermGain.x)
+						+ SkyColor * (SkyGain * TSky * PhIso * TermGain.y)
+						+ FireIrr * (lerp(PhIso, PhSun, Ap * 0.5) * TermGain.z))
+						+ Emit * (Ab * TermGain.w);
+					const float Ext = max(Sig, 1e-5);
+					const float TrStep = exp(-Ext * Dt);
+					L += Tr[O] * (Src - Src * TrStep) / Ext;
+					Tr[O] *= TrStep;
+					Ae *= MsExt;
+					Ab *= MsScatter;
+					Ap *= MsPhase;
+				}
+			}
+			// profundidade média pela cobertura (volumeRender.js): por onde o acúmulo reprojeta
+			const float C = 1.0 - Tr[0];
+			DepthSum += T * C;
+			DepthW += C;
+		}
+		T += Dt;
+	}
+	return float4(L, Tr[0]);
+}
+
+[numthreads(8, 8, 1)]
+void MainMarch(uint2 Id : SV_DispatchThreadID)
+{
+	if (any(Id >= HalfSize))
+	{
+		return;
+	}
+	InitLights();
+	const float2 Uv = (float2(Id) + 0.5) / float2(HalfSize);
+	const float3 Rd = RayDir(Uv);
+	const float TScene = SceneDist(Uv, Rd);
+	float3 L = 0.0;
+	float Tr = 1.0;
+	float DepthSum = 0.0, DepthW = 0.0;
+	// da mais perto pra mais longe: a de trás é vista pela transmitância da da frente
+	for (int I = 0; I < NumInstances; I++)
+	{
+		const float4 R = MarchInstance(I, Rd, TScene, float2(Id), DepthSum, DepthW);
+		L += Tr * R.rgb;
+		Tr *= R.a;
+		if (Tr < 0.004)
+		{
+			break;
+		}
+	}
+	VolOut[Id] = float4(L, Tr);
+	VolDepthOut[Id] = float2(min(TScene, 1e8), DepthW > 1e-4 ? DepthSum / DepthW : min(TScene, 1e4));
+}
+
+// =============================================================================
+// acúmulo temporal (o das nuvens e da névoa volumétrica dos AAA: Schneider,
+// "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn", SIGGRAPH 2015;
+// Hillaire, "Physically Based and Unified Volumetric Rendering in Frostbite",
+// SIGGRAPH 2015): a marcha de cada quadro começa num ponto sorteado diferente
+// (o jitter), e a média ao longo dos quadros tira o granulado. A história é
+// levada pela profundidade média do volume até onde ela estava no quadro
+// anterior e presa entre o mínimo e o máximo da vizinhança 3×3 do quadro novo
+// (sem rastro quando a fumaça anda ou a câmera gira).
+
+[numthreads(8, 8, 1)]
+void MainTemporal(uint2 Id : SV_DispatchThreadID)
+{
+	if (any(Id >= HalfSize))
+	{
+		return;
+	}
+	const float4 Cur = VolIn[Id];
+	if (HistValid < 0.5)
+	{
+		HistOut[Id] = Cur;
+		return;
+	}
+	float4 Mn = Cur, Mx = Cur;
+	[unroll] for (int Dy = -1; Dy <= 1; Dy++)
+	{
+		[unroll] for (int Dx = -1; Dx <= 1; Dx++)
+		{
+			const float4 V = VolIn[clamp(int2(Id) + int2(Dx, Dy), 0, int2(HalfSize) - 1)];
+			Mn = min(Mn, V);
+			Mx = max(Mx, V);
+		}
+	}
+	const float2 Uv = (float2(Id) + 0.5) / float2(HalfSize);
+	const float3 P = RayDir(Uv) * VolDepthIn[Id].y;
+	const float4 C = mul(float4(P, 1.0), CamToPrevClip);
+	const float2 PrevUv = float2(C.x / C.w * 0.5 + 0.5, 0.5 - C.y / C.w * 0.5);
+	if (C.w <= 1e-4 || any(PrevUv < 0.0) || any(PrevUv > 1.0))
+	{
+		HistOut[Id] = Cur;
+		return;
+	}
+	const float4 H = clamp(HistIn.SampleLevel(LinearClamp, PrevUv, 0), Mn, Mx);
+	HistOut[Id] = lerp(H, Cur, HistAlpha);
+}
+
+// =============================================================================
+// composite (volumeRender.js shComposite): upsample pela profundidade mais
+// parecida entre os 4 texels de meia resolução, bilinear onde concordam
+
+[numthreads(8, 8, 1)]
+void MainComposite(uint2 Id : SV_DispatchThreadID)
+{
+	if (any(Id >= OutExtent))
+	{
+		return;
+	}
+	float4 Scene = SceneColorIn[Id];
+	if (all(Id >= OutMin) && all(Id < OutMin + OutSize))
+	{
+		const float2 Uv = (float2(Id - OutMin) + 0.5) / float2(OutSize);
+		const float3 Rd = RayDir(Uv);
+		const float DRef = min(SceneDist(Uv, Rd), 1e8);
+		const float2 Hp = Uv * float2(HalfSize) - 0.5;
+		const int2 Base = int2(floor(Hp));
+		float4 Vol = float4(0.0, 0.0, 0.0, 1.0);
+		float Best = 1e20;
+		[unroll] for (int K = 0; K < 4; K++)
+		{
+			const int2 Q = clamp(Base + int2(K & 1, K >> 1), 0, int2(HalfSize) - 1);
+			const float Diff = abs(VolDepthIn[Q].x - DRef);
+			if (Diff < Best)
+			{
+				Best = Diff;
+				Vol = VolIn[Q];
+			}
+		}
+		const float4 Vb = VolIn.SampleLevel(LinearClamp, Uv, 0);
+		const float Agree = 1.0 - saturate(Best / max(DRef * 0.06, 0.25));
+		Vol = lerp(Vol, Vb, Agree);
+		Scene.rgb = Scene.rgb * Vol.a + Vol.rgb * (RadianceScale * View.PreExposure);
+	}
+	SceneColorOut[Id] = Scene;
+}

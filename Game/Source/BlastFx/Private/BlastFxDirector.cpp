@@ -109,7 +109,6 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 	E->SkirtLife = TankSkirtLife;
 	// sem o halo de ofuscamento: é um cartaz virado pra câmera que, na câmera alta do jogo,
 	// atravessa o chão e mostra uma borda reta (o BlastLab também o tirou da morte de tanque nova)
-	E->bGlare = false;
 	Alive.Add(E);
 	return E;
 }

@@ -25,7 +25,20 @@ namespace Sim
 		Stop = 4,         // grupo para e esquece ordens
 		AttackMove = 5,   // grupo anda até Point atacando o que encontrar
 		SetFog = 6,       // liga (Target = 1) ou desliga (0) a névoa de guerra: depuração, vale pra todos
+		// economia e construção (ZH): o prédio vai em Target, o tipo em Value
+		Produce = 7,      // o prédio Target põe o tipo Value na fila
+		CancelProduce = 8,// o prédio Target tira o item Value da fila (0 = o primeiro) e devolve o dinheiro
+		Build = 9,        // um Dozer do grupo constrói o prédio Value (BuildValue) com centro em Point;
+		                  // com Target, retoma a obra parada desse prédio
+		CancelBuild = 10, // desiste da obra Target (o prédio some e o dinheiro volta)
+		SetRally = 11,    // o ponto de encontro do prédio Target vira Point
+		Gather = 12,      // os caminhões do grupo vão coletar no depósito Value (índice)
 	};
+
+	/** Build: o tipo nos 16 bits de baixo e o lado pra onde o prédio olha (0 +X, 1 +Y, 2 −X, 3 −Y) em cima. */
+	constexpr int32_t BuildValue(uint16_t Def, int32_t Dir) { return int32_t(Def) | ((Dir & 3) << 16); }
+	constexpr uint16_t BuildDefOf(int32_t Value) { return uint16_t(Value & 0xFFFF); }
+	constexpr int32_t BuildDirOf(int32_t Value) { return (Value >> 16) & 3; }
 
 	struct Command
 	{
@@ -34,6 +47,7 @@ namespace Sim
 		CommandType Type = CommandType::Stop;
 		Vec2 Point;
 		EntityId Target = NoEntity;
+		int32_t Value = 0;            // tipo de unidade/prédio, item da fila ou depósito (economia)
 		std::vector<EntityId> Units;  // só no SetGroup
 	};
 

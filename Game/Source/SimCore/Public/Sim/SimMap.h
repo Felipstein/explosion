@@ -37,6 +37,11 @@ namespace Sim
 		std::vector<uint8_t> Pass;        // CellPass por célula, linha a linha (Y·Width + X)
 		/** Distância (em células, métrica do xadrez) até a célula bloqueada ou borda mais próxima. 1 = vizinha de bloqueio. */
 		std::vector<uint8_t> Clearance;
+		/** Altura do chão por célula, a menor e a maior (decímetros). Vazio = sem altura (chão plano). */
+		std::vector<int16_t> MinDm;
+		std::vector<int16_t> MaxDm;
+
+		bool HasHeights() const { return !MinDm.empty() && MinDm.size() == Pass.size() && MaxDm.size() == Pass.size(); }
 
 		void Resize(int32_t InWidth, int32_t InHeight, Fix InCellSize, Vec2 InOrigin);
 		/** Recalcula a folga depois de mudar a passabilidade. */

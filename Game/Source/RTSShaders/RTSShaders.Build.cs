@@ -1,6 +1,6 @@
 using UnrealBuildTool;
 
-// Shaders do jogo (a passada da névoa de guerra). Carrega em PostConfigInit, como a Unreal
+// Shaders do jogo (a passada da névoa de guerra e o raymarch da Carga Pesada, cópia do BlastLab). Carrega em PostConfigInit, como a Unreal
 // exige pra registrar a pasta /RTSGame dos .usf e os shaders globais.
 public class RTSShaders : ModuleRules
 {
@@ -8,6 +8,7 @@ public class RTSShaders : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Renderer", "Projects" });
+		PublicDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Renderer" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Projects", "Json" });
 	}
 }

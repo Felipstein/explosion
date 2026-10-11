@@ -26,7 +26,7 @@ namespace
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 18)
 				[
 					SNew(STextBlock)
-					.Text(FText::FromString(TEXT("CARREGANDO")))
+					.Text(NSLOCTEXT("RTSHUD", "Loading", "LOADING"))   // o jogo é em inglês por padrão (09/10)
 					.Font(FCoreStyle::GetDefaultFontStyle("Bold", 26))
 					.ColorAndOpacity(FLinearColor(0.92f, 0.93f, 0.95f))
 				]

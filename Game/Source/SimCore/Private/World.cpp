@@ -71,7 +71,9 @@ namespace Sim
 		LastAttacker.resize(N); TurretIdle.resize(N); Path.resize(N); PathIndex.resize(N);
 		PathGoal.resize(N); NeedsPath.resize(N); RepathWait.resize(N); StuckTicks.resize(N);
 		StuckAnchor.resize(N); EngageAnchor.resize(N); Ignore.resize(N); IgnoreUntil.resize(N);
-		LookCell.resize(N);
+		LookCell.resize(N); BuildLeft.resize(N); Builder.resize(N); Queue.resize(N); QueueLeft.resize(N);
+		Rally.resize(N); HasRally.resize(N); Task.resize(N); TaskTarget.resize(N); TaskDock.resize(N);
+		TaskTimer.resize(N); Cargo.resize(N); AutoGather.resize(N); Blocking.resize(N); TaskPoint.resize(N);
 	}
 
 	// ---------------------------------------------------------------- montagem
@@ -84,6 +86,14 @@ namespace Sim
 		H.Add(Rules.Hash());
 		H.Add(bFogOfWar);
 		H.Add(bAllowDebugCommands);
+		H.Add(uint64_t(Docks.size()));
+		for (const SupplyDockSetup& D : Docks)
+		{
+			H.Add(D.Pos);
+			H.Add(D.HalfX);
+			H.Add(D.HalfY);
+			H.Add(D.Boxes);
+		}
 		H.Add(uint64_t(Players.size()));
 		for (const PlayerSetup& P : Players)
 		{
@@ -113,9 +123,14 @@ namespace Sim
 		Random = Rng(Setup.Seed);
 		// antes de nascer: o raio de visão de cada um depende do maior raio (SightCells)
 		MaxUnitRadius = Fix::Zero();
+		MaxBodyRadius = Fix::Zero();
 		for (const UnitDef& D : RulesData.Units)
 		{
-			MaxUnitRadius = Max(MaxUnitRadius, D.Radius);
+			if (!D.IsStructure())
+			{
+				MaxUnitRadius = Max(MaxUnitRadius, D.Radius);
+			}
+			MaxBodyRadius = Max(MaxBodyRadius, D.Radius);
 		}
 		int32_t Teams = 0;
 		for (const PlayerSetup& P : Setup.Players)
@@ -126,12 +141,59 @@ namespace Sim
 			}
 			PlayerState S;
 			S.Team = P.Team;
+			S.Money = RulesData.Economy.StartingMoney;
 			Players.push_back(S);
 			Teams = std::max(Teams, int32_t(P.Team) + 1);
 		}
 		Vision.Init(MapData.Width, MapData.Height, Teams);
 		bFogOfWar = Setup.bFogOfWar;
 		bAllowDebug = Setup.bAllowDebugCommands;
+		// os depósitos do mapa entram na grade como terreno (nunca saem); os prédios iniciais
+		// entram prontos, antes das unidades: quem nasceria em cima deles vai pro lado
+		for (const SupplyDockSetup& D : Setup.Docks)
+		{
+			SupplyDock Dock;
+			Dock.Pos = D.Pos;
+			Dock.HalfX = D.HalfX;
+			Dock.HalfY = D.HalfY;
+			Dock.Boxes = D.Boxes;
+			Dock.StartBoxes = D.Boxes;
+			Docks.push_back(Dock);
+			const Vec2 Local = D.Pos - MapData.Origin;
+			const int32_t X0 = int32_t(((Local.X - D.HalfX) / MapData.CellSize).Floor());
+			const int32_t Y0 = int32_t(((Local.Y - D.HalfY) / MapData.CellSize).Floor());
+			const int32_t X1 = int32_t(((Local.X + D.HalfX) / MapData.CellSize).Floor()) + 1;
+			const int32_t Y1 = int32_t(((Local.Y + D.HalfY) / MapData.CellSize).Floor()) + 1;
+			for (int32_t Y = Y0; Y < Y1; ++Y)
+			{
+				for (int32_t X = X0; X < X1; ++X)
+				{
+					if (MapData.InBounds(X, Y))
+					{
+						MapData.Pass[size_t(MapData.Index(X, Y))] = uint8_t(CellPass::Blocked);
+					}
+				}
+			}
+		}
+		TerrainPass = MapData.Pass;
+		MapData.ComputeClearance();
+		for (SupplyDock& Dock : Docks)
+		{
+			BuildDockField(Dock);
+		}
+		for (size_t P = 0; P < Setup.Players.size(); ++P)
+		{
+			for (const StartingUnit& S : Setup.Players[P].Units)
+			{
+				const int32_t DefIndex = RulesData.FindUnit(S.Key);
+				if (DefIndex >= 0 && RulesData.Units[size_t(DefIndex)].IsStructure())
+				{
+					// o lado do prédio sai do giro de largada, arredondado pro quarto de volta mais perto
+					const int32_t Dir = int32_t(((S.Facing.Bam + Angle::QuarterTurn / 2) & 0xFFFF) / Angle::QuarterTurn) & 3;
+					PlaceStructure(PlayerIndex(P), uint16_t(DefIndex), Dir, ClampToMap(S.Pos), true);
+				}
+			}
+		}
 		// Onde cada unidade nasce. A montagem vem de fora (formação em volta da largada) e pode
 		// cair em cima de pedra, penhasco ou num platô isolado; quem nasce num lugar de onde não
 		// sai fica presa a partida toda e ninguém vence (teste t4, 08/10). Então: a célula
@@ -155,6 +217,10 @@ namespace Sim
 				if (DefIndex < 0)
 				{
 					return false;
+				}
+				if (RulesData.Units[size_t(DefIndex)].IsStructure())
+				{
+					continue;   // já está no mapa
 				}
 				Placement Pl{ PlayerIndex(P), uint16_t(DefIndex), MapData.ClearanceFor(RulesData.Units[DefIndex].PathRadius), Cell{}, ClampToMap(S.Pos), S.Facing };
 				Pl.C = MapData.CellOf(Pl.Pos);
@@ -229,9 +295,15 @@ namespace Sim
 		}
 		Starts.assign(Setup.Players.size(), Vec2::Zero());
 		std::vector<int64_t> StartCount(Setup.Players.size(), 0);
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			Starts[U.Owner[I]] += U.Pos[I];
+			StartCount[U.Owner[I]] += 1;
+		}
 		for (const Placement& Pl : Places)
 		{
-			Spawn(Pl.Owner, Pl.Def, Pl.Pos, Pl.Facing);
+			const EntityId Id = Spawn(Pl.Owner, Pl.Def, Pl.Pos, Pl.Facing);
+			U.AutoGather[size_t(IndexOf(Id))] = RulesData.Units[Pl.Def].SupplyBoxes > 0 ? 1 : 0;
 			Starts[Pl.Owner] += Pl.Pos;
 			StartCount[Pl.Owner] += 1;
 		}
@@ -245,6 +317,15 @@ namespace Sim
 		const Vec2 Extent = MapData.MaxCorner() - MapData.MinCorner();
 		BinsW = int32_t((Extent.X / BinSize).Floor()) + 1;
 		BinsH = int32_t((Extent.Y / BinSize).Floor()) + 1;
+		UpdatePower();
+		for (int32_t I = 0; I < UnitCount(); ++I)
+		{
+			if (DefOf(I).bCountsForVictory && IsComplete(I))
+			{
+				Players[U.Owner[I]].bHasBase = true;
+			}
+		}
+		bGridChanged = false;
 		CachedHash = ComputeHash();
 		return true;
 	}
@@ -281,6 +362,20 @@ namespace Sim
 		U.EngageAnchor[I] = Pos;
 		U.Ignore[I] = NoEntity;
 		U.IgnoreUntil[I] = 0;
+		U.BuildLeft[I] = 0;
+		U.Builder[I] = NoEntity;
+		U.Queue[I].clear();
+		U.QueueLeft[I] = 0;
+		U.Rally[I] = Pos;
+		U.HasRally[I] = 0;
+		U.Task[I] = UnitTask::None;
+		U.TaskTarget[I] = NoEntity;
+		U.TaskDock[I] = -1;
+		U.TaskTimer[I] = 0;
+		U.Cargo[I] = 0;
+		U.AutoGather[I] = 0;
+		U.Blocking[I] = 0;
+		U.TaskPoint[I] = Pos;
 		const Cell C = MapData.CellOf(Pos);
 		U.LookCell[I] = MapData.InBounds(C.X, C.Y) ? MapData.Index(C.X, C.Y) : -1;
 		LookAt(Players[Owner].Team, DefIndex, U.LookCell[I], +1);
@@ -324,6 +419,23 @@ namespace Sim
 		V.Engage = U.Engage[I];
 		V.PathLeft = int32_t(U.Path[I].size()) - int32_t(U.PathIndex[I]);
 		V.Cooldown = U.Cooldown[I];
+		const UnitDef& D = DefOf(I);
+		V.bStructure = D.IsStructure();
+		V.BuildLeft = U.BuildLeft[I] > 0 ? (U.BuildLeft[I] + 999) / 1000 : 0;   // guardado em passos × 1000
+		V.BuildTicks = D.BuildTicks;
+		V.Dir = V.bStructure ? DirOf(I) : 0;
+		V.QueueSize = int32_t(U.Queue[I].size());
+		if (!U.Queue[I].empty())
+		{
+			const int64_t Total = int64_t(RulesData.Units[U.Queue[I].front()].BuildTicks) * 1000;
+			V.QueueHead = U.Queue[I].front();
+			V.QueuePermille = Total > 0 ? int32_t(1000 - int64_t(U.QueueLeft[I]) * 1000 / Total) : 1000;
+		}
+		V.bHasRally = U.HasRally[I] != 0;
+		V.Rally = U.Rally[I];
+		V.Task = U.Task[I];
+		V.TaskTarget = U.TaskTarget[I];
+		V.Cargo = U.Cargo[I];
 		return V;
 	}
 
@@ -362,6 +474,22 @@ namespace Sim
 					ApplyCommand(C);
 				}
 			}
+		}
+		UpdatePower();
+		UpdateConstruction();
+		UpdateProduction();
+		UpdateSupply();
+		if (bGridChanged)
+		{
+			// prédio novo ou que caiu: os caminhos antigos podem cruzar a grade mudada
+			for (int32_t I = 0; I < UnitCount(); ++I)
+			{
+				if (!U.Path[I].empty())
+				{
+					U.NeedsPath[I] = 1;
+				}
+			}
+			bGridChanged = false;
 		}
 		BuildBins();
 		UpdateTargets();
@@ -410,18 +538,48 @@ namespace Sim
 			return;
 		}
 
+		// prédio não anda: o grupo das ordens é só de unidades
 		std::vector<int32_t> Members;
 		for (const EntityId Id : P.Group)
 		{
 			const int32_t I = IndexOf(Id);
-			if (I >= 0 && U.Owner[I] == C.Player)
+			if (I >= 0 && U.Owner[I] == C.Player && !DefOf(I).IsStructure())
 			{
 				Members.push_back(I);
 			}
 		}
+		if (C.Type >= CommandType::Produce)
+		{
+			ApplyEconomyCommand(C, Members);
+			return;
+		}
+		if (C.Type == CommandType::Attack)
+		{
+			// desarmado não ataca (o Dozer e o caminhão ficam onde estão)
+			Members.erase(std::remove_if(Members.begin(), Members.end(), [this](int32_t I) { return !DefOf(I).HasWeapon(); }), Members.end());
+		}
 		if (Members.empty())
 		{
 			return;
+		}
+		if (C.Type == CommandType::Move || C.Type == CommandType::AttackMove || C.Type == CommandType::Attack || C.Type == CommandType::Stop)
+		{
+			// ordem do jogador: o Dozer larga a obra (ela fica parada) e o caminhão para de coletar
+			for (const int32_t I : Members)
+			{
+				if (U.Task[I] == UnitTask::Construct)
+				{
+					const int32_t S = IndexOf(U.TaskTarget[I]);
+					if (S >= 0 && U.Builder[S] == U.Id[I])
+					{
+						U.Builder[S] = NoEntity;
+					}
+				}
+				U.Task[I] = UnitTask::None;
+				U.TaskTarget[I] = NoEntity;
+				U.TaskDock[I] = -1;
+				U.AutoGather[I] = 0;
+			}
 		}
 
 		switch (C.Type)
@@ -771,8 +929,9 @@ namespace Sim
 	{
 		EntityId Best = NoEntity;
 		int64_t BestD2 = 0;
+		bool bBestIsStructure = false;
 		const bool bIgnoring = U.Ignore[Self] != NoEntity && CurrentTick < U.IgnoreUntil[Self];
-		ForEachNear(U.Pos[Self], Radius + MaxUnitRadius, [&](int32_t J)
+		ForEachNear(U.Pos[Self], Radius + MaxBodyRadius, [&](int32_t J)
 		{
 			if (U.Hp[J] <= 0 || !AreEnemies(U.Owner[Self], U.Owner[J]) || (bIgnoring && U.Id[J] == U.Ignore[Self]) || !SeesUnit(Self, J))
 			{
@@ -783,10 +942,16 @@ namespace Sim
 			{
 				return;
 			}
-			if (Best == NoEntity || D2 < BestD2 || (D2 == BestD2 && U.Id[J] < Best))
+			// o que atira primeiro no que se mexe: prédio só quando não há unidade no alcance
+			const bool bStructure = DefOf(J).IsStructure();
+			const bool bBetter = Best == NoEntity
+				|| (bBestIsStructure && !bStructure)
+				|| (bBestIsStructure == bStructure && (D2 < BestD2 || (D2 == BestD2 && U.Id[J] < Best)));
+			if (bBetter)
 			{
 				Best = U.Id[J];
 				BestD2 = D2;
+				bBestIsStructure = bStructure;
 			}
 		});
 		return Best;
@@ -799,6 +964,14 @@ namespace Sim
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			const UnitDef& D = DefOf(I);
+			if (!D.HasWeapon())
+			{
+				// prédio, Dozer e caminhão: sem arma, não miram nem vão atrás de ninguém
+				U.FireTarget[I] = NoEntity;
+				U.Engage[I] = NoEntity;
+				U.LastAttacker[I] = NoEntity;
+				continue;
+			}
 			const bool bScan = ((CurrentTick + U.Id[I]) % TargetScanInterval) == 0;
 
 			if (U.Order[I] == OrderType::Attack && !IsAliveEnemy(I, U.OrderTarget[I]))
@@ -1018,6 +1191,10 @@ namespace Sim
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			const UnitDef& D = DefOf(I);
+			if (D.IsStructure())
+			{
+				continue;
+			}
 			Vec2 Goal;
 			Fix Stop;
 			const bool bWantsToMove = MovementGoal(I, Goal, Stop) && !U.Path[I].empty();
@@ -1149,11 +1326,15 @@ namespace Sim
 		std::vector<Fix> Deepest(U.Id.size(), Fix::Zero());   // a maior sobreposição de cada um
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
+			if (DefOf(I).IsStructure())
+			{
+				continue;
+			}
 			const Fix RI = DefOf(I).Radius;
 			const bool bMovingI = U.Speed[I] > Fix::Zero();
 			ForEachNear(U.Pos[I], RI + MaxUnitRadius, [&](int32_t J)
 			{
-				if (J <= I)
+				if (J <= I || DefOf(J).IsStructure())
 				{
 					return;
 				}
@@ -1333,7 +1514,7 @@ namespace Sim
 				{
 					ForEachNear(U.Pos[T], HelpRadius + MaxUnitRadius, [&](int32_t J)
 					{
-						if (J != T && U.Owner[J] == U.Owner[T] && U.Order[J] == OrderType::Idle && U.Engage[J] == NoEntity
+						if (J != T && U.Owner[J] == U.Owner[T] && DefOf(J).HasWeapon() && U.Order[J] == OrderType::Idle && U.Engage[J] == NoEntity
 							&& U.LastAttacker[J] == NoEntity && DistSqRaw(U.Pos[J], U.Pos[T]) <= RadiusSqRaw(HelpRadius))
 						{
 							U.LastAttacker[J] = H.Source;
@@ -1348,7 +1529,8 @@ namespace Sim
 		{
 			if (U.Hp[I] <= 0)
 			{
-				Events.push_back({ EventType::UnitDied, U.LastAttacker[I], U.Id[I], U.Pos[I], U.Owner[I] });
+				// a obra cancelada (BuildLeft −1) some sem explosão
+				Events.push_back({ U.BuildLeft[I] < 0 ? EventType::StructureCancelled : EventType::UnitDied, U.LastAttacker[I], U.Id[I], U.Pos[I], U.Owner[I] });
 			}
 		}
 	}
@@ -1365,6 +1547,29 @@ namespace Sim
 		if (!bAnyDead)
 		{
 			return;
+		}
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			if (Keep[I])
+			{
+				continue;
+			}
+			const UnitDef& D = DefOf(int32_t(I));
+			if (D.IsStructure())
+			{
+				SetFootprint(int32_t(I), false);   // a célula volta a ser o terreno
+				// a fábrica que cai devolve o dinheiro da fila (ZH ProductionUpdate::onDie)
+				for (const uint16_t K : U.Queue[I])
+				{
+					Players[U.Owner[I]].Money += RulesData.Units[K].Cost;
+				}
+				U.Queue[I].clear();
+			}
+			if (U.Cargo[I] > 0)
+			{
+				DropCargo(U.Pos[I], U.Cargo[I]);   // a carga que cai
+				U.Cargo[I] = 0;
+			}
 		}
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
@@ -1391,7 +1596,10 @@ namespace Sim
 		Compact(U.PathIndex, Keep); Compact(U.PathGoal, Keep); Compact(U.NeedsPath, Keep);
 		Compact(U.RepathWait, Keep); Compact(U.StuckTicks, Keep); Compact(U.StuckAnchor, Keep);
 		Compact(U.EngageAnchor, Keep); Compact(U.Ignore, Keep); Compact(U.IgnoreUntil, Keep);
-		Compact(U.LookCell, Keep);
+		Compact(U.LookCell, Keep); Compact(U.BuildLeft, Keep); Compact(U.Builder, Keep); Compact(U.Queue, Keep);
+		Compact(U.QueueLeft, Keep); Compact(U.Rally, Keep); Compact(U.HasRally, Keep); Compact(U.Task, Keep);
+		Compact(U.TaskTarget, Keep); Compact(U.TaskDock, Keep); Compact(U.TaskTimer, Keep); Compact(U.Cargo, Keep);
+		Compact(U.AutoGather, Keep); Compact(U.Blocking, Keep); Compact(U.TaskPoint, Keep);
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
 			IdToIndex[U.Id[I]] = int32_t(I);
@@ -1552,17 +1760,35 @@ namespace Sim
 
 	void World::CheckVictory()
 	{
+		// com base, perde quem fica sem prédio pronto que conta (o CC e os outros da lista; ajuste ao
+		// ZH, que conta até fundação: uma fundação escondida segurava o jogador vivo); sem base, como
+		// no skirmish só de tanques, perde quem fica sem nada
 		std::vector<int32_t> Alive(Players.size(), 0);
+		std::vector<int32_t> Bases(Players.size(), 0);
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			++Alive[U.Owner[I]];
+			if (DefOf(I).bCountsForVictory && IsComplete(I) && U.Hp[I] > 0)
+			{
+				++Bases[U.Owner[I]];
+			}
 		}
 		for (size_t P = 0; P < Players.size(); ++P)
 		{
-			if (!Players[P].bDefeated && Alive[P] == 0)
+			PlayerState& S = Players[P];
+			S.bHasBase = S.bHasBase || Bases[P] > 0;
+			if (!S.bDefeated && (S.bHasBase ? Bases[P] == 0 : Alive[P] == 0))
 			{
-				Players[P].bDefeated = true;
+				S.bDefeated = true;
 				Events.push_back({ EventType::PlayerDefeated, NoEntity, NoEntity, Vec2::Zero(), int32_t(P) });
+				// quem perde a base perde o resto (ZH VictoryConditions::killPlayer)
+				for (int32_t I = 0; I < UnitCount(); ++I)
+				{
+					if (U.Owner[I] == PlayerIndex(P))
+					{
+						U.Hp[I] = 0;
+					}
+				}
 			}
 		}
 		std::vector<uint8_t> TeamsAlive;
@@ -1606,6 +1832,10 @@ namespace Sim
 		{
 			H.Add(P.Team);
 			H.Add(P.bDefeated);
+			H.Add(P.Money);
+			H.Add(P.PowerMade);
+			H.Add(P.PowerUsed);
+			H.Add(P.bHasBase);
 			H.Add(uint64_t(P.Group.size()));
 			for (const EntityId Id : P.Group)
 			{
@@ -1628,6 +1858,19 @@ namespace Sim
 			H.Add(U.StuckTicks[I]); H.Add(U.StuckAnchor[I]);
 			H.Add(U.EngageAnchor[I]); H.Add(U.Ignore[I]); H.Add(U.IgnoreUntil[I]);
 			H.Add(U.LookCell[I]);
+			H.Add(U.BuildLeft[I]); H.Add(U.Builder[I]); H.Add(uint64_t(U.Queue[I].size()));
+			for (const uint16_t K : U.Queue[I])
+			{
+				H.Add(K);
+			}
+			H.Add(U.QueueLeft[I]); H.Add(U.Rally[I]); H.Add(U.HasRally[I]); H.Add(uint8_t(U.Task[I]));
+			H.Add(U.TaskTarget[I]); H.Add(U.TaskDock[I]); H.Add(U.TaskTimer[I]); H.Add(U.Cargo[I]);
+			H.Add(U.AutoGather[I]); H.Add(U.Blocking[I]); H.Add(U.TaskPoint[I]);
+		}
+		H.Add(uint64_t(Docks.size()));
+		for (const SupplyDock& D : Docks)
+		{
+			H.Add(D.Pos); H.Add(D.Boxes); H.Add(D.bPile); H.Add(D.Occupant);
 		}
 		H.Add(uint64_t(Lingering.size()));
 		for (const LingeringLook& L : Lingering)
