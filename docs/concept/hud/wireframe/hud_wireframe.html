@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>HUD Wireframe</title>
+<!-- Mapa do HUD (sessão de arte, 10/10/2026): o layout em caixas cinza, por estado.
+     #s=1..5 escolhe o estado; a=1 liga as notas em português, a=n mostra o NOME de cada peça
+     (o mapa de nomes, docs/concept/hud/NOMES.md); m = modo da partida no estado 5; t = ideia do topo
+     no estado 5 (cur = a de hoje, a = padronizada, b = compacta). shot=1 esconde os botões (render).
+     A versão sem etiquetas vai anexada ao GPT como planta do layout. -->
+<style>
+  :root { --panel: rgba(20,26,34,.90); --line: #8a97a6; --dim: #5d6876; --txt: #e9eef4; --sub: #9aa6b4;
+          --blue: #4d8fe0; --red: #e0443a; --amber: #f0a020; --green: #39c45a; --gold: #d9a93a; }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  body { font-family: 'Segoe UI', sans-serif; color: var(--txt); position: relative; }
+  #world { position: absolute; inset: 0; background: url(../../scenes/desert_golden_hour/best/day_game_cam.webp) center/cover; }
+  .p { position: absolute; box-sizing: border-box; background: var(--panel); border: 2px solid var(--line); border-radius: 6px; }
+  .c { font-family: Bahnschrift, 'Segoe UI', sans-serif; }
+  .k { position: absolute; left: 4px; top: 2px; font: 700 15px Bahnschrift, sans-serif; color: #ffd76a; z-index: 2; }
+  .bar { position: absolute; height: 10px; background: #222; border: 1px solid #000; }
+  .bar i { display: block; height: 100%; background: var(--green); }
+  .slot { position: absolute; box-sizing: border-box; width: 88px; height: 80px; background: #2b3542; border: 2px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .slot .nm { position: absolute; left: 0; right: 0; top: 18px; text-align: center; font: 600 12px/13px 'Segoe UI'; color: var(--txt); padding: 0 3px; }
+  .slot .pr { position: absolute; left: 0; right: 0; bottom: 3px; text-align: center; font: 700 14px Bahnschrift, sans-serif; color: #f2d16b; z-index: 2; }
+  .slot .pr.no { color: var(--red); }
+  .slot .cnt { position: absolute; right: 3px; top: 2px; background: #fff; color: #000; font: 700 13px Bahnschrift; padding: 0 4px; border-radius: 3px; z-index: 2; }
+  .slot.lock { background: #161b21; border-color: var(--dim); }
+  .slot.lock .nm, .slot.lock .pr { color: #6c7682; }
+  .slot.lock::after { content: '\1F512'; position: absolute; right: 4px; top: 2px; font-size: 13px; opacity: .8; }
+  .slot.upg { border: 2px dashed var(--gold); }
+  .slot.upg::before { content: 'UPGRADE'; position: absolute; left: 0; right: 0; bottom: 19px; text-align: center; font: 700 9px Bahnschrift; letter-spacing: 1px; color: var(--gold); }
+  .slot.done { opacity: .55; }
+  .slot.done .pr { color: var(--green); }
+  .slot.empty { background: rgba(14,18,24,.6); border-color: #333c47; }
+  .slot.act { border-color: var(--green); }
+  .slot.cap { border-color: var(--gold); box-shadow: 0 0 10px var(--gold); }
+  /* carregando como no C&C: o fundo escuro vai sumindo no sentido do relógio, com o número */
+  .sweep { position: absolute; inset: 0; background: conic-gradient(rgba(0,0,0,0) 0 var(--pct), rgba(0,0,0,.66) var(--pct) 100%); z-index: 1; }
+  .sweep span { position: absolute; left: 0; right: 0; top: 30px; text-align: center; font: 700 17px Bahnschrift; color: #fff; text-shadow: 0 0 3px #000; }
+  .tip { position: absolute; box-sizing: border-box; background: rgba(12,16,22,.96); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font: 15px 'Segoe UI'; white-space: nowrap; z-index: 5; }
+  .tip b { font-weight: 600; } .tip .y { color: #ffd76a; } .tip .g { color: var(--sub); font-size: 13px; } .tip .r { color: var(--red); font-size: 13px; }
+  .cursor { position: absolute; z-index: 6; width: 0; height: 0; border-left: 9px solid #fff; border-top: 9px solid transparent; border-bottom: 9px solid transparent; transform: rotate(-35deg); filter: drop-shadow(0 0 2px #000); }
+  .tag { position: absolute; z-index: 20; white-space: nowrap; background: #ffd400; color: #111; font: 600 17px/21px 'Segoe UI'; padding: 4px 9px; border-radius: 5px; box-shadow: 0 2px 8px rgba(0,0,0,.7); }
+  .tag b { display: inline-block; background: #111; color: #ffd400; border-radius: 50%; width: 23px; height: 23px; text-align: center; line-height: 23px; margin-right: 6px; font-size: 14px; }
+  .tag.nm { background: #7fe0ff; } .tag.nm i { font-style: normal; color: #2a4a5a; font-size: 14px; margin-left: 6px; }
+  .title { position: absolute; z-index: 20; left: 50%; top: 520px; transform: translateX(-50%); background: rgba(0,0,0,.78); color: #ffd400; font: 700 26px Bahnschrift; padding: 6px 16px; border-radius: 6px; letter-spacing: 1px; }
+</style></head>
+<body><div id="world"></div><div id="hud"></div>
+<script>
+const Q = new URLSearchParams(location.hash.slice(1));
+const S = +(Q.get('s') || 1), A = Q.get('a') || '0', ANN = A === '1', NAMES = A === 'n';
+const TOP = S === 5 ? (Q.get('t') || 'cur') : 'cur';   // o topo aprovado é o de hoje (cur); a e b ficam guardadas
+const hud = document.getElementById('hud');
+if (!ANN && !NAMES) document.getElementById('world').style.filter = 'none';
+else document.getElementById('world').style.filter = 'saturate(.75) brightness(.9)';
+const el = (html) => { hud.insertAdjacentHTML('beforeend', html); };
+const P = (x, y, w, h, inner = '', st = '') => el(`<div class="p" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;${st}">${inner}</div>`);
+// nota (a=1, português) e nome da peça (a=n: nome em português + nome do código em inglês)
+const tag = (n, x, y, t) => { if (ANN) el(`<div class="tag" style="left:${x}px;top:${y}px">${n === '' ? '' : `<b>${n}</b>`}${t}</div>`); };
+const name = (x, y, pt, en) => { if (NAMES) el(`<div class="tag nm" style="left:${x}px;top:${y}px">${pt}<i>${en}</i></div>`); };
+const EMB = { usa: '../../factions/usa_emblem.webp', china: '../../factions/china_emblem.webp', gla: '../../factions/gla_emblem.webp' };
+
+// ================= sempre à vista =================
+// Avisos (canto de cima, esquerda)
+const alerts = S === 5 ? [['Unit under attack', 'red'], ['Low power', 'amber']] : [['Unit under attack', 'red']];
+alerts.forEach(([t, c], i) => P(16, 16 + i * 46, 300, 40,
+  `<div style="position:absolute;left:10px;top:7px;font:600 17px 'Segoe UI'"><span style="color:var(--${c})">&#9650;</span> ${t}</div>`, `border-color:var(--${c})`));
+tag(1, 16, 16 + alerts.length * 46, 'Avisos (Espaço pula pro último)');
+name(S === 5 ? 92 : 324, S === 5 ? 108 : 22, 'Avisos', 'AlertFeed');
+// Seta na borda pra evento fora da tela
+el(`<div style="position:absolute;right:6px;top:470px;font:700 44px Bahnschrift;color:var(--red);text-shadow:0 0 6px #000">&#10095;</div>`);
+tag(2, 1610, 476, 'Seta: evento fora da tela');
+name(1590, 476, 'Seta de evento', 'OffscreenArrow');
+
+// ---------- topo: relógio no centro, metade dos jogadores de cada lado ----------
+const PLAYERS = {
+  felipe: { n: 'Felipe', f: 'usa', col: '#4d8fe0', me: 1 },
+  bruno: { n: 'Bruno', f: 'china', col: '#25b8c8', eco: ['$2,140', 80, 100], sw: [['NUCLEAR MISSILE', '4:10']] },
+  caio: { n: 'Caio', f: 'gla', col: '#3cb043', eco: ['$860'] },
+  davi: { n: 'Davi', f: 'usa', col: '#a46ce0', eco: ['$5,300', 130, 120], sw: [['ORBITAL LANCE', '3:45']] },
+  ai1: { n: 'Hard AI 1', f: 'gla', col: '#e0443a', eco: ['$1,700'], sw: [['PLAGUE STORM', '2:05'], ['PLAGUE STORM', '5:20']] },
+  ai2: { n: 'Hard AI 2', f: 'china', col: '#f08a24', eco: ['$3,900', 90, 150], spy: .6,
+         sw: [['NUCLEAR MISSILE', '0:42', 1], ['NUCLEAR MISSILE', '1:30'], ['NUCLEAR MISSILE', '4:55'], ['NUCLEAR MISSILE', '6:02'], ['NUCLEAR MISSILE', '7:40']] },
+  ai3: { n: 'Hard AI 3', f: 'usa', col: '#e6c629', eco: ['$2,800', 60, 80] },
+  ai4: { n: 'Hard AI 4', f: 'gla', col: '#e65aa6', dead: 1 },
+  enemy: { n: 'Enemy AI', f: 'gla', col: '#e0443a', eco: ['$1,200'], sw: [['PLAGUE STORM', '3:12']] }};
+const MODE = S === 5 ? (Q.get('m') || '2s') : '1v1';
+const TEAMSETS = {
+  '1v1': [['felipe'], ['enemy']],
+  '2s': [['felipe', 'bruno'], ['ai1', 'ai2'], ['caio', 'davi'], ['ai3', 'ai4']],
+  'ffa': [['felipe'], ['bruno'], ['caio'], ['davi'], ['ai1'], ['ai2'], ['ai3'], ['ai4']],
+  '4v4': [['felipe', 'bruno', 'caio', 'davi'], ['ai1', 'ai2', 'ai3', 'ai4']]};
+const T = TEAMSETS[MODE].map((t) => t.map((k) => ({ ...PLAYERS[k] })));
+T[0].forEach((p) => { if (!p.me) p.ally = 1; });
+const ordered = [...T[0], ...T.slice(1).flat()], half = Math.ceil(ordered.length / 2);
+const left = ordered.slice(0, half), right = ordered.slice(half);
+const powerBar = (x, y, made, used, w = 52, narrow = 0) => {
+  const low = used > made, pct = Math.min(100, used / made * 100);
+  return `<div class="bar" style="left:${x}px;top:${y + 4}px;width:${w}px"><i style="width:${pct}%;background:${low ? 'var(--red)' : 'var(--green)'}"></i></div>
+    <div style="position:absolute;left:${x + w + 4}px;top:${y}px;font:${narrow ? '600 condensed 13px Bahnschrift' : '600 13px Bahnschrift'};color:${low ? 'var(--red)' : 'var(--txt)'}">${used}/${made}</div>`;
+};
+const n = left.length + right.length, tw = 120, BIG = n === 2;
+const clockX = 960 - tw / 2;
+const cw = BIG ? 220 : 140, CH = 58;
+const leftStart = clockX - left.length * cw;
+const EYE = `<div style="position:absolute;left:18px;top:16px;width:16px;height:16px;border-radius:50%;background:var(--amber);color:#111;font:11px/16px 'Segoe UI';text-align:center;z-index:2">&#128065;</div>`;
+let maxBottom = 66;
+// a ideia de hoje (cur): nome na cor do jogador; superarmas em caixa embaixo, até 3 linhas
+// a ideia A (padronizada): todos os nomes brancos, a cor do jogador num quadradinho; uma linha de superarma por dono, "+n"
+// a ideia B (compacta): igual à A, mas a superarma vira só ícone + tempo, até 3 por linha, sem nome (nome no mouse)
+const swBox = (p, x, w) => {
+  const list = p.sw, hot = list.some((r) => r[2]), y = 4 + CH + 4;
+  const c = hot ? 'var(--red)' : p.me || p.ally ? 'var(--blue)' : '#c9733a';
+  const glow = hot ? ';box-shadow:0 0 10px var(--red)' : '';
+  const row = (r, yy, ww, withName) => `<div style="position:absolute;left:4px;top:${yy}px;width:${ww}px;height:17px;${r[2] ? 'background:rgba(224,68,58,.28);border-radius:2px' : ''}">
+      ${withName ? `<div style="position:absolute;left:3px;top:1px;font:600 condensed ${BIG ? 12 : 11}px Bahnschrift;color:${r[2] ? '#ff6a5a' : '#d9c7b0'};white-space:nowrap">&#9762; ${r[0]}</div>` : ''}
+      <div style="position:absolute;right:3px;top:0;font:700 condensed ${BIG ? 14 : 13}px Bahnschrift;color:${r[2] ? '#ff6a5a' : 'var(--txt)'}">${r[1]}</div></div>`;
+  if (TOP === 'cur') {
+    const rows = list.slice(0, 3), more = list.length - rows.length, h = rows.length * 18 + (more ? 16 : 0) + 6;
+    P(x, y, w, h, rows.map((r, i) => row(r, 3 + i * 18, w - 12, 1)).join('') +
+      (more ? `<div class="c" style="position:absolute;left:8px;top:${3 + rows.length * 18}px;font:600 12px Bahnschrift;color:var(--sub)">+${more} more</div>` : ''), `border-color:${c}${glow}`);
+    return y + h;
+  }
+  if (TOP === 'a') {
+    const more = list.length - 1;
+    const r = list[0], rc = r[2] ? '#ff6a5a' : '#d9c7b0';
+    P(x, y, w, 24, `<div style="position:absolute;left:4px;right:4px;top:2px;height:18px;display:flex;align-items:center;gap:5px;${r[2] ? 'background:rgba(224,68,58,.28);border-radius:2px' : ''}">
+      <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 condensed 11px Bahnschrift;color:${rc}">&#9762; ${r[0]}</div>
+      <div style="font:700 condensed 13px Bahnschrift;color:${r[2] ? '#ff6a5a' : 'var(--txt)'}">${r[1]}</div>
+      ${more ? `<div style="font:700 12px Bahnschrift;color:var(--sub)">+${more}</div>` : ''}</div>`, `border-color:${c}${glow}`);
+    return y + 24;
+  }
+  // B: até 3 tempos lado a lado, só ícone e número
+  const chips = list.slice(0, 3), more = list.length - chips.length;
+  P(x, y, w, 24, chips.map((r, i) => `<div class="c" style="position:absolute;left:${4 + i * 36}px;top:3px;font:700 condensed 13px Bahnschrift;color:${r[2] ? '#ff6a5a' : 'var(--txt)'};white-space:nowrap">&#9762;${r[1]}</div>`).join('') +
+    (more ? `<div class="c" style="position:absolute;right:4px;top:4px;font:700 12px Bahnschrift;color:var(--sub)">+${more}</div>` : ''), `border-color:${c}${glow}`);
+  return y + 24;
+};
+const card = (p, x, inTeam) => {
+  const showEco = !p.me && !p.dead && (p.ally || p.spy) && p.eco, w = cw - 4;
+  const top = showEco ? 4 : (CH - 4 - 26) / 2, dim = p.dead ? 'filter:grayscale(1) brightness(.5)' : '';
+  const colored = TOP === 'cur' || BIG;
+  P(x, 4, w, CH, `<img src="${EMB[p.f]}" style="position:absolute;left:5px;top:${top}px;width:26px;height:26px;border-radius:50%;${dim}">
+    ${p.spy ? EYE : ''}
+    ${!colored && !p.dead ? `<div style="position:absolute;left:36px;top:${top + 9}px;width:8px;height:8px;background:${p.col};border-radius:1px"></div>` : ''}
+    <div class="c" style="position:absolute;left:${colored ? 36 : 48}px;top:${top + 2}px;font:600 ${BIG ? 18 : 15}px Bahnschrift;color:${p.dead ? '#666' : colored ? p.col : 'var(--txt)'};white-space:nowrap">${p.n}</div>
+    ${showEco ? `<div style="position:absolute;left:4px;right:4px;top:33px;height:20px;background:rgba(0,0,0,.4);border-radius:3px">
+      <div class="c" style="position:absolute;left:6px;top:1px;font:700 14px Bahnschrift;color:#f2d16b">${p.eco[0]}</div>${p.eco[1] ? powerBar(52, 2, p.eco[2], p.eco[1], 20, 1) : ''}</div>` : ''}
+    ${p.spy ? `<div style="position:absolute;left:0;top:${CH - 3}px;height:3px;width:${p.spy * 100}%;background:var(--amber)"></div>` : ''}
+    ${p.dead ? `<div style="position:absolute;inset:0;font:700 34px/${CH - 4}px Bahnschrift;color:#a33;text-align:center">&#10005;</div>` : ''}`,
+    inTeam ? 'background:transparent;border-color:transparent' : p.spy ? 'border-color:var(--amber)' : '');
+  if (p.sw && !p.dead) maxBottom = Math.max(maxBottom, swBox(p, x, w));
+};
+const teamN = left.filter((p) => p.me || p.ally).length;
+P(leftStart - 2, 2, teamN * cw, CH + 4, Array.from({ length: teamN - 1 }, (_, i) =>
+  `<div style="position:absolute;left:${(i + 1) * cw - 4}px;top:6px;bottom:6px;width:1px;background:rgba(120,170,235,.45)"></div>`).join(''),
+  'background:rgba(28,52,88,.95);border-color:var(--blue)');
+left.forEach((p, i) => card(p, leftStart + i * cw, p.me || p.ally));
+P(clockX + 2, 0, tw - 4, CH + 8, `<div class="c" style="position:absolute;inset:0;text-align:center;font:700 30px/${CH + 4}px Bahnschrift">12:34</div>`);
+right.forEach((p, i) => card(p, clockX + tw + i * cw));
+const ty = maxBottom + 16;
+if (BIG) {
+  tag(3, 540, ty, 'Topo 1x1: você, relógio, adversário (o do limpo, grandão)');
+  tag(4, 540, ty + 34, 'Superarmas embaixo do dono');
+} else {
+  tag(3, 540, ty, { cur: 'Topo: nome na cor do jogador, bloco azul = seu time', a: 'Ideia A: tudo padronizado, nomes brancos, a cor num quadradinho', b: 'Ideia B: igual à A, superarma só ícone + tempo' }[TOP]);
+  tag(4, 540, ty + 34, { cur: 'Superarmas: até 3 linhas com nome + "+n more"', a: 'Superarmas: UMA linha por dono (a próxima, com nome) + "+4"; mouse lista todas', b: 'Superarmas: até 3 tempos lado a lado + "+2"; nome no mouse' }[TOP]);
+}
+name(BIG ? leftStart - 2 : 400, maxBottom + 8, 'Barra do topo', 'TopBar');
+name(clockX - 30, maxBottom + 42, 'Relógio da partida', 'MatchClock');
+if (!BIG) name(clockX + tw + 4, maxBottom + 76, 'Cartão de jogador', 'PlayerCard');
+else name(clockX + tw + 4, maxBottom + 76, 'Cartão de jogador', 'PlayerCard');
+name(BIG ? leftStart - 2 : 400, maxBottom + 42, 'Bloco do seu time', 'TeamBlock');
+name(clockX + tw + 4, maxBottom + 110, 'Lista de superarmas', 'SuperweaponList');
+
+// ---------- canto de cima, direita: o painel do comandante ----------
+P(1600, 4, 304, 92, `
+  <div class="c" style="position:absolute;left:12px;top:4px;font:700 30px Bahnschrift;color:#f2d16b">$ 4,250</div>
+  <div style="position:absolute;left:150px;top:10px;font:13px 'Segoe UI';color:var(--sub)">Power</div>
+  ${powerBar(196, 10, 120, S === 5 ? 130 : 95)}
+  <div style="position:absolute;left:12px;top:50px;font:20px 'Segoe UI';color:var(--gold);letter-spacing:2px">&#9733;&#9733;&#9733;<span style="color:#555">&#9733;&#9733;</span></div>
+  <div class="bar" style="left:112px;top:60px;width:110px;background:#222"><i style="width:62%;background:var(--gold)"></i></div>
+  <div style="position:absolute;right:8px;top:48px;background:var(--gold);color:#111;font:700 14px Bahnschrift;padding:3px 8px;border-radius:3px">Promote 1</div>`);
+tag(5, 1530, 102, 'Dinheiro, energia e patente (o do limpo)');
+tag('', 1530, 134, 'Promote abre os poderes');
+name(1600, 102, 'Painel do comandante', 'CommanderPanel');
+
+// ---------- borda esquerda: a coluna de poderes (só ícone; o nome fica na dica) ----------
+const pw = [['Orbital Lance', '2:31', .38], ['Orbital Lance', '5:40', .1], ['Artillery Strike', 'READY', 0], ['Paradrop', '0:48', .7], ['Spy Drone', 'READY', 0]];
+const pwY = 16 + alerts.length * 46 + 30;
+pw.forEach(([nm, t, cd], i) => P(16, pwY + i * 76, 68, 68, `
+  <div style="position:absolute;inset:0;text-align:center;font:600 10px/11px 'Segoe UI';color:#8f9aa6;padding-top:10px">icon<br>${nm}</div>
+  ${cd ? `<div class="sweep" style="--pct:${(1 - cd) * 100}%"></div>` : ''}
+  <div class="c" style="position:absolute;left:0;right:0;bottom:3px;text-align:center;font:700 15px Bahnschrift;color:${cd ? '#fff' : 'var(--gold)'};z-index:2">${t}</div>`,
+  cd ? '' : 'border-color:var(--gold);box-shadow:0 0 12px var(--gold)'));
+tag(6, 92, pwY + 10, 'Poderes: só ícone; carregando = fundo escuro');
+tag('', 92, pwY + 42, 'sumindo como no C&C + o tempo; pronto = READY');
+name(92, pwY + 10, 'Coluna de poderes', 'PowersColumn');
+
+// ---------- embaixo, esquerda: minimapa em losango + botões ----------
+el(`<div style="position:absolute;left:61px;top:810px;width:216px;height:216px;transform:rotate(45deg);box-sizing:border-box;border:3px solid var(--line);background:#000;overflow:hidden;border-radius:6px">
+  <div style="position:absolute;left:0;top:0;width:150px;height:216px;background:#3c3a36"></div>
+  <div style="position:absolute;left:20px;top:60px;width:100px;height:110px;background:#9c7a52"></div>
+  ${[[40,90,'#3a7bd5'],[60,120,'#3a7bd5'],[50,140,'#3a7bd5'],[90,80,'#d33'],[100,70,'#d33']].concat(S === 5 ? [[30,170,'#25b8c8'],[120,40,'#e8811a'],[70,30,'#3cb043'],[130,100,'#e0c020']] : [])
+    .map(([x, y, c]) => `<div style="position:absolute;left:${x}px;top:${y}px;width:9px;height:9px;border-radius:50%;background:${c}"></div>`).join('')}
+  <div style="position:absolute;left:45px;top:75px;width:60px;height:45px;border:2px solid #fff"></div></div>`);
+['&#9881;', 'Idle', '&#9873;', 'Chat'].forEach((t, i) => P(326, 852 + i * 54, 46, 46, `<div style="position:absolute;inset:0;text-align:center;font:600 13px/42px 'Segoe UI'">${t}</div>`));
+tag(7, 20, 728, 'Minimapa com névoa (a composição do clássico)');
+name(20, 728, 'Minimapa', 'Minimap');
+name(300, 806, 'Botões do minimapa', 'MinimapButtons');
+
+// ---------- o painel central: estica do minimapa até o cartão da direita ----------
+// grade principal (o que se constrói ou a seleção) à esquerda, 9 x 2; grade de ações (moldura verde) à direita, 3 x 2.
+// teclas: fileira de cima e de baixo do teclado constroem; a fileira do meio (A S D / F G H) são as ações.
+const PANEL = { x: 380, y: 892, w: 1132, h: 180 }, SX = 92, SY = 84;
+const MAINX = PANEL.x + 8, MAINY = PANEL.y + 8, ACTX = MAINX + 9 * SX + 12;
+const MAINKEYS = 'QWERTYUIOZXCVBNM', ACTKEYS = 'ASDFGH';
+const slot = (x, y, o) => el(`<div class="slot ${o.cls || ''}" style="left:${x}px;top:${y}px">${o.k ? `<div class="k">${o.k}</div>` : ''}
+  ${o.cnt ? `<div class="cnt">${o.cnt}</div>` : ''}<div class="nm">${o.n || ''}</div>
+  ${o.pct ? `<div class="sweep" style="--pct:${o.pct}%"><span>${o.pct}%</span></div>` : ''}
+  ${o.hp ? `<div class="bar" style="left:6px;right:6px;bottom:6px;height:7px;width:auto"><i style="width:${o.hp}%;background:${o.hp > 60 ? 'var(--green)' : o.hp > 30 ? 'var(--amber)' : 'var(--red)'}"></i></div>` : ''}
+  ${o.p ? `<div class="pr ${o.no ? 'no' : ''}">${o.p}</div>` : ''}</div>`);
+const panel = (main, acts) => {
+  P(PANEL.x, PANEL.y, PANEL.w, PANEL.h, `<div style="position:absolute;left:${ACTX - PANEL.x - 9}px;top:10px;bottom:10px;width:2px;background:#46515e"></div>`);
+  for (let i = 0; i < 18; i++) {
+    const o = main[i];
+    slot(MAINX + (i % 9) * SX, MAINY + Math.floor(i / 9) * SY, o ? { k: o.nokey ? '' : (o.k || MAINKEYS[i % 9 + (i >= 9 ? 9 : 0)] || ''), ...o } : { cls: 'empty' });
+  }
+  for (let i = 0; i < 6; i++) {
+    const o = acts[i];
+    slot(ACTX + (i % 3) * SX, MAINY + Math.floor(i / 3) * SY, o ? { k: ACTKEYS[i], cls: 'act', ...o } : { cls: 'empty' });
+  }
+};
+const at = (i, act) => act ? [ACTX + (i % 3) * SX, MAINY + Math.floor(i / 3) * SY] : [MAINX + (i % 9) * SX, MAINY + Math.floor(i / 9) * SY];
+// a dica aparece no mouse, em cima do botão apontado
+const tipAt = (i, act, html) => {
+  const [x, y] = at(i, act);
+  el(`<div class="cursor" style="left:${x + 52}px;top:${y + 36}px"></div>`);
+  el(`<div class="tip" style="left:${x + 30}px;top:${y - 62}px">${html}</div>`);
+};
+
+// grupos 1–0 em cima do painel central (sem nada selecionado, descem pra borda); a barrinha é a vida somada do grupo
+const GY = S === 5 ? 1024 : PANEL.y - 50, GX = 946 - 253;
+const grp = [['1', '×4', 82], ['2', '×2', 38], ['3'], ['4'], ['5'], ['6'], ['7'], ['8'], ['9'], ['0']];
+grp.forEach(([g, c, hp], i) => P(GX + i * 51, GY, 48, 46, `<div class="c" style="position:absolute;left:${c ? 6 : 16}px;top:4px;font:700 24px Bahnschrift;color:${c ? 'var(--txt)' : '#5e6874'}">${g}</div>
+  ${c ? `<div class="c" style="position:absolute;right:4px;top:14px;font:600 13px Bahnschrift;color:var(--sub)">${c}</div>
+  <div style="position:absolute;left:5px;right:5px;bottom:4px;height:4px;background:#111"><div style="height:100%;width:${hp}%;background:${hp > 60 ? 'var(--green)' : hp > 30 ? 'var(--amber)' : 'var(--red)'}"></div></div>` : ''}`,
+  c ? 'border-color:var(--blue)' : 'border-color:#3c4652;background:rgba(20,26,34,.6)'));
+if (S === 5) tag(8, GX, 984, 'Nada selecionado: os grupos descem, no centro');
+else { tag(8, 460, 690, 'Grupos 1–0; a barrinha = vida somada do grupo'); }
+name(S === 5 ? GX + 520 : GX + 200, S === 5 ? GY + 8 : GY - 40, 'Abas de grupo', 'GroupTabs');
+
+// ---------- o cartão da direita ----------
+const ucard = (h, inner) => P(1520, 1072 - h, 384, h, inner);
+const portrait = (label, extra = '') => `<div style="position:absolute;left:8px;top:8px;width:364px;height:150px;background:#4a4136;border:1px solid #000;border-radius:3px">
+  <div style="position:absolute;inset:0;text-align:center;font:600 16px/150px 'Segoe UI';color:#d8c8b0">PHOTO: ${label}</div>${extra}</div>`;
+const health = (y, nm, hp, max) => `<div class="c" style="position:absolute;left:10px;top:${y}px;font:600 20px Bahnschrift">${nm}</div>
+  <div class="bar" style="left:10px;top:${y + 32}px;width:250px;height:12px"><i style="width:${hp / max * 100}%"></i></div>
+  <div class="c" style="position:absolute;right:10px;top:${y + 26}px;font:600 18px Bahnschrift">${hp.toLocaleString('en-US')} / ${max.toLocaleString('en-US')}</div>`;
+const insignia = `<div style="position:absolute;left:6px;top:6px;width:30px;height:30px;border:2px solid var(--blue);border-radius:3px;background:#1d2a3a;text-align:center;font:16px/28px 'Segoe UI'">&#128737;</div>
+  <div style="position:absolute;right:6px;top:4px;width:34px;height:30px;border:2px solid var(--gold);border-radius:3px;text-align:center;font:700 20px/28px Bahnschrift;color:var(--gold)">&#8743;&#8743;</div>`;
+const queue = (y, items) => items.map((q, i) => `<div style="position:absolute;left:${10 + i * 72}px;top:${y}px;width:66px;height:54px;box-sizing:border-box;border:2px solid ${q ? 'var(--line)' : '#3c4652'};background:${q ? '#2b3542' : 'rgba(0,0,0,.25)'};border-radius:3px;overflow:hidden">
+  ${q ? `<div style="position:absolute;inset:0;text-align:center;font:600 11px/13px 'Segoe UI';padding-top:6px">${q.n}</div>` : ''}
+  ${q && q.pct ? `<div class="sweep" style="--pct:${q.pct}%"><span style="top:20px;font-size:15px">${q.pct}%</span></div>` : ''}
+  ${q && q.x ? '<div style="position:absolute;right:2px;top:1px;background:var(--red);color:#fff;font:700 12px/16px Bahnschrift;width:16px;text-align:center;border-radius:2px;z-index:2">&#10005;</div>' : ''}</div>`).join('');
+const cardNames = (top, withQueue) => {
+  name(1530, top - 36, 'Cartão da seleção', 'UnitCard');
+  name(1540, top + 14, 'Retrato', 'Portrait');
+  name(1540, top + 116, 'Vida', 'HealthBar');
+  if (withQueue) name(1540, top + 192, 'Fila', 'ProductionQueue');
+};
+
+if (S === 1) {
+  // 4 tanques: cada casa da grade principal é um tanque selecionado, com a vida; o capitão em destaque
+  panel([{ n: 'PHOTO<br>Tank', hp: 100, nokey: 1 }, { n: 'PHOTO<br>Tank', hp: 80, cls: 'cap', nokey: 1 }, { n: 'PHOTO<br>Tank', hp: 55, nokey: 1 }, { n: 'PHOTO<br>Tank', hp: 25, nokey: 1 }],
+    [{ n: 'Attack<br>Move' }, { n: 'Stop' }, null, null, { n: 'Guard' }, null]);
+  tipAt(0, true, '<b>Attack Move</b> <span class="y">[A]</span><br><span class="g">Move and attack anything on the way.</span>');
+  ucard(222, portrait('USA Battle Tank', insignia) + health(162, 'USA Battle Tank', 480, 600));
+  tag(9, 460, 724, 'Cada casa = um selecionado com a vida; dourado = o capitão (a voz e o retrato)');
+  tag(10, 460, 758, 'Ações à direita (moldura verde): teclas A S D / F G H');
+  tag(11, 1530, 816, 'Cartão: foto, insígnias, patente (clássico)');
+  cardNames(850, 0);
+}
+if (S === 2) {
+  panel([
+    { n: 'Battle<br>Tank', p: '$900', cnt: 3, pct: 64 }, { n: 'Heavy<br>Tank', p: '$1,100', cls: 'lock' }, { n: 'Humvee', p: '$700' }, { n: 'Rocket<br>Launcher', p: '$1,200' },
+    { n: 'Ambulance', p: '$600' }, { n: 'Anti-Air', p: '$1,000' }, { n: 'Drone', p: '$500' }, null, null,
+    { n: 'EW Tank', p: '$800', cls: 'lock' }, { n: 'Missile<br>Kit', p: '&#10003;', cls: 'upg done' }, { n: 'Battle<br>Drone', p: '$100', cls: 'upg' }],
+    [null, null, null, { n: 'Rally<br>Point' }, null, null]);
+  tipAt(0, false, '<b>Battle Tank</b> <span class="y">[Q]</span> &nbsp;<span style="color:#f2d16b">$900 · 0:12</span><br><span class="g">Left-click +1 · Shift-click +5 · Right-click −1</span>');
+  ucard(290, portrait('War Factory') + health(162, 'War Factory', 1800, 2000) +
+    queue(226, [{ n: 'Battle<br>Tank', pct: 64 }, { n: 'Battle<br>Tank', x: 1 }, { n: 'Battle<br>Tank' }, { n: 'Humvee' }, null]));
+  tag(9, 460, 724, 'Paleta do minimapa até o cartão; fotos e cadeado do clássico');
+  tag(10, 460, 758, 'Carregando = fundo escuro sumindo (C&C) + % ; dourado = melhoria');
+  tag(11, 1530, 748, 'Fila: mesmo carregamento, clique tira');
+  cardNames(782, 1);
+}
+if (S === 3) {
+  panel([
+    { n: 'Command<br>Center', p: '$2,000' }, { n: 'Power<br>Plant', p: '$800' }, { n: 'Barracks', p: '$600' }, { n: 'Supply<br>Center', p: '$1,500' },
+    { n: 'War<br>Factory', p: '$2,000' }, { n: 'Airfield', p: '$1,000', cls: 'lock' }, { n: 'Tech<br>Center', p: '$2,500', cls: 'lock' },
+    { n: 'Missile<br>Defense', p: '$1,000' }, { n: 'Fire<br>Base', p: '$1,000', cls: 'lock' },
+    { n: 'Radar', p: '$1,200' }, { n: 'Drop<br>Zone', p: '$2,500', cls: 'lock' }, { n: 'Orbital<br>Lance', p: '$5,000', no: 1, cls: 'lock' }],
+    [null, { n: 'Stop' }, null, null, null, null]);
+  tipAt(5, false, '<b>Airfield</b> <span class="y">[Y]</span> &nbsp;<span style="color:#f2d16b">$1,000</span><br><span class="r">Requires: War Factory</span>');
+  ucard(222, portrait('USA Dozer') + health(162, 'USA Dozer', 250, 250));
+  tag(9, 460, 724, 'Prédios do dozer; preço vermelho = falta dinheiro');
+  tag(10, 460, 758, 'Stop = o mesmo dos tanques (mão)');
+  cardNames(850, 0);
+}
+if (S === 4) {
+  panel([
+    { n: 'Composite<br>Armor', p: '$2,000', cls: 'upg', pct: 40 }, { n: 'Advanced<br>Training', p: '&#10003;', cls: 'upg done' }, { n: 'Drone<br>Armor', p: '$1,000', cls: 'upg' },
+    { n: 'Laser<br>Guidance', p: '$2,000', cls: 'upg lock' }],
+    [null, null, null, null, null, { n: 'Sell' }]);
+  tipAt(0, false, '<b>Composite Armor</b> <span class="y">[Q]</span> &nbsp;<span style="color:#f2d16b">$2,000 · 1:00</span><br><span class="g">+25% armor for all tanks.</span>');
+  ucard(290, portrait('Tech Center') + health(162, 'Tech Center', 2400, 2400) + queue(226, [{ n: 'Composite<br>Armor', pct: 40 }, null, null, null, null]));
+  tag(9, 460, 724, 'Melhoria = 1 casa só (a tecla fica certa); pesquisando = carregamento C&C');
+  tag(10, 460, 758, 'Sell: ícone novo, nas ações (verde)');
+  tag(11, 1530, 748, 'A pesquisa usa a mesma fila');
+  cardNames(782, 1);
+}
+if (S === 5) {
+  // nada selecionado: a placa da facção, sem o nome do jogador; embaixo, com menos destaque, as baixas que você causou
+  ucard(222, `<div style="position:absolute;inset:0;overflow:hidden;border-radius:4px;background:radial-gradient(circle at 75% 55%,#1d3554 0,#0e1622 70%)">
+    <img src="${EMB.usa}" style="position:absolute;right:10px;top:22px;width:150px;opacity:.95">
+    <div class="c" style="position:absolute;left:18px;top:38px;font:700 27px Bahnschrift;letter-spacing:1px">UNITED STATES</div>
+    <div class="c" style="position:absolute;left:18px;top:84px;font:600 17px Bahnschrift;color:var(--txt)">Army 24 · Buildings 9</div>
+    <div class="c" style="position:absolute;left:18px;top:150px;font:600 13px Bahnschrift;color:var(--sub);letter-spacing:1px">KILLS &nbsp;Units 31 · Buildings 6</div></div>`);
+  tag(9, 1530, 816, 'Placa da facção: emblema (clássico), sem nome do jogador');
+  tag(10, 940, 940, 'Meio vazio: só o mundo');
+  name(1300, 848, 'Placa da facção', 'FactionPlate');
+}
+if (S !== 5) {
+  name(PANEL.x + 4, 700, 'Dica (aparece no mouse)', 'Tooltip');
+  name(PANEL.x + 4, 734, 'Painel central', 'CommandPanel');
+  name(PANEL.x + 4, 768, 'Grade principal (esquerda)', 'MainGrid');
+  name(ACTX - 40, 768, 'Grade de ações (direita)', 'ActionGrid');
+}
+if (S === 1) name(560, 470, 'Barra de vida no mundo', 'WorldHealthBar');
+
+if (ANN || NAMES) el(`<div class="title">${['', '1. Tanques selecionados (1x1)', '2. War Factory cheia', '3. Dozer cheio', '4. Prédio com melhorias', '5. Nada selecionado, mapa de 8'][S]}</div>`);
+const fit = () => { document.body.style.zoom = Math.min(innerWidth / 1920, innerHeight / 1080); };
+fit(); addEventListener('resize', fit);
+addEventListener('hashchange', () => location.reload());
+// botões pra trocar de estado (somem no render com shot=1)
+if (Q.get('shot') !== '1') {
+  const btn = (href, label, on, bg = '#2b3542') => `<a href="#${href}" style="font:700 18px Bahnschrift;text-decoration:none;white-space:nowrap;padding:7px 13px;border-radius:5px;background:${on ? '#ffd400' : bg};color:${on ? '#111' : '#fff'}">${label}</a>`;
+  const keep = (s, extra = {}) => { const o = { s, a: A, m: MODE === '1v1' ? '2s' : MODE, t: TOP, ...extra }; return Object.entries(o).map(([k, v]) => `${k}=${v}`).join('&'); };
+  const names = ['Tanques', 'War Factory', 'Dozer', 'Melhorias', 'Nada / 8 jogadores'];
+  let row1 = names.map((nm, i) => btn(keep(i + 1), `${i + 1}. ${nm}`, S === i + 1)).join('');
+  row1 += btn(keep(S, { a: '1' }), 'Notas', A === '1', '#555') + btn(keep(S, { a: 'n' }), 'Nomes', A === 'n', '#555') + btn(keep(S, { a: '0' }), 'Limpo', A === '0', '#555');
+  let row2 = '';
+  if (S === 5) {
+    row2 = [['2s', '2v2v2v2'], ['ffa', 'Free for all'], ['4v4', '4v4']].map(([m, nm]) => btn(keep(5, { m }), nm, MODE === m, '#24425f')).join('') +
+      '';
+  }
+  el(`<div style="position:absolute;z-index:30;left:50%;top:620px;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;background:rgba(0,0,0,.82);padding:8px;border-radius:8px">
+    <div style="display:flex;gap:6px">${row1}</div>${row2 ? `<div style="display:flex;gap:6px">${row2}</div>` : ''}</div>`);
+}
+addEventListener('keydown', (e) => {
+  let s = S;
+  if (e.key >= '1' && e.key <= '5') s = +e.key; else if (e.key === 'ArrowRight') s = S % 5 + 1; else if (e.key === 'ArrowLeft') s = (S + 3) % 5 + 1; else return;
+  location.hash = `s=${s}&a=${A}&m=${MODE === '1v1' ? '2s' : MODE}&t=${TOP}`;
+});
+</script></body></html>

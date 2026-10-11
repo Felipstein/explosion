@@ -85,3 +85,4 @@ shaders das explosões (das próximas vezes é rápido).
 - `docs/MIGRACAO.md`: WebGL → Unreal, sistema por sistema, números calibrados.
 - `docs/ARCHITECTURE.md`: como cada sistema do WebGL funciona, com as referências.
 - `docs/WORLDFORGE.md`: o criador de mundos (pesquisa, proposta, como gera, medições).
+- `docs/concept/AMBIENTES.md`: os ambientes do jogo (biomas, horas, climas), da arte conceitual ao WorldForge e ao look.

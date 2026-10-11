@@ -3,7 +3,7 @@
 Regra do projeto: nenhum visual novo é "pronto" sem passar por esta folha, na
 mesma câmera e no mesmo instante da arte (docs/EXPLOSOES.md).
 
-    python BlastLab/Tools/concept_sheet.py saida.jpg docs/concept/scenes/game_shot_usa_vs_gla.webp \
+    python BlastLab/Tools/concept_sheet.py saida.jpg docs/concept/scenes/desert_golden_hour/more/game_shot_usa_vs_gla.webp \
         "deserto 1.5 s|captures/ue/range_desert_rts/sim_1.50.png" ["rótulo|imagem[|x0,y0,x1,y1]" ...]
 
 Cada quadro pode levar um recorte (x0,y0,x1,y1 em pixels da imagem) pra pôr a

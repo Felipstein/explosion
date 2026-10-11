@@ -27,21 +27,31 @@ O Felipe é o juiz de cada rodada.
 
 O **painel de montar do WorldForge continua com a luz leve de hoje**, nada realista. Não mexer nele.
 
-## 2. As referências (`docs/concept/look/`)
+## 2. As referências (`docs/concept/scenes/`)
 
 **Só as do Gemini** (decisão do Felipe, 09/10): as do GPT são "fantasia" demais, saturadas e
 dramáticas. Exceção: o game shot de perto, em que ele escolheu o do GPT ("gosto muito dos gráficos
-do GPT, mas é bem fantasia; vamos tentar GPT"), com o do Gemini guardado. A "foto do jogo" oficial (`game_shot_usa_vs_gla.webp`) é do GPT: vale pra cor e leitura
-dos tanques, **não** como alvo de luz. **Mapas-mundo e a gameplay de hoje ficam fora**, pra não
-confundir: o foco é o look.
+do GPT, mas é bem fantasia; vamos tentar GPT"), com o do Gemini guardado. A "foto do jogo" antiga
+(`game_shot_usa_vs_gla.webp`, GPT) **não** é alvo de luz. **Mapas-mundo e a gameplay de hoje ficam
+fora**, pra não confundir: o foco é o look.
 
-| Folha | O que é | Originais |
-|---|---|---|
-| `1_dia.jpg` | **Dia, golden hour: o padrão do jogo.** Câmera do jogo (oficial) e câmera deitada | `docs/concept/scenes/day_game_cam.webp` (**o alvo nº 1**), `day_tilt_cam.webp` |
-| `2_noite.jpg` | **Noite aprovada:** luar azul forte deixando o campo todo legível, mais as poças de luz laranja do fogo | `docs/concept/scenes/night_game_cam.webp` (aprovada), `night_tilt_cam_gemini.webp` |
-| `3_faccoes.jpg` | **Leitura das facções sob a luz** | `docs/concept/scenes/usa_vs_china_gemini.webp`, `china_vs_gla_gemini.webp` |
-| `perto_camera_do_jogo_gpt.webp` | **Game shot de perto, o escolhido** (Felipe, 09/10): tanque, chão e luz em detalhe. A cor bate com o dia aprovado (saturação 0,49 × 0,50, brilho 0,38 × 0,38, contraste 0,18 × 0,18). **Ignorar o desfoque em cima e embaixo** (efeito de miniatura, não existe na câmera de jogo); a câmera dele está um pouco mais baixa e mais perto que a do jogo | `docs/concept/look/` |
-| `perto_camera_do_jogo_gemini.webp` | Game shot de perto, a alternativa guardada: a altura de câmera do jogo e a mesma família das outras; o USA saiu com pintura azul grande (fora da regra) e menos detalhe | `docs/concept/look/` |
+**As cenas ficam em pastas por ambiente e hora (10/10):**
+- `desert_golden_hour/best/`: as melhores, as que "têm que ser isso";
+- `desert_golden_hour/more/`: as outras da golden hour;
+- `desert_night/`;
+- as pastas das horas e ambientes que ainda não têm imagem.
+
+O guia está em `docs/concept/scenes/README.md`.
+
+| Arquivo | O que é |
+|---|---|
+| `desert_golden_hour/best/day_game_cam.webp` | **Dia, golden hour, câmera do jogo: o alvo nº 1** |
+| `desert_golden_hour/more/day_tilt_cam.webp` | Dia, câmera deitada (cinematográfica) |
+| `desert_golden_hour/best/close_game_cam_gpt.webp` | **De perto, o escolhido:** tanque, chão e luz em detalhe. A cor bate com o dia aprovado (saturação 0,49 × 0,50, brilho 0,38 × 0,38, contraste 0,18 × 0,18). **Ignorar o desfoque em cima e embaixo** (efeito de miniatura, não existe na câmera de jogo); a câmera está um pouco mais baixa e mais perto que a do jogo |
+| `desert_golden_hour/more/close_game_cam_gemini.webp` | De perto, a alternativa guardada: a altura de câmera do jogo; o USA saiu com pintura azul grande (fora da regra) e menos detalhe |
+| `desert_night/night_game_cam.webp` | **Noite aprovada:** luar azul forte deixando o campo todo legível, mais as poças de luz laranja do fogo |
+| `desert_night/night_tilt_cam_gemini.webp` | Noite, câmera deitada |
+| `desert_golden_hour/best/usa_vs_china_gemini.webp`, `desert_golden_hour/best/china_vs_gla_gemini.webp` | **Leitura das facções sob a luz** |
 
 Também servem de referência:
 - `docs/concept/towns/`: todas as casas e cidades recortadas das cenas;
@@ -89,6 +99,9 @@ O efeito do FXLab (o fogo da carcaça) já lê a luz do mapa (`FXLab/Source/FXLa
 É um exemplo de efeito que se adapta a qualquer luz.
 
 ## 5. O que falta de referência (o Felipe decide se gera)
+
+Os mundos além do deserto (neve, floresta, selva, estepe, naval, cidades), as horas e os climas estão em
+`docs/concept/AMBIENTES.md`: cada pasta de cena vira uma receita de luz com o mesmo nome.
 
 - **Outras horas:** só existem golden hour e noite. Faltam meio-dia, amanhecer, nublado,
   tempestade de areia e chuva, se o jogo for tê-las.

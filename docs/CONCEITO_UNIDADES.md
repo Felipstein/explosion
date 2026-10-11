@@ -167,12 +167,12 @@ Caminhos relativos a `docs/concept/`.
 | Tanque básico China (ficha) | `units/china_mbt_sheet.webp` |
 | … com a cor do jogador | `units/china_mbt_player_color.webp` |
 | Tanque básico GLA (ficha, já com a cor do jogador) | `units/gla_mbt_sheet.webp` |
-| Cena oficial de dia, câmera de jogo | `scenes/day_game_cam.webp` |
-| Dia, câmera deitada | `scenes/day_tilt_cam.webp` |
-| Noite, câmera de jogo | `scenes/night_game_cam.webp` |
-| Noite, câmera deitada | `scenes/night_tilt_cam_gemini.webp` e `_gpt.webp` (o chinês favorito dele) |
+| Cena oficial de dia, câmera de jogo | `scenes/desert_golden_hour/best/day_game_cam.webp` |
+| Dia, câmera deitada | `scenes/desert_golden_hour/more/day_tilt_cam.webp` |
+| Noite, câmera de jogo | `scenes/desert_night/night_game_cam.webp` |
+| Noite, câmera deitada | `scenes/desert_night/night_tilt_cam_gemini.webp` e `_gpt.webp` (o chinês favorito dele) |
 | Os três tanques em cena | `scenes/usa_vs_china_*.webp`, `scenes/china_vs_gla_*.webp` |
-| **Foto do jogo** (tudo junto: fábricas, tanques, cor do jogador, explosão) | `scenes/game_shot_usa_vs_gla.webp` |
+| **Foto do jogo** (tudo junto: fábricas, tanques, cor do jogador, explosão) | `scenes/desert_golden_hour/more/game_shot_usa_vs_gla.webp` |
 | Teste da cor do jogador no tamanho do jogo | `units/usa_player_color_game_scale_test.jpg` |
 
 ---

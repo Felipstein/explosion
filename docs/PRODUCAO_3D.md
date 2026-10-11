@@ -163,7 +163,7 @@ Abre com:
 ## 10. O primeiro modelo: a casa do vilarejo do deserto
 
 Pra aprender: é feita de caixas e é a cara do deserto do primeiro mapa. **O alvo é a casa
-da nossa cena do jogo** (`docs/concept/scenes/day_game_cam.webp`), não uma casa nova: a
+da nossa cena do jogo** (`docs/concept/scenes/desert_golden_hour/best/day_game_cam.webp`), não uma casa nova: a
 ficha sai do Gemini/GPT com a cena anexada ("a casa da direita, com a caixinha no teto").
 Uma rodada com casa inventada (vigas, reboco descascado, escada externa, caixa-d'água)
 saiu bonita sozinha, mas não encaixava na cena (08/10).

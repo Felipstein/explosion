@@ -1,6 +1,6 @@
 # Construções civis do deserto (aprovadas 08/10/2026)
 
-Fichas tiradas da cena do jogo (`docs/concept/scenes/day_game_cam.webp`) com o prompt
+Fichas tiradas da cena do jogo (`docs/concept/scenes/desert_golden_hour/best/day_game_cam.webp`) com o prompt
 "keep exactly the same style… do not add anything that is not in the attached image"
 (`docs/PRODUCAO_3D.md` §10). Referência de todas as casas das cenas: `docs/concept/towns/`.
 

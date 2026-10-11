@@ -12,7 +12,7 @@ tanque inimigo um pouco mais distante acertar a mureta ao invés de você é eno
 um tiro de tanque é hit kill na mureta e ela vai desabar, mas você não toma dano, te dando uma
 vantagem."
 
-Veio da foto de perto do jogo (`docs/concept/look/perto_camera_do_jogo_gpt.webp`): o tanque do GLA
+Veio da foto de perto do jogo (`docs/concept/scenes/desert_golden_hour/best/close_game_cam_gpt.webp`): o tanque do GLA
 atirando de trás do muro de barro do quintal.
 
 **Como funcionaria:**
