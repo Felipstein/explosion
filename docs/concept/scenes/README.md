@@ -71,13 +71,14 @@ A folha com todos: `captures/concept/worlds_atlas.jpg`.
 | `forest_rain/` | Campo europeu sob chuva forte, lama e poças (USA × China) | aprovada; a chuva em risco fino não mata a leitura |
 | `jungle_monsoon/` | Monção na selva, estrada vermelha alagada, rio cheio (China × GLA) | aprovada |
 | `naval_storm/` | Tempestade no mar, farol, raio, ondas (USA × GLA) | aprovada; a naval mais "de jogo" |
+| `special_chaos/` | O caos: refinaria em chamas, chaminé caindo, gás tóxico verde, sol vermelho, as três facções ao mesmo tempo | Gemini: "gameplay mais próxima e realista, até que gostei" |
+| `special_base_assault/` | Ataque noturno dentro de uma base da USA (a China arromba o muro) | Só o GPT serve, e ainda não é final ("um pouco mais próximo do que dá pra ser"); o do Gemini virou maquete de brinquedo. A fábrica não é a nossa War Factory aprovada. |
 
 ## Ainda sem imagem aprovada (gerar)
 
 | Pasta | O que vai ter |
 |---|---|
 | `desert_noon/`, `desert_dawn/`, `desert_overcast/`, `desert_sandstorm/` | O deserto em outras horas |
-| `special_chaos/`, `special_nuke/`, `special_base_assault/` | Os momentos de arrepio (10/10): o campo de batalha em colapso, a explosão nuclear (a do deserto e a da "meia-noite que vira meio-dia" na cidade), o ataque dentro de uma base |
 
 Na fila (`docs/concept/AMBIENTES.md` §6): costa mediterrânea, desfiladeiro, passo alpino com represa,
 tundra com lago congelado, refinaria à noite; os climas; as outras horas de cada mundo aprovado.

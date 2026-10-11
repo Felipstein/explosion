@@ -140,6 +140,7 @@ O painel de montar do WorldForge continua com a luz leve.
   - naval (assalto à ilha e frota contra frota, "todas tops");
   - cidades: moderna ao meio-dia, europeia depois da chuva, asiática de neon à noite, porto no anoitecer.
   - chuva: campo sob chuva, monção na selva, tempestade no mar. **A chuva em risco fino, com céu cinza claro, não mata a leitura** (regra pro look).
+  - momentos especiais: o caos (refinaria em colapso, aprovado no Gemini) e o ataque à base (só o GPT serve, sem ser final). A nuke ficou de lado (11/10, nenhuma aprovada; notas em `captures/concept/42_environments/special_nuke/NOTAS.md`).
 - **O pedido mais forte do Felipe:** a **cidade de neon à noite rodando no jogo**, com a explosão acendendo o quarteirão ("eu quero muito isso rodando!").
 - **O que o motor tem de fazer pra chegar lá** (pra as sessões do look e das explosões):
   - a explosão como **fonte de luz** que acende o chão, as fachadas e as unidades em volta;
