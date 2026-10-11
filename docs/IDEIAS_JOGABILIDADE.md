@@ -193,4 +193,4 @@ no nosso jogo, pras pessoas precisarem ir pra luta!"
 **Decisão do Felipe (11/10):** "sim, pode ser; por enquanto a patente mesmo".
 - A patente é a chave da tecnologia grande (prédio **e** patente), por enquanto.
 - Os prédios neutros de tecnologia no mapa: sim.
-- Em aberto: o sucateio pra todas as facções ou só pro GLA.
+- O sucateio fica **só pro GLA**, como no ZH (11/10).
