@@ -105,6 +105,14 @@ feita no Gemini).
 
 ---
 
+### A base da USA (11/10/2026): ainda sem prédio novo aprovado
+
+Cena da base inteira, com a War Factory aprovada anexada (`captures/concept/43_usa_base/`, notas em `NOTAS.md`).
+O método da cena manteve a War Factory igual nos dois geradores, mas:
+- **O Felipe: "ambos bem broxantes".** Nenhum prédio novo (Centro de Comando, Supply Center, usina) saiu icônico como os do ZH. Ficam como arte conceitual; o desenho volta **bem depois**, com estudo próprio.
+- **O acabamento-alvo é o do Gemini:** texturas com cara de jogo. O GPT detalhou tanto que ficou ruim.
+- **Direção aprovada pras unidades:** o Chinook do Gemini e o Dozer do GPT.
+
 ## 4. Como fazer uma construção nova
 
 1. **Folha de ideias (GPT):** 4 designs, cada um com **um elemento-assinatura
