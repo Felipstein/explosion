@@ -174,6 +174,10 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 	{
 		B->LightCol.Add(Vec(V, 0));
 	}
+	// a curva de luz: a do WebGL saiu comprimida pelo expoente 0.44 do material de lá (ExplosionVolume.cpp
+	// LightCurveK); as dos conversores de VDB são físicas (Σ combustível·T⁴). As antigas sem o campo: pela origem
+	bool bPhysical = false;
+	B->bLightPhysical = J->TryGetBoolField(TEXT("lightPhysical"), bPhysical) ? bPhysical : !J->GetStringField(TEXT("source")).Contains(TEXT("reference/webgl"));
 	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("frameBricks")))
 	{
 		B->NumBricks.Add(int32(V->AsNumber()));

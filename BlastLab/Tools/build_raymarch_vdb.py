@@ -235,6 +235,7 @@ def main():
         'res': n, 'fuelRes': nf, 'macroRes': nm, 'frames': FRAMES,
         'duration': dur, 'curve': CURVE, 'domain': domain, 'velMax': VEL_MAX,
         'bounds': bounds, 'lightPos': light_pos, 'lightCol': light_col,
+        'lightPhysical': True,          # Σ combustível·T⁴ (a do WebGL vem comprimida pelo expoente 0.44)
     }
     hb = json.dumps(head, separators=(',', ':')).encode('utf-8')
     hb += b' ' * ((-len(hb)) % 16)

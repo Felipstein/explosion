@@ -37,6 +37,7 @@ namespace BlastRaymarch
 		TArray<int32> NumBricks;        // blocos com fumaça por quadro
 		TArray<int64> Offsets;          // começo de cada quadro em Data
 		int32 MaxBricks = 0;
+		bool bLightPhysical = false;    // a curva de luz já é física (as de VDB); a do WebGL vem comprimida (expoente 0.44)
 		TArray64<uint8> Data;
 
 		static TSharedPtr<FBakeData, ESPMode::ThreadSafe> Load(const FString& Path, FString& OutError);

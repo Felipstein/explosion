@@ -259,6 +259,8 @@ private:
 	void UpdateSignificance(float T);
 	void UpdateVolume(float T);
 	void UpdateLights(float T);
+	/** O nascimento da luz do clarão: com ou sem sombra, o raio e a altura (fixos até ela apagar), ou somada num vizinho. */
+	void BornFlash(float Tau, float Area, float Ambient);
 
 	// Importância (UpdateSignificance): fora da tela o volume não é desenhado
 	// nem atualizado, só os quadros seguem chegando; pequena na tela, menos
@@ -280,5 +282,10 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> StarMaterial;
 	/** O pico da luz gravada (o maior canal de LightColor), pra levar a curva à física. */
 	float BakeLightPeak = -1.0f;
+	/** A luz do clarão já nasceu; com sombra; somada na de um vizinho (sem luz própria); a área dos vizinhos somados nesta. */
+	bool bFlashBorn = false;
+	bool bFlashShadow = false;
+	bool bFlashMerged = false;
+	float FlashMergedArea = 0.0f;
 	virtual void BeginPlay() override;
 };

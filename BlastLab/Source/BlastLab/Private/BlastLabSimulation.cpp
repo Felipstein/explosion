@@ -105,10 +105,12 @@ const TArray<FBlastWeapon>& UBlastLabSimulation::Arsenal()
 	// a ordem do W54 do Davy Crockett): a coluna de ~38 m vira ~340 m e a
 	// sequência de 6 s dura ~54 s.
 	static const TArray<FBlastWeapon> Weapons = {
-		{ TEXT("granada"),  TEXT("Granada"),       0.05f,  TEXT("HE · 1 kg"),                false },
-		{ TEXT("morteiro"), TEXT("Morteiro"),      0.22f,  TEXT("HE · 5 kg"),                false },
+		// a granada, o morteiro e o paiol eram a Carga Pesada encolhida ou aumentada: cada tipo
+		// vai ganhar receita própria (10/10); até lá ficam fora do painel
+		{ TEXT("granada"),  TEXT("Granada"),       0.05f,  TEXT("HE · 1 kg"),                false, 0.0f, false, 0.0f, 1.0f, 1.0f, nullptr, nullptr, true },
+		{ TEXT("morteiro"), TEXT("Morteiro"),      0.22f,  TEXT("HE · 5 kg"),                false, 0.0f, false, 0.0f, 1.0f, 1.0f, nullptr, nullptr, true },
 		{ TEXT("tanque"),   TEXT("Carga Pesada"),  1.0f,   TEXT("HE · alto rendimento"),     false },
-		{ TEXT("deposito"), TEXT("Paiol"),         4.0f,   TEXT("detonação secundária"),     false },
+		{ TEXT("deposito"), TEXT("Paiol"),         4.0f,   TEXT("detonação secundária"),     false, 0.0f, false, 0.0f, 1.0f, 1.0f, nullptr, nullptr, true },
 		{ TEXT("aereo"),    TEXT("Ataque Aéreo"),  11.0f,  TEXT("bomba de demolição"),       false },
 		{ TEXT("nuclear"),  TEXT("Bomba Nuclear"), 729.0f, TEXT("nuclear tática · ~15 t"),   true  },
 		// A morte de tanque do vídeo do Veo (a cena herói, docs/CONCEITO_EXPLOSOES.md
@@ -125,8 +127,15 @@ const TArray<FBlastWeapon>& UBlastLabSimulation::Arsenal()
 		// pela sessão de arte em metros reais (pico de 9–10 m de largura, topo
 		// ~11 m, casca rachando a ~1.4 s): escala 1. A poeira sai do volume e
 		// vira camada própria. Sem o corpo, a Carga Pesada na proporção medida.
+		// a morte de tanque atual foi pro lixo (10/10, "muito ruim"): será refeita por partes no EmberGen
 		{ TEXT("tankdeath"), TEXT("Morte de Tanque"), 1.0f, TEXT("munição do tanque · bola de ~9 m"), false, 1.0f, true,
-			1.0f, 0.0f, 1.0f, TEXT("EgGasolineB"), TEXT("EgRing") },
+			1.0f, 0.0f, 1.0f, TEXT("EgGasolineB"), TEXT("EgRing"), true },
+		// A Carga Pesada simulada no EmberGen (sessão Projeto complexo, 10/10; 192³, 19.8 cm, a mesma
+		// especificação da do WebGL): o clarão curto e o rolo largo de fumaça preta e oleosa de uma
+		// explosão de combustível; o nome é a arma clássica do GLA. O corpo da Unreal (luz, clarão, chão)
+		// é o da Carga Pesada; o raymarch toca a gravação dela e a luz segue a curva dela.
+		{ TEXT("carrobomba"), TEXT("Carro-Bomba"), 1.0f, TEXT("simulada no EmberGen"), false, 0.0f, false, 0.0f, 1.0f, 1.0f,
+			nullptr, nullptr, false, TEXT("eg_charge") },
 	};
 	return Weapons;
 }
@@ -223,6 +232,10 @@ AExplosionVolume* UBlastLabSimulation::Detonate(const FVector& Ground, int32 Wea
 	if (E)
 	{
 		E->bNuclear = W.bNuclear;
+		if (W.RaymarchSource)
+		{
+			E->RaymarchSource = FName(W.RaymarchSource);
+		}
 	}
 	if (E && BallScale > 0.0f && !BodyMaterial)
 	{

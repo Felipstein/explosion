@@ -109,6 +109,40 @@ como passo próprio depois do TSR e antes do bloom:
   (192³, 19,8 cm) entrou na comparação (`eg_charge`, `captures/fonte_egc_*`): couve-flor
   nítida, mas mais larga e com o fogo apagando antes de 1 s. O Blender foi descartado;
   o Houdini foi pro backlog; o porte do simulador pra Unreal não por enquanto.
+- **Sombra do clarão e a luz da gravação (10/10, itens 1 e 2 da ordem do Felipe).**
+  A luz curta do clarão no chão ganhou sombra (sombras por campo de distância, decididas
+  no nascimento: `AExplosionVolume::BornFlash`). Teto por preset: ultra/alta 4 com sombra,
+  média 2, baixa 0 (e 0 sem `r.DistanceFieldShadowing`); no máximo 2 novas por quadro;
+  clarões a menos de 25 m × escala e 50 ms viram um só (somam a área); raio fixo no
+  nascimento, vida 4τ, a sem sombra com metade da força. A explosão com gravação própria
+  (`RaymarchSource`) acende a cena pela curva da gravação dela (`lightPos`/`lightCol`;
+  as curvas físicas, `lightPhysical`, não passam pela compressão da do WebGL): o chão
+  apaga junto com o fogo da do EmberGen.
+- **Arsenal (10/10, pedido do Felipe):** no painel só Carga Pesada, Ataque Aéreo, Bomba
+  Nuclear e o **Carro-Bomba** (a Carga Pesada simulada no EmberGen, `eg_charge`; o corpo
+  da Unreal é o da Carga Pesada). Granada, morteiro, paiol e morte de tanque ficam fora
+  (`FBlastWeapon::bHidden`): cada tipo ganha receita própria; a morte de tanque será
+  refeita no EmberGen.
+- **O peso do Carro-Bomba (10–11/10).** O Felipe sentiu o app travar com ele. Medido
+  (floresta, alta, 1600×900, `-ProfileGpu`), o custo é o DESENHO na placa, não o envio:
+  na câmera do jogo (100 m, 37,5°, `-Cam=100.4,0.8,0.6545,0,0.513`), 3 Cargas Pesadas
+  2,2 ms (6: 3,9 ms); 3 Carros-Bomba 192³ 22,6 ms (p90 33) com travadas de até 2 s
+  (o envio de até 37 MB por quadro gravado); a mesma gravação reduzida a 96³
+  (`Tools/brm2_downsample.py`, média na grandeza física) 7,4 ms sem travadas, e de cima
+  192 e 96 ficam praticamente iguais (`captures/ue/peso_rts_folha.jpg`, `peso_rts_recorte.jpg`).
+  O que sobra (3× a Carga Pesada) é a fumaça rala que enche a caixa de 38 m do chão
+  ao teto a partir de 2 s (a nossa sobe e a caixa encolhe), que também cobriria as
+  unidades. `-RmSwap=eg_charge:eg_charge_96` faz a arma tocar outro arquivo.
+  Pesquisa (CS2 por engenharia reversa: grade 32³ de ~51 cm + ruído; Nubis³: dado
+  grosso e denso + ruído, luz espalhada em quadros; AAA gastam 1–3 ms em volumétricos)
+  e segunda opinião deram o plano, nesta ordem: (1) gravações do jogo em 96³ e o
+  Carro-Bomba regravado no EmberGen com a fumaça subindo; (2) a gravação inteira na
+  placa ao carregar o mapa, sem envio durante a explosão; (3) medir por passe e
+  denso × esparso em 96³; (4) passo pelo voxel, longo na fumaça rala com limite pelo
+  máximo do macro, salto de vazio de volta com o túnel; (5) cache de luz só quando o
+  quadro gravado muda; (6) teto de custo por preset medido numa barragem, no p95;
+  (7) marcha em ¼ só na fumaça fria, conferida em vídeo. A floresta do laboratório
+  sozinha já fica em ~52 qps: a cena também precisa caber.
 - **Gravações em blocos esparsos (BRM2, 10/10).** Uma gravação fina densa não cabe
   no jogo (192³: 2,7 GB). `Tools/brm2.py`: blocos de 8³ só onde há fumaça (+1 voxel
   de borda, como o Sparse Volume Texture da Unreal e o NanoVDB), uma tabela por

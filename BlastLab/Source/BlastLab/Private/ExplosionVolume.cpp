@@ -4,12 +4,14 @@
 
 #include "BattleSmokeSim.h"
 #include "BlastLabEnvironment.h"
+#include "BlastLabPanel.h"
 #include "BlastLabSimulation.h"
 #include "Components/HeterogeneousVolumeComponent.h"
 #include "Components/MaterialBillboardComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/Texture.h"
 #include "ExplosionBake.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Scalability.h"
@@ -46,6 +48,10 @@ namespace
 	// 35 ms: com 60 ms (10/10) a luz sem sombra ficava à vista atravessando os objetos (o Felipe achou);
 	// mais longa só quando ela fizer sombra (a etapa 2 do clarão)
 	constexpr float FlashTau = 0.035f;
+	// a luz do clarão sem sombra (fora do orçamento ou no preset baixo) acende pela metade: o
+	// vazamento pelos prédios aparece menos (revisor de 10/10); clarões a menos de 25 m (× a
+	// escala) nascidos com até 50 ms de diferença viram uma luz só; a sombra dela quase dura (fonte de 50 cm)
+	constexpr float UnshadowedFlashGain = 0.5f, FlashMergeCm = 2500.0f, FlashMergeWindowS = 0.05f, FlashShadowSourceCm = 50.0f;
 	// O clarão tem luz própria (FlashLight) que some em ~0.15 s (§4d A4: "o
 	// chão volta ao normal até 0.15 s"); o alcance vai até 1% do ambiente.
 	// A estrela de raios: 0–0.13 s, ~30 m de lado na Carga Pesada (2–3× a bola
@@ -641,37 +647,117 @@ void AExplosionVolume::UpdateVolume(float T)
 	}
 }
 
+// A sombra do clarão (10/10, pesquisa + revisor): a luz do clarão faz sombra de
+// distance field (sem cache nem páginas, sem pico ao nascer; só malha rígida, que
+// é o que prédios e tanques são; Epic, "Distance Field Soft Shadows"), decidida
+// no nascimento e fixa até ela apagar. Orçamento por preset (as que já estão
+// acesas contam); no máximo 2 nascem com sombra por quadro. Clarões do mesmo
+// instante perto um do outro viram uma luz só, somando a área (uma barragem de 12
+// vira 2–3 luzes, todas com sombra).
+namespace FlashShadows
+{
+	struct FBorn
+	{
+		TWeakObjectPtr<AExplosionVolume> E;
+		FVector Pos;
+		double Time = 0.0;
+		bool bShadow = false;
+	};
+	TArray<FBorn> Recent;
+	uint64 Frame = 0;
+	int32 NewThisFrame = 0;
+
+	int32 Budget()
+	{
+		static const IConsoleVariable* DF = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DistanceFieldShadowing"));
+		if (DF && DF->GetInt() == 0)
+		{
+			return 0;           // sem distance field o flag deixaria a luz sem sombra nenhuma
+		}
+		switch (SBlastLabPanel::CurrentQuality)
+		{
+		case EBlastQuality::Ultra:
+		case EBlastQuality::High: return 4;
+		case EBlastQuality::Medium: return 2;
+		default: return 0;
+		}
+	}
+}
+
+void AExplosionVolume::BornFlash(float Tau, float Area, float Ambient)
+{
+	using namespace FlashShadows;
+	bFlashBorn = true;
+	const double Now = GetWorld()->GetTimeSeconds();
+	const FVector Here = GetActorLocation();
+	Recent.RemoveAll([&](const FBorn& B) { return !B.E.IsValid() || !B.E->FlashLight || (!B.E->FlashLight->IsVisible() && Now - B.Time > 0.1); });
+	// o vizinho que nasceu agora mesmo, perto: soma nele
+	const float MergeCm = FlashMergeCm * FMath::Max(SizeScale, 1.0f);
+	for (FBorn& B : Recent)
+	{
+		if (Now - B.Time < FlashMergeWindowS && FVector::DistSquared(B.Pos, Here) < MergeCm * MergeCm)
+		{
+			B.E->FlashMergedArea += Area;
+			bFlashMerged = true;
+			return;
+		}
+	}
+	if (GFrameCounter != Frame)
+	{
+		Frame = GFrameCounter;
+		NewThisFrame = 0;
+	}
+	int32 Active = 0;
+	for (const FBorn& B : Recent)
+	{
+		Active += B.bShadow && B.E->FlashLight->IsVisible() ? 1 : 0;
+	}
+	bFlashShadow = Active < Budget() && NewThisFrame < 2;
+	NewThisFrame += bFlashShadow ? 1 : 0;
+	// raio fixo: onde a luz um τ depois do pico cai abaixo de 1% do ambiente
+	const float Gain = bFlashShadow ? 1.0f : UnshadowedFlashGain;
+	const float Candela1 = FlashGain * Gain * FMath::Exp(-1.0f) * SceneLightFactor * LuxPerUnit * Area;
+	FlashLight->SetAttenuationRadius(FMath::Clamp(FMath::Sqrt(Candela1 / (LightCutoff * Ambient)) * 100.0f, MinSceneReachCm * SizeScale, 30000.0f * SizeScale));
+	if (FlashHeightCm > 0.0f)
+	{
+		// a escala do ator leva junto: em cm locais
+		FlashLight->SetRelativeLocation(FVector(0.0f, 0.0f, FlashHeightCm / FMath::Max(SizeScale, 0.01f)));
+	}
+	FlashLight->SetCastShadows(bFlashShadow);
+	FlashLight->SetUseRayTracedDistanceFieldShadows(bFlashShadow);
+	FlashLight->SetSourceRadius(bFlashShadow ? FlashShadowSourceCm * SizeScale : 0.0f);
+	Recent.Add({ this, Here, Now, bFlashShadow });
+}
+
 void AExplosionVolume::UpdateLights(float T)
 {
 	const bool bOn = bLights && Bake && Bake->LightColor.Num() && Age >= 0.0f && !IsFinished() && Opacity > 0.0f;
 	FireLight->SetVisibility(bOn);
 	FireLightVolume->SetVisibility(bOn);
 	const float Tau = FlashTauS > 0.0f ? FlashTauS : FlashTau;
-	const bool bFlashNow = bFlash && bOn && T < 8.0f * Tau;
+	const float Area = SizeScale * SizeScale;      // a luz vai com a área (W^(2/3))
+	const UBlastLabSimulation* Sim = UBlastLabSimulation::Get(this);
+	const float Ambient = FMath::Max(Sim ? Sim->AmbientLux() : 52000.0f, 1.0f);
+	// a luz do clarão vive 4τ (sobra 2%): nasce uma vez (sombra, raio e altura decididos ali) e só a
+	// força cai até ela apagar; mexer em raio ou sombra no meio recriaria a luz no render
+	const bool bFlashWindow = bFlash && bOn && T < 4.0f * Tau;
+	if (bFlashWindow && !bFlashBorn)
+	{
+		BornFlash(Tau, Area, Ambient);
+	}
+	const bool bFlashNow = bFlashWindow && !bFlashMerged;
 	FlashLight->SetVisibility(bFlashNow);
 	FlashStar->SetVisibility(bOn && T < StarEnd && StarMaterial != nullptr);
 	if (!bOn)
 	{
 		return;
 	}
-	const float Area = SizeScale * SizeScale;      // a luz vai com a área (W^(2/3))
-	const UBlastLabSimulation* Sim = UBlastLabSimulation::Get(this);
-	const float Ambient = FMath::Max(Sim ? Sim->AmbientLux() : 52000.0f, 1.0f);
 	if (bFlashNow)
 	{
-		// o clarão: pico no 1º quadro e queda de 35 ms (2–3 quadros), luz própria
-		const float FlashCandela = FlashGain * FMath::Exp(-T / Tau) * SceneLightFactor * LuxPerUnit * Area;
-		FlashLight->SetIntensity(FlashCandela);
-		if (FlashHeightCm > 0.0f)
-		{
-			// a escala do ator leva junto: em cm locais
-			FlashLight->SetRelativeLocation(FVector(0.0f, 0.0f, FlashHeightCm / FMath::Max(SizeScale, 0.01f)));
-		}
-		const float Reach = FMath::Clamp(FMath::Sqrt(FlashCandela / (LightCutoff * Ambient)) * 100.0f, MinSceneReachCm * SizeScale, 30000.0f * SizeScale);
-		if (FMath::Abs(FlashLight->AttenuationRadius - Reach) > 0.1f * Reach)
-		{
-			FlashLight->SetAttenuationRadius(Reach);
-		}
+		// pico no 1º quadro e queda de τ, com a área dos clarões vizinhos que entraram nesta luz;
+		// sem sombra ele acende mais fraco (o vazamento pelos prédios aparece menos)
+		const float Gain = bFlashShadow ? 1.0f : UnshadowedFlashGain;
+		FlashLight->SetIntensity(FlashGain * Gain * FMath::Exp(-T / Tau) * SceneLightFactor * LuxPerUnit * (Area + FlashMergedArea));
 	}
 	if (StarMaterial && T < StarEnd)
 	{
@@ -680,9 +766,23 @@ void AExplosionVolume::UpdateLights(float T)
 	int32 F0, F1;
 	float Alpha;
 	FramesAt(T, F0, F1, Alpha);
-	const FVector Position = FMath::Lerp(Bake->LightPosition[F0], Bake->LightPosition[F1], Alpha);
+	FVector Position = FMath::Lerp(Bake->LightPosition[F0], Bake->LightPosition[F1], Alpha);
 	FLinearColor Color = FMath::Lerp(Bake->LightColor[F0], Bake->LightColor[F1], Alpha);
-	// a curva da luz gravada levada à física (LightCurveK, acima)
+	// A luz da própria gravação (10/10, o Felipe: a do EmberGen acendia a cena com a curva da nossa):
+	// uma explosão que toca uma gravação de fora (RaymarchSource) acende pela curva dela, que os
+	// conversores de VDB já calculam (centro e força do fogo, Σ combustível·T⁴)
+	bool bPhysicalCurve = false;
+	{
+		const UBlastRaymarchSubsystem* RM = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+		FVector RecPos;
+		FLinearColor RecColor;
+		if (RM && RM->RecordedLight(this, T, RecPos, RecColor, bPhysicalCurve))
+		{
+			Position = RecPos;
+			Color = RecColor;
+		}
+	}
+	// a curva da luz gravada no WebGL levada à física (LightCurveK, acima); a de VDB já é
 	if (BakeLightPeak < 0.0f)
 	{
 		BakeLightPeak = 0.0f;
@@ -692,7 +792,7 @@ void AExplosionVolume::UpdateLights(float T)
 		}
 	}
 	const float RawPeak = FMath::Max3(Color.R, Color.G, Color.B);
-	if (BakeLightPeak > 0.0f && RawPeak > 0.0f)
+	if (!bPhysicalCurve && BakeLightPeak > 0.0f && RawPeak > 0.0f)
 	{
 		Color *= FMath::Pow(RawPeak / BakeLightPeak, LightCurveK - 1.0f);
 	}

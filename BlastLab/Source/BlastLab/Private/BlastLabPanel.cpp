@@ -131,9 +131,13 @@ void SBlastLabPanel::Construct(const FArguments& InArgs)
 	}
 
 	TSharedRef<SUniformGridPanel> Cards = SNew(SUniformGridPanel).SlotPadding(FMargin(2.0f));
-	for (int32 i = 0; i < UBlastLabSimulation::Arsenal().Num(); ++i)
+	for (int32 i = 0, n = 0; i < UBlastLabSimulation::Arsenal().Num(); ++i)
 	{
-		Cards->AddSlot(i % 2, i / 2)[WeaponCard(i)];
+		if (!UBlastLabSimulation::Arsenal()[i].bHidden)
+		{
+			Cards->AddSlot(n % 2, n / 2)[WeaponCard(i)];
+			++n;
+		}
 	}
 
 	TSharedRef<SWrapBox> PresetRow = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(3.0, 3.0));

@@ -34,6 +34,14 @@ public:
 	static const TArray<FName>& CompareSources();
 	static bool CompareMode() { return CompareSources().Num() > 0; }
 
+	/**
+	 * A luz do fogo gravada na própria gravação que esta explosão toca (RaymarchSource: a do
+	 * EmberGen etc.), no instante T da gravação: posição em cm locais e cor nas unidades do
+	 * WebGL. Falso pras de sempre (a luz delas é a do UExplosionBake, a mesma curva).
+	 * bPhysical: a curva já é física (os conversores de VDB), sem a compressão 0.44 do WebGL.
+	 */
+	bool RecordedLight(const AExplosionVolume* E, float T, FVector& OutPosCm, FLinearColor& OutColor, bool& bPhysical) const;
+
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 	virtual void Tick(float DeltaTime) override;

@@ -1,5 +1,7 @@
 #include "BlastRaymarchSubsystem.h"
 
+#include "BlastLabSimulation.h"
+
 #include "Engine/Texture.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
@@ -82,6 +84,24 @@ const TArray<FName>& UBlastRaymarchSubsystem::CompareSources()
 	return Names;
 }
 
+bool UBlastRaymarchSubsystem::RecordedLight(const AExplosionVolume* E, float T, FVector& OutPosCm, FLinearColor& OutColor, bool& bPhysical) const
+{
+	const int32* S = E && !E->RaymarchSource.IsNone() ? SourceOf.Find(E->RaymarchSource) : nullptr;
+	const BlastRaymarch::FBakeRef B = S && Sources.IsValidIndex(*S) ? Sources[*S] : nullptr;
+	if (!B || B->LightPos.Num() < B->Frames || B->LightCol.Num() < B->Frames)
+	{
+		return false;
+	}
+	const float F = B->FrameOfTime(T);
+	const int32 F0 = FMath::Clamp(FMath::FloorToInt32(F), 0, B->Frames - 1), F1 = FMath::Min(F0 + 1, B->Frames - 1);
+	const float A = FMath::Clamp(F - F0, 0.0f, 1.0f);
+	OutPosCm = FVector(FMath::Lerp(B->LightPos[F0], B->LightPos[F1], A)) * 100.0;
+	const FVector3f C = FMath::Lerp(B->LightCol[F0], B->LightCol[F1], A);
+	OutColor = FLinearColor(C.X, C.Y, C.Z);
+	bPhysical = B->bLightPhysical;
+	return true;
+}
+
 bool UBlastRaymarchSubsystem::Handles(const AExplosionVolume* E)
 {
 	const int32 V = VariantOf(E);
@@ -126,13 +146,30 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		Sources.Add(B128 ? B128 : LoadBake(FString::Printf(TEXT("r96_v%d.brm2"), V)));
 		GLoaded[V] = Sources[V].IsValid() && Noise != nullptr;
 	}
-	// as gêmeas da comparação lado a lado
+	// as gravações próprias das armas (a do EmberGen) e as gêmeas da comparação lado a lado
+	TArray<FName> Extra;
+	for (const FBlastWeapon& W : UBlastLabSimulation::Arsenal())
+	{
+		if (W.RaymarchSource)
+		{
+			Extra.AddUnique(FName(W.RaymarchSource));
+		}
+	}
 	for (const FName Cmp : CompareSources())
 	{
-		if (BlastRaymarch::FBakeRef B = LoadBake(Cmp.ToString() + TEXT(".brm2")))
+		Extra.AddUnique(Cmp);
+	}
+	// -RmSwap=eg_charge:eg_charge_96: a arma toca outro arquivo (medir uma versão da gravação no lugar da outra)
+	FString Swap, SwapFrom, SwapTo;
+	FParse::Value(FCommandLine::Get(), TEXT("RmSwap="), Swap, false);
+	Swap.Split(TEXT(":"), &SwapFrom, &SwapTo);
+	for (const FName Cmp : Extra)
+	{
+		const FString File = !SwapTo.IsEmpty() && Cmp == FName(*SwapFrom) ? SwapTo : Cmp.ToString();
+		if (BlastRaymarch::FBakeRef B = LoadBake(File + TEXT(".brm2")))
 		{
 			SourceOf.Add(Cmp, Sources.Add(B));
-			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: comparação com %s (%d³, %.1f m, %d quadros)"), *Cmp.ToString(), B->Res, B->Domain, B->Frames);
+			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: gravação %s ← %s (%d³, %.1f m, %d quadros)"), *Cmp.ToString(), *File, B->Res, B->Domain, B->Frames);
 		}
 	}
 	Extension = FSceneViewExtensions::NewExtension<FBlastRaymarchExtension>();

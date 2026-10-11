@@ -42,6 +42,13 @@ struct FBlastWeapon
 	const TCHAR* Body = nullptr;
 	/** A poeira levantada, um segundo volume no mesmo ponto (DA_/M_Explosion_<DustBody>, cor do chão). */
 	const TCHAR* DustBody = nullptr;
+	/** Fora do painel (10/10, o Felipe: por ora só Carga Pesada, Ataque Aéreo, Nuclear e a do EmberGen). */
+	bool bHidden = false;
+	/**
+	 * A gravação que o raymarch toca, se não for a Carga Pesada do WebGL:
+	 * Intermediate/Raymarch/<nome>.brm2 (Tools/build_raymarch_vdb.py). A luz da cena segue a curva dela.
+	 */
+	const TCHAR* RaymarchSource = nullptr;
 
 	/** Tamanho e duração escalam com W^(1/3). */
 	float SizeScale() const { return FMath::Pow(Yield, 1.0f / 3.0f); }
