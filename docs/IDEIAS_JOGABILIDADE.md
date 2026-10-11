@@ -194,3 +194,23 @@ no nosso jogo, pras pessoas precisarem ir pra luta!"
 - A patente é a chave da tecnologia grande (prédio **e** patente), por enquanto.
 - Os prédios neutros de tecnologia no mapa: sim.
 - O sucateio fica **só pro GLA**, como no ZH (11/10).
+
+---
+
+## 5. O engenheiro pesado: um Dozer mais poderoso (11/10/2026)
+
+**A ideia, nas palavras dele:** veio do caminhão 6×6 de engenharia da folha de ideias do Dozer
+(`captures/concept/43_usa_base/dozer_ideas_gpt.webp`, desenho 4): "pode ser uma versão de dozer mais poderoso que a
+gente pode pensar na jogabilidade pra deixar o negócio mais gostosinho".
+
+**Propostas da sessão de arte (pra discutir):**
+- **Ele é a unidade das obras da ideia 2:**
+  - o muro, o pátio e a estrada saem mais rápido com ele;
+  - só ele constrói a melhoria-assinatura do muro.
+- **Ele conserta o mundo:**
+  - tapa a cratera da estrada e do pátio;
+  - tira o escombro do muro caído;
+  - ergue a ponte destruída (se o mapa tiver).
+- **Ele monta a base avançada:** um posto de obra longe da base, que estende o alcance de construção enquanto ele estiver lá (casa com a estrada como alcance da base, ideia 2).
+- **Ele custa e exige:** precisa da patente (ideia 4), sai da War Factory, e é blindado o bastante pra trabalhar perto da luta.
+- **O Dozer comum continua** o construtor barato do começo, como no ZH.
