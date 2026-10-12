@@ -190,6 +190,18 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
 - **Na fábrica:** sumiu o risco que separa a grade de ações.
 - **No mapa de 8:** o relógio saiu um pouco à direita do centro, e a patente com 2 estrelas e meia.
 
+## 5b. A imagem-mestre não é necessária (12/10)
+
+O Felipe: "pra que ficar insistindo numa imagem coringa, a gente já tem tudo definido; os detalhes pequenos a gente corrige na hora da montagem e da criação".
+- `captures/concept/hud/hud_v10_master_tanks_gpt.webp` é a mais perto. Ela corrigiu os erros da v9 (o minimapa e os botões num painel sólido, o painel central encostando nos dois lados).
+- **A montagem segue este documento, não a imagem.** Na v10 ainda estão errados:
+  - a coluna de poderes com nome (o certo é só o ícone);
+  - o Attack Move sem a mira;
+  - o inimigo com rosto (o certo é o emblema);
+  - **o topo**: o Felipe disse que "não é como decidimos".
+- **Decidido por padrão:** melhoria em 1 casa; o ícone de vender é o da v9 (o prédio com o cifrão).
+- **Próximo:** o kit pro jogo (os ícones e as fotos recortados), feito pela arte. A montagem em Slate fica com a sessão do jogo, quando ela tiver vez.
+
 ## 6. Pendente
 
 - **A imagem final:** refazer os 5 estados com as correções da seção 5, e o Felipe aprova.
