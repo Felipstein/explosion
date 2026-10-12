@@ -28,6 +28,13 @@ O que fazia os prédios do ZH ficarem na memória não era realismo, era isto:
    trabalhando.
 5. **Uma cor forte de destaque** (a do jogador) nas peças certas, nunca o
    prédio inteiro pintado.
+6. **Assentado no chão, sem estrada nem pátio** (Felipe, 11/10). A base básica não tem piso: o pátio
+   e a estrada são uma mecânica que o jogador constrói (`docs/IDEIAS_JOGABILIDADE.md`, ideia 2).
+   Pra o prédio não parecer "plantado na areia":
+   - só a borda de fundação do próprio modelo (como o piso da War Factory aprovada);
+   - areia acumulada no pé das paredes;
+   - o chão em volta revolvido pelas esteiras e pneus;
+   - uma saia de poeira e sujeira subindo o primeiro metro da parede.
 
 Como erramos antes de acertar:
 
