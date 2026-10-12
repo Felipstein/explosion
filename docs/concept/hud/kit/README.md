@@ -19,9 +19,10 @@ Cada ícone já vem com o próprio quadrado do botão (metal escuro com rebites)
 | `settings.png`, `idle_units.png`, `beacon.png`, `chat.png` | Os botões do minimapa |
 | `orbital_lance.png`, `artillery_strike.png`, `paradrop.png`, `spy_drone.png` | A coluna de poderes (só o ícone; o nome vai na dica) |
 
-## Fotos das unidades
+## Fotos das unidades (`photos/`)
 
-(A recortar: o retrato largo do cartão e o quadrado do botão.)
+- **`photos/buttons/`** (256×256, 12/10): o veículo limpo sobre fundo escuro, no estilo das fotos da paleta aprovada (`../pieces/main_grid_palette.webp`). Arquivos: `usa_battle_tank`, `usa_dozer`, `usa_chinook`, `usa_war_factory`. Recortados de `captures/concept/hud/kit/photos_buttons_gpt.webp`.
+- **O retrato do cartão** (largo, ~2,4:1, como `../pieces/unit_card.webp`): ainda falta. As fotos quadradas não cabem na moldura larga sem cortar o veículo; precisa gerar no formato largo.
 
 ## Fonte
 
