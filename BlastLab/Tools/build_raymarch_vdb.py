@@ -24,7 +24,7 @@ Mantaflow (density, flame, temperature, velocity; o calor dele vai a ~1, com os
 fatores do convert_pyro_vdb.py pra ele: calor × 0.30 + chama × 1.3).
 
 Rodar (no Python do Blender, que traz openvdb e numpy):
-  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem]
+  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem] [fumaca|poeira]
 (a pasta do Mantaflow é a cache/data dele). Sai em BlastLab/Intermediate/Raymarch/<nome>.brm2 (em blocos,
 brm2.py; a densa intermediária .bin é apagada no fim).
 """
@@ -54,6 +54,10 @@ TEMP_K = float(argv[6]) if len(argv) > 6 else 1.0
 # a fuligem também (10/10): o fator que iguala a escuridão média da silhueta (Σ fuligem·ds de lado)
 # à da gravação do WebGL; a Carga Pesada do EmberGen (densidade até ~0,3) leva 3,6
 SOOT_FACTOR = float(argv[7]) if len(argv) > 7 else 0.35   # convert_pyro_vdb.py (07/10)
+# a camada (11/10): 'fumaca' (a densidade vira fuligem, a de sempre) ou 'poeira' (vira poeira, o canal b:
+# marrom-claro, albedo 0,78; o fator acima passa a ser o da poeira). A poeira do chão é uma camada à parte
+# da explosão, como nos AAA (Battlefront II, Back 4 Blood: pesquisa de 11/10), tocada junto no mesmo ponto
+LAYER = argv[8] if len(argv) > 8 else 'fumaca'
 CURVE = 1.4                 # quadros mais densos no começo (js/bake.js timeOfFrame)
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(TOOLS, '..'))
@@ -150,9 +154,11 @@ def main():
         g = read(path, ['density', flame, 'temperature'] + vel_names)
         out = []
         for name in ('density', flame, 'temperature'):
+            if g[name] is None:
+                out.append(np.zeros((n, n, n), dtype=np.float32))   # a poeira só tem densidade: sem caixa cheia à toa
+                continue
             a = np.zeros(dims, dtype=np.float32)
-            if g[name] is not None:
-                g[name].copyToArray(a, ijk=tuple(lo))
+            g[name].copyToArray(a, ijk=tuple(lo))
             out.append(cube(a))
         vel = None
         if len(vel_names) == 1 and g['velocity'] is not None:
@@ -182,17 +188,22 @@ def main():
             src = files[min(len(files) - 1, int(round(t * FPS)))]
             den, fl, heat, vel = fields(src)
             soot = np.clip(den * SOOT_FACTOR, 0.0, 4.0)
+            dust = np.zeros_like(soot)
+            if LAYER == 'poeira':
+                dust, soot = np.clip(den * SOOT_FACTOR, 0.0, 2.5), np.zeros_like(soot)
             temp = np.clip((heat * temp_heat + fl * temp_flame) * TEMP_K, 0.0, 1.6)
             fuel = np.clip(fl, 0.0, 1.0)
-            empty = (soot < 0.003) & (fuel < 0.05)
+            empty = (soot < 0.003) & (dust < 0.003) & (fuel < 0.05)
             soot[empty] = 0.0
+            dust[empty] = 0.0
             # transmitância até o topo, do centro do voxel (fluid.js shLight, y)
-            ext = SOOT_EXT * np.maximum(soot - ERODE_MEAN / (1.0 + soot * 9.0), 0.0)
+            ext = SOOT_EXT * np.maximum(soot - ERODE_MEAN / (1.0 + soot * 9.0), 0.0) + DUST_EXT * dust
             above = np.cumsum(ext[::-1], axis=0)[::-1] - 0.5 * ext
             sky = np.exp(-np.minimum(above * vm, 60.0))
             A = np.zeros((n, n, n, 4), dtype=np.uint8)
             A[..., 0] = np.round(np.sqrt(soot / 4.0) * 255)
             A[..., 1] = np.round(temp / 1.6 * 255)
+            A[..., 2] = np.round(np.sqrt(dust / 2.5) * 255)
             A[..., 3] = np.round(np.clip(sky, 0.0, 1.0) * 255)
             A[empty, :3] = 0
             F = np.full((nf, nf, nf, 4), 128, dtype=np.uint8)

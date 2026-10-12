@@ -143,6 +143,30 @@ como passo próprio depois do TSR e antes do bloom:
   quadro gravado muda; (6) teto de custo por preset medido numa barragem, no p95;
   (7) marcha em ¼ só na fumaça fria, conferida em vídeo. A floresta do laboratório
   sozinha já fica em ~52 qps: a cena também precisa caber.
+- **Rodar liso e lindo (11–12/10; o Felipe: "acho que dá pra aprovar").**
+  - **Sombra da luz do fogo por campo de distância** abaixo do ultra (a virtual redesenhava a
+    floresta inteira: 6 Cargas à noite 40,5 → 25,2 ms de placa; de dia igual à virtual; no baixa
+    sem sombra; `r.DFShadowQuality 2` no alta e na média). `-FireShadow=0|1|2` compara.
+  - **Bordas nas árvores:** a marcha guarda duas camadas por texel (até a cena mais perto e até a
+    mais longe do bloco, como as nuvens da Unreal, `CLOUD_MIN_AND_MAX_DEPTH`) e entra ANTES do TSR
+    (passo AfterDOF), com o raio tremido igual à profundidade; na junção, superfície única →
+    bilinear, senão o valor na profundidade do pixel entre as duas camadas (sem mistura com pesos,
+    que borrava). Sumiram o quadriculado e os pontinhos laranja; a marcha ficou mais barata (12
+    Cargas: 7,0 → 5,2 ms; em ¼ 2,2 ms). `-RmPass=1` volta pro lugar antigo.
+  - **O fogo creme era a luz do fogo espalhada na fumaça** (com a curva canal a canal da Unreal), não
+    a emissão: `FireGain` 1 → 0,25; emissão 0,62 → 0,42 com o expoente da luminância 0,44 → 0,6 (só o
+    miolo estoura, a borda fica laranja); emissão e luz do fogo × (exposição de referência ÷ a de
+    agora), como o EyeAdaptationInverse: à noite a câmera abre 46× e a bola estourava em branco. A luz
+    do fogo no chão leva metade dessa compensação (poças laranja à noite, `-FireLightExpo=`).
+  - **Carro-Bomba v5f** (EmberGen, `captures/embergen/carro_bomba_v5f.ember`): combustão avançada (o
+    combustível dura e queima devagar, a fumaça nasce da queima, emissor a 2600 K, fumaça some aos ~3 s):
+    o fogo vivo dentro da fumaça preta até ~1,2 s, o mais perto da arte até agora.
+  - **Poeira do chão como camada** (`Tools/brm2_merge_dust.py`, o canal de poeira na grade da própria
+    explosão; o conversor ganhou `poeira`): a gratuita da JangaFX (Grenade Dust Impact, CC0) espirra pra
+    um lado só, não serve; a nossa vai ser simulada no EmberGen (a 1ª saiu alta). `-RmBakeSuffix=_poeira`.
+  - Pesquisas (com fontes, nas conversas): CS2/Nubis/Frostbite/Horizon; sombra de luz de explosão; borda de
+    volume em meia resolução; fogo e tonemapper; explosão em camadas nos AAA; casca preta e poeira no
+    EmberGen.
 - **Gravações em blocos esparsos (BRM2, 10/10).** Uma gravação fina densa não cabe
   no jogo (192³: 2,7 GB). `Tools/brm2.py`: blocos de 8³ só onde há fumaça (+1 voxel
   de borda, como o Sparse Volume Texture da Unreal e o NanoVDB), uma tabela por

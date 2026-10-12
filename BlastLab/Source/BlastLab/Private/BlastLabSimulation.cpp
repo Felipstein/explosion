@@ -134,8 +134,17 @@ const TArray<FBlastWeapon>& UBlastLabSimulation::Arsenal()
 		// especificação da do WebGL): o clarão curto e o rolo largo de fumaça preta e oleosa de uma
 		// explosão de combustível; o nome é a arma clássica do GLA. O corpo da Unreal (luz, clarão, chão)
 		// é o da Carga Pesada; o raymarch toca a gravação dela e a luz segue a curva dela.
+		// Toca a versão 96³ (Tools/brm2_downsample.py): na câmera do jogo igual à 192³ e 3× mais
+		// barata (3 delas: 7,4 contra 22,6 ms, 11/10). Regravada no EmberGen em 11/10 (v4,
+		// captures/embergen/carro_bomba_v2.ember): o calor dura mais (dissipação 25 → 8 %/s, difusão
+		// 0,77 → 0,2 m/s) e a bola nasce do tamanho da física (esfera 3,2 → 2 m, pressão 40 → 20 %/s):
+		// a fumaça sobe e sai pelo alto em vez de virar névoa do chão ao teto; 3 delas 7,3 → 5,3 ms.
+		// v5f (11–12/10, captures/embergen/carro_bomba_v5f.ember): o fogo vivo dentro da fumaça preta até
+		// ~1,2 s, como a arte (combustão avançada: o combustível dura mais e queima devagar, a fumaça nasce
+		// da queima e não quente na fonte, emissor a 2600 K, a fumaça some aos ~3 s); o Felipe: "serve".
+		// As anteriores ficam pra comparar (-RmSwap=eg_cb_v5f_96:eg_cb_v4_96).
 		{ TEXT("carrobomba"), TEXT("Carro-Bomba"), 1.0f, TEXT("simulada no EmberGen"), false, 0.0f, false, 0.0f, 1.0f, 1.0f,
-			nullptr, nullptr, false, TEXT("eg_charge") },
+			nullptr, nullptr, false, TEXT("eg_cb_v5f_96") },
 	};
 	return Weapons;
 }

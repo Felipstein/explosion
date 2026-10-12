@@ -274,12 +274,14 @@ AExplosionVolume* ABlastLabController::DetonateAt(const FVector& Ground)
 	// a comparação lado a lado (-RmCompare=<gravação>[,...]): uma gêmea por
 	// gravação, 40 m à direita na tela, a seguinte 40 m à esquerda (e assim por
 	// diante), com o mesmo tamanho, relógio e semente; a do clique toca a gravação
-	// de sempre (a do WebGL, 96), cada gêmea a sua (r128_v0, eg_gasoline_x15, mf_charge...)
+	// da arma, cada gêmea a sua (r128_v0, eg_gasoline_x15, mf_charge...)
 	if (E && UBlastRaymarchSubsystem::CompareMode())
 	{
 		const FVector Right = PlayerCameraManager ? FRotationMatrix(PlayerCameraManager->GetCameraRotation()).GetScaledAxis(EAxis::Y) : FVector::RightVector;
 		const TArray<FName>& Sources = UBlastRaymarchSubsystem::CompareSources();
-		FString Msg = TEXT("COMPARACAO: onde voce clicou = a gravacao atual (WebGL 96)");
+		// a do clique toca a gravação da arma (a do WebGL; o Carro-Bomba, a dele)
+		FString Msg = FString::Printf(TEXT("COMPARACAO: onde voce clicou = %s"),
+			E->RaymarchSource.IsNone() ? TEXT("a gravacao do WebGL (96)") : *E->RaymarchSource.ToString());
 		for (int32 k = 0; k < Sources.Num(); ++k)
 		{
 			const double Side = (k % 2 ? -1.0 : 1.0) * (k / 2 + 1);

@@ -146,12 +146,21 @@ uint2 OutExtent;         // o tamanho da textura de saída
 float Jitter;
 Texture2D<float> SceneDepth;   // na resolução interna (antes do TSR)
 Texture2D<float4> SceneColorIn;
-Texture2D<float4> VolIn;       // meia resolução: radiância, transmitância
-Texture2D<float2> VolDepthIn;  // x = a distância da cena usada em cada texel, y = a profundidade média do volume
-Texture2D<float4> HistIn;      // o volume resolvido do quadro anterior (acúmulo temporal)
+// Duas camadas por texel da marcha (11/10): cada texel cobre vários pixels da cena, e nas folhas a
+// profundidade muda de pixel pra pixel. A marcha vai até a cena MAIS LONGE do bloco (a camada de trás)
+// e guarda o que já juntou ao passar pela MAIS PERTO (a da frente); cada pixel da tela usa a camada da
+// profundidade dele. Com uma camada só (a profundidade do centro do texel), o galho na frente da bola
+// pegava a fumaça de trás dele e o céu entre os galhos a de um galho: o quadriculado nas árvores.
+Texture2D<float4> VolIn;       // a camada de trás: radiância, transmitância
+Texture2D<float4> VolNearIn;   // a camada da frente
+Texture2D<float4> VolDepthIn;  // x = a cena mais longe do bloco, y = a profundidade média do volume, z = a cena mais perto do bloco
+Texture2D<float4> HistIn;      // as camadas resolvidas do quadro anterior (acúmulo temporal)
+Texture2D<float4> HistNearIn;
 RWTexture2D<float4> VolOut;
-RWTexture2D<float2> VolDepthOut;
+RWTexture2D<float4> VolNearOut;
+RWTexture2D<float4> VolDepthOut;
 RWTexture2D<float4> HistOut;
+RWTexture2D<float4> HistNearOut;
 float4x4 CamToPrevClip;  // ponto relativo à câmera (m) → clip do quadro anterior (sem jitter)
 float HistValid;         // 0 = sem história (primeiro quadro, mudou o tamanho, pulou quadro)
 float HistAlpha;         // peso do quadro novo
@@ -600,9 +609,34 @@ float SceneDist(float2 UvOut, float3 Rd)
 	return ViewZ / max(dot(Rd, CameraForward), 1e-4);
 }
 
-float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float DepthSum, inout float DepthW)
+// a cena mais perto e a mais longe (m, ao longo de Rd) entre os pixels da profundidade que o texel Id
+// da marcha cobre (a profundidade está na resolução interna; até 5×5 por texel no ¼ da resolução)
+void SceneDistRange(uint2 Id, float3 Rd, out float DNear, out float DFar)
+{
+	const float2 Px = View.ViewSizeAndInvSize.xy / float2(HalfSize);
+	const int2 P0 = int2(floor(View.ViewRectMin.xy + float2(Id) * Px));
+	const int2 P1 = max(int2(ceil(View.ViewRectMin.xy + float2(Id + 1) * Px)) - 1, P0);
+	const int2 PMax = int2(View.ViewRectMin.xy + View.ViewSizeAndInvSize.xy) - 1;
+	float ZMin = 1.0, ZMax = 0.0;   // DeviceZ invertido: maior = mais perto
+	for (int Y = P0.y; Y <= min(P1.y, P0.y + 4); Y++)
+	{
+		for (int X = P0.x; X <= min(P1.x, P0.x + 4); X++)
+		{
+			const float Z = SceneDepth.Load(int3(min(int2(X, Y), PMax), 0));
+			ZMin = min(ZMin, Z);
+			ZMax = max(ZMax, Z);
+		}
+	}
+	const float K = 1.0 / max(dot(Rd, CameraForward), 1e-4);
+	DFar = ZMin <= 1e-7 ? 1e9 : ConvertFromDeviceZ(ZMin) * 0.01 * K;
+	DNear = ZMax <= 1e-7 ? 1e9 : ConvertFromDeviceZ(ZMax) * 0.01 * K;
+}
+
+// a marcha de uma explosão até TScene (a camada de trás); Near volta com o que ela juntou até TNear (a da frente)
+float4 MarchInstance(int I, float3 Rd, float TScene, float TNear, float2 Pix, inout float DepthSum, inout float DepthW, out float4 Near)
 {
 	UseRes(I);
+	Near = float4(0.0, 0.0, 0.0, 1.0);
 	float2 Hit = RayBox(0.0, Rd, InstBoxMin[I].xyz, InstBoxMax[I].xyz);
 	Hit.x = max(Hit.x, NearM);
 	Hit.y = min(Hit.y, TScene);
@@ -610,6 +644,7 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float Dep
 	{
 		return float4(0.0, 0.0, 0.0, 1.0);
 	}
+	bool bNear = false;
 	const int Steps = int(InstMisc[I].w);
 	const float Span = Hit.y - Hit.x;
 	const float Dt = Span / float(Steps);
@@ -629,6 +664,12 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float Dep
 	float Tr[4] = { 1.0, 1.0, 1.0, 1.0 };
 	for (int S = 0; S < MAX_STEPS; S++)
 	{
+		// passou pela cena mais perto do bloco: o que juntou até aqui é a camada da frente
+		if (!bNear && T >= TNear)
+		{
+			bNear = true;
+			Near = float4(L, Tr[0]);
+		}
 		if (S >= Steps || T >= Hit.y || Tr[0] < 0.004)
 		{
 			break;
@@ -723,6 +764,10 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float2 Pix, inout float Dep
 		}
 		T += Dt;
 	}
+	if (!bNear)
+	{
+		Near = float4(L, Tr[0]);   // acabou antes da cena da frente: a frente vê o volume inteiro
+	}
 	return float4(L, Tr[0]);
 }
 
@@ -736,23 +781,29 @@ void MainMarch(uint2 Id : SV_DispatchThreadID)
 	InitLights();
 	const float2 Uv = (float2(Id) + 0.5) / float2(HalfSize);
 	const float3 Rd = RayDir(Uv);
-	const float TScene = SceneDist(Uv, Rd);
-	float3 L = 0.0;
-	float Tr = 1.0;
+	float TNear, TScene;
+	SceneDistRange(Id, Rd, TNear, TScene);
+	float3 L = 0.0, Ln = 0.0;
+	float Tr = 1.0, Trn = 1.0;
 	float DepthSum = 0.0, DepthW = 0.0;
-	// da mais perto pra mais longe: a de trás é vista pela transmitância da da frente
+	// da mais perto pra mais longe: a de trás é vista pela transmitância da da frente (nas duas camadas;
+	// a da frente é uma parte do caminho da de trás, então ela é a última a ficar opaca)
 	for (int I = 0; I < NumInstances; I++)
 	{
-		const float4 R = MarchInstance(I, Rd, TScene, float2(Id), DepthSum, DepthW);
+		float4 Rn;
+		const float4 R = MarchInstance(I, Rd, TScene, TNear, float2(Id), DepthSum, DepthW, Rn);
 		L += Tr * R.rgb;
 		Tr *= R.a;
-		if (Tr < 0.004)
+		Ln += Trn * Rn.rgb;
+		Trn *= Rn.a;
+		if (Trn < 0.004)
 		{
 			break;
 		}
 	}
 	VolOut[Id] = float4(L, Tr);
-	VolDepthOut[Id] = float2(min(TScene, 1e8), DepthW > 1e-4 ? DepthSum / DepthW : min(TScene, 1e4));
+	VolNearOut[Id] = float4(Ln, Trn);
+	VolDepthOut[Id] = float4(min(TScene, 1e8), DepthW > 1e-4 ? DepthSum / DepthW : min(TScene, 1e4), min(TNear, 1e8), 0.0);
 }
 
 // =============================================================================
@@ -772,20 +823,25 @@ void MainTemporal(uint2 Id : SV_DispatchThreadID)
 	{
 		return;
 	}
-	const float4 Cur = VolIn[Id];
+	// as duas camadas, cada uma presa na vizinhança dela, levadas pelo mesmo movimento
+	const float4 Cur = VolIn[Id], CurN = VolNearIn[Id];
 	if (HistValid < 0.5)
 	{
 		HistOut[Id] = Cur;
+		HistNearOut[Id] = CurN;
 		return;
 	}
-	float4 Mn = Cur, Mx = Cur;
+	float4 Mn = Cur, Mx = Cur, MnN = CurN, MxN = CurN;
 	[unroll] for (int Dy = -1; Dy <= 1; Dy++)
 	{
 		[unroll] for (int Dx = -1; Dx <= 1; Dx++)
 		{
-			const float4 V = VolIn[clamp(int2(Id) + int2(Dx, Dy), 0, int2(HalfSize) - 1)];
+			const int2 Q = clamp(int2(Id) + int2(Dx, Dy), 0, int2(HalfSize) - 1);
+			const float4 V = VolIn[Q], VN = VolNearIn[Q];
 			Mn = min(Mn, V);
 			Mx = max(Mx, V);
+			MnN = min(MnN, VN);
+			MxN = max(MxN, VN);
 		}
 	}
 	const float2 Uv = (float2(Id) + 0.5) / float2(HalfSize);
@@ -795,15 +851,19 @@ void MainTemporal(uint2 Id : SV_DispatchThreadID)
 	if (C.w <= 1e-4 || any(PrevUv < 0.0) || any(PrevUv > 1.0))
 	{
 		HistOut[Id] = Cur;
+		HistNearOut[Id] = CurN;
 		return;
 	}
-	const float4 H = clamp(HistIn.SampleLevel(LinearClamp, PrevUv, 0), Mn, Mx);
-	HistOut[Id] = lerp(H, Cur, HistAlpha);
+	HistOut[Id] = lerp(clamp(HistIn.SampleLevel(LinearClamp, PrevUv, 0), Mn, Mx), Cur, HistAlpha);
+	HistNearOut[Id] = lerp(clamp(HistNearIn.SampleLevel(LinearClamp, PrevUv, 0), MnN, MxN), CurN, HistAlpha);
 }
 
 // =============================================================================
-// composite (volumeRender.js shComposite): upsample pela profundidade mais
-// parecida entre os 4 texels de meia resolução, bilinear onde concordam
+// composite (volumeRender.js shComposite): upsample pela profundidade, agora com
+// as duas camadas de cada um dos 4 texels vizinhos (8 candidatos, cada um com a
+// profundidade até onde marchou): o peso bilinear vezes o quanto a profundidade
+// dele concorda com a do pixel (upsample bilateral, Kopf et al. 2007; a escolha
+// pela profundidade mais parecida, Bavoil/NVIDIA). Nenhum concorda: o mais parecido.
 
 [numthreads(8, 8, 1)]
 void MainComposite(uint2 Id : SV_DispatchThreadID)
@@ -820,21 +880,47 @@ void MainComposite(uint2 Id : SV_DispatchThreadID)
 		const float DRef = min(SceneDist(Uv, Rd), 1e8);
 		const float2 Hp = Uv * float2(HalfSize) - 0.5;
 		const int2 Base = int2(floor(Hp));
-		float4 Vol = float4(0.0, 0.0, 0.0, 1.0);
-		float Best = 1e20;
+		// A regra das nuvens da Unreal (VolumetricRenderTarget.usf, CLOUD_MIN_AND_MAX_DEPTH, 12/10):
+		// onde a cena dos 4 texels vizinhos é uma superfície só (a faixa entre a mais perto e a mais longe
+		// cabe na tolerância), bilinear macio; senão, NENHUMA mistura: o pixel pega o candidato (dos 8: 4
+		// texels × frente/trás) cuja profundidade mais se parece com a dele. A mistura com pesos (Kopf
+		// 2007) que havia aqui borrava o fogo por cima das folhas (o Felipe, 12/10: "só deu uma
+		// suavizada"); o Pesce (BO3) já avisava que o peso de semelhança dá artefato na borda.
+		// E a profundidade do pixel cai DENTRO da faixa de um texel (uma folha no meio da bola, na
+		// floresta): o valor dele nessa profundidade é a interpolação entre a camada da frente e a de trás
+		// (a integral só cresce entre as duas; a pesquisa de 11/10: "interpolar luz e transmitância na
+		// profundidade real do pixel"). Sem isso a folha meio dentro do fogo tinha de escolher "fogo todo"
+		// ou "nenhum": quadradinhos laranja nas copas. Entre os texels que contêm a profundidade, bilinear.
+		const float Tol = max(DRef * 0.06, 0.25);
+		const float2 Fr = Hp - float2(Base);
+		float4 BestV = float4(0.0, 0.0, 0.0, 1.0), Acc = 0.0;
+		float Best = 1e20, DMin = 1e20, DMax = 0.0, WSum = 0.0;
 		[unroll] for (int K = 0; K < 4; K++)
 		{
 			const int2 Q = clamp(Base + int2(K & 1, K >> 1), 0, int2(HalfSize) - 1);
-			const float Diff = abs(VolDepthIn[Q].x - DRef);
-			if (Diff < Best)
+			const float4 D = VolDepthIn[Q];
+			DMin = min(DMin, D.z);
+			DMax = max(DMax, D.x);
+			const float4 Vn = VolNearIn[Q], Vf = VolIn[Q];
+			// dentro da faixa [perto, longe] deste texel (com a tolerância): o valor na profundidade do pixel
+			if (DRef > D.z - Tol && DRef < D.x + Tol)
 			{
-				Best = Diff;
-				Vol = VolIn[Q];
+				const float A = saturate((DRef - D.z) / max(D.x - D.z, 1e-3));
+				const float Wb = ((K & 1) ? Fr.x : 1.0 - Fr.x) * ((K >> 1) ? Fr.y : 1.0 - Fr.y) + 1e-4;
+				Acc += Wb * lerp(Vn, Vf, A);
+				WSum += Wb;
+			}
+			[unroll] for (int Ly = 0; Ly < 2; Ly++)
+			{
+				const float Diff = abs((Ly == 0 ? D.x : D.z) - DRef);
+				if (Diff < Best)
+				{
+					Best = Diff;
+					BestV = Ly == 0 ? Vf : Vn;
+				}
 			}
 		}
-		const float4 Vb = VolIn.SampleLevel(LinearClamp, Uv, 0);
-		const float Agree = 1.0 - saturate(Best / max(DRef * 0.06, 0.25));
-		Vol = lerp(Vol, Vb, Agree);
+		const float4 Vol = DMax - DMin < Tol ? VolIn.SampleLevel(LinearClamp, Uv, 0) : (WSum > 0.0 ? Acc / WSum : BestV);
 		Scene.rgb = Scene.rgb * Vol.a + Vol.rgb * (RadianceScale * View.PreExposure);
 	}
 	SceneColorOut[Id] = Scene;

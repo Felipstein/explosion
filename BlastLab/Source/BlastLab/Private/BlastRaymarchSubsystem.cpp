@@ -141,9 +141,11 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	SourceOf.Reset();
 	// a de 128 como padrão (-RmBake=128): as três variantes tocam a v0 dela
 	const BlastRaymarch::FBakeRef B128 = BakeRes() == 128 ? LoadBake(TEXT("r128_v0.brm2")) : nullptr;
+	// -RmBakeSuffix=_poeira: as variantes com a camada de poeira misturada (Tools/brm2_merge_dust.py, 11/10)
+	static const FString BakeSuffix = [] { FString S; FParse::Value(FCommandLine::Get(), TEXT("RmBakeSuffix="), S); return S; }();
 	for (int32 V = 0; V < 3; ++V)
 	{
-		Sources.Add(B128 ? B128 : LoadBake(FString::Printf(TEXT("r96_v%d.brm2"), V)));
+		Sources.Add(B128 ? B128 : LoadBake(FString::Printf(TEXT("r96_v%d%s.brm2"), V, *BakeSuffix)));
 		GLoaded[V] = Sources[V].IsValid() && Noise != nullptr;
 	}
 	// as gravações próprias das armas (a do EmberGen) e as gêmeas da comparação lado a lado

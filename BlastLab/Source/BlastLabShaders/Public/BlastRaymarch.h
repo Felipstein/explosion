@@ -140,7 +140,7 @@ private:
 	uint32 FrameCounter = 0;
 
 	// acúmulo temporal: o volume resolvido do quadro anterior e a câmera dele
-	TRefCountPtr<IPooledRenderTarget> History;
+	TRefCountPtr<IPooledRenderTarget> History, HistoryNear;   // as duas camadas da marcha (a de trás e a da frente)
 	FIntPoint HistorySize = FIntPoint::ZeroValue;
 	FMatrix PrevWorldToClip = FMatrix::Identity;
 	uint32 HistoryFrame = 0;

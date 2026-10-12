@@ -738,6 +738,18 @@ void AExplosionVolume::UpdateLights(float T)
 	const float Area = SizeScale * SizeScale;      // a luz vai com a área (W^(2/3))
 	const UBlastLabSimulation* Sim = UBlastLabSimulation::Get(this);
 	const float Ambient = FMath::Max(Sim ? Sim->AmbientLux() : 52000.0f, 1.0f);
+	// A luz do fogo no cenário com metade da compensação da exposição (12/10): à noite a câmera abre ~46×
+	// (EV100 12,58 → 7,05) e o chão em volta acendia creme estourado; a noite aprovada
+	// (docs/concept/scenes/desert_night) tem poças de luz laranja, mais fortes que de dia, mas sem estourar.
+	// A emissão da bola usa a compensação inteira (BlastRaymarch.cpp); a luz no chão, a raiz dela
+	// (× (2^(EV−12,58))^0,5: à noite 0,15, o chão fica ~7× mais aceso na tela que de dia). -FireLightExpo=
+	static TWeakObjectPtr<const ABlastLabEnvironment> EnvCache;
+	if (!EnvCache.IsValid())
+	{
+		EnvCache = ABlastLabEnvironment::Find(this);
+	}
+	static const float FireLightExpoK = [] { float K = 0.5f; FParse::Value(FCommandLine::Get(), TEXT("-FireLightExpo="), K); return K; }();
+	const float ExpoComp = EnvCache.IsValid() ? FMath::Clamp(FMath::Pow(FMath::Exp2(EnvCache->TargetEV100() - 12.58f), FireLightExpoK), 1.0f / 64.0f, 4.0f) : 1.0f;
 	// a luz do clarão vive 4τ (sobra 2%): nasce uma vez (sombra, raio e altura decididos ali) e só a
 	// força cai até ela apagar; mexer em raio ou sombra no meio recriaria a luz no render
 	const bool bFlashWindow = bFlash && bOn && T < 4.0f * Tau;
@@ -757,7 +769,7 @@ void AExplosionVolume::UpdateLights(float T)
 		// pico no 1º quadro e queda de τ, com a área dos clarões vizinhos que entraram nesta luz;
 		// sem sombra ele acende mais fraco (o vazamento pelos prédios aparece menos)
 		const float Gain = bFlashShadow ? 1.0f : UnshadowedFlashGain;
-		FlashLight->SetIntensity(FlashGain * Gain * FMath::Exp(-T / Tau) * SceneLightFactor * LuxPerUnit * (Area + FlashMergedArea));
+		FlashLight->SetIntensity(FlashGain * Gain * FMath::Exp(-T / Tau) * SceneLightFactor * LuxPerUnit * (Area + FlashMergedArea) * ExpoComp);
 	}
 	if (StarMaterial && T < StarEnd)
 	{
@@ -818,7 +830,7 @@ void AExplosionVolume::UpdateLights(float T)
 		MID->SetVectorParameterValue(TEXT("FireFill"), Color * (VolumeCandela * FillFraction));
 		MID->SetScalarParameterValue(TEXT("SizeScale"), SizeScale);
 	}
-	const float SceneCandela = Peak * SceneLightFactor * LuxPerUnit * Area * LightScale;
+	const float SceneCandela = Peak * SceneLightFactor * LuxPerUnit * Area * LightScale * ExpoComp;
 	for (UPointLightComponent* L : { FireLight.Get(), FireLightVolume.Get() })
 	{
 		const bool bVolume = L == FireLightVolume;
@@ -869,9 +881,29 @@ void AExplosionVolume::UpdateLights(float T)
 		// sem ela. 12 Cargas Pesadas eram 12 luzes pontuais com sombra virtual: ~8 ms
 		// de luzes + ~8 ms de sombras e uma travada de 2.4 s quando nasciam (08/10,
 		// deserto, captures/ue/RM_barr12)
+		// Abaixo do ultra a sombra da do cenário é por campo de distância (11/10), como a do clarão:
+		// a virtual de uma luz pontual é um cubo de 6 mapas que redesenha a floresta inteira (Nanite)
+		// quando a luz nasce ou anda; medido na floresta com 6 Cargas Pesadas no 1º segundo, ~8 ms de
+		// ShadowDepths + ~5 ms de projeção, mais que o raymarch inteiro (2,9 ms). O campo de distância
+		// não depende dos triângulos (Epic, "Distance Field Soft Shadows"; Wright, SIGGRAPH 2015:
+		// 30–50% mais barato que o cubo) e não segue o vento das folhas, que de cima em 1–3 s não se vê.
+		// Medido à noite (6 Cargas, quadro inteiro da placa): virtual 40,5 ms, campo de distância
+		// 30,8 ms, com 32 passos (r.DFShadowQuality 2, DefaultScalability) 27,0 ms, sem sombra 22,5 ms;
+		// de dia a sombra fica igual à virtual (captures/ue/sombra_fogo_*.jpg). No baixa a Unreal
+		// desliga o campo de distância (r.DistanceFieldShadowing 0): lá o fogo fica sem sombra, não
+		// volta pra virtual. Medição: -FireShadow=0 sem sombra, 1 virtual, 2 campo de distância.
+		static const int32 ForcedFireShadow = [] { int32 M = -1; FParse::Value(FCommandLine::Get(), TEXT("-FireShadow="), M); return M; }();
+		static const IConsoleVariable* DFShadowing = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DistanceFieldShadowing"));
+		const bool bDFAvailable = !DFShadowing || DFShadowing->GetInt() != 0;
+		const bool bDistanceField = !bVolume && (ForcedFireShadow == 2 || (ForcedFireShadow < 0 && !FullDetail() && bDFAvailable));
+		if (L->bUseRayTracedDistanceFieldShadows != bDistanceField)
+		{
+			L->SetUseRayTracedDistanceFieldShadows(bDistanceField);   // recria a luz: só na troca de preset
+		}
 		const bool bShadow = bVolume ? bOnScreen
-			: (bSceneShadow && bShadowRegionOnScreen && ScreenFrac > MinShadowFraction && (LoopPeriod <= 0.0f || FullDetail() || Age < LoopShadowS)
-				&& (FullDetail() || LodFloor == 0));
+			: (ForcedFireShadow != 0 && (ForcedFireShadow > 0 || FullDetail() || bDFAvailable)
+				&& bSceneShadow && bShadowRegionOnScreen && ScreenFrac > MinShadowFraction
+				&& (LoopPeriod <= 0.0f || FullDetail() || Age < LoopShadowS) && (FullDetail() || LodFloor == 0));
 		if (L->CastShadows != bShadow)
 		{
 			L->SetCastShadows(bShadow);
