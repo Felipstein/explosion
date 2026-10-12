@@ -218,6 +218,17 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - máscara da cor: a lona do cesto é a maior área vista de cima; passar no teste de visão de longe;
   - texturas de dano e queimado, a carcaça e as antenas.
 - [ ] **Se for USA contra GLA:** tanque GLA e Oficina GLA em 3D (as fichas já estão aprovadas).
+- [ ] **Fatia vertical do deserto** (proposta da arte, aceita pelo Felipe em 12/10). Entra **quando as frentes atuais das outras sessões terminarem**, sem atropelar ninguém.
+  - **O que é:** um canto do mapa do deserto, na câmera do jogo, **lado a lado com `docs/concept/scenes/desert_golden_hour/best/town_battle_top_gemini.webp`**. É a prova de que o jogo chega nos game shots.
+  - **Os modelos:** provisórios **caprichados e fiéis às fichas aprovadas** (War Factory, tanque, Dozer e Chinook da USA, mais o tanque e a picape do GLA). Quina dura, a proporção e a silhueta da ficha, material com desgaste, o pó subindo de baixo pra cima e a cor do time. Os finais do Felipe substituem depois, sem mudar o lugar.
+    - **Por que provisório serve:** na câmera de 61 m o tanque tem ~120 px. No teste do Dozer, o rebite virou granulado e o que leu foi a silhueta, a proporção, o material e a luz (`captures/concept/43_usa_base/dozer_game_scale_test.jpg`).
+  - **Quem faz cada peça:**
+    - os provisórios: quem já faz (o jogo, com `Game/Tools/blender_provisional.py`; o look, com o tanque);
+    - a conferência: a arte, com a folha "provisório × ficha" na câmera do jogo;
+    - o chão: o WorldForge (alvo `close_ground_light_gemini.webp`);
+    - a luz: o look (a receita das sete);
+    - uma explosão: as sessões de explosão.
+  - **A prova:** a folha lado a lado e um vídeo. O Felipe julga.
 - [~] **Fogo da carcaça do FXLab** ("o melhor até agora", salvo; **não aprovado como final**, Felipe 09/10), levar pro jogo:
   - no deserto com a luz do jogo ficou igual ao aprovado (14:39 de 08/10; o Felipe: "fez um ótimo trabalho com o fogo"); parados: o vídeo no deserto e a medida com 1+1 e 3+3;
   - ciclo de vida: pico, cauda e apagar (hoje solta sem fim);
