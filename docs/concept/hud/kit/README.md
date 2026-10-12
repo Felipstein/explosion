@@ -22,7 +22,7 @@ Cada ícone já vem com o próprio quadrado do botão (metal escuro com rebites)
 ## Fotos das unidades (`photos/`)
 
 - **`photos/buttons/`** (256×256, 12/10): o veículo limpo sobre fundo escuro, no estilo das fotos da paleta aprovada (`../pieces/main_grid_palette.webp`). Arquivos: `usa_battle_tank`, `usa_dozer`, `usa_chinook`, `usa_war_factory`. Recortados de `captures/concept/hud/kit/photos_buttons_gpt.webp`.
-- **O retrato do cartão** (largo, ~2,4:1, como `../pieces/unit_card.webp`): ainda falta. As fotos quadradas não cabem na moldura larga sem cortar o veículo; precisa gerar no formato largo.
+- **`photos/card/`** (728×300, 12/10): o retrato largo do cartão, no estilo de `../pieces/unit_card.webp` (foto, deserto desfocado, luz neutra). A foto quadrada do GPT foi estendida pros lados pelo Gemini (originais em `captures/concept/hud/kit/card_gemini/`). Arquivos: os mesmos quatro nomes.
 
 ## Fonte
 
