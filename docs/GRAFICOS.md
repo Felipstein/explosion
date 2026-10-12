@@ -45,8 +45,8 @@ O guia está em `docs/concept/scenes/README.md`.
 
 | Arquivo | O que é |
 |---|---|
-| `desert_golden_hour/best/day_game_cam.webp` | **Dia, golden hour, câmera do jogo: o alvo nº 1** |
-| `desert_golden_hour/more/day_tilt_cam.webp` | Dia, câmera deitada (cinematográfica) |
+| `desert_golden_hour/best/` (as sete escolhidas pelo Felipe em 11/10, ver `scenes/README.md`) | **Dia, golden hour: o alvo de beleza e de gameplay.** A `day_game_cam` fica como base medida da maquete, não como a favorita |
+| `desert_golden_hour/best/day_tilt_cam.webp` | Dia, câmera deitada (cinematográfica) |
 | `desert_golden_hour/best/close_game_cam_gpt.webp` | **De perto, o escolhido:** tanque, chão e luz em detalhe. A cor bate com o dia aprovado (saturação 0,49 × 0,50, brilho 0,38 × 0,38, contraste 0,18 × 0,18). **Ignorar o desfoque em cima e embaixo** (efeito de miniatura, não existe na câmera de jogo); a câmera está um pouco mais baixa e mais perto que a do jogo |
 | `desert_golden_hour/more/close_game_cam_gemini.webp` | De perto, a alternativa guardada: a altura de câmera do jogo; o USA saiu com pintura azul grande (fora da regra) e menos detalhe |
 | `desert_night/night_game_cam.webp` | **Noite aprovada:** luar azul forte deixando o campo todo legível, mais as poças de luz laranja do fogo |

@@ -22,15 +22,25 @@ A arquitetura inteira (peças, caminho de cada imagem, onde cada mundo encaixa n
 
 ## Deserto, golden hour (`desert_golden_hour/`)
 
-### `best/`: as melhores, as que "têm que ser isso"
+### `best/`: as perfeitas, escolhidas pelo Felipe (11/10)
 
-| Arquivo | Por que está aqui |
+"As perfeitas pra mim são essas." As sete juntas são o alvo de beleza e de gameplay do deserto dourado.
+
+| Arquivo | O que é |
 |---|---|
-| `day_game_cam.webp` | **O alvo nº 1.** Câmera do jogo, sol baixo e quente, sombras longas, poeira no ar; a cidade de adobe, a USA clara contra o GLA. É a base da maquete do look (`Game/Tools/look_compare.py`). |
-| `usa_vs_china_gemini.webp` | **A atmosfera mais forte:** a poeira acesa pelo sol, o chão rachado, a luz contra; a USA clara e a China escura se separam bem. |
-| `china_vs_gla_gemini.webp` | **A leitura das facções:** China escura e GLA cor de areia no mesmo chão, cada uma lendo pelo claro e escuro. Luz limpa, sombra nítida. |
-| `close_game_cam_gpt.webp` | **De perto, o escolhido pelo Felipe:** o detalhe de tanque, chão e muro. A cor bate com `day_game_cam` (medido). Ignorar o desfoque de miniatura em cima e embaixo; a câmera está mais baixa e mais perto que a do jogo. |
-| `close_ground_light_gemini.webp` | **De perto, o alvo de luz e de chão (11/10):** o tanque da USA ao lado de um Dozer (o Dozer é só rascunho, não é alvo de modelo). O Felipe: "parece muito a nossa gameplay final". Pro look, **a luz**: sol baixo, sombra longa e macia, cor desbotada. Pro WorldForge, **o chão**: areia batida com marca de esteira e pneu, seixos e moitas secas espalhados, e a ondulação suave do vento. |
+| `town_battle_top_gemini.webp` | A batalha na cidade vista do alto: a mais "de jogo", com muitas unidades, helicópteros, barricadas de sucata e a explosão no meio |
+| `road_battle_gemini.webp` | Na estrada: os tanques da USA (com os painéis azuis antigos) contra as picapes vermelhas |
+| `road_town_battle_gemini.webp` | Na estrada junto da vila: helicópteros, picape capotando, luz contra |
+| `day_tilt_cam.webp` | A câmera deitada, com o sol no horizonte |
+| `street_battle_usa_china_gemini.webp` | A briga de rua USA × China, com crateras e carcaças |
+| `china_vs_gla_gemini.webp` | China × GLA no cruzamento: a leitura das facções |
+| `usa_vs_china_gemini.webp` | USA × China na rua de adobe, com a poeira acesa pelo sol |
+
+Duas observações:
+- Nas mais antigas, a pintura das unidades é a velha (USA bege com painéis azuis grandes, picapes vermelhas). **Vale a luz, a câmera e o clima, não a pintura**, que é a de `docs/concept/units/`.
+- **`day_game_cam.webp` não é uma das perfeitas.** Fica aqui só porque a maquete do look foi medida em cima dela (a câmera, a planta das casas, o tanque); mudar o arquivo de lugar quebraria as ferramentas da sessão de gráficos.
+
+`close_game_cam_gpt.webp` e `close_ground_light_gemini.webp` são os alvos **de perto** (o detalhe do tanque e do chão, e a luz).
 
 ### `more/`: as outras da golden hour (apoio)
 
@@ -38,7 +48,6 @@ A arquitetura inteira (peças, caminho de cada imagem, onde cada mundo encaixa n
 |---|---|
 | `three_factions_gemini.webp` | As 3 facções juntas na câmera do jogo, com as cores de hoje. A luz é mais lavada que a das melhores. |
 | `close_game_cam_gemini.webp` | De perto, a alternativa: a altura de câmera do jogo; o USA com pintura azul grande, fora da regra. |
-| `day_tilt_cam.webp` | Câmera deitada (cinematográfica), com sol no horizonte e helicópteros. |
 | `usa_vs_china_gpt.webp`, `china_vs_gla_gpt.webp` | As mesmas batalhas no GPT: mais detalhe, mais "fantasia" (saturado e dramático). |
 | `game_shot_usa_vs_gla.webp` | A "foto do jogo" antiga (GPT), com fábricas, cor do jogador e explosão. **Não é alvo de luz:** fantasia demais. |
 

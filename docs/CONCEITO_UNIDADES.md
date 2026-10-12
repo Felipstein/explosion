@@ -170,7 +170,7 @@ Caminhos relativos a `docs/concept/`.
 | Chinook da USA, o coletor de suprimento (ficha do Gemini, 11/10; nasceu da cena da base, `captures/concept/43_usa_base/`) | `units/usa_chinook_sheet.webp` |
 | Dozer da USA, o construtor: trator de mineração blindado, com a esteira em triângulo e o braço robótico dobrado (Gemini, 11/10; rodadas em `captures/concept/43_usa_base/`) | `units/usa_dozer.webp` (a ficha vem depois) |
 | Cena oficial de dia, câmera de jogo | `scenes/desert_golden_hour/best/day_game_cam.webp` |
-| Dia, câmera deitada | `scenes/desert_golden_hour/more/day_tilt_cam.webp` |
+| Dia, câmera deitada | `scenes/desert_golden_hour/best/day_tilt_cam.webp` |
 | Noite, câmera de jogo | `scenes/desert_night/night_game_cam.webp` |
 | Noite, câmera deitada | `scenes/desert_night/night_tilt_cam_gemini.webp` e `_gpt.webp` (o chinês favorito dele) |
 | Os três tanques em cena | `scenes/desert_golden_hour/*/usa_vs_china_*.webp`, `scenes/desert_golden_hour/*/china_vs_gla_*.webp` |
