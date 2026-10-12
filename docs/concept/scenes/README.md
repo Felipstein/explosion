@@ -71,6 +71,7 @@ A folha com todos: `captures/concept/worlds_atlas.jpg`.
 | `forest_golden_hour/` | Campo e vila europeus depois da chuva, igreja de pedra (USA × GLA) | "sensacional" |
 | `jungle_golden_hour/` | Selva com rio, palafitas, briga pela ponte (USA × China) | "gostei gostei" |
 | `steppe_golden_hour/` | Estepe dourada com campo de petróleo (China × GLA) | "sensacional", mas laranja demais; ver em outras horas. O GLA se mistura no capim. |
+| `snow_morning/` | Vila russa numa manhã fria e limpa, sem golden hour (USA × China) | escolhida pra bancada de teste do look (12/10) |
 | `snow_golden_hour/` | Vila russa, sol baixo de inverno, sombra azul longa (China × GLA) | "sensacional": a neve voando no tiro, a poeira de neve onde o tanque anda |
 | `snow_snowfall/` | Neve caindo, vila em chamas, tudo mais cinza (USA × China) | "mais foda ainda": os fogos nas casas |
 | `naval_day/` | `naval_island`: assalto anfíbio à ilha (China × GLA); `naval_fleets`: frota contra frota, porta-aviões, encouraçado, submarino (USA × China) | "todas tops": os tiros caindo na água, os barcos atirando |
