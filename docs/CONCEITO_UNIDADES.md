@@ -168,6 +168,7 @@ Caminhos relativos a `docs/concept/`.
 | … com a cor do jogador | `units/china_mbt_player_color.webp` |
 | Tanque básico GLA (ficha, já com a cor do jogador) | `units/gla_mbt_sheet.webp` |
 | Chinook da USA, o coletor de suprimento (ficha do Gemini, 11/10; nasceu da cena da base, `captures/concept/43_usa_base/`) | `units/usa_chinook_sheet.webp` |
+| Dozer da USA, o construtor: trator de mineração blindado, com a esteira em triângulo e o braço robótico dobrado (Gemini, 11/10; rodadas em `captures/concept/43_usa_base/`) | `units/usa_dozer.webp` (a ficha vem depois) |
 | Cena oficial de dia, câmera de jogo | `scenes/desert_golden_hour/best/day_game_cam.webp` |
 | Dia, câmera deitada | `scenes/desert_golden_hour/more/day_tilt_cam.webp` |
 | Noite, câmera de jogo | `scenes/desert_night/night_game_cam.webp` |
