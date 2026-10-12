@@ -182,11 +182,18 @@ Caminhos relativos a `docs/concept/`.
 ## 5. Como fazer uma unidade nova
 
 1. **Folha de ideias (GPT):** 4 designs lado a lado, na câmera do jogo, com
-   a ficha aprovada de outra unidade da mesma facção anexada (pra manter
-   pintura e linguagem). Cada design com uma ideia diferente, todos dentro da
+   a ficha do tanque da facção anexada (a raiz, pra manter pintura e
+   linguagem; nunca uma peça derivada, pra não encadear e derivar). Cada design com uma ideia diferente, todos dentro da
    bíblia da facção.
 2. **O Felipe escolhe** (às vezes mistura dois). Pergunte o que ele gostou de
    cada um; não decida por ele.
+2b. **Teste em gameplay ANTES da ficha** (pedido do Felipe, 11/10: "precisamos testar antes em
+   gameplay pra ver se os detalhes demais não atrapalham"):
+   - a escolhida no tamanho do jogo, ao lado do tanque: zoom perto (~210 px), câmera padrão
+     (~120 px) e afastado (~65 px), com redução BOX;
+   - uma cena de jogo curta na câmera alta, com ela trabalhando no meio das outras unidades.
+   - Pergunta: a silhueta e a cor do time leem? O detalhe vira ruído que atrapalha?
+   - Só depois disso vem a ficha.
 3. **Ficha técnica:** a escolhida em 5 vistas (de cima, câmera do jogo,
    frente, lado, trás), fundo cinza neutro. Confira se as vistas batem entre si
    e se a vista de cima está limpa.
