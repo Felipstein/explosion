@@ -78,6 +78,7 @@ A folha com todos: `captures/concept/worlds_atlas.jpg`.
 | `city_europe_after_rain/` | Praça da catedral gótica, pontes de pedra, chão molhado (China × GLA) | aprovada |
 | `city_asia_night/` | Avenida de neon sob o metrô elevado, a explosão acendendo o quarteirão (USA × China) | **"que foda essa explosão, os efeitos, a luz, eu quero muito isso rodando!"** |
 | `city_port_dusk/` | Porto de contêineres, guindastes, hora azul (USA × GLA) | aprovada |
+| `forest_morning/` | Floresta de manhã, sem golden hour: luz branca, céu azul, campo de flores amarelas, ponte de pedra (China × GLA) | `more/forest_morning_tilt_gemini`: "até que gostei", mas a câmera saiu deitada; fica como a câmera deitada desse mundo. **`best/forest_morning_gpt`: a câmera do jogo, feita pelo GPT em cima da do Gemini, "diferenciada"** (o método das duas etapas, `CONCEITO_UNIDADES.md` §8) |
 | `forest_rain/` | Campo europeu sob chuva forte, lama e poças (USA × China) | aprovada; a chuva em risco fino não mata a leitura |
 | `jungle_monsoon/` | Monção na selva, estrada vermelha alagada, rio cheio (China × GLA) | aprovada |
 | `naval_storm/` | Tempestade no mar, farol, raio, ondas (USA × GLA) | aprovada; a naval mais "de jogo" |

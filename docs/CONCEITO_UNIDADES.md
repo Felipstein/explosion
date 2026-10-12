@@ -297,6 +297,11 @@ longe = im.resize((w // 10, h // 10), Image.BOX).resize((w, h), Image.BILINEAR)
 
 ## 8. Cenas e atmosfera (pra mostrar as unidades)
 
+- **O método das duas etapas (descoberto pelo Felipe em 12/10, na floresta de manhã):**
+  1. **O Gemini faz a gameplay:** a câmera alta, a escala de RTS, a composição.
+  2. **O GPT melhora em cima dela:** anexar a imagem do Gemini ao GPT ("same battle... only the camera changes" ou "keep the composition") mantém o game shot e soma a beleza do GPT.
+  - **Sozinho, sem imagem,** o GPT faz arte conceitual bonita, mas viaja (câmera baixa, fantasia). **Ancorado no Gemini,** sai "melhorias incríveis que mantêm a arte de gameplay".
+  - Exemplo: `scenes/forest_morning/best/forest_morning_gpt.webp`, feita a partir de `scenes/forest_morning/more/forest_morning_tilt_gemini.webp`.
 - **Imagem de teste é diferente de imagem bonita.** Folha de cor ou cena com
   três facções serve pra decidir e não encanta (ele "broxou" numa delas). Pra
   beleza: prompt curto, uma história só (dois exércitos e uma explosão), cores
