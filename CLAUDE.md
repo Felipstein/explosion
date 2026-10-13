@@ -77,3 +77,12 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   qualquer Unreal com janela ou render na placa, siga a trava `captures/.gpu_lock`
   (`docs/GPU.md`): se existe e tem menos de 20 min, espere; senão crie, use e apague.
   As sessões se coordenam por ela, sem pedir ao Felipe pra liberar.
+- **Seu status no Hub (o painel do Felipe, `Hub/`).** Ele acompanha todas as sessões por
+  um painel que lê as filas sozinho; a única coisa que você faz é dizer o que está fazendo,
+  numa linha, **ao começar uma tarefa, ao mudar de tarefa e ao terminar**:
+  `powershell -NoProfile -File C:\Users\luisf\explosion\Hub\hub.ps1 set "<seu nome>" "<o que está fazendo>"`
+  Estados, com `-State`: `working` (padrão), `waiting` (esperando outra sessão ou a placa),
+  `review` (pronto pro Felipe ver), `blocked` (travada), `done` (terminou). `-Note "..."` pra um
+  detalhe curto. Seu nome é o curto da tabela em `~/.hub/names.json` (BlastLab, Jogo, Look,
+  WorldForge, Arte, Explosões, Hub); se você usa outro nome no `-Owner` das filas, passe
+  `-Alias "<esse nome>"` uma vez. As filas da placa e do EmberGen não mudam em nada.

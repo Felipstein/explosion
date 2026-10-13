@@ -115,6 +115,7 @@ function glyphOf(c, s) {
   const st = c.status?.state;
   if (st === 'blocked') return G.alert(C.bad);
   if (st === 'review') return G.check(C.you);
+  if (st === 'done') return G.check(C.idle);
   if (s === 'working') return G.full(C.ok);
   if (s === 'waiting') return G.half(C.wait);
   return G.ring(C.idle);

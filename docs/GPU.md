@@ -5,6 +5,10 @@ caiu (DXGI_ERROR_DEVICE_HUNG). Várias sessões do Claude usam a placa (BlastLab
 WorldForge, o jogo RTSGame, renders no Blender). O Felipe não fica no meio liberando ("pode
 abrir agora", "espera"): a trava abaixo resolve sozinha, sem mensagem entre as sessões.
 
+**O painel (13/10):** o Felipe vê as duas filas, quem está com a placa e o EmberGen, e o que cada sessão está
+fazendo em `Hub/` (`powershell -File Hub\hub.ps1 open`). O painel só lê os tickets: nada aqui muda. O que cada
+sessão escreve é o status dela (`hub.ps1 set "<nome>" "<tarefa>"`, regra no `CLAUDE.md`).
+
 ## A fila (preferida, desde 08/10)
 
 `C:\Users\luisf\.gpu_queue\gpu_queue.ps1` (fora do repositório, comum a todas as sessões; o cabeçalho explica):

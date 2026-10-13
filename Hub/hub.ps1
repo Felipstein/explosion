@@ -1,4 +1,4 @@
-<#
+﻿<#
 hub.ps1: o status da sua sessão no painel (Hub). Uma linha, sem clicar em nada. As filas da placa e do EmberGen
 continuam exatamente como são (gpu_queue.ps1 / ember_queue.ps1): o painel lê os tickets delas sozinho.
 
@@ -27,6 +27,7 @@ param(
     [int]$Port = 8140
 )
 
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $Dir = Join-Path $env:USERPROFILE '.hub\sessions'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Python = 'C:\Users\luisf\AppData\Local\Programs\Python\Python312\python.exe'
@@ -43,7 +44,14 @@ function Save($rec) {
     $f = Join-Path $Dir ((Slug $rec.session) + '.json')
     [IO.File]::WriteAllText($f, ($rec | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
 }
-function Server-Up { try { (Invoke-WebRequest "http://localhost:$Port/state" -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { $false } }
+# Sem proxy: o Invoke-WebRequest passava pelo proxy do sistema e dizia "fora do ar" com o servidor no ar.
+function Get-State {
+    $wc = New-Object Net.WebClient; $wc.Proxy = $null; $wc.Encoding = [Text.Encoding]::UTF8
+    try { $wc.DownloadString("http://127.0.0.1:$Port/state") | ConvertFrom-Json } catch { $null } finally { $wc.Dispose() }
+}
+function Server-Up { $s = Get-State; [bool]($s -and $s.ready) }
+# "-File" não separa a vírgula em lista: -Alias FXLab,HUDLab chega como um nome só (achado pela sessão da Arte, 13/10).
+$Alias = @($Alias | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 switch ($Action) {
     'set' {
@@ -79,8 +87,8 @@ switch ($Action) {
         "$Session · apagado do painel"
     }
     'status' {
-        if (Server-Up) {
-            $s = Invoke-RestMethod "http://localhost:$Port/state"
+        $s = Get-State
+        if ($s -and $s.ready) {
             foreach ($pair in @(@('unreal', 'Placa'), @('ember', 'EmberGen'))) {
                 $q = $s.($pair[0]); $label = $pair[1]
                 if ($q.holder) { "{0}: em uso por {1} ({2}) há {3:N0} min" -f $label, $q.holder.session, $q.holder.task, $q.holder.since_min } else { "${label}: livre" }
@@ -90,7 +98,7 @@ switch ($Action) {
             foreach ($c in $s.sessions) {
                 $st = if ($c.status) { $c.status.state } else { '-' }
                 $doing = if ($c.status) { $c.status.doing } elseif ($c.unreal) { $c.unreal.task } elseif ($c.ember) { $c.ember.task } else { '' }
-                "   [{0}] {1}: {2}" -f $st, $c.title, $doing
+                "   [{0}] {1}: {2}" -f $st, $(if ($c.name) { $c.name } else { $c.title }), $doing
             }
         } else {
             "painel fora do ar (hub.ps1 open sobe). Status gravados:"
