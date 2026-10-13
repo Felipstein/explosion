@@ -436,7 +436,12 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8140
     COLLECTOR.start()
-    srv = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    ThreadingHTTPServer.allow_reuse_address = False   # no Windows, "reuse" deixava dois servidores na mesma porta
+    try:
+        srv = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    except OSError:
+        print(f'já tem um Hub na porta {port}; não subi outro.')
+        sys.exit(0)
     print(f'Hub em http://localhost:{port}  (Ctrl+C fecha)')
     try:
         srv.serve_forever()

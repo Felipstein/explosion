@@ -24,6 +24,10 @@
   .group { margin-top: 20px; }
   .group h2 { margin: 0; height: 30px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--sec); border-bottom: 1px solid var(--line); }
   .group h2 span { color: var(--ter); font-weight: 500; }
+  .legend { margin-left: auto; display: flex; gap: 16px; font-size: 11.5px; font-weight: 500; color: var(--ter); letter-spacing: .1px; }
+  .legend i { font-style: normal; display: inline-flex; align-items: center; gap: 6px; }
+  .legend .g { width: 11px; height: 11px; }
+  @media (max-width: 600px) { .legend { display: none; } }
   .row { display: grid; grid-template-columns: 22px 150px 1fr auto; gap: 12px; align-items: center; min-height: 42px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .row .g { width: 14px; height: 14px; display: block; }
   .row .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -133,17 +137,19 @@ let quietOpen = false, footOpen = false;
 function render(s) {
   const g = s.gpu;
   $('vram').textContent = g && g.mem_used / g.mem_total > 0.85 ? `placa cheia · ${(g.mem_used / 1024).toFixed(1)} / ${(g.mem_total / 1024).toFixed(0)} GB` : '';
-  $('res').innerHTML = resourceRows(s.unreal, 'Placa') + resourceRows(s.ember, 'EmberGen');
+  const L = (items) => `<span class="legend">${items.map(([g, t]) => `<i>${g}${t}</i>`).join('')}</span>`;
+  $('res').innerHTML = `<h2>Placa e EmberGen ${L([[G.full(C.ok), 'em uso'], [G.full(C.wait), 'sem renovar'], [G.ring(C.idle), 'livre']])}</h2>` +
+    resourceRows(s.unreal, 'Placa') + resourceRows(s.ember, 'EmberGen');
 
   const all = (s.sessions || []).map(c => [c, stateOf(c)]);
   const you = all.filter(([, st]) => st === 'you');
-  $('you').innerHTML = `<h2>Pra você <span>${you.length || ''}</span></h2>` +
+  $('you').innerHTML = `<h2>Pra você <span>${you.length || ''}</span>${L([[G.check(C.you), 'pra aprovar'], [G.alert(C.bad), 'travada']])}</h2>` +
     (you.length ? you.map(([c, st]) => sessionRow(c, st)).join('')
                 : `<div class="row none">${G.ring(C.idle)}<span class="name">nada pra você</span><span class="doing"></span><span class="meta"></span></div>`);
 
   const live = all.filter(([, st]) => st === 'working' || st === 'waiting' || st === 'idle');
   const quiet = all.filter(([, st]) => st === 'quiet');
-  $('sessions').innerHTML = `<h2>Sessões <span>${live.length}</span></h2>` + live.map(([c, st]) => sessionRow(c, st)).join('') +
+  $('sessions').innerHTML = `<h2>Sessões <span>${live.length}</span>${L([[G.full(C.ok), 'trabalhando'], [G.half(C.wait), 'esperando'], [G.ring(C.idle), 'parada'], [G.check(C.idle), 'terminou']])}</h2>` + live.map(([c, st]) => sessionRow(c, st)).join('') +
     (quiet.length ? `<div class="more" id="more">${G.ring(C.idle)}<span>${quiet.length} ${quiet.length === 1 ? 'quieta' : 'quietas'}</span></div><div class="quiet-list ${quietOpen ? 'open' : ''}" id="quiet">${quiet.map(([c, st]) => sessionRow(c, st)).join('')}</div>` : '');
   $('more')?.addEventListener('click', () => { quietOpen = !quietOpen; $('quiet').classList.toggle('open', quietOpen); });
 
