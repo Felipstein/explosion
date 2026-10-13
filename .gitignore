@@ -44,6 +44,11 @@ Game/Content/Units/
 Game/Content/Explosions/
 Game/Content/Materials/M_FireGlare.uasset
 Game/Content/Materials/M_FlashStar.uasset
+# A maquete do look (sessão de gráficos): tudo refeito por Game/Tools/look.ps1 build
+Game/Content/LookLab/
+# Os plugins do jogo: o que a engine regenera
+Game/Plugins/*/Binaries/
+Game/Plugins/*/Intermediate/
 
 # FXLab (Unreal): o laboratório de explosões. Tudo do Content/ é refeito por
 # FXLab/Tools/fxlab.ps1 setup (cozimento de captures/, tanque e areia de fora do git)

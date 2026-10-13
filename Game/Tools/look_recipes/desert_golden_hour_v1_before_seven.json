@@ -1,0 +1,99 @@
+{
+  "name": "desert_golden_hour_v1_before_seven",
+  "about": "A receita do deserto dourado como estava antes do ajuste às sete perfeitas (11/10), guardada a pedido do Felipe (\"não quero perder o jeito que está hoje\"). Pra voltar: copiar por cima do desert_golden_hour.json.",
+  "sun": {
+    "elevation": 20.0,
+    "from_camera": -42.0,
+    "lux": 120000.0,
+    "temperature": 5900.0,
+    "source_angle": 0.8,
+    "note": "contraluz de três-quartos: o sol na frente e à DIREITA da câmera da arte, as sombras caindo pra baixo e pra esquerda da tela (corrigido 11/10 pela crítica da sessão de arte; a 1ª medida tinha saído espelhada)"
+  },
+  "atmosphere": {
+    "rayleigh_scattering_scale": 0.0331,
+    "mie_scattering_scale": 0.05,
+    "mie_scattering": [
+      1.0,
+      0.8,
+      0.58
+    ],
+    "mie_absorption_scale": 0.005,
+    "mie_absorption": [
+      0.35,
+      0.6,
+      1.0
+    ],
+    "mie_anisotropy": 0.75,
+    "mie_exponential_distribution": 0.8,
+    "ground_albedo": [
+      176,
+      140,
+      100
+    ],
+    "aerial_distance_scale": 40.0,
+    "aerial_start_ratio": 0.923
+  },
+  "skylight": {
+    "intensity": 3.0,
+    "color": [
+      255,
+      232,
+      205
+    ]
+  },
+  "fog": {
+    "density": 0.11,
+    "falloff": 0.25,
+    "volumetric": {
+      "albedo": [
+        255,
+        195,
+        135
+      ],
+      "scattering_distribution": 0.6,
+      "extinction_scale": 0.5,
+      "distance_cm": 25000.0,
+      "start_ratio": 0.739
+    },
+    "start_ratio": 0.739
+  },
+  "post": {
+    "ev100": 13.624490737915039,
+    "bias": -0.05,
+    "bloom": 0.25,
+    "local_exposure_shadow": 0.6,
+    "local_exposure_highlight": 0.9,
+    "saturation": 0.94,
+    "contrast": 1.06,
+    "shadow_saturation": 0.9,
+    "highlight_gain": [
+      1.3,
+      1.1,
+      0.94
+    ],
+    "shadow_gain": [
+      1.08,
+      1.06,
+      1.05
+    ],
+    "film_shoulder": 0.32,
+    "raw": {
+      "color_correction_highlights_min": 0.22,
+      "local_exposure_detail_strength": 1.35
+    }
+  },
+  "rts_rule": "A poeira e a perspectiva aérea começam numa proporção da distância da câmera até o ponto que ela olha: o foco fica limpo em qualquer zoom (o plugin faz o mesmo no jogo).",
+  "world": {
+    "about": "o pó do mundo: a areia que assenta nas unidades (o padrão de material das unidades)",
+    "dust": [
+      0.46,
+      0.34,
+      0.22
+    ],
+    "unit_dust_top": 0.14,
+    "unit_dust_low": 0.6,
+    "unit_dust_height": 1.0,
+    "rule": "o pó nunca apaga a cor da facção: o azul da USA, o oliva da China e o areia da GLA continuam lendo (medir)",
+    "note": "o pó: claro em cima, sujando pra baixo (esteira e saia); a cor da facção tem de continuar lendo (a China oliva sumia com 0,75 até 1,7 m)"
+  }
+}

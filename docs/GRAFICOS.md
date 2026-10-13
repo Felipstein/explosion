@@ -48,6 +48,7 @@ O guia está em `docs/concept/scenes/README.md`.
 | `desert_golden_hour/best/` (as sete escolhidas pelo Felipe em 11/10, ver `scenes/README.md`) | **Dia, golden hour: o alvo de beleza e de gameplay.** A `day_game_cam` fica como base medida da maquete, não como a favorita |
 | `desert_golden_hour/best/day_tilt_cam.webp` | Dia, câmera deitada (cinematográfica) |
 | `desert_golden_hour/best/close_game_cam_gpt.webp` | **De perto, o escolhido:** tanque, chão e luz em detalhe. A cor bate com o dia aprovado (saturação 0,49 × 0,50, brilho 0,38 × 0,38, contraste 0,18 × 0,18). **Ignorar o desfoque em cima e embaixo** (efeito de miniatura, não existe na câmera de jogo); a câmera está um pouco mais baixa e mais perto que a do jogo |
+| `desert_golden_hour/best/close_ground_light_gemini.webp` | **De perto, a luz do chão (11/10):** o Felipe disse que "parece muito a nossa gameplay final objetiva". Vale a **luz**: sol baixo e macio, sombra longa, cor desbotada e quente sem saturar, o tanque claro lendo na areia com a lona azul, nada de névoa nas unidades. O Dozer é rascunho, não é alvo de modelo. Aqui o sol vem de trás e da direita da câmera; o lado do sol do mapa continua o da `day_game_cam` |
 | `desert_golden_hour/more/close_game_cam_gemini.webp` | De perto, a alternativa guardada: a altura de câmera do jogo; o USA saiu com pintura azul grande (fora da regra) e menos detalhe |
 | `desert_night/night_game_cam.webp` | **Noite aprovada:** luar azul forte deixando o campo todo legível, mais as poças de luz laranja do fogo |
 | `desert_night/night_tilt_cam_gemini.webp` | Noite, câmera deitada |
@@ -125,3 +126,148 @@ Quando precisar de referência nova, o Felipe chama a sessão de arte.
   com as fontes e só então código.
 - **Commit só com o "aprovado" do Felipe.**
 - **A lista viva da base jogável** é `docs/BASE_JOGAVEL.md`: marque lá o que tocar.
+
+## 7. A maquete do look (LookLab, desde 10/10/2026)
+
+Cada cena-alvo vira uma **maquete na Unreal, na mesma câmera da arte**, pra ajustar a luz contra o
+alvo sem chute. Tudo é gerado por script (`Game/Content/LookLab/` fica fora do git):
+
+| Comando (`Game/Tools/look.ps1 … [-Scene <cena>]`) | O que faz |
+|---|---|
+| `houses` | casas provisórias de adobe no Blender (quina dura): `look_houses.py` |
+| `tank` | os provisórios no Blender (`look_tank.py`): o tanque USA detalhado, o carro queimado, a picape técnica do GLA, o paraquedas do sinalizador e as miudezas (caixotes, tambores, sacos de areia, munição); `LOOK_TANK_ONLY=props` refaz só uma parte |
+| `ground` | o asfalto rachado (`look_textures.py`), as texturas do fogo e da fumaça (`look_fx_textures.py`) e o chão em relevo + planta pintada + marcas de esteira + espalhamento (`look_ground.py`) |
+| `build` | a cena na Unreal (`look_lab.py`): chão, casas, veículos, luz da receita, câmeras, sequências |
+| `iterate <variante>` | a volta de ajuste: monta só essa receita, render rápido na câmera da arte e os números |
+| `render <variante>` | as três câmeras (a da arte, a do jogo a 61 m e o zoom perto a 32 m) |
+| `perf <variante> [-Preset alta\|ultra]` | o tempo de GPU na câmera do jogo (`look_perf.py`) |
+
+- **A planta de cada cena** fica num arquivo só: `look_layout.py` (deserto dourado) e
+  `look_layout_night.py` (noite), escolhidos por `LOOK_SCENE` (`look_scene.py`). A câmera de cada
+  arte foi **medida pela perspectiva** (cantos de telhado em ângulo reto, pontos de fuga) e a escala
+  pelo casco do tanque (7,9 m):
+  - dia: 29° de inclinação, 65° de campo, 26,25 m;
+  - noite: 38°, 66°, 31 m (a câmera do jogo no zoom perto, com a lente mais aberta).
+- **A luz é uma receita por ambiente e hora** (`Game/Tools/look_recipes/<pasta das cenas>.json`):
+  sol (altura e lado em relação à câmera inicial), atmosfera e poeira, luz do céu, névoa, exposição
+  e cor, e o **pó do mundo** (a cor e a quantidade de pó/terra nas unidades). A mesma receita vai
+  pro plugin comum.
+- **A regra de RTS da poeira:** a névoa e a perspectiva aérea começam numa proporção da distância
+  até o ponto que a câmera olha; o foco fica limpo em qualquer zoom.
+- **A prova é o ponto a ponto** (`look_match.py`): a planta projetada na câmera diz, na arte e no
+  render, onde está cada material (asfalto e areia no sol e na sombra, telhado, as duas paredes,
+  teto e lado do tanque, a névoa do fundo). Compara a cor (ΔE no L*a*b*: < 5 é igual a olho), a
+  curva de tom (percentis 1–99) e a cor das sombras, dos meios e das luzes.
+- **Modelos provisórios** (casas, tanque, carcaça) são da sessão de gráficos, só pra a luz ter onde
+  bater; os finais são do Felipe e passam pelo mesmo ponto a ponto.
+- **Os efeitos da noite são de look-dev** (só pra a maquete ter a luz e a cor da arte; o efeito final é
+  das sessões de explosão), feitos do jeito dos jogos (11/10):
+  - a fumaça é um cartão virado pra câmera com um tufo desenhado e o relevo dele na textura
+    (`T_LL_Puff`, o "normal-mapped smoke sprite" de Killzone/Battlefield; o 6-way lightmap da
+    Unity/CoD é o mesmo princípio), translúcida e acesa por pixel pela luz da cena: o fogo embaixo
+    acende o lado de baixo, a lua o de cima;
+  - o fogo é a temperatura em cinza (`T_LL_Flame`: línguas de fogo e bola de fogo) pintada pela rampa
+    do corpo negro, aditiva (o "temperature map" que o EmberGen exporta);
+  - a conta da textura usa a direita e o alto da tela, não o UV da malha: o desenho e a luz não
+    dependem de como o cartão foi girado.
+- **A comparação de perto** (`Close`, receita `desert_golden_close`): o mesmo deserto dourado com o
+  sol na posição da arte `close_game_cam_gpt` (na frente e à esquerda, baixo) e a câmera na própria
+  receita (`camera`), pra ver os modelos de perto na luz da arte. O mapa do jogo continua com o sol
+  do `desert_golden_hour`.
+
+### O estado em 11/10/2026
+
+| Cena | Ponto a ponto (ΔE por material, < 5 = igual a olho) | Curva p5/p50/p95 (arte → maquete) | GPU no jogo, 1080p, preset alta |
+|---|---|---|---|
+| Deserto dourado | 0,7 a 6,2 (pior: a parede de lado) | 0,09/0,34/0,69 → 0,07/0,37/0,67 | 29,6 ms (Lumen 6,8, TSR 4,9, luzes 3,9, névoa volumétrica 2,0) |
+| Noite | 3,6 a 6,5 nas superfícies ao luar; o "chão no sol" da arte é o chão aceso pelo fogo e pela explosão (efeito, fora da maquete) | 0,06/0,23/0,49 → 0,06/0,22/0,42 | 28,3 ms (luzes ~6: as luzes de fogo com sombra) |
+
+- **A crítica da sessão de arte (11/10) mudou três coisas grandes:** o sol do dourado estava espelhado
+  (agora é contraluz de três-quartos, na frente e à direita da câmera da arte, sombras caindo pra baixo e pra
+  esquerda); a areia da noite estava clara como neve (agora escura, e a USA areia é a coisa clara); o pó do
+  mundo virou gradiente de baixo pra cima, sem apagar a cor da facção.
+- **A noite:** lua fraca e quase branca (28 klux, 245/240/232) e céu azul forte (a luz do céu 12×, 150/176/235):
+  o azul vem da sombra; o chão à noite é cinza-azulado no material (a areia laranja virava roxo ou neve);
+  a USA areia fica bege e clara, a China oliva escura; o fogo é poça pequena laranja.
+- **O desempenho ainda não está nos 60 qps** (16,7 ms) no preset alta: é o próximo trabalho do look
+  (Lumen e TSR por preset, sombra só nas luzes que importam), sempre medido com `look.ps1 perf`.
+
+## 8. O plugin RTSLook (proposta de 11/10, combinada com a sessão do jogo; código depois da noite)
+
+O look sai da maquete e vai pro jogo, pro "ver na versão final" do WorldForge e pro BlastLab por um
+plugin de runtime. A sessão de gráficos escreve; a do jogo revisa antes de entrar.
+
+**Arquivos novos (meus):** `Game/Plugins/RTSLook/`
+- `RTSLook.uplugin` (módulo de runtime `RTSLook`);
+- `Public/LookRecipe.h`: `ULookRecipe` (DataAsset) com as estruturas da receita, espelho do JSON:
+  sol (altura, lado em relação à câmera inicial, lux, cor ou temperatura, ângulo), atmosfera, luz do
+  céu, névoa (densidade, queda, começo por proporção, volumétrica), pós (EV100 travado, curva, ganhos,
+  vinheta) e o pó do mundo;
+- `Public/LookDirector.h` + `Private/LookDirector.cpp`: `ALookDirector`, que monta e mantém sol,
+  `SkyAtmosphere`, `SkyLight`, névoa e pós ilimitado a partir da receita (o mesmo que o `environment()`
+  do `look_lab.py` faz em Python). A cada quadro ele põe o começo da névoa, da névoa volumétrica e da
+  perspectiva aérea na proporção da distância da câmera ao foco (a regra de RTS);
+- `Public/LookCamera.h`: a interface `ILookCamera` (`GetLookFocusDistance()`, `GetLookYaw()`): a
+  câmera do jogo implementa e o plugin não depende do módulo do jogo;
+- `Content/`: o material de pó das unidades (`M_UnitDust`, com o slot Team recebendo a cor do
+  jogador por Custom Primitive Data) e as receitas convertidas (`DA_Look_<cena>`);
+- `Game/Tools/look_recipe_import.py`: o JSON (`Game/Tools/look_recipes/`, que continua sendo a fonte)
+  vira o DataAsset.
+
+**Do lado do jogo (da sessão do jogo):** ligar o plugin no `RTSGame.uproject`; o GameMode cria o
+diretor com o nome da receita do mapa; o `ARTSCameraPawn` implementa `ILookCamera`. A passada da névoa
+de guerra continua antes das explosões e do pós; a foto do minimapa é com luz chapada, sem pós.
+
+**Presets:** cada receita pode trazer `presets.{baixa,media,alta,ultra}` com o que muda (Lumen ou
+não, névoa volumétrica, sombras das luzes locais, resolução do TSR). Meta combinada: o look em ~8 ms
+no alta, na 1660 a 1080p, medido no mapa do jogo com 50 tanques.
+
+**Revisão da sessão do jogo (11/10), já valendo pro código:**
+- Custom Primitive Data das unidades e prédios: 0..3 = cor do time (RGBA, A = 1, `ARTSUnitActor::SetPlayerColor`),
+  4 = energia (luzes dos prédios), 5 = altura da obra (m), **6 = queimado** (0..1: o `M_UnitDust` escurece e
+  tira o brilho; o jogo põe 1 quando a unidade morre, no lugar das instâncias dinâmicas de hoje).
+- O mapa do WorldForge já vem com sol, céu e névoa: o diretor **assume esses atores** (aplica a receita
+  neles) em vez de somar outros, e expõe `GetSun()` (a sombra da fumaça das explosões entra como função de
+  luz no sol; a foto do minimapa usa a luz do mapa).
+- `ALookDirector::ApplyPreset(int32 Level)` (1..4, o mesmo do Scalability), chamado pelo
+  `ARTSPlayerController::ApplyQuality` (F5..F8): a receita e o Scalability andam juntos.
+- `ILookCamera` também com `GetLookFocusPoint()`.
+- A névoa de altura nunca com começo zero (tinge o foco de perto); o pós ilimitado vem depois da passada
+  da névoa de guerra (`RTSFogPass`).
+- A exposição travada muda o brilho do clarão das explosões: a sessão das explosões já compensa a emissão
+  pela exposição (referência EV100 12,58 do BlastLab); o valor de cada receita é combinado com ela.
+
+### A fila do look (11/10, a ordem do Felipe: comentário novo entra na fila, não muda a ordem)
+
+1. A noite: avaliar junto com o Felipe o A/B (`captures/look/noite_A_B.jpg`: o fogo pintando o tanque inteiro × lado laranja e teto na cor da facção).
+2. A cena de perto contra a `close_ground_light_gemini` (cena própria `desert_ground`) e o deserto contra as sete "perfeitas" na câmera do jogo, em A/B com a receita de antes (`desert_golden_hour_v1_before_seven.json`).
+3. O desempenho: os presets baixa/média/alta/ultra, o look em ~8 ms no alta no mapa do jogo.
+4. Os materiais no plugin RTSLook: o pó das unidades (Team e queimado por CPD), o reboco e **o chão em qualidade AAA**. O Felipe: "o pior de todos é a qualidade da textura do chão, é o que tá piorando tudo". Primeiro o estudo (como os jogos AAA resolvem o chão visto do alto a 60 m: conjunto de texturas de alta resolução com variação grande, quebra do ladrilho, normal de detalhe, textura virtual, decalques, relevo), uma segunda opinião e só então o código, medido.
+   - A areia do deserto v1 está **aprovada** pelo Felipe (12/10: "uma das melhores até agora") e congelada pro WorldForge
+     em `Game/Tools/look_materials/sand_desert_v1.*` (o material e o espalhamento: capim seco, gravetos, pedrinhas).
+     Próximo nela: o relevo de ondulação simulado (o modelo de Nishimori & Ouchi, 1993, num mapa de altura que emenda sem
+     costura, em manchas) no lugar do seno do shader, e o hex tiling (Heitz & Neyret 2018, Mikkelsen 2022) contra a
+     repetição; materiais escaneados (Megascans/Fab) só se forem gratuitos, pra comparar.
+5. O kit civil pro WorldForge (as 6 peças e as 6 miudezas, `civ_*`, mais o `civ_pole`) e os parâmetros de água (WaterBodyColor/Strength, SkyReflection) na receita.
+
+### O desempenho medido (12/10, o mapa do deserto em -game, 1080p, `look.ps1 perf Golden -Preset …`)
+
+| Preset | GPU (mediana) | Os maiores |
+|---|---|---|
+| alta | 28,3 ms | Lumen (coleta de sondas) 6,8 · TSR 4,9 · sombras por campo de distância 2,0 · névoa volumétrica 2,0 · Nanite 1,9 |
+| média | 20,5 ms | TSR 4,5 · Lumen 2,9 · sombras por campo de distância 1,9 |
+| baixa | 9,9 ms | TSR 2,2 · Lumen (campo de irradiância) 1,0 |
+
+Plano dos presets (cada corte em A/B contra o ultra na mesma câmera): Lumen em resolução menor no alta, TSR a ~70% da tela,
+névoa volumétrica com grade menor, sombras por campo de distância só no ultra. Meta: alta ~16,7 ms (60 qps).
+
+### O que o Felipe escolheu até 13/10/2026 (o 1º commit do look)
+
+- **O jogo:** a receita `desert_golden_hour_v2_aprovada` (congelada; o jogo aponta pra ela no Maps.json). A bancada
+  `desert_golden_hour` só a substitui depois de um A/B com ele. A areia nova só vai junto com a bancada (exposição do jogo
+  14,3: o sol do jogo é a 30°); critério de estouro: o claro p95 0,65–0,75 e o estourado < ~2,5%, como nas favoritas.
+- **A areia:** a v2 (a versão C): a v1 + zonas + ondulações simuladas só nas zonas delas + a trilha da esteira (fresca e
+  velha mais marcada), congelada em `Game/Tools/look_materials/sand_desert_v2.*` pro WorldForge; a trilha do jogo vem da
+  `MF_LookGroundMemory` (o plugin), que também pinta a cratera, o ejetado e a fuligem.
+- **A noite:** a A (o fogo pinta as unidades inteiras; a separação de luz ficou desligada pela receita).
+- **O kit civil da vila** (`SM_civ_*`, `look.ps1 civil`) no jogo; os modelos finais continuam dele.

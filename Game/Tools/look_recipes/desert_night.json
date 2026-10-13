@@ -1,0 +1,98 @@
+{
+  "name": "desert_night",
+  "about": "Deserto, noite (refeita em 11/10). Alvo: docs/concept/scenes/desert_night/night_game_cam.webp. A batalha é iluminada pelas fontes locais (fogo, sinalizador, explosão); entre elas o chão cai pro azul escuro; a lua só dá o brilho frio de topo e de borda. A cor é a da noite americana do cinema (o efeito Purkinje): sombras azuis, meios-tons ciano, claros neutros puxando pro quente, que mantém a USA bege e o fogo laranja. A lua é quase branca (a chave neutra: a areia acesa fica levemente quente, b* +5 na arte) e o céu azul só preenche a sombra (b* −5); o laranja vem das fontes. Fontes: Shotcut 'Turn day into night', Noam Kroll 'day for night', World of Level Design (lua ~1 lux artístico, céu frio, luz prática carrega o clima).",
+  "sun": {
+    "elevation": 40.0,
+    "from_camera": 35.0,
+    "lux": 56000.0,
+    "temperature": null,
+    "color": [
+      207,
+      229,
+      255
+    ],
+    "source_angle": 1.5
+  },
+  "atmosphere": {
+    "rayleigh_scattering_scale": 0.0331,
+    "mie_scattering_scale": 0.004,
+    "mie_scattering": [
+      0.9,
+      0.95,
+      1.0
+    ],
+    "mie_absorption_scale": 0.001,
+    "mie_anisotropy": 0.7,
+    "mie_exponential_distribution": 1.0,
+    "ground_albedo": [
+      90,
+      95,
+      110
+    ],
+    "aerial_distance_scale": 0.3
+  },
+  "skylight": {
+    "intensity": 18.0,
+    "color": [
+      118,
+      152,
+      190
+    ]
+  },
+  "fog": {
+    "density": 0.012,
+    "falloff": 0.3,
+    "start_ratio": 0.8
+  },
+  "post": {
+    "ev100": 13.6,
+    "bias": 0.0,
+    "bloom": 0.6,
+    "local_exposure_shadow": 0.7,
+    "local_exposure_highlight": 0.85,
+    "saturation": 1.0,
+    "contrast": 1.0,
+    "shadow_gain": [
+      0.92,
+      1.0,
+      1.04
+    ],
+    "midtone_gain": [
+      0.96,
+      1.0,
+      0.98
+    ],
+    "highlight_gain": [
+      1.05,
+      1.0,
+      0.95
+    ],
+    "raw": {
+      "color_correction_highlights_min": 0.3,
+      "color_correction_shadows_max": 0.1,
+      "vignette_intensity": 0.85
+    },
+    "film_toe": 0.5,
+    "gain": [
+      0.96,
+      1.02,
+      1.0
+    ]
+  },
+  "world": {
+    "about": "o pó do mundo (a mesma areia do dia; a cor da noite vem da luz)",
+    "dust": [
+      0.46,
+      0.34,
+      0.22
+    ],
+    "unit_dust_top": 0.06,
+    "unit_dust_low": 0.35,
+    "unit_dust_height": 0.9,
+    "unit_paint_roughness": 0.38,
+    "unit_light_split": false
+  },
+  "measure": "11/10 por região só de luar (look_regions.py): na arte, longe do fogo, a areia é azul-petróleo (L* 24, a* −2, b* −10) e a rua mais escura e mais azul (L* 16–20, b* −12 a −15); as unidades ficam na cor da facção (a USA bege). Então o azul vai no material do chão e das casas (só à noite) e a lua fica quase neutra: o chão some no azul e as unidades se leem.",
+  "critique": "11/10, sessão de arte: 1 o núcleo quente (fogo/explosão a ~2000 K vencendo a lua perto deles), 2 o chão escuro fora das poças com bordas pretas, 3 o disco do sinalizador marcado, 4 a fumaça grossa acesa por baixo, 5 o brilho frio da lua nas quinas das unidades.",
+  "felipe": "13/10: escolheu a A (o fogo e a explosão pintam as unidades inteiras; a China fica bege perto da explosão) contra a B (o fogo só no lado, o teto na cor da facção). A separação de luz das unidades ficou desligada (world.unit_light_split)."
+}

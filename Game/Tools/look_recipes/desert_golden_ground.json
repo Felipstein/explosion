@@ -1,0 +1,107 @@
+{
+  "name": "desert_golden_ground",
+  "about": "A cena de perto contra a close_ground_light_gemini (pedido do Felipe, 11/10: idêntica, \"o chão, tudo\"): a mesma receita do desert_golden_hour, com o sol na posição da arte de perto.",
+  "sun": {
+    "elevation": 15.0,
+    "from_camera": 105.0,
+    "lux": 120000.0,
+    "temperature": 5300.0,
+    "source_angle": 0.8,
+    "note": "lido na close_ground_light_gemini (com contraste): as sombras dos tufos e do Dozer caem pra direita e as faces viradas pra esquerda estão acesas: o sol vem da esquerda, ~105° da frente da câmera (um pouco atrás), baixo (~15°, sombras longas). Confirmado pela sessão de arte."
+  },
+  "atmosphere": {
+    "rayleigh_scattering_scale": 0.0331,
+    "mie_scattering_scale": 0.05,
+    "mie_scattering": [
+      1.0,
+      0.8,
+      0.58
+    ],
+    "mie_absorption_scale": 0.005,
+    "mie_absorption": [
+      0.35,
+      0.6,
+      1.0
+    ],
+    "mie_anisotropy": 0.75,
+    "mie_exponential_distribution": 0.8,
+    "ground_albedo": [
+      176,
+      140,
+      100
+    ],
+    "aerial_distance_scale": 40.0,
+    "aerial_start_ratio": 0.923
+  },
+  "skylight": {
+    "intensity": 4.0,
+    "color": [
+      240,
+      235,
+      228
+    ]
+  },
+  "fog": {
+    "density": 0.11,
+    "falloff": 0.25,
+    "volumetric": {
+      "albedo": [
+        255,
+        195,
+        135
+      ],
+      "scattering_distribution": 0.6,
+      "extinction_scale": 0.5,
+      "distance_cm": 25000.0,
+      "start_ratio": 0.739
+    },
+    "start_ratio": 0.739
+  },
+  "post": {
+    "ev100": 13.85,
+    "bias": -0.05,
+    "bloom": 0.25,
+    "local_exposure_shadow": 0.6,
+    "local_exposure_highlight": 0.9,
+    "saturation": 0.9,
+    "contrast": 1.2,
+    "shadow_saturation": 0.9,
+    "highlight_gain": [
+      1.27,
+      1.09,
+      0.95
+    ],
+    "shadow_gain": [
+      1.08,
+      1.06,
+      1.05
+    ],
+    "film_shoulder": 0.32,
+    "raw": {
+      "color_correction_highlights_min": 0.22,
+      "local_exposure_detail_strength": 1.35,
+      "vignette_intensity": 0.1
+    }
+  },
+  "rts_rule": "A poeira e a perspectiva aérea começam numa proporção da distância da câmera até o ponto que ela olha: o foco fica limpo em qualquer zoom (o plugin faz o mesmo no jogo).",
+  "world": {
+    "about": "o pó do mundo: a areia que assenta nas unidades (o padrão de material das unidades)",
+    "dust": [
+      0.49,
+      0.42,
+      0.31
+    ],
+    "unit_dust_top": 0.08,
+    "unit_dust_low": 0.6,
+    "unit_dust_height": 1.0,
+    "rule": "o pó nunca apaga a cor da facção: o azul da USA, o oliva da China e o areia da GLA continuam lendo (medir)",
+    "note": "o pó: claro em cima, sujando pra baixo (esteira e saia); a cor da facção tem de continuar lendo (a China oliva sumia com 0,75 até 1,7 m)",
+    "paints": {
+      "usa": [
+        182,
+        180,
+        172
+      ]
+    }
+  }
+}
