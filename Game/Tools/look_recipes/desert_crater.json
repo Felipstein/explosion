@@ -1,0 +1,136 @@
+{
+  "name": "desert_crater",
+  "about": "A prova da cratera v2 (13/10): a bancada do deserto (desert_golden_hour, a volta 15), a luz dos game shots e do jogo.",
+  "sun": {
+    "elevation": 20.0,
+    "from_camera": -42.0,
+    "lux": 132000.0,
+    "temperature": 4700.0,
+    "source_angle": 0.8,
+    "note": "contraluz de três-quartos: o sol na frente e à DIREITA da câmera da arte, as sombras caindo pra baixo e pra esquerda da tela (corrigido 11/10 pela crítica da sessão de arte; a 1ª medida tinha saído espelhada)"
+  },
+  "atmosphere": {
+    "rayleigh_scattering_scale": 0.0331,
+    "mie_scattering_scale": 0.05,
+    "mie_scattering": [
+      1.0,
+      0.8,
+      0.58
+    ],
+    "mie_absorption_scale": 0.005,
+    "mie_absorption": [
+      0.35,
+      0.6,
+      1.0
+    ],
+    "mie_anisotropy": 0.75,
+    "mie_exponential_distribution": 0.8,
+    "ground_albedo": [
+      176,
+      140,
+      100
+    ],
+    "aerial_distance_scale": 40.0,
+    "aerial_start_ratio": 0.923
+  },
+  "skylight": {
+    "intensity": 4.0,
+    "color": [
+      250,
+      232,
+      205
+    ]
+  },
+  "fog": {
+    "density": 0.21,
+    "falloff": 0.25,
+    "volumetric": {
+      "albedo": [
+        255,
+        195,
+        135
+      ],
+      "scattering_distribution": 0.75,
+      "extinction_scale": 0.65,
+      "distance_cm": 25000.0,
+      "start_ratio": 0.739
+    },
+    "start_ratio": 0.739,
+    "note_13_10": "13/10: a névoa do quadro (o brilho da faixa de cima ÷ o da de baixo) dava 1,19 na câmera de 61 m contra 1,28–1,82 nas favoritas: mais poeira no ar ao fundo (densidade 0,11 → 0,15).",
+    "note_volta11": "volta 11 (crítica: 'o ar é limpo demais'): densidade 0,15 → 0,21 e o espalhamento pra frente 0,6 → 0,75 (o brilho na direção do sol).",
+    "note_volta12": "volta 12: o brilho direcional (luminância 2400, expoente 10, a partir de 60 m) velou o quadro inteiro (p50 0,86, tempestade de areia): fora, sem medida da escala dele não entra de novo. Volta 13: densidade 0,25 e a volumétrica 0,72 (um pouco mais que a 11)."
+  },
+  "post": {
+    "ev100": 14.15,
+    "bias": -0.05,
+    "bloom": 0.35,
+    "local_exposure_shadow": 0.8,
+    "local_exposure_highlight": 0.9,
+    "saturation": 0.8,
+    "contrast": 1.22,
+    "shadow_saturation": 0.5,
+    "highlight_gain": [
+      1.24,
+      1.07,
+      0.94
+    ],
+    "shadow_gain": [
+      1.0,
+      1.02,
+      0.99
+    ],
+    "film_shoulder": 0.32,
+    "raw": {
+      "color_correction_highlights_min": 0.15,
+      "local_exposure_detail_strength": 1.35,
+      "lumen_diffuse_color_boost": 1.0,
+      "color_correction_shadows_max": 0.2
+    },
+    "midtone_saturation": 0.98,
+    "saturation_note": "13/10 volta 5: medida por faixa de brilho (a tela em 4 faixas): o excesso de saturação estava nas sombras (0,69 contra 0,48 nas favoritas no escuro, 0,57 contra 0,42 na meia-sombra) e um pouco no meio-tom (0,52 contra 0,47); o claro já batia (0,42 contra 0,43).",
+    "midtone_gain": [
+      1.0,
+      1.015,
+      1.0
+    ],
+    "highlight_saturation": 1.35,
+    "light_vs_shadow_note": "13/10 volta 6 (crítica da arte: 'filtro sépia, luz e sombra da mesma cor'). Medido por faixa: sombra 23° sat 0,55 puxando pro magenta (G−(R+B)/2 −0,012) contra 23–32° sat ~0,45 e −0,003 nas sete; luz sat 0,38 contra 0,44. O magenta vem do rebote quente (lumen_diffuse_color_boost 1,2) somado ao céu azul: o rebote volta a 1,0, a sombra ganha um pouco de verde e perde saturação, o claro ganha saturação (1,15) e o sol 10% mais forte (a volta 2 tinha mais sol). Volta 7: na volta 6 o claro ficou com sat 0,35 (alvo ~0,46) e a sombra ainda 0,49–0,53 (alvo ~0,45): claro 1,35 e ganho mais dourado, sombra 0,5. Volta 8: o claro da Unreal começa no ColorCorrectionHighlightsMin (0,22) e a areia ao sol caía no meio-tom, que estava em 0,86 (desbotava a luz; o 1,35 do claro quase não pegava): meio-tom 0,98 e o claro começando em 0,15. Volta 9: com o meio-tom de volta a 0,98 o claro chegou (sat 0,44) mas a sombra voltou a 0,51–0,54: a sombra da Unreal só vai até ColorCorrectionShadowsMax 0,09; subo pra 0,2, pra a meia-sombra cair na saturação 0,5.",
+    "gold_note": "volta 11 (2ª crítica da arte: 'falta ouro na luz, mais cinza que a volta 2'): sol 5300 → 4700 K, EV 13,85 → 13,7 (a areia ao sol mais clara), brilho 0,25 → 0,35. A sombra fica neutra pelo ganho e pela saturação das sombras.",
+    "shadow_depth_note": "volta 14 (3ª crítica da arte: 'lavado, sem preto, a névoa levantou as sombras'): a névoa volta à da volta 11 (0,21 / 0,65) e a exposição local deixa de levantar tanto as sombras (0,6 → 0,8).",
+    "crater_note": "volta 6 (a comparação na mesma escala: a areia longe dava brilho 0,67 contra 0,49 na sand_gpt): +0,45 EV"
+  },
+  "rts_rule": "A poeira e a perspectiva aérea começam numa proporção da distância da câmera até o ponto que ela olha: o foco fica limpo em qualquer zoom (o plugin faz o mesmo no jogo).",
+  "world": {
+    "about": "o pó do mundo: a areia que assenta nas unidades (o padrão de material das unidades)",
+    "dust": [
+      0.49,
+      0.42,
+      0.31
+    ],
+    "unit_dust_top": 0.08,
+    "unit_dust_low": 0.75,
+    "unit_dust_height": 1.0,
+    "rule": "o pó nunca apaga a cor da facção: o azul da USA, o oliva da China e o areia da GLA continuam lendo (medir)",
+    "note": "o pó: claro em cima, sujando pra baixo (esteira e saia); a cor da facção tem de continuar lendo (a China oliva sumia com 0,75 até 1,7 m)",
+    "paints": {
+      "usa": [
+        150,
+        120,
+        84
+      ]
+    },
+    "team": {
+      "usa": [
+        40,
+        70,
+        200
+      ]
+    },
+    "paints_note": "13/10: nas 7 favoritas o tanque da USA é cor de areia queimada (o teto ao sol medido na road_battle: 0,67/0,53/0,40, brilho 0,55) com o painel do time azul forte (0,23/0,20/0,64, brilho 0,24). Volta 4 (176,150,112 e 44,52,196): o teto saiu 0,93/0,82/0,67 (claro demais) e o azul escuro e violeta; volta 5 corrige pelas razões medidas.",
+    "team_note": "volta 14: o 36,52,160 da volta 6 ficou quase cinza na distância de jogo (crítica: 'a cor do time precisa ler de cima'); 40,70,200 (entre o violeta da volta 5 e o cinza).",
+    "unit_paint_roughness": 0.45,
+    "units_note": "volta 11 (crítica: 'as unidades parecem plástico'): a tinta 0,62 → 0,45 de rugosidade (o brilho no topo da torre e do deque contra o sol baixo, a road_town_battle) e mais poeira embaixo (0,6 → 0,75)."
+  },
+  "target": "11/10 (decisão do Felipe, pela sessão de arte): o alvo de cor são as sete \"perfeitas\" de best/ (town_battle_top, road_battle, road_town_battle, street_battle_usa_china, china_vs_gla, usa_vs_china, day_tilt_cam), medidas na câmera do jogo com look_stats.py: saturação 0,44, calor R−B 0,21, p50 0,37, p95 0,72. A day_game_cam continua só como planta da maquete, não como alvo de cor.",
+  "guard": "13/10: a areia nova (sand_desert_v2) só vai pro jogo com esta receita (a exposição 14,3 do jogo); com a v2_aprovada ela sai clara demais (meio-tom 0,48–0,52 contra 0,30–0,40 nas favoritas). O critério de estouro: claro p95 0,65–0,75 e estourado (canal > 0,97) abaixo de ~2,5%, como nas favoritas."
+}

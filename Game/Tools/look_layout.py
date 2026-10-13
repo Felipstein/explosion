@@ -27,11 +27,24 @@ SAND_RIPPLE_TEX = 1.0   # as ondulações simuladas (look_ripples.py), em mancha
 WIND_YAW = -158.3       # pra onde o vento sopra (graus): o sol fica do lado de onde vem o vento (155°), as cristas riscam
 SAND_RIPPLES = 0.0      # (a ondulação de seno do shader: desligada)
 # (antes: SAND_RIPPLES = 0.25     # fracas: na arte de perto a areia é pisada, quase sem ondulação regular (1,0 virou listras)
-GROUND_TINT = {'asphalt': (0.8, 0.84, 0.9), 'sand': (1.0, 1.0, 1.0)}   # areia menos vermelha: o alvo das sete e da arte de perto (matiz 29–30°, 12/10)
-WRECKS = []        # carcaças queimando (a noite tem)
+# o asfalto: 13/10 volta 4, o mesmo matiz (~30°) menos saturado e um pouco mais escuro (medido 1:0,67:0,44 e valor 0,44–0,49
+# contra 1:0,75:0,60 e 0,28–0,40 nas favoritas; antes 0,74/0,71/0,65). Cuidado: um azulado de verdade lia lilás (13/10).
+# A areia sem ajuste: o alvo das sete e da arte de perto (matiz 29–30°, 12/10).
+GROUND_TINT = {'asphalt': (0.216, 0.396, 0.648), 'sand': (1.0, 1.0, 1.0)}
+# volta 15 (Felipe, 13/10 de manhã: "o asfalto ficou muito mais escuro que o gameshot, que está mais sujo de areia, mais claro"):
+# 1,2× mais claro (as favoritas vão de 0,30 a 0,51 de brilho; a volta 14 dava 0,38–0,40), mais a película de areia e as
+# rachaduras mais grossas no look_lab. Volta 14: (0,18, 0,33, 0,54).
+# volta 14 (3ª crítica da arte: "o asfalto é marrom-laranja como a areia" depois do sol 4700 K): medido 1:0,73:0,53 sat 0,47
+# contra 1:0,81:0,63 sat 0,37 na road_town_battle; o tom pro cinza-frio e ~10% mais escuro. Volta 6: (0,247, 0,363, 0,506).
+# volta 6 (crítica da arte: "o asfalto e a areia têm o mesmo valor"): o asfalto ~0,72× mais escuro na tela (0,47 → ~0,34;
+# a areia ao sol fica em 0,45–0,47; na road_town_battle 0,29 contra 0,47) e mais frio (1:0,75:0,58 → 1:0,81:0,63, o da
+# road_town_battle). Volta 5: (0,51, 0,635, 0,87).
+WRECKS = [(-3.0, 13.5, 35.0, 1.0), (12.0, -20.5, 160.0, 1.0), (30.0, 8.5, 80.0, 1.0)]   # as carcaças de carro queimado na beira da rua (13/10)
 LIGHTS = []        # luzes pontuais da cena (fogo, sinalizador)
 
 ROAD = {
+    'edge_noise': 0.25,
+    'paint_v2': True,               # (13/10) a faixa estudada: a da beira acompanha o contorno, nítida, a trinca e a areia por cima             # (13/10) a beira quase reta e limpa, como nas referências boas (1,0 = o serrilhado antigo)
     'b_half': 6.5 * K,              # a transversal (ao longo de Y), centro em X = 0
     'b_end': -12.0,                 # daqui pra cima ela vira a rua de cima (estreita, depois terra)
     'a_left': (0.0, 7.5 * K),       # a rua dos tanques (X < 0): centro em Y, meia largura
@@ -84,8 +97,11 @@ TANKS = [(-16.65, 3.42), (-21.71, -1.58), (-20.18, 8.89), (-30.39, 1.08), (-29.2
          # o tanque da China (oliva) e as cinco picapes técnicas do GLA (medidas na arte em 11/10: a frente
          # e a traseira de cada uma, desprojetadas na altura da carroceria)
          (13.4, 14.8, -109.0, 'china'),
-         (20.06, -22.93, 119.4, 'gla'), (15.89, -13.12, 98.4, 'gla'), (20.11, -5.42, -177.8, 'gla'),
-         (25.42, -0.12, -164.7, 'gla'), (20.2, 6.54, -153.6, 'gla')]
+         # (13/10, crítica da arte: "caixas bege iguais"; na road_town_battle as técnicas são brancas, vermelhas e ferrugem)
+         (20.06, -22.93, 119.4, 'gla'), (15.89, -13.12, 98.4, 'gla_white'), (20.11, -5.42, -177.8, 'gla_red'),
+         (25.42, -0.12, -164.7, 'gla_rust'), (20.2, 6.54, -153.6, 'gla')]
+# o teto das casas (13/10, crítica da arte: "os tetos ao sol estouram claros, creme quase branco"; o padrão escurecia)
+HOUSE_ROOF = (0.45, (0.52, 0.47, 0.39))
 PALMS = [  # (x, y, malha, escala, giro)
     (-11.3, 12.0, 'SM_DatePalm_OasisCluster', 0.6, 30.0),
     (-8.1, 30.9, 'SM_DatePalm_Mature', 1.0, 75.0),
@@ -123,11 +139,28 @@ PROPS = [('Crates', -14.0, -21.7, 10.0), ('Crates', 21.8, -13.5, -30.0), ('Ammo'
          ('Crates', -14.9, 13.2, 60.0), ('Barrels', 14.9, 20.0, 0.0), ('Barrels', -11.4, -14.8, 30.0),
          ('Ammo', 24.0, -16.0, -10.0)]
 
+# O vestir da vila (13/10, "a cena vazia" contra as favoritas): as regras pro look_ground.dressing(). As peças são o kit de
+# entulho do look_tank.py (clutter). A rua por onde as unidades andam fica limpa (o respiro da leitura das unidades).
+DRESSING = {
+    'seed': 31, 'candidates': 30000, 'group': (1, 4),
+    'roof_items': (3, 7),          # 3–6 por casa (o estudo: a silhueta do telhado é o que mais vende de cima)
+    'roof_kinds': ['WaterTank', 'AC', 'Dish', 'Laundry', 'Crates'], 'roof_p': [0.32, 0.3, 0.16, 0.12, 0.10],
+    'w_wall': 0.05, 'wall_kinds': ['Crates', 'Barrels', 'Tires', 'Scrap0', 'Scrap1', 'Ammo', 'Rubble0'],
+    'wall_p': [0.22, 0.2, 0.14, 0.12, 0.1, 0.07, 0.15],
+    'w_curb': 0.02, 'curb_kinds': ['Rubble1', 'Rubble2', 'Fence0', 'Fence1', 'BrokenWall0', 'BrokenWall1', 'Scrap0'],
+    'curb_p': [0.18, 0.14, 0.18, 0.14, 0.14, 0.12, 0.10],
+    'w_lot': 0.012, 'lot_kinds': ['Rubble2', 'Rubble1', 'Fence0', 'Fence1', 'BrokenWall0', 'BrokenWall1', 'Scrap1'],
+    'lot_p': [0.2, 0.14, 0.18, 0.14, 0.14, 0.12, 0.08],
+}
+
 # A explosão da arte (pedido do Felipe, 11/10): a existente que mais combina, a Carga Pesada do
 # BlastLab (o raymarch aprovado em 08/10, as 3 gravações DA_HeavyCharge_v0..v2 do jogo), parada
 # no instante em que a arte mostra: bola de fogo ainda acesa e a coluna escura subindo.
 # (x, y, gravação, idade em s, tamanho W^(1/3), semente)
-EXPLOSIONS = [(3.5, -15.5, 'DA_HeavyCharge_v2', 0.5, 1.0, 0.37)]
+# (13/10: aos 0,5 s a bola saía branca estourada, um adesivo; aos 1,2 s o núcleo já tem cor e a coluna escura sobe.
+#  A explosão nova é da sessão das explosões: isto é só pra não sujar o julgamento do look)
+# (volta 11, 2ª crítica da arte: "a provisória está estragando a leitura do quadro inteiro": fora até a explosão nova)
+EXPLOSIONS = []   # era [(3.5, -15.5, 'DA_HeavyCharge_v2', 1.2, 1.0, 0.37)]
 
 # o que se espalha sozinho (look_ground.py sorteia pela planta): malha, pasta e o material do deserto
 SCATTER = {
@@ -140,6 +173,25 @@ SCATTER = {
     'bush': [f'wild_rooibos_bush/wild_rooibos_bush_{v}' for v in 'abcde']
             + [f'searsia_lucida/searsia_lucida_{v}_LOD0' for v in 'abcdefg'],
 }
+# o mato da areia (13/10, contra a road_town_battle: a areia lá tem touceiras secas douradas de 1–1,5 m com sombra por
+# todo lado, menos onde os veículos passam; aqui era capim fino espetado e quase nada): mais denso, arbusto maior e o tom
+# dourado-seco (o mesmo capim claro da cena de perto)
+# a estrada com volume (13/10, o protótipo: a laje de asfalto em cima do chão, com o degrau e a borda quebrada), só na área
+# que as câmeras veem
+# os tipos de borda (look_ground.EDGE_TYPES): 'intact' (a 14 e a 12), 'worn' (quebra em trechos), 'ruined' (a borda toda);
+# sand_over: a areia cobrindo a beira (0..1)
+ASPHALT_V2 = True      # (13/10) o asfalto v2 do WorldForge aprovado (zonas de defeito, trincas, remendos, óleo) por cima
+AER_BLUR = False       # (13/10: o borrão da foto aérea testado e engavetado pelo Felipe: "deixa assim, se atrapalhar a gente vê depois")
+ROAD_SLAB = dict(type='flat', sand_over=1.0, thick=0.12, step=0.04, crown=0.025, plate=0.5,
+                 region=(-62.0, 77.0, -112.0, 47.0))   # (v2: 8 → 12 cm, o degrau lia pouco)
+SCATTER_DENSITY = 1.8
+BUSH_SCALE = (0.9, 1.7)
+# (volta 11: o arbusto de folha (searsia) saía verde-escuro, e o mato das favoritas é capim seco dourado em touceira:
+#  menos arbusto, capim maior)
+BUSH_FRACTION = 0.2
+TUFT_SCALE = (3.0, 5.2)
+SCATTER_TINT = {'grass_medium_01': (2.3, 2.0, 1.25, 0.15), 'wild_rooibos_bush': (1.6, 1.4, 0.95, 0.3),
+                'searsia_lucida': (1.4, 1.3, 0.9, 0.25)}
 SCATTER_MI = {'grass_medium_01': 'MI_grass_medium_01_desert', 'namaqualand_stones_01': 'MI_namaqualand_stones_01_desert',
               'wild_rooibos_bush': 'MI_wild_rooibos_bush_desert', 'searsia_lucida': 'MI_searsia_lucida_desert'}
 

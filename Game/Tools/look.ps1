@@ -32,8 +32,8 @@ $Cmd = Join-Path $Engine 'UnrealEditor-Cmd.exe'
 $Captures = Join-Path $Repo 'captures\look'
 $env:LOOK_SCENE = $Scene
 $Sub = if ($Scene -eq 'desert_golden_hour') { '' } else { $Scene }
-$MapPrefix = if ($Scene -eq 'desert_night') { 'LL_DesertNight' } elseif ($Scene -eq 'desert_ground') { 'LL_DesertGround' } else { 'LL_DesertDay' }
-$Variants = if ($Scene -eq 'desert_night') { @('Night') } elseif ($Scene -eq 'desert_ground') { @('Ground') } else { @('Before', 'Golden') }
+$MapPrefix = if ($Scene -eq 'desert_night') { 'LL_DesertNight' } elseif ($Scene -eq 'desert_ground') { 'LL_DesertGround' } elseif ($Scene -eq 'desert_tanks') { 'LL_DesertTanks' } elseif ($Scene -eq 'desert_crater') { 'LL_DesertCrater' } else { 'LL_DesertDay' }
+$Variants = if ($Scene -eq 'desert_night') { @('Night') } elseif ($Scene -eq 'desert_ground') { @('Ground') } elseif ($Scene -eq 'desert_tanks') { @('Tanks') } elseif ($Scene -eq 'desert_crater') { @('Crater') } else { @('Before', 'Golden') }
 
 function RunUnrealPython([string]$script) {
   $s = Join-Path $Root $script

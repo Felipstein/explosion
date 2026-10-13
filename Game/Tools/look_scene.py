@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 SCENE = os.environ.get('LOOK_SCENE', 'desert_golden_hour')
 _MODULES = {'desert_golden_hour': 'look_layout', 'desert_night': 'look_layout_night',
             'desert_ground': 'look_layout_ground',     # a cena de perto contra a close_ground_light_gemini
-            'civil_kit': 'look_layout_civil'}          # o kit civil da vila pro mapa jogável (só as malhas)
+            'civil_kit': 'look_layout_civil',          # o kit civil da vila pro mapa jogável (só as malhas)
+            'desert_tanks': 'look_layout_tanks',       # os tanques no deserto aberto (a cena pras explosões, 13/10)
+            'desert_crater': 'look_layout_crater'}     # a prova da cratera v2 (13/10)
 _m = importlib.import_module(_MODULES[SCENE])
 globals().update({k: v for k, v in vars(_m).items() if not k.startswith('__')})
 SCENE = os.environ.get('LOOK_SCENE', 'desert_golden_hour')

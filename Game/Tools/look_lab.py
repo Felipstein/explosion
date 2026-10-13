@@ -213,9 +213,9 @@ if (SALB > 0.5) {
     float gao = GravM.Sample(GravMSampler, p / 1.3).r;
     float4 Z = (ZON > 0.5) ? Zones.Sample(ZonesSampler, luv) : float4(0, 0, 0, 0);   // liso, ondulado, pedregoso, revirado
     sand *= lerp(1.0, gao * gao, 0.7 * (1.0 - 0.6 * Z.r) + 0.3 * Z.b);              // o liso tem menos fresta; o pedregoso mais
-    sand *= lerp(1.0, 1.07, Z.r);                                                     // o compactado mais claro
-    sand *= lerp(float3(1, 1, 1), float3(0.88, 0.85, 0.8), Z.b);                      // o pedregoso um pouco mais escuro e frio
-    sand *= lerp(float3(1, 1, 1), float3(0.86, 0.81, 0.75), Z.a);                     // a areia revirada (solta, um pouco úmida)
+    sand *= lerp(1.0, 1.03, Z.r);                                                     // o compactado mais claro (pouco: a diferença é no grão, não em mancha)
+    sand *= lerp(float3(1, 1, 1), float3(0.96, 0.95, 0.93), Z.b);                     // o pedregoso um pouco mais escuro e frio
+    sand *= lerp(float3(1, 1, 1), float3(0.94, 0.92, 0.89), Z.a);                     // a areia revirada (solta, um pouco úmida)
 }
 float2 sNxy = SandN.Sample(SandNSampler, p / 2.5).rg * 2.0 - 1.0;
 if (SALB > 0.5) {
@@ -307,22 +307,43 @@ float3 aA = AsphD.Sample(AsphDSampler, p / 2.2).rgb;
 float3 aB = AsphD.Sample(AsphDSampler, p / 8.14 + 0.37).rgb;
 float3 asph = lerp(aA, aB, 0.35) * 1.3;    // medido (ponto a ponto, 11/10): o asfalto da arte é bem mais claro
 float3 aFar = AerAsph.Sample(AerAsphSampler, p / 30.0 + 0.21).rgb * 0.9;
+// (13/10, o Felipe: "as marcas de pneu viram um PADRÃO na estrada toda") a foto aérea é um estacionamento com arcos de pneu e
+// uma trinca reta; repetida a cada 30 m, os mesmos arcos voltam ao longo da rua. AERBLUR = 1: só a mancha de cor dela (o mip
+// de ~1 m, os arcos somem), em duas amostras giradas e de escalas diferentes (a repetição se desfaz). O detalhe fino vem da
+// foto de perto e dos defeitos, que não mudam.
+if (AERBLUR > 0.5) {
+    float2 pa2 = float2(0.8 * p.x - 0.6 * p.y, 0.6 * p.x + 0.8 * p.y);
+    aFar = lerp(AerAsph.SampleLevel(AerAsphSampler, p / 30.0 + 0.21, 7.0).rgb,
+                AerAsph.SampleLevel(AerAsphSampler, pa2 / 47.0 + 0.63, 7.0).rgb, 0.5) * 0.9;
+}
 asph = lerp(asph, aFar, 0.45 + 0.3 * saturate((Depth - 1000.0) / 14000.0)) * macro * 1.72 * float3(AGR, AGG, AGB);   // o ganho depois da foto aérea (medido 11/10); × o ajuste da cena
 float2 aNxy = AsphN.Sample(AsphNSampler, p / 2.2).rg * 2.0 - 1.0;
 float3 aM = AsphM.Sample(AsphMSampler, p / 2.2).rgb;
 float3 dust = float3(0.30, 0.20, 0.12);
 asph = lerp(asph, dust * 1.3, 0.10);                       // o pó quente do deserto em tudo
+// a película de areia por cima (volta 15, o Felipe: "o gameshot está mais sujo de areia, mais claro"), em manchas largas
+// (13/10: lida da foto de praia em tamanho normal, os pedregulhos dela viravam bolhas de 20–30 cm, "uma onça no chão";
+//  agora só a mancha larga, num mip borrado: manchas de 2–5 m)
+float film = 0.12 + 0.16 * smoothstep(0.228, 0.246, Beach.SampleLevel(BeachSampler, p / 14.0 + 0.71, 8.0).g);
+asph = lerp(asph, sand * 0.92, film);
 
 // as rachaduras: duas amostras (12 m e 16,4 m girada 37°), trocando por manchas
 float2 pr = float2(0.8 * p.x - 0.6 * p.y, 0.6 * p.x + 0.8 * p.y) / 16.4 + 0.37;
 float4 C1 = Cracks.Sample(CracksSampler, p / 12.0);
 float4 C2 = Cracks.Sample(CracksSampler, pr);
-float sel = smoothstep(0.228, 0.244, Beach.Sample(BeachSampler, p / 40.0 + 0.19).g);   // G vai de ~0,22 a ~0,26
+// (volta 15: a fresta tinha ~2 cm e sumia no pixel de 5–8 cm da câmera do jogo; nas favoritas ela lê como linha de ~10 cm:
+//  engrossada ~3,5 cm pra cada lado pelo máximo de 4 vizinhos)
+float dl1 = 0.035 / 12.0, dl2 = 0.035 / 16.4;
+C1.r = max(C1.r, max(max(Cracks.Sample(CracksSampler, p / 12.0 + float2(dl1, 0)).r, Cracks.Sample(CracksSampler, p / 12.0 - float2(dl1, 0)).r),
+                     max(Cracks.Sample(CracksSampler, p / 12.0 + float2(0, dl1)).r, Cracks.Sample(CracksSampler, p / 12.0 - float2(0, dl1)).r)));
+C2.r = max(C2.r, max(max(Cracks.Sample(CracksSampler, pr + float2(dl2, 0)).r, Cracks.Sample(CracksSampler, pr - float2(dl2, 0)).r),
+                     max(Cracks.Sample(CracksSampler, pr + float2(0, dl2)).r, Cracks.Sample(CracksSampler, pr - float2(0, dl2)).r)));
+float sel = smoothstep(0.228, 0.244, Beach.SampleLevel(BeachSampler, p / 40.0 + 0.19, 8.0).g);   // (13/10: mip borrado, sem trocar em bolhas)   // G vai de ~0,22 a ~0,26
 float4 C = lerp(C1, C2, sel);
 // trechos muito rachados e trechos quase lisos (manchas de ~60 m e ~20 m), como nas artes
-float zone = saturate((Beach.Sample(BeachSampler, p / 60.0 + 0.61).r - 0.262) / 0.04) * 0.7
-           + saturate((Beach.Sample(BeachSampler, p / 20.0 + 0.27).g - 0.22) / 0.035) * 0.3;
-float crackAmt = lerp(0.0, 0.8, smoothstep(0.45, 0.85, zone));   // rara: a arte tem trechos lisos e a fresta só aqui e ali (crítica 11/10)
+float zone = saturate((Beach.SampleLevel(BeachSampler, p / 60.0 + 0.61, 8.0).r - 0.262) / 0.04) * 0.7
+           + saturate((Beach.SampleLevel(BeachSampler, p / 20.0 + 0.27, 7.0).g - 0.22) / 0.035) * 0.3;
+float crackAmt = lerp(0.15, 0.9, smoothstep(0.35, 0.8, zone));   // (13/10: as favoritas mostram o asfalto rachado de longe)   // rara: a arte tem trechos lisos e a fresta só aqui e ali (crítica 11/10)
 C.r *= crackAmt;
 C.g *= lerp(0.5, 1.0, crackAmt);
 float2 n1 = CracksN.Sample(CracksNSampler, p / 12.0).rg * 2.0 - 1.0;
@@ -331,26 +352,60 @@ float2 n2 = float2(0.8 * t2.x + 0.6 * t2.y, -0.6 * t2.x + 0.8 * t2.y);   // de v
 float2 cN = lerp(n1, n2, sel) * crackAmt;
 asph *= 0.88 + 0.24 * C.b;                                  // cada placa envelheceu de um jeito
 // a vida do asfalto (crítica 11/10): remendos retangulares mais escuros, manchas de óleo e marcas de pneu
-float2 cell = floor(p / 3.5);
+// os remendos (13/10: a grade de 3,5 m com 18% das células aparecia de longe como quadriculado): células de 9 m deslocadas
+// por linha, 6% delas com um remendo de tamanho, posição e tom sorteados, alinhado à rua
+float2 pc = p / 9.0;
+pc.x += floor(pc.y) * 0.37;
+float2 cell = floor(pc);
 float rnd = frac(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
 float rnd2 = frac(sin(dot(cell, float2(39.346, 11.135))) * 24634.6345);
-float2 fp = frac(p / 3.5);
-float patchBox = step(0.82, rnd) * step(0.12, fp.x) * step(fp.x, 0.12 + 0.5 + 0.35 * rnd2) * step(0.2, fp.y) * step(fp.y, 0.75);
-asph *= lerp(1.0, 0.72, patchBox);
+float rnd3 = frac(sin(dot(cell, float2(73.156, 52.235))) * 15731.7431);
+float2 fp = frac(pc);
+float2 pc0 = float2(0.1 + 0.45 * rnd2, 0.15 + 0.4 * rnd3);
+float2 psz = float2(0.18 + 0.3 * rnd3, 0.1 + 0.22 * rnd2);
+float2 fpl = (LANEX > 0.5) ? fp : fp.yx;
+float patchBox = step(0.94, rnd) * step(pc0.x, fpl.x) * step(fpl.x, pc0.x + psz.x) * step(pc0.y, fpl.y) * step(fpl.y, pc0.y + psz.y);
+asph *= lerp(1.0, 0.78 + 0.12 * rnd2, patchBox * (1.0 - ASPHV2));   // (com o v2, os remendos são os dele)
 float oil = Beach.Sample(BeachSampler, p / 2.3 + 0.83).r;
-asph *= lerp(1.0, 0.6, smoothstep(0.293, 0.303, oil));
+asph *= lerp(1.0, 0.6, smoothstep(0.293, 0.303, oil) * (1.0 - ASPHV2));
 float tireX = Beach.Sample(BeachSampler, float2(p.x / 40.0, p.y / 0.55) + 0.15).g;
 float tireY = Beach.Sample(BeachSampler, float2(p.x / 0.55, p.y / 40.0) + 0.65).g;
 float tire = max(smoothstep(0.247, 0.256, tireX) * LANEX, smoothstep(0.247, 0.256, tireY) * (1.0 - LANEX));
 asph *= lerp(1.0, 0.8, tire);
-asph = lerp(asph, asph * 0.3, saturate(C.r * 0.85));   // a fresta: fina (o miolo da textura), não a borda alargada
+asph = lerp(asph, asph * 0.22, saturate(C.r * 0.95));   // a fresta: fina (o miolo da textura), não a borda alargada
 asph = lerp(asph, dust * 1.2, C.g * 0.6);                   // areia nas frestas e as faixas de vento
 float aRough = saturate(aM.g + 0.1 * C.r + 0.1 * C.g);
+float2 v2Nxy = float2(0.0, 0.0);
+ASPHALT_V2_BLOCK
 
-// --- faixa pintada (gasta) ---
-float wear = smoothstep(0.215, 0.245, Beach.Sample(BeachSampler, p / 1.7 + 0.31).g);
-float paint = L.a * wear * (1.0 - C.r) * (1.0 - C.g);
-asph = lerp(asph, float3(0.62, 0.60, 0.55), paint);
+// --- a faixa pintada ---
+float paint;
+if (PAINTV2 > 0.5) {
+    // (13/10, o estudo nas favoritas: a road_town_battle e a close_game_cam) contínua e nítida, ~13 cm, creme empoeirada
+    // (não branco); a trinca passa por cima e a corta, faltam lasquinhas ao longo, uns trechos mais apagados, e a areia que
+    // invade a pista a cobre (a mistura da areia vem depois daqui)
+    // a idade da tinta muda pela estrada, em trechos de 20–40 m (as favoritas vão da quase nova, a road_town_battle, à quase
+    // sumida, a three_factions e a street_battle): a velha descasca em placas de 10–50 cm, ficando só o "fantasma" (o
+    // asfalto mais claro onde a tinta esteve), e encarde (mais parda, menos contraste)
+    float pline = saturate((L.a - 0.5) / max(fwidth(L.a), 1e-3) + 0.5);
+    float life = lerp(0.12, 1.0, saturate((Beach.Sample(BeachSampler, p / 30.0 + 0.47).r - 0.262) / 0.035));
+    // (v2: descascava demais e em pedaços curtos, a faixa lia tracejada; agora as falhas são maiores e mais raras: a maior
+    //  parte da estrada tem a faixa quase inteira, como a road_town_battle, e só os trechos velhos ficam no fantasma)
+    float flakeN = Beach.Sample(BeachSampler, p / 2.4 + 0.13).g;
+    float thr = lerp(0.248, 0.205, life);
+    float keep = smoothstep(thr - 0.003, thr + 0.003, flakeN);
+    float chips = smoothstep(0.229, 0.222, Beach.Sample(BeachSampler, p / 0.6 + 0.71).g);
+    float crackCut = 1.0 - saturate(C.r * 1.6);
+    paint = pline * keep * (1.0 - 0.9 * chips) * (0.55 + 0.45 * life) * crackCut * (1.0 - 0.7 * C.g);
+    float ghost = pline * (1.0 - keep) * 0.18 * crackCut;                     // o fantasma da tinta que saiu
+    float3 paintC = lerp(float3(0.56, 0.53, 0.46), sand * 0.95, 0.2 + 0.35 * (1.0 - life));
+    asph = lerp(asph, asph * 1.25 + 0.02, ghost);
+    asph = lerp(asph, paintC, paint);
+} else {
+    float wear = smoothstep(0.215, 0.245, Beach.Sample(BeachSampler, p / 1.7 + 0.31).g);
+    paint = L.a * wear * (1.0 - C.r) * (1.0 - C.g);
+    asph = lerp(asph, float3(0.62, 0.60, 0.55), paint);
+}
 
 // --- terra batida ---
 float3 dirt = sand * float3(0.63, 0.57, 0.50);
@@ -360,20 +415,81 @@ float3 col = sand;
 float2 nxy = sNxy;
 float r = sM.g, ao = sM.r;
 col = lerp(col, asph, L.r);
-nxy = lerp(nxy, aNxy * 0.6 + cN, L.r);
+nxy = lerp(nxy, aNxy * 0.6 + cN + v2Nxy, L.r);
 r = lerp(r, lerp(aRough, 0.55, paint), L.r);
 ao = lerp(ao, aM.r, L.r);
 col = lerp(col, dirt, L.b);
-col = lerp(col, sand * 1.04, L.g);
+col = lerp(col, sand * 0.97, smoothstep(0.0, 1.0, L.g) * 0.9);   // (volta 11: a areia na pista é a mesma areia, num degradê; era sand × 1,04 de borda dura)
 nxy = lerp(nxy, sNxy, L.g);
 r = lerp(r, sM.g, L.g);
+// --- a cratera v2 (13/10, a prova): a cor do crater() do jogo a 2 cm, com as cores da MF v2 (look_mf.py); o relevo é a
+// malha (look_ground.py). A textura tem as crateras lado a lado: R altura, G escuro, B calor, A claro.
+if (CRN > 0.5) {
+    for (int k = 0; k < 2; k++) {
+        if (k >= CRN) break;
+        float cx = (k == 0) ? C1X : C2X, cy = (k == 0) ? C1Y : C2Y, ya = (k == 0) ? C1YAW : C2YAW;
+        float2 dd = p - float2(cx, cy);
+        float2 uvl = float2(dd.x * cos(ya) + dd.y * sin(ya), -dd.x * sin(ya) + dd.y * cos(ya)) / CSPAN + 0.5;
+        if (all(uvl > 0.0) && all(uvl < 1.0)) {
+            float4 Cr = Crater.Sample(CraterSampler, float2((uvl.x + k) / CRN, uvl.y));
+            float hc = (Cr.r - 0.5) * 2.0 * CRANGE * 100.0;         // cm
+            float dark = Cr.g, ej = Cr.a;
+            float surf = L.r;                                        // 0 areia, 1 asfalto
+            float bowl = saturate(-hc / 25.0);
+            col = lerp(col, lerp(col * float3(0.5, 0.45, 0.4), float3(0.17, 0.15, 0.12), surf), bowl);
+            col *= lerp(1.0, lerp(1.1, 1.0, surf), saturate(hc / 6.0));
+            float lum = dot(col, float3(0.3, 0.59, 0.11));
+            float3 darkC = lerp(lerp(col, lum.xxx, 0.5) * 0.14, float3(0.03, 0.028, 0.026), surf);
+            col = lerp(col, darkC, dark * 0.95);
+            float3 lightC = lerp(min(max(col * 1.35, float3(0.55, 0.46, 0.33)), 0.8), float3(0.40, 0.38, 0.35), surf);
+            col = lerp(col, lightC, ej * 0.9);
+            float crMask = saturate(dark + ej + bowl);
+            r = lerp(r, 0.95, crMask);
+            nxy *= 1.0 - 0.35 * crMask;                              // a ondulação some na terra revirada; o grão fica (volta 5: 0,7 alisava o fundo)
+        }
+    }
+}
 Rough = r;
 AO = ao;
 // o detalhe por cima da normal da malha (o relevo de verdade)
 float3 vn = normalize(VN);
+// a face da quebra da laje da estrada (a estrada com volume, 13/10): a parede do degrau é íngreme; o asfalto quebrado
+// mostra a brita e a base, mais clara e cinza que o topo (nos game shots a borda lê como um lábio claro esfarelado)
+float lip = (1.0 - smoothstep(0.55, 0.85, vn.z)) * saturate(L.r * 2.0);
+// (v3: a face clara lia linha branca nas frestas; nas imagens 14 e 12 a quebra é asfalto escuro com sombra, e o claro é
+//  a areia em volta)
+col = lerp(col, col * float3(0.45, 0.43, 0.41), lip);
+Rough = lerp(Rough, 0.95, lip);
 Nrm = normalize(vn + float3(nxy, 0.0) * 0.8);
 return col;
 """
+
+
+def asphalt_v2_block():
+    """O asfalto v2 do WorldForge (look_asphalt.ASPHALT_V2_CODE, aprovado em 13/10) por cima do asfalto da maquete, num
+    escopo próprio: a entrada Base é o asfalto da maquete; o referencial da rua vem do T_LL_RoadFrame."""
+    if not getattr(look_scene, 'ASPHALT_V2', False):
+        return ''
+    import importlib.util as iu
+    sp = iu.spec_from_file_location('look_asphalt', os.path.join(os.path.dirname(__file__), 'look_asphalt.py'))
+    la = iu.module_from_spec(sp); sp.loader.exec_module(la)
+    code = la.ASPHALT_V2_CODE
+    for a, b in (('return col;', 'asph = col;'), ('Nout = normalize(N + float3(nxy, 0.0));', 'v2Nxy = nxy;'),
+                 ('Rout = saturate(rough);', 'aRough = saturate(rough);')):
+        assert a in code, a
+        code = code.replace(a, b)
+    head = """{
+    float4 RFt = RoadFrame.SampleLevel(RoadFrameSampler, luv, 0.0);
+    float Across = (RFt.r - 0.5) * 25.6;
+    float Width = RFt.g * 32.0;
+    float Edge = Width * 0.5 - abs(Across);
+    float2 RD = float2(cos(RFt.b * 3.14159265), sin(RFt.b * 3.14159265));
+    float2 WindDir = float2(cos(WINDYAW), sin(WINDYAW));
+    float3 Base = asph;
+    float Rough = aRough;
+    float3 N = float3(0.0, 0.0, 1.0);
+"""
+    return head + code + chr(10) + "}" + chr(10)
 
 
 def ground_material():
@@ -387,20 +503,26 @@ def ground_material():
     zon = import_texture(zon_png, tfold, 'masks') if os.path.exists(zon_png) else load('/Engine/EngineResources/Black')
     trk_png = os.path.join(GROUND_DIR, f'T_LL_Tracks{SUFFIX}.png')
     trk = import_texture(trk_png, tfold, 'masks') if os.path.exists(trk_png) else load('/Engine/EngineResources/Black')
+    cr_png = os.path.join(GROUND_DIR, f'T_LL_Crater{SUFFIX}.png')        # a cratera v2 (look_ground.py)
+    crt = import_texture(cr_png, tfold, 'masks') if os.path.exists(cr_png) else load('/Engine/EngineResources/Black')
     import json
     G = json.load(open(os.path.join(GROUND_DIR, 'ground.json')))
     m = fresh(name, folder, unreal.Material, unreal.MaterialFactoryNew())
     m.set_editor_property('tangent_space_normal', False)
     custom = mel.create_material_expression(m, unreal.MaterialExpressionCustom, -300, 0)
-    custom.set_editor_property('code', GROUND_CODE)
+    custom.set_editor_property('code', GROUND_CODE.replace('ASPHALT_V2_BLOCK', asphalt_v2_block()))
     custom.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
     custom.set_editor_property('description', 'LookLab ground')
+    v2 = bool(getattr(look_scene, 'ASPHALT_V2', False))
+    rf_png = os.path.join(GROUND_DIR, f'T_LL_RoadFrame{SUFFIX}.png')
+    texs_v2 = [('RoadFrame', import_texture(rf_png, tfold, 'masks')),
+               ('OilAtlas', import_texture(os.path.join(TEX_DIR, 'T_LL_Oil.png'), tfold, 'masks'))] if v2 else []
     texs = [('SandD', load(TEX['SandD'])), ('SandN', load(TEX['SandN'])), ('SandM', load(TEX['SandM'])),
             ('Beach', load(TEX['BeachD'])), ('AsphD', load(TEX['AsphD'])), ('AsphN', load(TEX['AsphN'])),
             ('AsphM', load(TEX['AsphM'])), ('AerAsph', load(TEX['AerAsphD'])),
             ('Layout', lay), ('Cracks', crk), ('CracksN', crn),
             ('GravD', load(TEX['GravD'])), ('GravN', load(TEX['GravN'])), ('BeachN', load(TEX['BeachN'])),
-            ('GravM', load(TEX['GravM'])), ('Ripples', rip), ('Tracks', trk), ('Zones', zon)]
+            ('GravM', load(TEX['GravM'])), ('Ripples', rip), ('Tracks', trk), ('Zones', zon), ('Crater', crt)] + texs_v2
     sg = getattr(look_scene, 'GROUND_TINT', {}).get('sand', (1.0, 1.0, 1.0))       # o ajuste da areia por cena (a noite: mais clara e cinza)
     ag = getattr(look_scene, 'GROUND_TINT', {}).get('asphalt', (1.0, 1.0, 1.0))
     sa = getattr(look_scene, 'SAND_ALBEDO', None)        # o albedo da areia em linear (o caminho novo, 12/10)
@@ -411,7 +533,16 @@ def ground_material():
               ('RIPTEX', float(getattr(look_scene, 'SAND_RIPPLE_TEX', 0.0))),
               ('WINDYAW', math.radians(getattr(look_scene, 'WIND_YAW', 0.0))), ('RTILE', 10.0),
               ('TRK', 1.0 if getattr(look_scene, 'TRACK_RELIEF', False) else 0.0),
-              ('ZON', 1.0 if getattr(look_scene, 'ZONES', None) is not None else 0.0)]
+              ('ZON', 1.0 if getattr(look_scene, 'ZONES', None) is not None else 0.0),
+              ('AERBLUR', 1.0 if getattr(look_scene, 'AER_BLUR', False) else 0.0),
+              ('PAINTV2', 1.0 if getattr(look_scene, 'ROAD', {}).get('paint_v2', False) else 0.0),
+              ('ASPHV2', 1.0 if getattr(look_scene, 'ASPHALT_V2', False) else 0.0), ('OilPuddle', 0.07)]
+    crs = G.get('craters', [])[:2] if os.path.exists(cr_png) else []
+    cpad = crs + [dict(x=0.0, y=0.0, yaw=0.0)] * (2 - len(crs))
+    consts += [('CRN', float(len(crs))), ('CSPAN', float(crs[0]['span']) if crs else 14.0),
+               ('CRANGE', float(crs[0]['range']) if crs else 0.8)]
+    for k, c in enumerate(cpad):
+        consts += [(f'C{k + 1}X', float(c['x'])), (f'C{k + 1}Y', float(c['y'])), (f'C{k + 1}YAW', math.radians(c.get('yaw', 0.0)))]
     names = ['WP', 'Depth', 'VN'] + [k for k, _ in texs] + [k for k, _ in consts]
     ins = []
     for n in names:
@@ -502,11 +633,17 @@ float stain = Beach.Sample(BeachSampler, q.yz / 9.0).g * w.x + Beach.Sample(Beac
 float3 col = c / 0.26 * float3(0.40, 0.31, 0.22);   // reboco cinza-terra (medido: b* 18 na arte)
 float hsh = frac(sin(dot(Obj.xy * 0.01, float2(12.9898, 78.233))) * 43758.5453);
 col *= lerp(float3(0.93, 0.95, 0.98), float3(1.07, 1.03, 0.97), hsh);
+// cada casa um tom (13/10, crítica da arte: "umas caiadas, outras ocre"; todas tinham a cor do chão)
+float hsh2 = frac(hsh * 7.31 + 0.17);
+col = lerp(col, float3(0.52, 0.45, 0.35), 0.55 * step(0.62, hsh2));          // caiada (creme; o 0,50/0,46/0,40 lia cinza-frio)
+col *= lerp(float3(1.0, 1.0, 1.0), float3(1.08, 0.94, 0.74), step(hsh2, 0.3));   // ocre
 col *= lerp(0.88, 1.08, saturate((stain - 0.215) / 0.045));
 float zf = (WP.z - Obj.z) * 0.01;
 float sn = saturate((stain - 0.215) / 0.045);
-float base = 1.0 - smoothstep(0.55 + 0.35 * sn, 1.15 + 0.4 * sn, zf);          // a barra de sujeira no pé (~1 m, borda irregular)
-col = lerp(col, col * float3(0.62, 0.55, 0.47), 0.85 * base);
+// a barra de sujeira no pé, borda irregular (volta 12, 2ª crítica da arte: "paredes lisas, sem sujeira subindo da base":
+// ~1,5 m e mais escura; era ~1 m e 0,62/0,55/0,47)
+float base = 1.0 - smoothstep(0.8 + 0.5 * sn, 1.6 + 0.6 * sn, zf);
+col = lerp(col, col * float3(0.55, 0.48, 0.40), 0.9 * base);
 float zTop = Bnd.z * 0.01;
 // paredes: escorridos de sujeira (ruído esticado na vertical, escorre da mureta) e o reboco
 // caído em manchas (aparece o barro mais escuro e avermelhado por baixo)
@@ -517,9 +654,9 @@ streak = smoothstep(0.275, 0.3, streak);
 float fromTop = 1.0 - smoothstep(0.3, 2.4, zTop - zf);                       // o escorrido nasce na beira do teto e some descendo
 col *= lerp(1.0, 0.6, streak * wall * fromTop);
 col *= lerp(1.0, 0.82, wall * (1.0 - smoothstep(0.0, 0.35, zTop - zf)));      // a beira do teto mais escura
-float peel = Beach.Sample(BeachSampler, wq / 3.2 + 0.11).g;
-peel = smoothstep(0.238, 0.25, peel + 0.004 * (c.r / 0.26 - 1.0));
-col = lerp(col, col * float3(0.72, 0.62, 0.52), peel * wall);
+float peel = Beach.Sample(BeachSampler, wq / 5.0 + 0.11).g;
+peel = smoothstep(0.236, 0.246, peel + 0.004 * (c.r / 0.26 - 1.0));
+col = lerp(col, col * float3(0.66, 0.5, 0.38), peel * wall);      // (volta 12: manchas maiores, o barro avermelhado aparecendo)
 float up = smoothstep(0.55, 0.9, n.z);
 col = lerp(col, float3(0.32, 0.28, 0.23), ROOFDARK * up);
 col *= lerp(1.0, 0.78, up * step(zTop - 0.12, zf));                         // o topo da mureta (a quina do teto) mais escuro
@@ -617,6 +754,7 @@ def house_materials():
         'Wood': flat_material('M_LL_Wood', (0.11, 0.065, 0.035), 0.8),
         'Metal': flat_material('M_LL_Metal', (0.20, 0.19, 0.17), 0.55, 0.6),
         'Cloth': flat_material('M_LL_Cloth', (0.30, 0.22, 0.13), 0.95, two_sided=True),
+        'Rust': flat_material('M_LL_Rust', (0.14, 0.06, 0.025), 0.85, 0.15),
     })
     return HOUSE_MATS
 
@@ -789,6 +927,57 @@ def unit_dust_parent():
 
 _DUST_PARENT = None
 
+# A carcaça queimada (13/10, medida na carcaça da street_battle ampliada; a mesma receita foi pro jogo): não é preta, é
+# marrom-carvão com variação forte. Tinta queimada (92,74,60 sRGB) em ~55%, fuligem (34,30,27) embaixo e em manchas,
+# ferrugem de calor (118,70,42) em manchas de ~1,5 m com borda dura, cinza (165,155,142) em placas nas faces de cima.
+# Na tela o alvo dá p10/p50/p90 ≈ 0,03/0,33/0,60 (o bloco chapado de antes dava uma cor só).
+BURNT_CODE = r"""
+float3 n = normalize(N);
+float3 w = pow(abs(n), 4.0); w /= (w.x + w.y + w.z);
+float3 q = WP * 0.01;
+// (13/10 volta 2: a foto da praia tem pedrinhas; amostrada sem desfoque o limiar virava pontilhado preto. O SampleBias
+// pega um mip borrado: só as manchas largas ficam)
+// (volta 4: o SampleBias somava ao mip da distância e o ruído virava uma cor só; o mip fixo dá a mesma mancha a qualquer distância)
+float nA = Beach.SampleLevel(BeachSampler, q.yz / 1.5 + 0.13, 5.0).g * w.x + Beach.SampleLevel(BeachSampler, q.xz / 1.5 + 0.41, 5.0).g * w.y
+         + Beach.SampleLevel(BeachSampler, q.xy / 1.5 + 0.77, 5.0).g * w.z;
+float nB = Beach.SampleLevel(BeachSampler, q.yz / 0.8 + 0.29, 4.0).r * w.x + Beach.SampleLevel(BeachSampler, q.xz / 0.8 + 0.53, 4.0).r * w.y
+         + Beach.SampleLevel(BeachSampler, q.xy / 0.8 + 0.91, 4.0).r * w.z;
+// a faixa do ruído borrado (medida na foto em linear: mip 5 do G p5/p50/p95 0,221/0,237/0,253; mip 4 do R 0,257/0,284/0,309)
+nA = saturate((nA - 0.221) / 0.032);
+nB = saturate((nB - 0.257) / 0.052);
+float zf = (WP.z - Obj.z) * 0.01;                                   // a altura sobre o chão (a origem do tanque)
+// (volta 2: a fuligem cobria quase tudo, a carcaça deu p50 0,15 contra 0,33 no alvo: embaixo só até 0,6 m, e as manchas
+// em ~25% do corpo)
+float soot = saturate((1.0 - smoothstep(0.2, 0.6, zf)) * 0.8 + (1.0 - smoothstep(0.22, 0.32, nA)) * 0.9);   // ~25% em manchas
+float rust = smoothstep(0.78, 0.86, nA) * (1.0 - 0.7 * soot);                                             // ~15%
+float up = smoothstep(0.6, 0.9, n.z);
+float ash = up * smoothstep(0.7, 0.8, nB) * (1.0 - soot);                                                 // ~20% do teto
+float3 col = float3(0.076, 0.061, 0.051);                            // a tinta queimada (volta 4: 78,70,64, mais cinza: o sol baixo puxa pro laranja)
+col = lerp(col, float3(0.140, 0.062, 0.030), rust);                  // a ferrugem de calor (volta 2: menos vermelha, 104,70,48)
+col = lerp(col, float3(0.016, 0.013, 0.011), soot);                  // a fuligem
+col = lerp(col, float3(0.376, 0.328, 0.270), ash);                   // a cinza
+col *= 0.9 + 0.2 * nB;
+Rough = 0.93;
+return col;
+"""
+_BURNT = None
+
+
+def burnt_material():
+    global _BURNT
+    if _BURNT is None:
+        F1 = unreal.CustomMaterialOutputType.CMOT_FLOAT1
+        m, c = custom_material('M_LL_Burnt', BURNT_CODE,
+                               [('WP', unreal.MaterialExpressionWorldPosition), ('N', unreal.MaterialExpressionVertexNormalWS),
+                                ('Obj', unreal.MaterialExpressionObjectPositionWS), ('Beach', TEX['BeachD'])],
+                               [('Rough', F1)])
+        mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+        mel.connect_material_property(c, 'Rough', unreal.MaterialProperty.MP_ROUGHNESS)
+        mel.recompile_material(m)
+        eal.save_loaded_asset(m)
+        _BURNT = m
+    return _BURNT
+
 
 def unit_dust_materials(R):
     """Para cada peça do tanque: as instâncias do pó com os parâmetros da peça e da receita."""
@@ -834,7 +1023,7 @@ def unit_dust_materials(R):
 TANK_GLB = os.path.join(REPO, 'captures', 'look', 'tank_glb')
 # o aspecto de cada material do tanque (cor sRGB, rugosidade, metal); o pó vem da receita
 # a tinta é cinza-claro de tinta (albedo ~0,38), não branco
-TANK_SLOTS = {'Paint': ((126, 126, 119), 0.62, 0.0), 'Team': ((86, 108, 150), 0.66, 0.0), 'Dark': ((40, 40, 38), 0.7, 0.0),
+TANK_SLOTS = {'Paint': ((126, 126, 119), 0.62, 0.0), 'Team': ((86, 108, 150), 0.85, 0.0), 'Dark': ((40, 40, 38), 0.7, 0.0),
               'Metal': ((95, 95, 92), 0.45, 0.7), 'Cloth': ((64, 86, 132), 0.92, 0.0), 'Lens': ((30, 60, 110), 0.15, 0.0),
               'Track': ((55, 52, 48), 0.6, 0.5), 'Char': ((26, 23, 20), 0.92, 0.0), 'Rust': ((74, 46, 30), 0.85, 0.15),
               'Blade': ((196, 160, 40), 0.6, 0.2)}     # o amarelo de máquina (a lâmina do Dozer)
@@ -890,7 +1079,8 @@ def import_tank():
     return out
 
 
-PAINTS = {'usa': (126, 126, 119), 'usa_tan': (176, 150, 112), 'china': (64, 72, 50), 'gla': (178, 152, 110), 'usa_night': (150, 128, 92), 'china_night': (40, 46, 32)}   # usa_night medida 11/10: o lado L* 36, quase sem amarelo
+PAINTS = {'usa': (126, 126, 119), 'usa_tan': (176, 150, 112), 'china': (64, 72, 50), 'gla': (178, 152, 110), 'usa_night': (150, 128, 92), 'china_night': (40, 46, 32), 'olive': (66, 72, 50), 'burnt': (34, 30, 27),
+          'gla_white': (196, 190, 176), 'gla_red': (128, 44, 34), 'gla_rust': (118, 74, 46)}   # as técnicas da road_town_battle (13/10)   # usa_night medida 11/10: o lado L* 36, quase sem amarelo
 
 
 def wreck_materials(R):
@@ -905,6 +1095,8 @@ def kit_mat(R, paint, slot, cache):
     """O material de um slot da unidade (tinta da facção, pó do mundo, camuflagem), um por (slot, tinta, receita)."""
     global _DUST_PARENT
     key = next((k for k in TANK_SLOTS if slot.lower().startswith(k.lower())), 'Paint')
+    if paint == 'burnt':
+        return burnt_material()          # a carcaça: um material só, a variação vem do ruído (BURNT_CODE)
     if key in cache:
         return cache[key]
     if _DUST_PARENT is None:
@@ -915,6 +1107,10 @@ def kit_mat(R, paint, slot, cache):
     if key == 'Paint':
         col = PAINTS.get(paint, col)
         col = tuple(W.get('paints', {}).get(paint, col))     # a tinta da facção pode vir da receita (o alvo de cada ambiente)
+    if key == 'Team':
+        col = tuple(W.get('team', {}).get(paint, col))       # a cor do time também (13/10: o azul das favoritas é forte)
+    if paint == 'olive' and key in ('Team', 'Cloth'):
+        col = (120, 40, 34) if key == 'Team' else (58, 62, 46)        # a estrela vermelha e a lona oliva
     if paint.startswith('china') and key in ('Team', 'Cloth'):
         col = (120, 40, 34) if key == 'Team' else (62, 70, 50)      # o vermelho da China e a lona oliva
         if key == 'Team' and paint == 'china_night':
@@ -943,7 +1139,7 @@ def kit_mat(R, paint, slot, cache):
         camo = ((46, 64, 36), (84, 108, 56), (78, 70, 44))
         if paint == 'china_night':      # à noite a luz azul puxa o verde pro menta: mais oliva e mais escuro (11/10)
             camo = ((44, 50, 26), (76, 82, 40), (96, 84, 52))
-    if key == 'Paint' and paint.startswith('gla'):
+    if key == 'Paint' and paint == 'gla':
         # as picapes da arte: areia-amarelado com manchas marrons e oliva (a pintura de deserto feita à mão)
         camo = ((176, 148, 96), (112, 90, 54), (146, 132, 82))
     if camo:
@@ -1147,6 +1343,21 @@ def props(P):
                 a.static_mesh_component.set_material(i, HOUSE_MATS[key])
         a.set_actor_label(f'Prop_{nm}_{k}')
         a.set_folder_path('Props')
+    # o vestir da vila (look_ground.dressing): as peças do kit de entulho pelas regras da planta
+    for k, (nm, x, y, z, yaw) in enumerate(P.get('dressing', [])):
+        m = EXTRA_MESHES.get(nm)
+        if not m:
+            continue
+        a = actors.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x * 100, y * 100, z * 100),
+                                          unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
+        a.static_mesh_component.set_static_mesh(m)
+        for i, sm in enumerate(m.get_editor_property('static_materials')):
+            slot = str(sm.get_editor_property('material_slot_name'))
+            key = next((kk for kk in HOUSE_MATS if slot.lower().startswith(kk.lower())), None)
+            if key:
+                a.static_mesh_component.set_material(i, HOUSE_MATS[key])
+        a.set_actor_label(f'Dress_{nm}_{k}')
+        a.set_folder_path('Dressing')
     pole = load('/Game/Slice/Models/modular_electricity_poles/preset_02_pole')
     zo = P.get('poles', [0.0] * len(POLES))
     if pole:
@@ -1275,10 +1486,8 @@ def wrecks(P, kits):
             a = actors.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x * 100, y * 100, z * 100),
                                               unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
             a.static_mesh_component.set_static_mesh(mesh)
-            for i, slot in mats.items():
-                mi = WRECK_MATS.get(slot)
-                if mi:
-                    a.static_mesh_component.set_material(i, mi)
+            for i, slot in mats.items():      # (13/10: o carvão chapado lia "borrão preto": o material da carcaça)
+                a.static_mesh_component.set_material(i, burnt_material())
             a.set_actor_scale3d(unreal.Vector(sc, sc, sc))
             a.set_actor_label(f'Wreck_{k}')
             a.set_folder_path('Wrecks')
@@ -1424,6 +1633,11 @@ def card_material(name, code, kind, params, tex_key):
         mel.connect_material_expressions(e, '', c, n)
         y += 100
     tex = import_texture(os.path.join(TEX_DIR, f'T_LL_{tex_key}.png'), ROOT + '/Textures', 'masks')
+    # (13/10: no -game com o pool de texturas estourado a chama caía no último mip, uma média sem forma, e o cartão inteiro
+    #  brilhava: o "quadrado branco" no BlastLab. O MRQ roda sem streaming e não mostrava. Textura de efeito não entra no streaming)
+    if not tex.get_editor_property('never_stream'):
+        tex.set_editor_property('never_stream', True)
+        eal.save_loaded_asset(tex)
     bt = mel.create_material_expression(m, unreal.MaterialExpressionTextureObject, -700, y)
     bt.set_editor_property('texture', tex)
     bt.set_editor_property('sampler_type', sampler_for(tex))
@@ -1804,7 +2018,8 @@ def environment(R, cam_yaw):
     for key, field in (('saturation', 'color_saturation'), ('contrast', 'color_contrast'), ('gamma', 'color_gamma'),
                        ('gain', 'color_gain'), ('shadow_saturation', 'color_saturation_shadows'),
                        ('shadow_gain', 'color_gain_shadows'), ('highlight_gain', 'color_gain_highlights'),
-                       ('midtone_gain', 'color_gain_midtones'), ('shadow_contrast', 'color_contrast_shadows')):
+                       ('midtone_gain', 'color_gain_midtones'), ('shadow_contrast', 'color_contrast_shadows'),
+                       ('midtone_saturation', 'color_saturation_midtones'), ('highlight_saturation', 'color_saturation_highlights')):
         if key in P:
             v = P[key]
             v4 = unreal.Vector4(v, v, v, 1.0) if not isinstance(v, list) else unreal.Vector4(v[0], v[1], v[2], 1.0)

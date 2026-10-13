@@ -34,7 +34,15 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   2. `docs/MIGRACAO.md`: plano de migração, números calibrados, lições.
   3. `docs/ARCHITECTURE.md`: como cada sistema do WebGL foi feito, com
      referências (caminhos `js/...` = `reference/webgl/js/...`).
-- `captures/` (fora do git): renders, capturas e testes.
+  - Arte conceitual do jogo (imagens geradas no GPT/Gemini): `docs/CONCEITO_UNIDADES.md`
+    e `docs/CONCEITO_CONSTRUCOES.md` são os guias pra criar unidades e
+    construções novas no padrão de cada facção. Leia antes de gerar qualquer
+    prompt. As aprovadas ficam em `docs/concept/`.
+  - **O visual aprovado e como foi feito** (areia, cratera, vila, carcaça, asfalto, estrada):
+    `docs/RECEITAS_DO_LOOK.md`. Leia antes de mexer em qualquer visual. Quem faz algo que
+    o Felipe aprova anota lá o caminho, os números e os arquivos.
+- `captures/` (fora do git): renders, capturas e testes (a arte conceitual
+  fica em `captures/concept/`).
 
 ## Como trabalhar com o Felipe (regras combinadas)
 
@@ -65,3 +73,7 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   internos.
 - Se você deixar o app/editor num modo de teste (pausado, câmera presa),
   restaure antes de devolver.
+- **A placa de vídeo é uma só (GTX 1660), e várias sessões usam.** Antes de abrir
+  qualquer Unreal com janela ou render na placa, siga a trava `captures/.gpu_lock`
+  (`docs/GPU.md`): se existe e tem menos de 20 min, espere; senão crie, use e apague.
+  As sessões se coordenam por ela, sem pedir ao Felipe pra liberar.

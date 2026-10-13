@@ -594,6 +594,106 @@ def dozer():
     return p.finish()
 
 
+# ---------------------------------------------------------------------------------- o kit de entulho da vila
+import random as _random
+
+
+def clutter():
+    """O entulho das favoritas: monte de escombros de adobe, cerca de chapa, caixa d'água, ar-condicionado, antena
+    parabólica, pneus, sucata, muro quebrado, toldo, varal. Cada peça com variações (semente fixa)."""
+    COLORS.update({'Plaster': (186, 160, 124), 'Wood': (118, 84, 52), 'Metal': (120, 118, 110), 'Rust': (110, 62, 36),
+                   'Cloth': (150, 128, 98), 'Dark': (30, 28, 26)})
+    out = []
+    for v in range(3):                                   # os montes de escombro (adobe quebrado, laje, ferro)
+        r = _random.Random(100 + v)
+        p = Part(f'SM_LL_Prop_Rubble{v}')
+        n = 14 + 6 * v
+        for i in range(n):
+            a = r.uniform(0, 6.283); d = r.uniform(0, 1.6 + 0.4 * v) ** 1.2
+            sz = r.uniform(0.18, 0.75) * (1.2 - 0.5 * d / 2.5)
+            z = max(0.0, 0.55 - 0.3 * d) * r.uniform(0.4, 1.0)
+            p.obox('Plaster', (d * __import__('math').cos(a), d * __import__('math').sin(a), z + sz * 0.3),
+                   (sz * r.uniform(0.8, 1.6), sz * r.uniform(0.6, 1.2), sz * r.uniform(0.35, 0.7)),
+                   yaw=r.uniform(0, 180), pitch=r.uniform(-25, 25), roll=r.uniform(-25, 25), bevel=0.02)
+        for i in range(3 + v):                           # uma laje rachada e ferros tortos saindo
+            p.obox('Plaster', (r.uniform(-0.8, 0.8), r.uniform(-0.8, 0.8), 0.35), (r.uniform(0.9, 1.6), r.uniform(0.6, 1.1), 0.12),
+                   yaw=r.uniform(0, 180), pitch=r.uniform(-30, 30), roll=r.uniform(-20, 20), bevel=0.015)
+            p.cyl('Rust', (r.uniform(-0.6, 0.6), r.uniform(-0.6, 0.6), 0.5), (r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(0.3, 1.0)),
+                  0.012, r.uniform(0.6, 1.4), seg=6, bevel=0.0)
+        out.append(p.finish())
+    for v in range(2):                                   # a cerca de chapa corrugada (4 m), enferrujada, uma placa torta
+        r = _random.Random(200 + v)
+        p = Part(f'SM_LL_Prop_Fence{v}')
+        for i in range(5):
+            x = -1.6 + i * 0.8
+            tilt = r.uniform(-6, 6) if not (v == 1 and i == 3) else 22.0
+            p.obox('Rust' if r.random() < 0.6 else 'Metal', (x, 0.0, 1.0), (0.82, 0.03, 2.0 * r.uniform(0.85, 1.0)),
+                   yaw=r.uniform(-3, 3), roll=tilt, bevel=0.0)
+            for k in range(6):                           # as ondas da chapa
+                p.obox('Dark', (x - 0.35 + k * 0.14, 0.018, 1.0), (0.02, 0.01, 1.8), roll=tilt, bevel=0.0)
+        for x in (-2.0, 0.0, 2.0):
+            p.cyl('Wood', (x, -0.04, 1.05), 'z', 0.05, 2.1, seg=8, bevel=0.0)
+        out.append(p.finish())
+    p = Part('SM_LL_Prop_WaterTank')                     # a caixa d'água de telhado no suporte
+    for x in (-0.45, 0.45):
+        for y in (-0.45, 0.45):
+            p.box('Metal', x - 0.04, x + 0.04, y - 0.04, y + 0.04, 0.0, 0.8, bevel=0.0)
+    p.box('Metal', -0.55, 0.55, -0.55, 0.55, 0.78, 0.84, bevel=0.0)
+    p.cyl('Plaster', (0.0, 0.0, 1.35), 'z', 0.55, 1.0, seg=20, bevel=0.02)
+    p.cyl('Dark', (0.0, 0.0, 1.87), 'z', 0.18, 0.06, seg=12, bevel=0.0)
+    out.append(p.finish())
+    p = Part('SM_LL_Prop_AC')                            # o ar-condicionado com a grelha
+    p.box('Metal', -0.45, 0.45, -0.3, 0.3, 0.0, 0.55, bevel=0.02)
+    p.cyl('Dark', (0.0, 0.31, 0.28), 'y', 0.2, 0.02, seg=16, bevel=0.0)
+    out.append(p.finish())
+    p = Part('SM_LL_Prop_Dish')                          # a antena parabólica no pé
+    p.cyl('Metal', (0.0, 0.0, 0.4), 'z', 0.03, 0.8, seg=8, bevel=0.0)
+    p.cyl('Plaster', (0.12, 0.0, 0.85), (0.6, 0.0, 0.5), 0.45, 0.05, seg=20, r2=0.42, bevel=0.0)
+    out.append(p.finish())
+    p = Part('SM_LL_Prop_Tires')                         # pneus empilhados e um solto
+    for i, (x, y, z) in enumerate(((0, 0, 0.11), (0.05, 0.02, 0.33), (0.0, -0.03, 0.55), (0.9, 0.3, 0.11))):
+        p.cyl('Dark', (x, y, z), 'z', 0.38, 0.22, seg=18, bevel=0.03)
+    out.append(p.finish())
+    for v in range(2):                                   # a sucata: chapas, canos, uma porta de carro
+        r = _random.Random(300 + v)
+        p = Part(f'SM_LL_Prop_Scrap{v}')
+        for i in range(7):
+            p.obox('Rust' if r.random() < 0.5 else 'Metal', (r.uniform(-1.2, 1.2), r.uniform(-0.9, 0.9), r.uniform(0.02, 0.25)),
+                   (r.uniform(0.4, 1.3), r.uniform(0.3, 0.9), 0.025), yaw=r.uniform(0, 180), pitch=r.uniform(-15, 15), bevel=0.0)
+        for i in range(3):
+            p.cyl('Rust', (r.uniform(-1, 1), r.uniform(-0.8, 0.8), 0.06), 'x', 0.05, r.uniform(0.8, 1.8), seg=8, bevel=0.0)
+        out.append(p.finish())
+    for v in range(2):                                   # o muro quebrado (4 m) com o entulho caído do lado
+        r = _random.Random(400 + v)
+        p = Part(f'SM_LL_Prop_BrokenWall{v}')
+        x0 = -2.0
+        while x0 < 2.0:
+            w = r.uniform(0.5, 1.1)
+            hgt = r.choice((r.uniform(0.3, 0.9), r.uniform(1.4, 2.3), 2.3))
+            p.box('Plaster', x0, min(x0 + w, 2.0), -0.18, 0.18, 0.0, hgt, bevel=0.03)
+            x0 += w
+        for i in range(10):
+            sz = r.uniform(0.15, 0.45)
+            p.obox('Plaster', (r.uniform(-1.8, 1.8), r.uniform(0.3, 1.4) * r.choice((1, -1)), sz * 0.3), (sz, sz * 0.8, sz * 0.5),
+                   yaw=r.uniform(0, 180), pitch=r.uniform(-20, 20), bevel=0.02)
+        out.append(p.finish())
+    p = Part('SM_LL_Prop_Awning')                        # o toldo de lona nas varas (3 m)
+    p.obox('Cloth', (0.0, 0.8, 2.25), (3.0, 1.7, 0.03), roll=-12, bevel=0.0)
+    for x in (-1.45, 1.45):
+        p.cyl('Wood', (x, 1.6, 1.05), 'z', 0.04, 2.1, seg=8, bevel=0.0)
+    out.append(p.finish())
+    p = Part('SM_LL_Prop_Laundry')                       # o varal de telhado
+    for x in (-1.2, 1.2):
+        p.cyl('Metal', (x, 0.0, 0.7), 'z', 0.025, 1.4, seg=6, bevel=0.0)
+    p.cyl('Dark', (0.0, 0.0, 1.38), 'x', 0.006, 2.4, seg=4, bevel=0.0)
+    r = _random.Random(500)
+    for i in range(5):
+        x = -0.9 + i * 0.45
+        p.box(r.choice(('Cloth', 'Plaster', 'Rust')), x - 0.16, x + 0.16, -0.01, 0.01, 0.75 + r.uniform(0, 0.2), 1.37, bevel=0.0)
+    out.append(p.finish())
+    return out
+
+
 # ---------------------------------------------------------------------------------- paraquedas
 def chute():
     """O paraquedas do sinalizador da noite: a cúpula de 16 gomos (o pano estufa entre as costuras e a
@@ -664,7 +764,7 @@ def main():
     only = os.environ.get('LOOK_TANK_ONLY')     # ex.: "props" pra refazer só as miudezas
     builds = {'hull': hull, 'turret': turret, 'barrel': barrel, 'wheels': wheels, 'track_l': lambda: track('l'),
               'track_r': lambda: track('r'), 'wreck': wreck, 'chute': chute, 'pickup': pickup, 'props': props,
-              'dozer': dozer, 'pickup_civil': lambda: pickup(armed=False)}
+              'dozer': dozer, 'pickup_civil': lambda: pickup(armed=False), 'clutter': clutter}
     for key, build in builds.items():
         if only and key not in only.split(','):
             continue

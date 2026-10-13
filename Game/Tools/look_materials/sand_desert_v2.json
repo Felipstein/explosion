@@ -141,7 +141,8 @@
       "capim": "(0,15 + 1,6·pisado + 0,4·pedregoso)·(1 − 0,85·liso)·(1 − 0,9·ondulado)",
       "pedrinhas": "0,12 + 3,2·pedregoso + 0,4·revirado",
       "gravetos": "0,2 + 2,4·pedregoso + 0,8·revirado + 0,4·pisado"
-    }
+    },
+    "open_desert_rule": "13/10, a referência nova do Felipe (o deserto aberto com tanques): longe da vila e da rua, a ondulação de vento domina o chão (quase todo), e as trilhas de esteira cruzam em várias direções e idades; na vila ela é rara. Regra: o peso do ondulado sobe com a distância do pisado (terra, rua, casas): +0,25 a partir de ~40 m."
   },
   "wind": {
     "WIND_YAW_close": -140.7,

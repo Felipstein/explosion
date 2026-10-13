@@ -271,3 +271,52 @@ névoa volumétrica com grade menor, sombras por campo de distância só no ultr
   `MF_LookGroundMemory` (o plugin), que também pinta a cratera, o ejetado e a fuligem.
 - **A noite:** a A (o fogo pinta as unidades inteiras; a separação de luz ficou desligada pela receita).
 - **O kit civil da vila** (`SM_civ_*`, `look.ps1 civil`) no jogo; os modelos finais continuam dele.
+
+### A vila contra as favoritas (13/10/2026, à noite: "horrível perto dos game shots")
+
+O Felipe comparou a vila da maquete com os game shots e achou feia. O defeito era de conjunto, não de média de cor:
+cena vazia, asfalto liso, ar parado, sombra roxa, casas em caixa. As voltas (cada uma medida contra as sete com
+`look_stats.py` e na folha lado a lado):
+- **Volta 1–2:** o vestir da vila (`DRESSING` no `look_layout.py`, o kit de entulho do `look_tank.py`: telhados, pé de
+  parede, beira de rua, terrenos; a rua das unidades limpa), asfalto rachado e mais escuro, três carcaças de carro,
+  sombra quente, contraste de volta (p95 0,69).
+- **Volta 3–4:** saturação e calor pra baixo (0,56 → 0,52 e 0,26 → 0,24; o alvo é 0,44 e 0,21). Também:
+  - poeira no ar ao fundo (a névoa 0,11 → 0,15: a razão topo/base 1,19 → 1,27, faixa das sete 1,28–1,82);
+  - asfalto menos laranja;
+  - o tanque da USA cor de areia com o painel do time azul forte (as sete; o cinza-claro antigo saía branco).
+- **Volta 5:** a medida por faixa de brilho achou o excesso de saturação nas **sombras** (0,69 contra 0,48 no escuro,
+  0,57 contra 0,42 na meia-sombra); o claro já batia. A saturação das sombras foi pra 0,65 e a do meio-tom pra 0,92.
+  O tanque também foi pelas razões medidas no teto ao sol (alvo 0,67/0,53/0,40 na road_battle), e o asfalto ficou 20% mais cinza no mesmo matiz.
+- **A carcaça queimada** (maquete e jogo, a mesma receita, medida na carcaça da street_battle): marrom-carvão com
+  variação, não bloco preto.
+  - Cores sRGB: tinta queimada 92,74,60 (~55%), fuligem 34,30,27 embaixo e em manchas, ferrugem de calor 118,70,42 em
+    manchas de ~1,5 m, cinza 165,155,142 em placas no teto.
+  - Na tela o alvo dá p10/p50/p90 ≈ 0,03/0,33/0,60. Na maquete é o `BURNT_CODE` do `look_lab.py`.
+  - O miolo quente no jogo: corpo negro de 1300 → 900 K, pico ~3000 nits, (1 − t/30)², brasas mais 20 s.
+- **Voltas 6–14 (13/10, de madrugada), pelas três críticas da sessão de arte (a imagem primeiro):**
+  - **O chão:**
+    - asfalto mais escuro e cinza que a areia (1 : 0,76 : 0,58, perto da road_town_battle);
+    - areia por cima só na borda da pista, em línguas na direção do vento (o relevo ondulado dentro do asfalto fazia bolhas no meio da pista);
+    - mato mais denso, com o capim seco dourado.
+  - **A luz contra a sombra** (medida por faixa de brilho contra as sete):
+    - o malva vinha do rebote quente (`lumen_diffuse_color_boost` 1,2) somado ao céu azul: o rebote voltou a 1,0;
+    - na Unreal, a areia ao sol cai no meio-tom (o claro só começa em `ColorCorrectionHighlightsMin`): o meio-tom em 0,86 desbotava a luz;
+    - a sombra da Unreal só vai até `ColorCorrectionShadowsMax` 0,09: subiu pra 0,2;
+    - o sol foi pra 4700 K (o ouro), e a exposição local deixou de levantar tanto as sombras (0,8).
+  - **A explosão provisória saiu** da vila até chegar a nova (a crítica: "figurinha, estraga a leitura do quadro").
+  - **O brilho direcional da névoa** (luminância 2400) velou o quadro inteiro: fora, e não entra de novo sem medir a escala.
+  - **Unidades:**
+    - USA cor de areia, com o azul do time 40,70,200 (lê de cima sem virar violeta);
+    - técnicas do GLA brancas, vermelhas e ferrugem;
+    - a tinta com brilho no topo (rugosidade 0,45) e mais poeira embaixo.
+  - **Casas:** um tom por casa (caiada creme, ocre), tetos claros, sujeira subindo ~1,5 m da base, reboco caído mostrando o barro.
+  - **Resultado (câmera de 61 m):** saturação 0,48, calor 0,23, p5/p50/p95 0,09/0,35/0,69, névoa 1,39. Tudo dentro da faixa das sete.
+    - Folhas: `captures/look/vila_antes_depois.jpg` e `vila_perto_antes_depois.jpg`.
+    - O que sobra é conteúdo (densidade de unidades e infantaria, a explosão nova) e o detalhe das casas.
+  - **Tudo isso está na bancada** (`desert_golden_hour.json`). O jogo segue na `v2_aprovada` até o A/B com o Felipe.
+- **A cena dos tanques** (`LL_DesertTanks_Tanks`, `look_layout_tanks.py` + `desert_tanks.json`), pedida pelo Felipe pra sessão das explosões:
+  - 4 tanques oliva em linha diagonal e a carcaça queimada no meio;
+  - ondulação no chão todo, trilhas cruzando, sol de lado a 18°, o pós da cena de perto;
+  - foto em `captures/look/tanques_cena.jpg`. A sessão das explosões já testou a morte de tanque nela.
+- **As texturas de efeito (chama e fumaça) não entram no streaming.** No -game com o pool estourado, a chama caía no último mip e o cartão inteiro brilhava, um quadrado branco no BlastLab.
+- **A noite A refeita sem cair** (o shader do jogo estável): `captures/look/noite_A_final.jpg`.

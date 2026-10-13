@@ -27,66 +27,140 @@ tools = unreal.AssetToolsHelpers.get_asset_tools()
 
 CODE = r"""
 float3 bc = BC; float3 nT = N; float rough = Rg;
-Mask = 0.0;
+Mask = 0.0; Emi = float3(0, 0, 0);
 if (Range <= 0.0) { Nout = nT; Rout = rough; return bc; }
 float2 p = WP.xy;
 float2 uvD = (p - DB.xy) / max(DB.zw, 1.0);
 float2 uvM = (p - MB.xy) / max(MB.zw, 1.0);
 float inD = step(0.0, uvD.x) * step(uvD.x, 1.0) * step(0.0, uvD.y) * step(uvD.y, 1.0);
 float inM = step(0.0, uvM.x) * step(uvM.x, 1.0) * step(0.0, uvM.y) * step(uvM.y, 1.0);
-float fw = length(fwidth(p));                                   // cm por pixel no chão
-float wD = inD * (1.0 - smoothstep(6.0, 12.0, fw));              // o detalhe enquanto o pixel é menor que ~9 cm
+// o maior eixo do pixel no chão, em cm (13/10, medido pelo jogo: o length(fwidth(p)) soma |ddx|+|ddy| por eixo e, com a
+// câmera girada a 45°, dava ~13–15 cm onde o pixel tem ~5×8 cm; o detalhe nunca entrava na vista do RTS e a cratera virava
+// mancha do caderno do meio)
+float fw = max(length(ddx(p)), length(ddy(p)));
+float wD = inD * (1.0 - smoothstep(10.0, 16.0, fw));             // o detalhe em toda a faixa do zoom do RTS (o mais longe: ~7,5 cm)
 float wM = inM * (1.0 - smoothstep(20.0, 40.0, fw)) * (1.0 - wD);
 float w = wD + wM;
-if (w <= 0.001) { Nout = nT; Rout = rough; return bc; }
+// (13/10, com o jogo: na câmera do RTS o pixel tem 10–20 cm e o wD zerava; a cor do caderno do meio não some com a
+//  distância, só a normal)
+float wMc = inM * (1.0 - wD);
+float wc = wD + wMc;
+if (wc <= 0.001) { Nout = nT; Rout = rough; return bc; }
+float wn = max(w, 1e-4);
 float tD = Texel, tM = Texel;
 float cmD = DB.z * Texel, cmM = MB.z * Texel;                    // cm por texel
 float4 Rd = Relief.Sample(ReliefSampler, uvD);
 float4 Rm = ReliefMid.Sample(ReliefMidSampler, uvM);
-float4 Rr = (Rd * wD + Rm * wM) / w;
+float4 Rr = (Rd * wD + Rm * wMc) / wc;
 // a normal da altura (diferença finita no caderno de cada nível)
 float hxD = (Relief.Sample(ReliefSampler, uvD + float2(tD, 0)).r - Relief.Sample(ReliefSampler, uvD - float2(tD, 0)).r) * 2.0 * Range / (2.0 * cmD);
 float hyD = (Relief.Sample(ReliefSampler, uvD + float2(0, tD)).r - Relief.Sample(ReliefSampler, uvD - float2(0, tD)).r) * 2.0 * Range / (2.0 * cmD);
 float hxM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(tM, 0)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(tM, 0)).r) * 2.0 * Range / (2.0 * cmM);
 float hyM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(0, tM)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(0, tM)).r) * 2.0 * Range / (2.0 * cmM);
-float2 g = (float2(hxD, hyD) * wD + float2(hxM, hyM) * wM) / w;
+float2 g = (float2(hxD, hyD) * wD + float2(hxM, hyM) * wM) / wn;
 // a garra fina da esteira (o caderno de 4,7 cm, R = a fita com as garras): ~0,5 cm de relevo, só no detalhe
 float tT = Texel * 0.5;
 float gx = (Track.Sample(TrackSampler, uvD + float2(tT, 0)).r - Track.Sample(TrackSampler, uvD - float2(tT, 0)).r);
 float gy = (Track.Sample(TrackSampler, uvD + float2(0, tT)).r - Track.Sample(TrackSampler, uvD - float2(0, tT)).r);
-g += float2(gx, gy) * (-0.5) / (2.0 * cmD * 0.5) * wD;
-// a cratera e o queimado (13/10, o alvo street_battle_usa_china_gemini): GroundTrack B = a altura da cratera com sinal
-// (CraterRangeCm), A = o ejetado (a areia clara espirrada e os torrões), G = a fuligem com a borda definida
-float hc = 0.0, ej = 0.0, soot = 0.0;
-if (CRange > 0.0) {
-    float4 Tk = Track.Sample(TrackSampler, uvD);
-    hc = (Tk.b - 0.5) * 2.0 * CRange * wD;
-    float cx = (Track.Sample(TrackSampler, uvD + float2(tT, 0)).b - Track.Sample(TrackSampler, uvD - float2(tT, 0)).b) * 2.0 * CRange / (2.0 * cmD * 0.5);
-    float cy = (Track.Sample(TrackSampler, uvD + float2(0, tT)).b - Track.Sample(TrackSampler, uvD - float2(0, tT)).b) * 2.0 * CRange / (2.0 * cmD * 0.5);
-    g += float2(cx, cy) * wD;
-    ej = Tk.a * wD;
-    soot = Tk.g * wD;
+// (13/10, combinado com o jogo) o relevo do caderno leva só a base do sulco; a garra é daqui: +45% do sulco de 2,2 cm
+// a partir do R do GroundTrack (4,7 cm, a garra só no miolo da fita), sumindo com a idade
+float grouserCm = 2.2 * 0.45 * (1.0 - 0.8 * Rr.g);
+g += float2(gx, gy) * (-grouserCm) / (2.0 * cmD * 0.5) * wD;
+// a cratera e o queimado (13/10, o alvo street_battle_usa_china_gemini; o formato final do jogo): a altura numa textura
+// própria em cm (GroundCrater/GroundCraterMid, R16F), e o GroundTrack G = o escuro (o halo revirado, a fuligem, o
+// combustível), B = o calor (a brasa), A = o claro (os torrões, a borda, os raios de areia)
+float hc = 0.0, ej = 0.0, dark = 0.0, heat = 0.0;
+if (UseCrater > 0.5) {
+    float hcD = Crater.Sample(CraterSampler, uvD).r, hcM = CraterMid.Sample(CraterMidSampler, uvM).r;
+    hc = (hcD * wD + hcM * wMc) / wc;
+    float cxD = (Crater.Sample(CraterSampler, uvD + float2(tD, 0)).r - Crater.Sample(CraterSampler, uvD - float2(tD, 0)).r) / (2.0 * cmD);
+    float cyD = (Crater.Sample(CraterSampler, uvD + float2(0, tD)).r - Crater.Sample(CraterSampler, uvD - float2(0, tD)).r) / (2.0 * cmD);
+    float cxM = (CraterMid.Sample(CraterMidSampler, uvM + float2(tM, 0)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(tM, 0)).r) / (2.0 * cmM);
+    float cyM = (CraterMid.Sample(CraterMidSampler, uvM + float2(0, tM)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(0, tM)).r) / (2.0 * cmM);
+    g += (float2(cxD, cyD) * wD + float2(cxM, cyM) * wM) / wn;
+    // o escuro, o calor e o claro: o caderno de detalhe perto e o do meio (GroundTrackMid, 19 cm) na câmera do jogo
+    float4 Tk = (Track.Sample(TrackSampler, uvD) * wD + TrackMid.Sample(TrackMidSampler, uvM) * wMc) / wc;
+    // (13/10, a cratera v2, combinado com o jogo) MarkRamps = 1: o G e o A vêm em rampa de distância (< 0,5 fora; dentro,
+    // 0,5 + 0,5·intensidade): a borda cortada no meio da rampa com antisserrilhado pelo fwidth, nítida em qualquer zoom.
+    // MarkRamps = 0: lineares, como antes. O B (calor) é sempre linear.
+    if (MarkRamps > 0.5) {
+        float covG = saturate((Tk.g - 0.5) / max(fwidth(Tk.g), 1e-4) + 0.5);
+        float covA = saturate((Tk.a - 0.5) / max(fwidth(Tk.a), 1e-4) + 0.5);
+        dark = covG * saturate((Tk.g - 0.5) * 2.0) * wc;
+        ej = covA * saturate((Tk.a - 0.5) * 2.0) * wc;
+    } else {
+        dark = Tk.g * wc; ej = Tk.a * wc;
+    }
+    heat = Tk.b * wc;
 }
 float k = w;                                                     // some no longe
 nT = normalize(nT + float3(-g.x, -g.y, 0.0) * k);
 // a luz e a areia mexida
 float age = Rr.g, stir = Rr.a, vis = Rr.b;
 bc *= lerp(1.0, vis, 0.85 * k);
-if (CRange > 0.0) {
-    bc *= lerp(float3(1, 1, 1), float3(0.8, 0.74, 0.68), saturate(-hc / 15.0));   // o fundo da cratera: areia revirada, úmida
-    bc *= lerp(1.0, 1.12, saturate(hc / 6.0));                                      // a borda levantada: areia clara
-    bc = lerp(bc, bc * float3(1.16, 1.12, 1.05), ej * 0.7);                         // o ejetado espirrado por cima (claro)
+if (UseCrater > 0.5) {
+    // cada chão quebra de um jeito (13/10, a cratera v2; Surf = o peso da camada de asfalto do WorldForge, 0 = areia/terra):
+    // a areia escorre e o claro é areia; o asfalto quebra em placas pretas e o fundo mostra a base de terra e brita
+    float surf = saturate(Surf);
+    // o fundo da bacia (medido na street_battle: o miolo ~0,09 de brilho na tela contra ~0,46 do chão; o mf15 dava 0,23):
+    // na areia, terra revirada e úmida bem mais escura; no asfalto, a base de terra e brita à mostra
+    float bowl = saturate(-hc / 25.0);
+    bc = lerp(bc, lerp(bc * float3(0.5, 0.45, 0.4), float3(0.17, 0.15, 0.12), surf), bowl);
+    bc *= lerp(1.0, lerp(1.1, 1.0, surf), saturate(hc / 6.0));                      // a borda levantada: areia clara (no asfalto, a placa)
     float lum = dot(bc, float3(0.3, 0.59, 0.11));
-    bc = lerp(bc, lerp(bc, lum.xxx, 0.6) * 0.45, soot * 0.75);                     // a fuligem: pouca, sem preto chapado
+    // o escuro: na areia, terra revirada e fuligem, marrom-carvão e nunca preto chapado (medido 13/10: ~0,15–0,2× em albedo);
+    // no asfalto, o asfalto quebrado e queimado, quase preto
+    float3 darkC = lerp(lerp(bc, lum.xxx, 0.5) * 0.14, float3(0.03, 0.028, 0.026), surf);
+    bc = lerp(bc, darkC, dark * 0.95);
+    // o claro: os torrões e a areia jogada por cima (o +13% de antes lia dois tons, não três): um albedo-alvo, areia clara
+    // de baixo na areia e cascalho cinza no asfalto
+    float3 lightC = lerp(min(max(bc * 1.35, float3(0.55, 0.46, 0.33)), 0.8), float3(0.40, 0.38, 0.35), surf);
+    bc = lerp(bc, lightC, ej * 0.9);
     rough = lerp(rough, 0.95, ej * 0.5);
+    Emi = float3(1.0, 0.35, 0.08) * heat * heat * HeatNits;                        // a brasa (some em ~30 s, quem apaga é o jogo)
 }
-float fresh = stir * (1.0 - age) * k;
+float fresh = stir * (1.0 - age) * wc;
 bc *= lerp(float3(1.0, 1.0, 1.0), float3(0.84, 0.8, 0.76), fresh * 0.8);   // revolvida fresca: mais escura e quente; seca com a idade
 float h = (Rr.r - 0.5) * 2.0 * Range;
 rough = lerp(rough, rough * 0.85, saturate(-h / 2.0) * k);                   // o fundo do sulco compactado, mais liso
-Mask = saturate(fresh + saturate(-hc / 3.0) + ej);                            // a ondulação some na esteira fresca e na cratera
+Mask = saturate(fresh + saturate(-hc / 3.0) + ej + dark * 0.5);                            // a ondulação some na esteira fresca e na cratera
 Nout = nT; Rout = rough;
 return bc;
+"""
+
+
+# O deslocamento do chão (13/10, a cratera do jogo igual à prova, proposta da sessão do jogo: a tesselação Nanite do próprio
+# Landscape, sem malha nem buraco). Num Custom separado, ligado ao pino Displacement do material do chão com
+# bEnableTessellation e DisplacementScaling (magnitude 200 cm, centro 0,5): roda no estágio da tesselação, então nada de
+# ddx/fwidth e só SampleLevel. A altura é a do caderno (a cratera em cm + o sulco da esteira) e, dentro da cratera, o relevo
+# fino da terra revirada (a altura da Farm Soil, Poly Haven CC0, em ladrilho de 1,6 m girado contra a repetição).
+# Entradas: WP, Relief, ReliefMid, Crater, CraterMid, FarmH (farm_soil_disp, linear), DB, MB, Range, UseCrater, DispOn.
+DISP_CODE = r"""
+if (DispOn < 0.5 || Range <= 0.0) return 0.5;
+float2 p = WP.xy;
+float2 uvD = (p - DB.xy) / max(DB.zw, 1.0);
+float2 uvM = (p - MB.xy) / max(MB.zw, 1.0);
+float inD = step(0.0, uvD.x) * step(uvD.x, 1.0) * step(0.0, uvD.y) * step(uvD.y, 1.0);
+float inM = step(0.0, uvM.x) * step(uvM.x, 1.0) * step(0.0, uvM.y) * step(uvM.y, 1.0);
+// a borda dos cadernos: a altura vai a zero nos últimos 4% (sem degrau quando o caderno anda)
+float2 eD = min(uvD, 1.0 - uvD), eM = min(uvM, 1.0 - uvM);
+float fD = inD * saturate(min(eD.x, eD.y) / 0.04), fM = inM * saturate(min(eM.x, eM.y) / 0.04);
+float wD = fD, wM = fM * (1.0 - fD);
+float w = wD + wM;
+if (w <= 0.001) return 0.5;
+float hRel = ((Relief.SampleLevel(ReliefSampler, uvD, 0.0).r - 0.5) * wD + (ReliefMid.SampleLevel(ReliefMidSampler, uvM, 0.0).r - 0.5) * wM)
+             * 2.0 * Range / w;                                                        // o sulco da esteira (cm)
+float hc = 0.0;
+if (UseCrater > 0.5)
+    hc = (Crater.SampleLevel(CraterSampler, uvD, 0.0).r * wD + CraterMid.SampleLevel(CraterMidSampler, uvM, 0.0).r * wM) / w;   // cm
+// a terra revirada dentro da cratera: ±2 cm, onde o caderno da cratera mexeu (a bacia, a borda, o manto)
+float churn = saturate(abs(hc) / 4.0);
+float2 q = p * 0.01 / 1.6;
+float2 q2 = float2(0.8 * q.x - 0.6 * q.y, 0.6 * q.x + 0.8 * q.y) * 1.37 + 0.41;
+float fh = lerp(FarmH.SampleLevel(FarmHSampler, q, 0.0).r, FarmH.SampleLevel(FarmHSampler, q2, 0.0).r, 0.5);
+float hFine = (fh - 0.5) * 4.0 * churn;
+float h = (hRel + hc + hFine) * w;                                                     // cm; some fora dos cadernos
+return saturate(0.5 + h / 200.0);
 """
 
 
@@ -112,11 +186,13 @@ def main():
     bc_in = fin('BaseColor', unreal.FunctionInputType.FUNCTION_INPUT_VECTOR3, -400, 0)
     n_in = fin('Normal', unreal.FunctionInputType.FUNCTION_INPUT_VECTOR3, -250, 1)
     r_in = fin('Roughness', unreal.FunctionInputType.FUNCTION_INPUT_SCALAR, -100, 2)
+    s_in = fin('Surface', unreal.FunctionInputType.FUNCTION_INPUT_SCALAR, 50, 3)      # 0 areia/terra, 1 asfalto (o peso da camada)
+    s_in.set_editor_property('use_preview_value_as_default', True)
     c = E(unreal.MaterialExpressionCustom, -600, 0)
     c.set_editor_property('code', CODE)
     c.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
     c.set_editor_property('description', 'RTSLook ground memory')
-    names = ['WP', 'BC', 'N', 'Rg', 'Relief', 'ReliefMid', 'Track', 'DB', 'MB', 'Range', 'Texel', 'CRange']
+    names = ['WP', 'BC', 'N', 'Rg', 'Surf', 'Relief', 'ReliefMid', 'Track', 'TrackMid', 'Crater', 'CraterMid', 'DB', 'MB', 'Range', 'Texel', 'UseCrater', 'HeatNits', 'MarkRamps']
     ins = []
     for n in names:
         ci = unreal.CustomInput()
@@ -125,7 +201,7 @@ def main():
     c.set_editor_property('inputs', ins)
     outs = []
     for n, t in (('Nout', unreal.CustomMaterialOutputType.CMOT_FLOAT3), ('Rout', unreal.CustomMaterialOutputType.CMOT_FLOAT1),
-                 ('Mask', unreal.CustomMaterialOutputType.CMOT_FLOAT1)):
+                 ('Mask', unreal.CustomMaterialOutputType.CMOT_FLOAT1), ('Emi', unreal.CustomMaterialOutputType.CMOT_FLOAT3)):
         co = unreal.CustomOutput()
         co.set_editor_property('output_name', n)
         co.set_editor_property('output_type', t)
@@ -136,9 +212,11 @@ def main():
     mel.connect_material_expressions(bc_in, '', c, 'BC')
     mel.connect_material_expressions(n_in, '', c, 'N')
     mel.connect_material_expressions(r_in, '', c, 'Rg')
+    mel.connect_material_expressions(s_in, '', c, 'Surf')
     black = unreal.load_asset('/Engine/EngineResources/Black')
     y = 200
-    for pname, pin in (('GroundRelief', 'Relief'), ('GroundReliefMid', 'ReliefMid'), ('GroundTrack', 'Track')):
+    for pname, pin in (('GroundRelief', 'Relief'), ('GroundReliefMid', 'ReliefMid'), ('GroundTrack', 'Track'), ('GroundTrackMid', 'TrackMid'),
+                       ('GroundCrater', 'Crater'), ('GroundCraterMid', 'CraterMid')):
         t = E(unreal.MaterialExpressionTextureObjectParameter, -1100, y)
         t.set_editor_property('parameter_name', pname)
         if black:
@@ -151,9 +229,20 @@ def main():
         v = E(unreal.MaterialExpressionVectorParameter, -1100, y)
         v.set_editor_property('parameter_name', pname)
         v.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 0))
-        mel.connect_material_expressions(v, '', c, pin)
+        # (13/10: a saída '' do VectorParameter entrega só o RGB (float3) e o .zw não compilava no SM6, o chão do jogo saiu
+        #  xadrez; a 'RGBA' entrega os quatro)
+        ok = mel.connect_material_expressions(v, 'RGBA', c, pin)
+        if not ok:      # (sem a saída 'RGBA' nesta versão: junta o RGB com o A)
+            ap = E(unreal.MaterialExpressionAppendVector, -900, y)
+            mel.connect_material_expressions(v, '', ap, 'A')
+            mel.connect_material_expressions(v, 'A', ap, 'B')
+            ok = mel.connect_material_expressions(ap, '', c, pin)
+            unreal.log(f'LOOKMF {pname}: RGB + A pelo AppendVector ({ok})')
+        else:
+            unreal.log(f'LOOKMF {pname}: saída RGBA ligada')
         y += 120
-    for pname, pin, dv in (('ReliefRangeCm', 'Range', 0.0), ('ReliefTexel', 'Texel', 1.0 / 2048.0), ('CraterRangeCm', 'CRange', 0.0)):
+    for pname, pin, dv in (('ReliefRangeCm', 'Range', 0.0), ('ReliefTexel', 'Texel', 1.0 / 2048.0), ('UseCrater', 'UseCrater', 0.0),
+                           ('HeatNits', 'HeatNits', 3000.0), ('MarkRamps', 'MarkRamps', 0.0)):
         sp = E(unreal.MaterialExpressionScalarParameter, -1100, y)
         sp.set_editor_property('parameter_name', pname)
         sp.set_editor_property('default_value', dv)
@@ -169,6 +258,8 @@ def main():
     fout('Normal', c, 'Nout', -50, 1)
     fout('Roughness', c, 'Rout', 100, 2)
     fout('RippleMask', c, 'Mask', 250, 3)
+    fout('Emissive', c, 'Emi', 400, 4)
+    # (o deslocamento, DISP_CODE, vai só inline pelo WorldForge: a função do plugin não é chamada no chão hoje)
     mel.update_material_function(mf)
     eal.save_loaded_asset(mf)
     unreal.log(f'LOOKMF {path} pronta')
