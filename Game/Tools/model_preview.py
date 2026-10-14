@@ -60,6 +60,18 @@ MODELS = {
         'usa_at': (0, 6.0, 0),
         'game': [('game_cam', 37.5, 35.0, 50.0, 0.8), ('game_cam_close', 37.5, 35.0, 28.0, 0.75)],
     },
+    'usa_patriot': {
+        'parts': [('SM_USA_Patriot_Base', (0, 0, 0)), ('SM_USA_Patriot_Turret', (0, 0, 0)), ('SM_USA_Patriot_Dish', (-2.35, 2.35, 4.4))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1200, 1200)),
+                  ('front', 'ortho', (-1, 0, 0), (0, 0, 1), (1200, 900)),
+                  ('side', 'ortho', (0, 1, 0), (0, 0, 1), (1200, 900)),
+                  ('three_quarter', 'persp', 32.0, 215.0, (1600, 1000), 30.0, 0.95),
+                  ('three_quarter_right', 'persp', 32.0, 145.0, (1600, 1000), 30.0, 0.95),
+                  ('back_three_quarter', 'persp', 30.0, 35.0, (1600, 1000), 30.0, 0.95)],
+        'usa_at': (0, 7.0, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.8), ('game_cam_close', 37.5, 200.0, 28.0, 0.75)],
+        'scaffold': 'SM_USA_Patriot_Scaffold',
+    },
     'gla_war_factory': {
         'parts': [('gla_war_factory', (0, 0, 0))],
         'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1500, 1200)),           # a planta: frente embaixo, direita (+Y) à esquerda

@@ -1,0 +1,15 @@
+{
+  "ficha": "",
+  "rows": [],
+  "extra": [
+    {"tag": "three_quarter", "label": "3/4 pela frente-esquerda (sem arte aprovada: a formula do ZH + a biblia da USA)"},
+    {"tag": "three_quarter_right", "label": "3/4 pela frente-direita"},
+    {"tag": "back_three_quarter", "label": "3/4 por tras (o radar e as grelhas do escape)"},
+    {"tag": "top", "label": "planta (cima): o que a camera do RTS mais ve"},
+    {"tag": "front", "label": "frente"},
+    {"tag": "side", "label": "lado direito"},
+    {"tag": "game_cam", "label": "a camera do jogo (37,5 graus), tanque USA ao lado"},
+    {"tag": "game_cam_close", "label": "a camera do jogo, mais perto"},
+    {"tag": "game_cam_scaffold", "label": "em obra: o andaime"}
+  ]
+}

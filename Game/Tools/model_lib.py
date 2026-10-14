@@ -309,3 +309,50 @@ def export_group(objs, out_dir, name):
     tris = sum(len(poly.vertices) - 2 for o in objs for poly in o.data.polygons)
     print('MODEL', name, tris, 'tris', f'({len(objs)} malhas) ->', path)
     return tris
+
+
+def scaffold(name, x0, x1, y0, y1, h, post='Trim', plank='Crate', stripe='Hazard', gap=0.9, bay=3.0, lift=2.0, z0=0.12):
+    """O andaime da obra em volta do lote (some quando o prédio fica pronto): postes, travessas por nível, tábuas
+    e o rodapé de perigo do lado de fora, mais a diagonal de travamento (o mesmo desenho dos provisórios da USA,
+    Game/Tools/blender_provisional.py). Materiais por parâmetro: tubos galvanizados (USA) ou madeira (GLA)."""
+    p = Part(name)
+    X0, Y0, X1, Y1 = x0 - gap, y0 - gap, x1 + gap, y1 + gap
+    top = h + 1.0
+    levels = max(2, int((top - z0) / lift))
+    perim = [(X0, Y0), (X1, Y0), (X1, Y1), (X0, Y1)]
+    outward = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)]
+    for i in range(4):
+        (ax, ay), (bx, by) = perim[i], perim[(i + 1) % 4]
+        ox, oy = outward[i]
+        L = math.hypot(bx - ax, by - ay)
+        n = max(1, int(L / bay))
+        for k in range(n + 1):
+            t = k / n
+            px, py = ax + (bx - ax) * t, ay + (by - ay) * t
+            for d in (0.0, 1.0):
+                p.cyl(post, (px + ox * d, py + oy * d, (z0 + top) / 2), 'z', 0.05, top - z0, seg=8, bevel=0.0)
+        for lv in range(1, levels + 1):
+            z = z0 + (top - z0) * lv / levels
+            for d in (0.0, 1.0):
+                mx, my = (ax + bx) / 2 + ox * d, (ay + by) / 2 + oy * d
+                if i in (0, 2):
+                    p.cyl(post, (mx, my, z), 'x', 0.045, abs(bx - ax), seg=8, bevel=0.0)
+                else:
+                    p.cyl(post, (mx, my, z), 'y', 0.045, abs(by - ay), seg=8, bevel=0.0)
+            if i in (0, 2):
+                yy = ay + oy * 0.5
+                p.box(plank, min(ax, bx), max(ax, bx), yy - 0.45, yy + 0.45, z - 0.06, z, bevel=0.01)
+                p.box(stripe, min(ax, bx), max(ax, bx), ay + oy - 0.02, ay + oy + 0.02, z, z + 0.18, bevel=0.0)
+            else:
+                xx = ax + ox * 0.5
+                p.box(plank, xx - 0.45, xx + 0.45, min(ay, by), max(ay, by), z - 0.06, z, bevel=0.01)
+                p.box(stripe, ax + ox - 0.02, ax + ox + 0.02, min(ay, by), max(ay, by), z, z + 0.18, bevel=0.0)
+        for k in range(n):
+            t0, t1 = k / n, (k + 1) / n
+            pa = (ax + (bx - ax) * t0 + ox, ay + (by - ay) * t0 + oy)
+            pb = (ax + (bx - ax) * t1 + ox, ay + (by - ay) * t1 + oy)
+            zl = z0 + (top - z0) * ((k % levels) / levels)
+            zh = z0 + (top - z0) * ((k % levels + 1) / levels)
+            d = Vector((pb[0] - pa[0], pb[1] - pa[1], zh - zl))
+            p.cyl(post, ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (zl + zh) / 2), (d.x, d.y, d.z), 0.035, d.length, seg=6, bevel=0.0)
+    return p.finish()
