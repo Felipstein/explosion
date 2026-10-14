@@ -1,6 +1,6 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
-// BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
-// de aparência nascem lá e são trazidas pra cá.
+﻿// Cópia do BlastLab (13/10/2026, a morte de tanque da v2: a luz e a cor por explosão, a composição em duas camadas,
+// a emissão compensada pela exposição): a ponte até o plugin comum. A original continua sendo a referência:
+// mudanças de aparência nascem lá e são trazidas pra cá.
 #include "BlastRaymarch.h"
 
 #include "DataDrivenShaderPlatformInfo.h"
@@ -46,10 +46,23 @@ namespace
 	constexpr float SootExt = 13.5f, DustExt = 5.5f;
 	constexpr float SootAlbedo = 0.30f, DustAlbedo = 0.78f;
 	const FVector3f SootColor(0.55f, 0.545f, 0.535f), DustColor(0.82f, 0.755f, 0.655f);
-	constexpr float EmissionGain = 0.62f, EmissionCurve = 0.44f, TempScale = 0.92f, FlameBoost = 1.5f;
+	// A emissão pela metade do WebGL (0,62 → 0,31, 11/10): a bola saía creme (saturação 0,45 aos 0,7 s,
+	// contra 0,53 assim, com o miolo branco e a borda laranja da arte; captures/ue/calib_perto.jpg).
+	// E a luminância do corpo negro com expoente 0,6 em vez de 0,44 (o do WebGL), com o ganho × 1,35 que
+	// mantém o miolo: o miolo fica ~3,7 stops acima da borda em vez de ~2,7, e a borda escurece em vez de
+	// estourar (a pesquisa de 11/10: borda entre 0 e +2 stops, só o miolo em +4/+5; 0,8 escurecia demais;
+	// captures/ue/curva_folha.jpg)
+	constexpr float EmissionGain = 0.31f * 1.35f, EmissionCurve = 0.6f, TempScale = 0.92f, FlameBoost = 1.5f;
+	// a exposição (GetLastEyeAdaptationExposure) do dia em que o fogo foi calibrado (floresta, 15h,
+	// EV100 12,58 = 1/(1,2·2^12,58), medido 11/10): a referência da compensação da emissão. À noite (22h,
+	// EV100 7,05) a câmera abre 46× (6,286e-3) e o fogo estourava em branco
+	constexpr float RefExposure = 1.358e-4f;
 	constexpr float PhaseG = 0.42f, PhaseBack = 0.22f, PhaseMix = 0.32f, SunOcclude = 1.8f;
 	constexpr float DetailAmp = 0.42f, DetailScale = 0.85f, DetailDens = 0.34f, Erode = 0.042f, FlowPeriod = 0.5f;
-	constexpr float SkyGain = 1.1f, FireGain = 1.0f;
+	// A luz do fogo que a fumaça espalha em 25% da do WebGL (11/10): com a curva de cor da Unreal (canal a
+	// canal) ela cobria a bola de um véu creme e enchia os bolsões escuros; sem ela o fogo fica laranja com a
+	// borda escura (captures/ue/creme_termos.jpg, luzfogo_perto.jpg). No WebGL a curva era outra.
+	constexpr float SkyGain = 1.1f, FireGain = 0.25f;
 	constexpr int32 MsOctaves = 3;
 	constexpr float MsExt = 0.52f, MsScatter = 0.52f, MsPhase = 0.55f;
 	constexpr int32 LightSteps = 20, FireSteps = 16;
@@ -159,6 +172,7 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 	B->Frames = J->GetIntegerField(TEXT("frames"));
 	B->Duration = float(J->GetNumberField(TEXT("duration")));
 	B->Curve = float(J->GetNumberField(TEXT("curve")));
+	J->TryGetBoolField(TEXT("loop"), B->bLoop);
 	B->Domain = float(J->GetNumberField(TEXT("domain")));
 	B->VelMax = float(J->GetNumberField(TEXT("velMax")));
 	auto Vec = [](const TSharedPtr<FJsonValue>& V, int32 Offset) {
@@ -177,6 +191,10 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 	{
 		B->LightCol.Add(Vec(V, 0));
 	}
+	// a curva de luz: a do WebGL saiu comprimida pelo expoente 0.44 do material de lá (ExplosionVolume.cpp
+	// LightCurveK); as dos conversores de VDB são físicas (Σ combustível·T⁴). As antigas sem o campo: pela origem
+	bool bPhysical = false;
+	B->bLightPhysical = J->TryGetBoolField(TEXT("lightPhysical"), bPhysical) ? bPhysical : !J->GetStringField(TEXT("source")).Contains(TEXT("reference/webgl"));
 	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("frameBricks")))
 	{
 		B->NumBricks.Add(int32(V->AsNumber()));
@@ -245,20 +263,30 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, FlowPeriod)
 	SHADER_PARAMETER(float, DetailAmp2)
 	SHADER_PARAMETER(float, SkyGain)
+	SHADER_PARAMETER(float, SunFull)
+	SHADER_PARAMETER(FVector3f, GroundAlbedo)
 	SHADER_PARAMETER(float, FireGain)
 	SHADER_PARAMETER(float, MsExt)
 	SHADER_PARAMETER(float, MsScatter)
 	SHADER_PARAMETER(float, MsPhase)
 	SHADER_PARAMETER(int32, MsOctaves)
+	SHADER_PARAMETER(int32, JointMarch)
 	SHADER_PARAMETER(int32, SunSteps)
 	SHADER_PARAMETER(int32, FireSteps)
 	SHADER_PARAMETER(float, RadianceScale)
+	SHADER_PARAMETER(FVector4f, FogA)      // ligada, densidade (1/m), queda (1/m, base 2), começo (m)
+	SHADER_PARAMETER(FVector4f, FogB)      // albedo (linear), fase g
+	SHADER_PARAMETER(float, FogHeightRel)  // a altura da névoa relativa à câmera (m)
 	SHADER_PARAMETER(FVector4f, TermGain)
 	SHADER_PARAMETER(int32, DebugView)
 	SHADER_PARAMETER(int32, NumInstances)
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFoot, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFrame, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstMisc, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstNoise, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstLight2, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstGround, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstDust, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstLight, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstBoxMin, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstBoxMax, [MaxInstances])
@@ -298,17 +326,24 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float>, SceneDepth)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, SceneColorIn)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, VolIn)
-	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float2>, VolDepthIn)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, VolNearIn)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, VolDepthIn)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, HistIn)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, HistNearIn)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float2>, PoolLC)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolOut)
-	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float2>, VolDepthOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolNearOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolDepthOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, HistOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, HistNearOut)
 	SHADER_PARAMETER(FMatrix44f, CamToPrevClip)
 	SHADER_PARAMETER(float, HistValid)
 	SHADER_PARAMETER(float, HistAlpha)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, SceneColorOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float2>, PoolLCOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ShadowOut)   // a sombra da explosão no chão (MainShadowMap)
+	SHADER_PARAMETER(FVector4f, ShadowA)   // canto do mapa relativo à câmera (m) xy, texel (m), o chão relativo à câmera (m)
+	SHADER_PARAMETER(FVector4f, ShadowB)   // a direção pro sol, a resolução
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearClamp)
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearWrap)
 END_SHADER_PARAMETER_STRUCT()
@@ -354,6 +389,7 @@ BLAST_RAYMARCH_SHADER(FBlastRaymarchLightCacheCS, "MainLightCache")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchMarchCS, "MainMarch")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchTemporalCS, "MainTemporal")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchCompositeCS, "MainComposite")
+BLAST_RAYMARCH_SHADER(FBlastRaymarchShadowMapCS, "MainShadowMap")
 
 namespace
 {
@@ -412,6 +448,18 @@ void FBlastRaymarchExtension::Submit_GameThread(TArray<FInstance>&& InInstances,
 		{
 			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes, WorleyRes, PoolRes, MaxBricks);
 		});
+}
+
+void FBlastRaymarchExtension::SetFog_GameThread(const FFog& InFog)
+{
+	ENQUEUE_RENDER_COMMAND(BlastRaymarchFog)(
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), InFog](FRHICommandListImmediate&) { Self->Fog = InFog; });
+}
+
+void FBlastRaymarchExtension::SetShadow_GameThread(const FShadow& InShadow)
+{
+	ENQUEUE_RENDER_COMMAND(BlastRaymarchShadow)(
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), InShadow](FRHICommandListImmediate&) { Self->Shadow = InShadow; });
 }
 
 void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FInstance>&& List, const TArray<FUpload>& Ups, FTextureResource* NoiseRes,
@@ -576,9 +624,16 @@ void FBlastRaymarchExtension::EnsurePools_RenderThread(FRHICommandListImmediate&
 
 void FBlastRaymarchExtension::SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& View, FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled)
 {
-	// depois do TSR e antes do bloom (a mesma saída que o "motion blur" entrega):
-	// a imagem já está na resolução da tela, sem o jitter, e o fogo ainda entra no bloom e na exposição
-	if (Pass == EPostProcessingPass::MotionBlur && Instances.Num() && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
+	// ANTES do TSR (11/10; até então depois dele, no lugar do "motion blur"): a fumaça entra na imagem
+	// da resolução interna, com a mesma tremida (jitter) da profundidade, e o TSR reconstrói a borda junto
+	// com a cena, como as nuvens volumétricas da própria Unreal (VolumetricRenderTarget.usf). Depois do TSR
+	// a profundidade (interna, tremida) não batia com a imagem (da tela, reconstruída): nos galhos na frente
+	// da bola o pixel via "céu" onde a imagem mostrava galho, e saíam pontinhos de fogo em cima da árvore
+	// (sem TSR eles somem; captures/ue/dl_semtsr_zoom.jpg). O fogo continua entrando no bloom e na exposição.
+	// -RmPass=1 volta pro lugar antigo (comparação).
+	static const bool bAfterTSR = ParamOr(TEXT("RmPass="), 0.0f) > 0.5f;
+	const EPostProcessingPass Where = bAfterTSR ? EPostProcessingPass::MotionBlur : EPostProcessingPass::AfterDOF;
+	if (Pass == Where && Instances.Num() && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
 	{
 		InOutPassCallbacks.Add(FPostProcessingPassDelegate::CreateRaw(this, &FBlastRaymarchExtension::Render_RenderThread));
 	}
@@ -622,11 +677,32 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.SootExt = SootExt;
 	Base.DustExt = DustExt;
 	Base.SootAlbedo = SootAlbedo;
-	Base.DustAlbedo = DustAlbedo;
+	// medição (13/10): -RmDust=r,g,b,albedo troca a cor da poeira (a areia levantada das artes: caramelo)
+	static const FVector4f DustCfg = [] { FString S; FVector4f V(DustColor.X, DustColor.Y, DustColor.Z, DustAlbedo); TArray<FString> P;
+		if (FParse::Value(FCommandLine::Get(), TEXT("RmDust="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4) { V = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3])); }
+		return V; }();
+	Base.DustAlbedo = DustCfg.W;
 	Base.SootColor = SootColor;
-	Base.DustColor = DustColor;
-	Base.EmissionGain = EmissionGain;
-	Base.EmissionCurve = EmissionCurve;
+	Base.DustColor = FVector3f(DustCfg.X, DustCfg.Y, DustCfg.Z);
+	// O brilho do fogo compensado pela exposição (11/10): a câmera se ajusta à cena (à noite ela abre
+	// ~8 stops) e o fogo, que é luz própria, ia junto e estourava em branco; a noite aprovada
+	// (docs/concept/scenes/desert_night) tem o fogo laranja. Como o EyeAdaptationInverse dos efeitos da
+	// Unreal e o "Exposure Weight" da Unity (pesquisa de 11/10): a emissão × (exposição de referência ÷
+	// exposição de agora)^k, k = 1 (-RmEmitExpo=), e o fogo fica com o mesmo brilho na tela de dia e de
+	// noite; a luz que a fumaça espalha (sol, céu, fogo) continua física. A referência é a do dia em que o
+	// fogo foi calibrado (floresta, 15h). Medição: -RmEmission= multiplica a emissão.
+	static const float EmissionCfg = ParamOr(TEXT("RmEmission="), 1.0f);
+	static const float EmitExpoK = ParamOr(TEXT("RmEmitExpo="), 1.0f);
+	const float Exposure = View.GetLastEyeAdaptationExposure();
+	const float EmitComp = Exposure > 0.0f && EmitExpoK > 0.0f ? FMath::Clamp(FMath::Pow(RefExposure / Exposure, EmitExpoK), 1.0f / 256.0f, 16.0f) : 1.0f;
+	if (FrameCounter % 120 == 0)
+	{
+		UE_LOG(LogTemp, Display, TEXT("BlastRaymarch: exposição %.4g, compensação do fogo %.3f"), Exposure, EmitComp);
+	}
+	Base.EmissionGain = EmissionGain * EmissionCfg * EmitComp;
+	// medição: -RmEmitCurve= (o expoente da luminância do corpo negro: maior = só o miolo estoura)
+	static const float EmitCurveCfg = ParamOr(TEXT("RmEmitCurve="), EmissionCurve);
+	Base.EmissionCurve = EmitCurveCfg;
 	Base.TempScale = TempScale;
 	Base.FlameBoost = FlameBoost;
 	Base.PhaseG = PhaseG;
@@ -640,15 +716,36 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.FlowPeriod = FlowPeriod;
 	static const float Detail2 = ParamOr(TEXT("RmDetail2="), 0.0f);
 	Base.DetailAmp2 = Detail2;
-	Base.SkyGain = SkyGain;
-	Base.FireGain = FireGain;
+	// a luz do céu (e a do chão, -RmGround) na fumaça: 1,1 × fase isotrópica é a convenção do WebGL, ~5,7× abaixo do
+	// físico (céu uniforme na metade de cima da esfera, fase 1/4π: 2π·L/4π = L/2 → ganho 2π). A/B: -RmSkyGain= (13/10)
+	static const float SkyGainCfg = ParamOr(TEXT("RmSkyGain="), SkyGain);
+	Base.SkyGain = SkyGainCfg;
+	// o sol inteiro na fumaça (13/10, A/B contra os game shots): -RmFullSun=1; 0 = o seno do WebGL (o arsenal aprovado)
+	static const float SunFullCfg = FMath::Clamp(ParamOr(TEXT("RmFullSun="), 0.0f), 0.0f, 1.0f);
+	Base.SunFull = SunFullCfg;
+	// a luz que volta do chão de sol pra barriga da fumaça (13/10): -RmGround=r,g,b é o albedo da areia; 0 = desligado
+	static const FVector3f GroundCfg = [] { FString S; TArray<FString> P; FVector3f V(0.0f);
+		if (FParse::Value(FCommandLine::Get(), TEXT("RmGround="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 3) { V = FVector3f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])); }
+		return V; }();
+	Base.GroundAlbedo = GroundCfg;
+	// a luz do fogo que a fumaça espalha é luz do próprio fogo: a mesma compensação da emissão (à noite, sem
+	// ela, a fumaça acesa por dentro estourava em creme mesmo com a emissão compensada; 11/10)
+	Base.FireGain = FireGain * EmitComp;
 	Base.MsExt = MsExt;
 	Base.MsScatter = MsScatter;
 	Base.MsPhase = MsPhase;
-	Base.MsOctaves = MsOctaves;
+	// medição: -RmOctaves=1 (conta ou leitura de memória? 11/10)
+	static const int32 OctavesCfg = FMath::Clamp(int32(ParamOr(TEXT("RmOctaves="), float(MsOctaves))), 1, 4);
+	Base.MsOctaves = OctavesCfg;
+	// a marcha conjunta (as explosões que se cruzam numa marcha só, como o WebGL; 12/10): -RmJoint=0 desliga
+	static const int32 JointCfg = int32(ParamOr(TEXT("RmJoint="), 1.0f));
+	Base.JointMarch = JointCfg;
 	Base.SunSteps = LightSteps;
 	Base.FireSteps = FireSteps;
 	Base.RadianceScale = LuxPerUnit;
+	Base.FogA = FVector4f(Fog.bOn ? 1.0f : 0.0f, Fog.DensityPerM, Fog.FalloffPerM, Fog.StartM);
+	Base.FogB = FVector4f(Fog.Albedo, Fog.G);
+	Base.FogHeightRel = float((Fog.HeightCm - CamCm.Z) * 0.01);
 	// depuração: -RmTerms=sol,céu,fogo,emissão (ex. 0,1,0,0 = só a luz do céu)
 	static const FVector4f Terms = []
 	{
@@ -705,7 +802,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		const FInstance& I = Instances[i];
 		const FBakeData& B = *I.Bake;
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(I.Frame), 0, B.Frames - 1);
-		const int32 F1 = FMath::Min(F0 + 1, B.Frames - 1);
+		const int32 F1 = B.NextFrame(F0);
 		const float A = FMath::Clamp(I.Frame - F0, 0.0f, 1.0f);
 		// a caixa dos dois quadros, alargada pelo deslocamento do ruído (instances.js _box)
 		FBox3f Local(ForceInit);
@@ -747,12 +844,33 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstFrame[N] = FVector4f(float(I.Slot0), float(I.Slot1), A,
 			(B.TimeOfFrame(float(F1)) - B.TimeOfFrame(float(F0))) * (B.Res / B.Domain) * MvScale);
 		Base.InstMisc[N] = FVector4f(B.TimeOfFrame(I.Frame), I.Seed, I.Keep, float(S));
+		Base.InstNoise[N] = FVector4f(I.NoiseScale, 0.0f, 0.0f, 0.0f);
+		Base.InstLight2[N] = FVector4f(I.SunFull, I.SkyGain, 0.0f, 0.0f);
+		Base.InstGround[N] = FVector4f(I.GroundAlbedo.X, I.GroundAlbedo.Y, I.GroundAlbedo.Z, I.GroundAlbedo.W > 0.0f ? 1.0f : 0.0f);
+		Base.InstDust[N] = I.DustLook;
 		// A nuvem nuclear quase não tem fuligem: logo depois da bola de fogo ela é
 		// marrom-avermelhada (óxidos de nitrogênio do ar quente) e, quando esfria e o
 		// vapor condensa, fica branca (Glasstone & Dolan 1977, cap. II). A emissão é
 		// ∝ σ·(1−albedo) (Kirchhoff): o ganho compensa pra bola de fogo brilhar igual.
 		float Albedo = SootAlbedo, EmitGain = 1.0f;
 		FVector3f Look = SootColor;
+		// medição (13/10): -RmSoot=r,g,b,albedo troca a cor da fuligem (a explosão de tanque das artes: marrom-escura)
+		static const FVector4f SootCfg = [] { FString S; FVector4f V(-1.0f, 0.0f, 0.0f, 0.0f); TArray<FString> P;
+			if (FParse::Value(FCommandLine::Get(), TEXT("RmSoot="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4) { V = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3])); }
+			return V; }();
+		if (SootCfg.X >= 0.0f)
+		{
+			Look = FVector3f(SootCfg.X, SootCfg.Y, SootCfg.Z);
+			Albedo = SootCfg.W;
+			EmitGain = (1.0f - SootAlbedo) / FMath::Max(1.0f - Albedo, 0.05f);
+		}
+		if (I.SootLook.X >= 0.0f)
+		{
+			// a desta explosão (a morte de tanque no jogo)
+			Look = FVector3f(I.SootLook.X, I.SootLook.Y, I.SootLook.Z);
+			Albedo = I.SootLook.W;
+			EmitGain = (1.0f - SootAlbedo) / FMath::Max(1.0f - Albedo, 0.05f);
+		}
 		if (I.bNuclear)
 		{
 			const float K = FMath::Clamp((B.TimeOfFrame(I.Frame) - 1.0f) / 1.8f, 0.0f, 1.0f), Wn = K * K * (3.0f - 2.0f * K);
@@ -774,7 +892,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			const float Hot = 1.0f - FMath::SmoothStep(2.0f, 4.0f, B.TimeOfFrame(I.Frame));
 			Base.InstDetail[N] = FVector4f(FMath::SmoothStep(2.7f, 5.3f, Px), FMath::SmoothStep(5.3f, 10.7f, Px), FMath::SmoothStep(10.7f, 21.0f, Px), Hot);
 		}
-		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain, float(WarpSlot));
+		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain * I.EmitScale, float(WarpSlot));
 		Base.InstBoxMin[N] = FVector4f(Rel(World.Min), 0.0f);
 		Base.InstBoxMax[N] = FVector4f(Rel(World.Max), 0.0f);
 		Base.InstFirePos[N] = FVector4f(Foot + LP * I.Scale, I.Flash);
@@ -795,8 +913,10 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstLight[Vis[k].Index].X = float(k);
 	}
 
-	// a tela: raio sem o jitter do TSR (a imagem aqui já é a reconstruída)
-	const FMatrix InvProj = View.ViewMatrices.GetViewToClipNoAA().Inverse();
+	// a tela: antes do TSR o raio leva a mesma tremida (jitter) da cena e da profundidade, pra cair no
+	// mesmo ponto delas; no lugar antigo (depois do TSR, -RmPass=1) a imagem já é a reconstruída, sem tremida
+	static const bool bAfterTSR = ParamOr(TEXT("RmPass="), 0.0f) > 0.5f;
+	const FMatrix InvProj = (bAfterTSR ? View.ViewMatrices.GetViewToClipNoAA() : View.ViewMatrices.GetProjectionMatrix()).Inverse();
 	const FMatrix ViewRot = View.ViewMatrices.GetWorldToView().RemoveTranslation().GetTransposed();
 	Base.ClipToCamera = FMatrix44f(InvProj * ViewRot);
 	Base.CameraForward = FVector3f(View.GetViewDirection());
@@ -861,16 +981,36 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			Shader, P, FComputeShaderUtils::GetGroupCount(FIntVector(LCRes), FIntVector(4)));
 	}
 
+	// 1b) a sombra no chão: a espessura óptica entre o plano do chão e o sol, vista de cima (a light function do sol lê
+	// no quadro seguinte). Sem dono no jogo (mapas do BlastLab, que têm a sombra da fumaça de campo), não roda.
+	if (Shadow.Out && Shadow.Out->GetRenderTargetTexture())
+	{
+		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
+		Common(P);
+		FRDGTextureRef ShadowTex = External(GraphBuilder, Shadow.Out->GetRenderTargetTexture(), TEXT("BlastRaymarch.Shadow"));
+		P->ShadowOut = GraphBuilder.CreateUAV(ShadowTex);
+		P->ShadowA = FVector4f(float(Shadow.OriginM.X - CamCm.X * 0.01), float(Shadow.OriginM.Y - CamCm.Y * 0.01), Shadow.TexelM, float(Shadow.GroundZM - CamCm.Z * 0.01));
+		P->ShadowB = FVector4f(Shadow.ToSun, float(Shadow.Res));
+		TShaderMapRef<FBlastRaymarchShadowMapCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ShadowMap"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
+			Shader, P, FComputeShaderUtils::GetGroupCount(FIntPoint(Shadow.Res, Shadow.Res), FIntPoint(8, 8)));
+	}
+
 	// 2) a marcha, meia resolução
-	FRDGTextureRef Vol = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(Half, PF_FloatRGBA, FClearValueBinding::Black,
-		TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.Volume"));
-	FRDGTextureRef VolDepth = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(Half, PF_G32R32F, FClearValueBinding::Black,
-		TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.VolumeDepth"));
+	// duas camadas por texel (a de trás e a da frente, BlastRaymarch.usf SceneDistRange): o quadriculado nas folhas
+	auto HalfTex = [&](const TCHAR* Name, EPixelFormat Format = PF_FloatRGBA)
+	{
+		return GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(Half, Format, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV), Name);
+	};
+	FRDGTextureRef Vol = HalfTex(TEXT("BlastRaymarch.Volume"));
+	FRDGTextureRef VolNear = HalfTex(TEXT("BlastRaymarch.VolumeNear"));
+	FRDGTextureRef VolDepth = HalfTex(TEXT("BlastRaymarch.VolumeDepth"), PF_A32B32G32R32F);
 	{
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		P->PoolLC = LC;
 		P->VolOut = GraphBuilder.CreateUAV(Vol);
+		P->VolNearOut = GraphBuilder.CreateUAV(VolNear);
 		P->VolDepthOut = GraphBuilder.CreateUAV(VolDepth);
 		TShaderMapRef<FBlastRaymarchMarchCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch March %dx%d", Half.X, Half.Y), Shader, P,
@@ -880,16 +1020,19 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	// 2b) acúmulo temporal, levado pela câmera do quadro anterior
 	const FMatrix WorldToClip = View.ViewMatrices.GetWorldToView() * View.ViewMatrices.GetViewToClipNoAA();
 	const uint32 Frame = View.Family ? View.Family->FrameNumber : 0;
-	const bool bHistory = HistAlpha < 1.0f && History.IsValid() && HistorySize == Half && Frame == HistoryFrame + 1;
-	FRDGTextureRef Resolved = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(Half, PF_FloatRGBA, FClearValueBinding::Black,
-		TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.Resolved"));
+	const bool bHistory = HistAlpha < 1.0f && History.IsValid() && HistoryNear.IsValid() && HistorySize == Half && Frame == HistoryFrame + 1;
+	FRDGTextureRef Resolved = HalfTex(TEXT("BlastRaymarch.Resolved"));
+	FRDGTextureRef ResolvedNear = HalfTex(TEXT("BlastRaymarch.ResolvedNear"));
 	{
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		P->VolIn = Vol;
+		P->VolNearIn = VolNear;
 		P->VolDepthIn = VolDepth;
 		P->HistIn = bHistory ? GraphBuilder.RegisterExternalTexture(History, TEXT("BlastRaymarch.History")) : Vol;
+		P->HistNearIn = bHistory ? GraphBuilder.RegisterExternalTexture(HistoryNear, TEXT("BlastRaymarch.HistoryNear")) : VolNear;
 		P->HistOut = GraphBuilder.CreateUAV(Resolved);
+		P->HistNearOut = GraphBuilder.CreateUAV(ResolvedNear);
 		// metros relativos à câmera de agora → mundo (cm) → clip do quadro anterior (em double, depois float)
 		P->CamToPrevClip = FMatrix44f(FScaleMatrix(100.0) * FTranslationMatrix(CamCm) * PrevWorldToClip);
 		P->HistValid = bHistory ? 1.0f : 0.0f;
@@ -901,6 +1044,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			FComputeShaderUtils::GetGroupCount(Half, FIntPoint(8, 8)));
 	}
 	GraphBuilder.QueueTextureExtraction(Resolved, &History);
+	GraphBuilder.QueueTextureExtraction(ResolvedNear, &HistoryNear);
 	HistorySize = Half;
 	HistoryFrame = Frame;
 	PrevWorldToClip = WorldToClip;
@@ -919,6 +1063,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Common(P);
 		P->SceneColorIn = SceneColor.Texture;
 		P->VolIn = Resolved;
+		P->VolNearIn = ResolvedNear;
 		P->VolDepthIn = VolDepth;
 		P->SceneColorOut = GraphBuilder.CreateUAV(OutTex);
 		TShaderMapRef<FBlastRaymarchCompositeCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));

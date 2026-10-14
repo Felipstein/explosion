@@ -1,4 +1,4 @@
-// BlastRaymarch.usf — o raymarch das explosões gravadas do WebGL, portado.
+﻿// BlastRaymarch.usf — o raymarch das explosões gravadas do WebGL, portado.
 //
 // Porte de reference/webgl/js/instances.js (shLight e shSingle) e do composite
 // de js/volumeRender.js, com as mesmas constantes (ver BlastRaymarch.cpp). O
@@ -105,6 +105,8 @@ float Erode;
 float FlowPeriod;
 float DetailAmp2;   // 2ª oitava do detalhe (m locais; o WebGL usava 0.11 só na qualidade máxima, main.js det2)
 float SkyGain;
+float3 GroundAlbedo;  // a areia que devolve o sol pra baixo da fumaça (0 = desligado; -RmGround=r,g,b; 13/10)
+float SunFull;     // 0 = o sol × seno da altura (o "erro" do WebGL, a fumaça preta aprovada); 1 = o sol inteiro (13/10)
 float FireGain;
 float MsExt;
 float MsScatter;
@@ -116,8 +118,14 @@ int FireSteps;
 // ---- luz da cena (InitLights, da View: a mesma que acende o resto da cena) -------
 static float3 KeyDir;     // pra luz-chave (sol ou lua, a mais forte)
 static float3 KeyColor;   // iluminância dela no chão, unidades do WebGL
+static float3 KeyGround;  // a mesma sempre com o seno da altura (a névoa da composição)
+static float3 KeySun;     // a luz-chave sem o seno (o sol inteiro por explosão)
+static float3 GroundColor; // a luz do chão de sol na fumaça, na convenção do céu (radiância de um Lambert: E·albedo/π)
 static float3 SkyColor;   // céu do hemisfério de cima / π, unidades do WebGL (envSkyUp)
 float RadianceScale;      // unidades do WebGL → cd/m² (128 000: js/atmosphere.js, E_lux / E_render)
+float4 FogA;              // a névoa do mapa na explosão: ligada, densidade (1/m), queda (1/m, base 2), começo (m)
+float4 FogB;              // albedo (linear), fase g
+float FogHeightRel;        // a altura da névoa relativa à câmera (m)
 float4 TermGain;          // depuração (-RmTerms=sol,céu,fogo,emissão): 1 = o termo inteiro
 int DebugView;            // depuração (-RmDebug=): 1 = transmitância até o sol (branco = sol passa), 2 = até o fogo, 3 = do céu
 
@@ -126,6 +134,11 @@ int NumInstances;
 float4 InstFoot[MAX_INSTANCES];    // pé (m, relativo à câmera).xyz, escala
 float4 InstFrame[MAX_INSTANCES];   // slot do quadro de baixo, slot do de cima, fração, k (voxels por m/s)
 float4 InstMisc[MAX_INSTANCES];    // tempo da gravação (s), seed, fração mantida × espessura, passos
+float4 InstNoise[MAX_INSTANCES];   // x: o ruído de detalhe do WebGL nesta (1 = o de sempre; 0 = só a gravação, 13/10)
+// a luz e a cor desta explosão (13/10, a morte de tanque no jogo; as outras ficam com as globais): negativo = a global
+float4 InstLight2[MAX_INSTANCES];  // x: sol inteiro (0–1), y: ganho do céu
+float4 InstGround[MAX_INSTANCES];  // rgb: albedo da areia que devolve o sol; w > 0,5 = usa este
+float4 InstDust[MAX_INSTANCES];    // rgb: cor da poeira, a: albedo; x < 0 = a global
 float4 InstLight[MAX_INSTANCES];   // slot do cache de luz (<0 = sem), espessura, ganho da emissão, slot da deformação (<0 = sem)
 float4 InstBoxMin[MAX_INSTANCES];  // caixa justa no mundo (m, relativo à câmera)
 float4 InstBoxMax[MAX_INSTANCES];
@@ -171,6 +184,9 @@ int LCInstance;
 int LCSlot;
 Texture3D<float2> PoolLC;      // sol, fogo
 RWTexture3D<float2> PoolLCOut;
+RWTexture2D<float> ShadowOut;   // a sombra da explosão no chão (MainShadowMap)
+float4 ShadowA;                 // canto do mapa relativo à câmera (m) xy, texel (m), o chão relativo à câmera (m)
+float4 ShadowB;                 // a direção pro sol, a resolução
 
 // ---- subida dos blocos pro atlas (o UpdateSparseVolumeTexture.usf da Unreal faz igual) ----
 StructuredBuffer<uint> BrickData;     // um RGBA8 por texel, bloco a bloco (z, y, x), como no arquivo
@@ -250,7 +266,15 @@ void InitLights()
 	// fosse a luz de frente: às 15h, com o sol a 26°, ela recebe 0.44 do sol. É a
 	// fumaça preta aprovada (como o céu, um "erro" que se reproduz, não se corrige);
 	// com a luz inteira ela saía bege (rodada de 08/10, captures/cmp_250.jpg).
-	KeyColor = (bMoon ? Moon : Sun) * max(KeyDir.z, 0.0) / RadianceScale;
+	// O sol inteiro (13/10, -RmFullSun=1): os game shots do fim de tarde (alvos 3/6/19) têm a fumaça marrom-clara
+	// iluminada; com o sol a ~20° o seno deixava ~1/3 dele e a fumaça saía preta. Um volume não tem normal: a
+	// iluminância que chega é a da luz inteira (a névoa e as nuvens da Unreal fazem assim)
+	KeyColor = (bMoon ? Moon : Sun) * lerp(max(KeyDir.z, 0.0), 1.0, SunFull) / RadianceScale;
+	KeyGround = (bMoon ? Moon : Sun) * max(KeyDir.z, 0.0) / RadianceScale;     // a névoa da composição segue como foi medida
+	KeySun = (bMoon ? Moon : Sun) / RadianceScale;
+	// A luz que volta do chão (as nuvens da Unreal: VolumetricCloud.usf, GroundAlbedo, o chão Lambert iluminado pelo sol
+	// e visto pela metade de baixo da esfera): no deserto a areia ao sol acende a barriga da fumaça (os alvos 3/6/19)
+	GroundColor = KeyGround * GroundAlbedo * (1.0 / PI_F);
 	const float4 N = float4(0.0, 0.0, 1.0, 1.0);
 	float3 I0, I1;
 	I0.x = dot(View.SkyIrradianceEnvironmentMap[0], N);
@@ -465,13 +489,14 @@ float4 SampleInst(float3 LpIn, int I, float Dith)
 	const float3 Vel = BakeVel(ToVoxel(Lp, GRes), InstFrame[I].x);
 	float3 N2;
 	const float3 N = FlowNoise(Lp, Vel, InstMisc[I].x, InstMisc[I].y, N2);
-	const float3 Voxel = ToVoxel(Lp + (N * DetailAmp + N2 * DetailAmp2) * NoiseK(), GRes);
+	const float Kn = InstNoise[I].x;
+	const float3 Voxel = ToVoxel(Lp + (N * DetailAmp + N2 * DetailAmp2) * (NoiseK() * Kn), GRes);
 	float4 F = BakeAtMV(Voxel, I, Vel, Dith);
 	const float Nm = (N.x + N.y + N.z) * 0.577;
 	// o recorte sai primeiro onde o ruído é mais ralo: a borda do túnel sai rasgada (erosão do Nubis)
 	const float Kept = saturate(1.0 - saturate(Wp.w) * (1.0 + (0.5 - 0.5 * Nm)));
-	F.rb *= (1.0 + DetailDens * Nm) * BoxFade(Voxel) * InstMisc[I].z * Kept;
-	const float Er = Erode * (0.5 - 0.5 * Nm);
+	F.rb *= (1.0 + DetailDens * Kn * Nm) * BoxFade(Voxel) * InstMisc[I].z * Kept;
+	const float Er = Erode * Kn * (0.5 - 0.5 * Nm);
 	F.r = max(F.r - Er / (1.0 + F.r * 9.0), 0.0);
 	F.b = max(F.b - Er * 0.7 / (1.0 + F.b * 9.0), 0.0);
 	// as bolhas de perto: multiplicam a densidade que existe (não criam fumaça no
@@ -689,8 +714,13 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float TNear, float2 Pix, in
 			const float SigSoot = SootExt * F.r * Thick, SigDust = DustExt * F.b * Thick;
 			const float SigT = SigSoot + SigDust;
 			const float WS = SigSoot / max(SigT, 1e-5);
-			const float3 ScatCol = lerp(DustColor, InstLook[I].rgb, WS);
-			const float Albedo = lerp(DustAlbedo, InstLook[I].a, WS);
+			const bool bOwnDust = InstDust[I].x >= 0.0;
+			const float3 ScatCol = lerp(bOwnDust ? InstDust[I].rgb : DustColor, InstLook[I].rgb, WS);
+			const float Albedo = lerp(bOwnDust ? InstDust[I].a : DustAlbedo, InstLook[I].a, WS);
+			// a luz desta explosão (o sol inteiro, o céu e a areia por explosão; negativo = as globais)
+			const float3 KeyI = InstLight2[I].x >= 0.0 ? KeySun * lerp(max(KeyDir.z, 0.0), 1.0, InstLight2[I].x) : KeyColor;
+			const float SkyI = InstLight2[I].y >= 0.0 ? InstLight2[I].y : SkyGain;
+			const float3 GroundI = InstGround[I].w > 0.5 ? KeyGround * InstGround[I].rgb * (1.0 / PI_F) : GroundColor;
 
 			// corpo negro com o reforço na frente de chama (onde ainda há combustível)
 			// no clarão, só o miolo que já é fogo esquenta (a casca fria não acende)
@@ -744,8 +774,8 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float TNear, float2 Pix, in
 					const float Ph = lerp(PhIso, PhSun, Ap);
 					const float TSun = lerp(1.0, SunT, Ap);
 					const float TSky = lerp(1.0, SkyT, Ap * 0.7 + 0.3);
-					const float3 Src = ScatCol * Sc * (KeyColor * (TSun * Ph * TermGain.x)
-						+ SkyColor * (SkyGain * TSky * PhIso * TermGain.y)
+					const float3 Src = ScatCol * Sc * (KeyI * (TSun * Ph * TermGain.x)
+						+ (SkyColor * TSky + GroundI * lerp(1.0, FireT, Ap * 0.7 + 0.3)) * (SkyI * PhIso * TermGain.y)
 						+ FireIrr * (lerp(PhIso, PhSun, Ap * 0.5) * TermGain.z))
 						+ Emit * (Ab * TermGain.w);
 					const float Ext = max(Sig, 1e-5);
@@ -771,6 +801,216 @@ float4 MarchInstance(int I, float3 Rd, float TScene, float TNear, float2 Pix, in
 	return float4(L, Tr[0]);
 }
 
+// A marcha CONJUNTA (instances.js, a do WebGL; perdida no porte e de volta em 12/10): o raio anda uma vez
+// pela cena e em cada passo soma todas as explosões cuja caixa contém o ponto. Marchar uma de cada vez e pôr
+// uma inteira na frente da outra errava a ordem onde elas se cruzam (o Felipe: a areia de uma explosão velha
+// passando por cima das novas). A luz de cada uma segue sendo a dela (cache, céu, fogo próprio); o fogo de
+// uma acendendo a fumaça da outra (o resto da marcha conjunta do WebGL) é o próximo passo.
+#define JOINT_MAX 8
+int JointMarch;
+float4 MarchJoint(float3 Rd, float TScene, float TNear, float2 Pix, inout float DepthSum, inout float DepthW, out float4 Near)
+{
+	Near = float4(0.0, 0.0, 0.0, 1.0);
+	// as que o raio atravessa (as mais perto primeiro: a lista já vem ordenada pela distância)
+	int Ids[JOINT_MAX];
+	float T0[JOINT_MAX], T1[JOINT_MAX], DtI[JOINT_MAX];
+	int K = 0;
+	float TMin = 1e9, TMax = -1e9, DtMin = 1e9;
+	for (int I = 0; I < NumInstances && K < JOINT_MAX; I++)
+	{
+		float2 Hit = RayBox(0.0, Rd, InstBoxMin[I].xyz, InstBoxMax[I].xyz);
+		Hit.x = max(Hit.x, NearM);
+		Hit.y = min(Hit.y, TScene);
+		if (Hit.y > Hit.x)
+		{
+			Ids[K] = I;
+			T0[K] = Hit.x;
+			T1[K] = Hit.y;
+			DtI[K] = (Hit.y - Hit.x) / max(InstMisc[I].w, 1.0);
+			TMin = min(TMin, Hit.x);
+			TMax = max(TMax, Hit.y);
+			DtMin = min(DtMin, DtI[K]);
+			K++;
+		}
+	}
+	if (K == 0)
+	{
+		return float4(0.0, 0.0, 0.0, 1.0);
+	}
+	// o orçamento de passos: o de quem mais pede, espalhado na faixa toda do raio. Com o passo de cada uma
+	// valendo sozinho, as saias de poeira largas (caixa de 38 m) somavam passos curtos ao longo da faixa toda
+	// e a marcha das 6 Cargas com poeira ia de 5,8 (uma de cada vez) a 14,5 ms; com o teto × 1,5, 8,7 ms e a
+	// mesma imagem (captures/ue/conjunta_teto.jpg); × 1 (12/10) pra ficar perto da de uma de cada vez
+	float Budget = 1.0;
+	for (int B = 0; B < K; B++)
+	{
+		Budget = max(Budget, InstMisc[Ids[B]].w);
+	}
+	const float DtFloor = (TMax - TMin) / min(Budget, float(MAX_STEPS));
+	const float CosSun = dot(Rd, KeyDir);
+	const float PhSun = PhaseDual(CosSun, PhaseG, PhaseBack, PhaseMix);
+	const float PhIso = 1.0 / (4.0 * PI_F);
+	bool bNear = false;
+	float3 L = 0.0;
+	float Tr[4] = { 1.0, 1.0, 1.0, 1.0 };
+	float T = TMin + DtMin * IGNoise(Pix + Jitter * 71.13);
+	for (int S = 0; S < MAX_STEPS * 3; S++)
+	{
+		if (!bNear && T >= TNear)
+		{
+			bNear = true;
+			Near = float4(L, Tr[0]);
+		}
+		if (T >= TMax || Tr[0] < 0.004)
+		{
+			break;
+		}
+		const float3 W = Rd * T;
+		const float Dith = (IGNoise(Pix + float(S) * float2(5.588, 3.17)) - 0.5) / 255.0;
+		float Dt = 1e9, Skip = 1e9, NextIn = 1e9;
+		bool bAny = false;
+		float3 SrcO[4] = { (float3)0.0, (float3)0.0, (float3)0.0, (float3)0.0 };
+		float ExtO[4] = { 0.0, 0.0, 0.0, 0.0 };
+		float DebugV = 0.0;
+		for (int J = 0; J < K; J++)
+		{
+			if (T < T0[J])
+			{
+				NextIn = min(NextIn, T0[J]);
+				continue;
+			}
+			if (T >= T1[J])
+			{
+				continue;
+			}
+			const int I = Ids[J];
+			UseRes(I);
+			const float3 Foot = InstFoot[I].xyz;
+			const float Scale = InstFoot[I].w;
+			const float3 Lpw = (W - Foot) / Scale;
+			if (MacroEmpty(Lpw, I))
+			{
+				Skip = min(Skip, MacroSkip(Lpw, Rd, I, DtI[J] / Scale) * Scale);
+				continue;
+			}
+			bAny = true;
+			Dt = min(Dt, DtI[J]);
+			const float4 F = SampleInst(Lpw, I, Dith);
+			if (F.r + F.b <= 1e-4)
+			{
+				continue;
+			}
+			const float Thick = InstLight[I].y;
+			const float SigSoot = SootExt * F.r * Thick, SigDust = DustExt * F.b * Thick;
+			const float SigT = SigSoot + SigDust;
+			const float WS = SigSoot / max(SigT, 1e-5);
+			const bool bOwnDust = InstDust[I].x >= 0.0;
+			const float3 ScatCol = lerp(bOwnDust ? InstDust[I].rgb : DustColor, InstLook[I].rgb, WS);
+			const float Albedo = lerp(bOwnDust ? InstDust[I].a : DustAlbedo, InstLook[I].a, WS);
+			// a luz desta explosão (o sol inteiro, o céu e a areia por explosão; negativo = as globais)
+			const float3 KeyI = InstLight2[I].x >= 0.0 ? KeySun * lerp(max(KeyDir.z, 0.0), 1.0, InstLight2[I].x) : KeyColor;
+			const float SkyI = InstLight2[I].y >= 0.0 ? InstLight2[I].y : SkyGain;
+			const float3 GroundI = InstGround[I].w > 0.5 ? KeyGround * InstGround[I].rgb * (1.0 / PI_F) : GroundColor;
+			// corpo negro com o reforço na frente de chama; no clarão só o miolo que já é fogo esquenta
+			const float Fl = InstFirePos[I].w;
+			const float TN = saturate((F.g + FlashDT * Fl * smoothstep(0.12, 0.45, F.g)) * TempScale);
+			const float4 Bb = BlackBody.SampleLevel(LinearClamp, float2(TN, 0.5), 0);
+			float Flame = 1.0;
+			if (F.g > 0.12)
+			{
+				Flame += FlameBoost * smoothstep(0.02, 0.35, SampleFuel(Lpw, I));
+			}
+			const float3 Emit = Bb.rgb * (pow(max(Bb.a, 0.0), EmissionCurve) * EmissionGain * InstLight[I].z * Flame * (1.0 + FlashGain * Fl))
+				* (SigSoot * (1.0 - InstLook[I].a));
+			// luz: do cache (marchado neste quadro) ou a transmitância do céu gravada
+			const float FadeM = BoxFade(ToVoxel(Lpw, GRes));
+			const float SkyT = lerp(1.0, F.a, FadeM);
+			float SunT, FireT;
+			const float LcSlot = InstLight[I].x;
+			if (LcSlot >= 0.0)
+			{
+				const float2 Lc = LightCacheAt(Lpw, LcSlot);
+				SunT = lerp(1.0, Lc.x, FadeM);
+				FireT = lerp(1.0, Lc.y, FadeM);
+			}
+			else
+			{
+				SunT = pow(SkyT, SunOcclude);
+				FireT = SkyT;
+			}
+			if (DebugView > 0)
+			{
+				DebugV += (DebugView == 1 ? SunT : (DebugView == 2 ? FireT : SkyT)) * SigT;
+				ExtO[0] += SigT;
+				continue;
+			}
+			const float Fd = length(InstFirePos[I].xyz - W);
+			const float3 FireIrr = InstFireCol[I].rgb * FireGain * FireT / (1.0 + Fd * Fd * 0.05);
+			float Ae = 1.0, Ab = 1.0, Ap = 1.0;
+			[unroll] for (int O = 0; O < 4; O++)
+			{
+				if (O < MsOctaves)
+				{
+					const float Sig = SigT * Ae;
+					const float Sc = Sig * Albedo * Ab;
+					const float Ph = lerp(PhIso, PhSun, Ap);
+					const float TSun = lerp(1.0, SunT, Ap);
+					const float TSky = lerp(1.0, SkyT, Ap * 0.7 + 0.3);
+					SrcO[O] += ScatCol * Sc * (KeyI * (TSun * Ph * TermGain.x)
+						+ (SkyColor * TSky + GroundI * lerp(1.0, FireT, Ap * 0.7 + 0.3)) * (SkyI * PhIso * TermGain.y)
+						+ FireIrr * (lerp(PhIso, PhSun, Ap * 0.5) * TermGain.z))
+						+ Emit * (Ab * TermGain.w);
+					ExtO[O] += Sig;
+					Ae *= MsExt;
+					Ab *= MsScatter;
+					Ap *= MsPhase;
+				}
+			}
+		}
+		if (!bAny)
+		{
+			// ninguém ocupado aqui: salta o vazio, sem passar da entrada da próxima caixa
+			const float Nt = min(T + Skip, NextIn);
+			if (Nt > 1e8)
+			{
+				break;
+			}
+			T = max(Nt, T + 1e-3);
+			continue;
+		}
+		Dt = max(Dt, DtFloor);      // a integração e o avanço com o mesmo passo
+		if (DebugView > 0)
+		{
+			const float TrStep = exp(-ExtO[0] * Dt);
+			L += Tr[0] * (DebugV / max(ExtO[0], 1e-5)) * 0.05 * (1.0 - TrStep);
+			Tr[0] *= TrStep;
+		}
+		else
+		{
+			[unroll] for (int O = 0; O < 4; O++)
+			{
+				if (O < MsOctaves)
+				{
+					const float Ext = max(ExtO[O], 1e-5);
+					const float TrStep = exp(-Ext * Dt);
+					L += Tr[O] * (SrcO[O] - SrcO[O] * TrStep) / Ext;
+					Tr[O] *= TrStep;
+				}
+			}
+		}
+		// profundidade média pela cobertura (volumeRender.js): por onde o acúmulo reprojeta
+		const float C = 1.0 - Tr[0];
+		DepthSum += T * C;
+		DepthW += C;
+		T += Dt;
+	}
+	if (!bNear)
+	{
+		Near = float4(L, Tr[0]);
+	}
+	return float4(L, Tr[0]);
+}
+
 [numthreads(8, 8, 1)]
 void MainMarch(uint2 Id : SV_DispatchThreadID)
 {
@@ -783,26 +1023,35 @@ void MainMarch(uint2 Id : SV_DispatchThreadID)
 	const float3 Rd = RayDir(Uv);
 	float TNear, TScene;
 	SceneDistRange(Id, Rd, TNear, TScene);
-	float3 L = 0.0, Ln = 0.0;
-	float Tr = 1.0, Trn = 1.0;
 	float DepthSum = 0.0, DepthW = 0.0;
-	// da mais perto pra mais longe: a de trás é vista pela transmitância da da frente (nas duas camadas;
-	// a da frente é uma parte do caminho da de trás, então ela é a última a ficar opaca)
-	for (int I = 0; I < NumInstances; I++)
+	float4 Near, Far;
+	if (JointMarch > 0)
 	{
-		float4 Rn;
-		const float4 R = MarchInstance(I, Rd, TScene, TNear, float2(Id), DepthSum, DepthW, Rn);
-		L += Tr * R.rgb;
-		Tr *= R.a;
-		Ln += Trn * Rn.rgb;
-		Trn *= Rn.a;
-		if (Trn < 0.004)
-		{
-			break;
-		}
+		Far = MarchJoint(Rd, TScene, TNear, float2(Id), DepthSum, DepthW, Near);
 	}
-	VolOut[Id] = float4(L, Tr);
-	VolNearOut[Id] = float4(Ln, Trn);
+	else
+	{
+		// uma de cada vez (até 12/10; -RmJoint=0 compara): a de trás vista pela transmitância da da frente
+		float3 L = 0.0, Ln = 0.0;
+		float Tr = 1.0, Trn = 1.0;
+		for (int I = 0; I < NumInstances; I++)
+		{
+			float4 Rn;
+			const float4 R = MarchInstance(I, Rd, TScene, TNear, float2(Id), DepthSum, DepthW, Rn);
+			L += Tr * R.rgb;
+			Tr *= R.a;
+			Ln += Trn * Rn.rgb;
+			Trn *= Rn.a;
+			if (Trn < 0.004)
+			{
+				break;
+			}
+		}
+		Far = float4(L, Tr);
+		Near = float4(Ln, Trn);
+	}
+	VolOut[Id] = Far;
+	VolNearOut[Id] = Near;
 	VolDepthOut[Id] = float4(min(TScene, 1e8), DepthW > 1e-4 ? DepthSum / DepthW : min(TScene, 1e4), min(TNear, 1e8), 0.0);
 }
 
@@ -856,6 +1105,51 @@ void MainTemporal(uint2 Id : SV_DispatchThreadID)
 	}
 	HistOut[Id] = lerp(clamp(HistIn.SampleLevel(LinearClamp, PrevUv, 0), Mn, Mx), Cur, HistAlpha);
 	HistNearOut[Id] = lerp(clamp(HistNearIn.SampleLevel(LinearClamp, PrevUv, 0), MnN, MxN), CurN, HistAlpha);
+}
+
+// =============================================================================
+// a sombra no chão (13/10; o Felipe: "parece um PNG em cima do cenário", a nuvem não escurecia nada): pra cada texel
+// de um plano no chão, a espessura óptica até o sol através de todas as explosões. A light function do sol
+// (M_SmokeShadowLF, a mesma da fumaça de campo) leva o ponto ao plano ao longo do sol e tira e^−τ da luz direta: a
+// sombra cai longe com o sol baixo, nas casas e nas unidades, e respeita as sombras que já existem (só a luz direta).
+// As "transmittance/opacity shadow maps" das nuvens e da fumaça dos AAA (Frostbite, Hillaire 2016; as nuvens da Unreal).
+
+[numthreads(8, 8, 1)]
+void MainShadowMap(uint2 Id : SV_DispatchThreadID)
+{
+	const int Res = int(ShadowB.w);
+	if (any(int2(Id) >= Res))
+	{
+		return;
+	}
+	const float3 P = float3(ShadowA.xy + (float2(Id) + 0.5) * ShadowA.z, ShadowA.w);
+	const float3 L = ShadowB.xyz;
+	float Tau = 0.0;
+	for (int I = 0; I < NumInstances; I++)
+	{
+		UseRes(I);
+		float2 Hit = RayBox(P, L, InstBoxMin[I].xyz, InstBoxMax[I].xyz);
+		Hit.x = max(Hit.x, 0.0);
+		if (Hit.y <= Hit.x)
+		{
+			continue;
+		}
+		const int N = 24;
+		const float Dt = (Hit.y - Hit.x) / float(N);
+		const float Thick = InstLight[I].y;
+		for (int S = 0; S < N; S++)
+		{
+			const float3 W = P + L * (Hit.x + (float(S) + 0.5) * Dt);
+			const float3 Lpw = (W - InstFoot[I].xyz) / InstFoot[I].w;
+			if (MacroEmpty(Lpw, I))
+			{
+				continue;
+			}
+			const float4 F = SampleInst(Lpw, I, 0.0);
+			Tau += (SootExt * F.r + DustExt * F.b) * Thick * Dt;
+		}
+	}
+	ShadowOut[Id] = Tau;
 }
 
 // =============================================================================
@@ -921,7 +1215,36 @@ void MainComposite(uint2 Id : SV_DispatchThreadID)
 			}
 		}
 		const float4 Vol = DMax - DMin < Tol ? VolIn.SampleLevel(LinearClamp, Uv, 0) : (WSum > 0.0 ? Acc / WSum : BestV);
-		Scene.rgb = Scene.rgb * Vol.a + Vol.rgb * (RadianceScale * View.PreExposure);
+		float3 VolL = Vol.rgb;
+		if (FogA.x > 0.5 && Vol.a < 0.999)
+		{
+			// A névoa do mapa entre a câmera e a explosão (13/10; o Felipe: "parece um PNG em cima do cenário"). A cena
+			// já vem com a névoa; a explosão vinha limpa por cima. A mesma névoa de altura da Unreal (HeightFogCommon:
+			// densidade × 2^(−queda·(z − altura)), integrada no raio), do começo dela até a profundidade média da
+			// explosão; a luz é a volumétrica (albedo, fase do sol + céu). Ela some o tanto que a explosão tapa a cena
+			// (a cena atrás já tem a névoa dela) e cobre a explosão.
+			const float Dv = min(VolDepthIn[clamp(int2(Uv * float2(HalfSize)), 0, int2(HalfSize) - 1)].y, DRef);
+			const float S0 = FogA.w, S1 = max(Dv, S0);
+			const float Fz = FogA.z * Rd.z;
+			const float Z0 = -FogHeightRel;            // a altura da câmera acima da névoa (m)
+			float Line;
+			if (abs(Fz) > 1e-4)
+			{
+				Line = exp2(-FogA.z * Z0) * (exp2(-Fz * S0) - exp2(-Fz * S1)) / (Fz * 0.69314718);
+			}
+			else
+			{
+				Line = exp2(-FogA.z * Z0) * (S1 - S0);
+			}
+			const float FogT = exp(-FogA.y * max(Line, 0.0));
+			InitLights();
+			const float CosS = dot(Rd, KeyDir);
+			const float G = FogB.w, G2 = G * G;
+			const float Hg = (1.0 - G2) / (4.0 * PI_F * pow(max(1.0 + G2 - 2.0 * G * CosS, 1e-4), 1.5));
+			const float3 Src = FogB.rgb * (KeyGround * Hg + SkyColor * (1.0 / (4.0 * PI_F)));
+			VolL = Vol.rgb * FogT + Src * (1.0 - FogT) * (1.0 - Vol.a);
+		}
+		Scene.rgb = Scene.rgb * Vol.a + VolL * (RadianceScale * View.PreExposure);
 	}
 	SceneColorOut[Id] = Scene;
 }

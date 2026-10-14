@@ -143,6 +143,94 @@ como passo próprio depois do TSR e antes do bloom:
   quadro gravado muda; (6) teto de custo por preset medido numa barragem, no p95;
   (7) marcha em ¼ só na fumaça fria, conferida em vídeo. A floresta do laboratório
   sozinha já fica em ~52 qps: a cena também precisa caber.
+- **A morte de tanque pelo combustível na maquete do look (13/10; aprovada pelo Felipe à noite, sem o fogo da carcaça, e no jogo pra v2).**
+  Alvos escolhidos por ele: 3 `road_town_battle`, 6 `usa_vs_china`, 19 `r1_raid_slabs` e a referência da torre voando
+  (bola ~0,6–0,7 do casco, coluna preta densa, destroços em chamas, faíscas, chão queimado).
+  - **Onde testar:** a maquete do look ligada no BlastLab (`Content/LookLab`, links da sessão do look); abrir com
+    `?game=/Script/BlastLab.BlastLabGameMode`; a câmera do jogo é a `CAM_GameDefault`
+    (`-Cam=100.4,2.3504,0.6545,0,0.513,x,y`: o giro dela é o do sol da maquete, contraluz), qualidade ultra.
+  - **Tamanho medido com o tanque:** a nossa bola era 2,5–2,9 tanques (a gravação do Carro-Bomba); os alvos, 0,6–1,5.
+    Testados 0,5 e 0,35 (`-BlastScale`), com o relógio da pluma (`-BlastTime` = √escala). `-AutoRealTime` põe as fotos e
+    os vídeos no segundo real, pra comparar com o vídeo-alvo.
+  - **"Parece um PNG em cima do cenário":** a névoa do mapa agora começa numa fração da distância ao foco
+    (`BlastLabCamera::FocusFog`, a regra da maquete: era a névoa que lavava a cena), a névoa passa na frente da explosão
+    (composite), e a **explosão projeta sombra** no chão, nas casas e nos tanques (`MainShadowMap` → `M_SmokeShadowLF`
+    no sol dos mapas sem o ambiente do BlastLab; o mesmo método das nuvens da Unreal; pesquisa com fontes).
+  - **Morte de tanque completa (`-TankKill`):** o tanque da maquete mais perto ganha as tags da cena herói
+    (`TagNearestTank`) e a torre voa, saem destroços com rastro, faíscas e a carcaça queima com a coluna preta. As
+    faíscas encolhem e esquentam com a bola menor (os "palitos" brancos sumiram); a carcaça estourava de branco:
+    `-WreckBallLight`, `-WreckBallTemp`.
+  - **A nuvem:** gravação nova no EmberGen em duas rodadas do mesmo movimento (só fuligem / só areia que sobe), juntas
+    com a saia em anel (`eg_tq_v2`); a fuligem escura quente (`-RmSoot=0.30,0.25,0.21,0.22`) é a mais parecida.
+  - **Memória de vídeo:** no ultra (Cinematic) a textura pedia 3 GB e a 1660 estourava ("Video memory has been
+    exhausted"): as texturas caíam e a cena virava massinha. `DefaultScalability.ini`: 1800 MB com o limite pela memória.
+  - Vídeo lado a lado com o alvo: `captures/morte_tanque_vs_alvo.mp4`; folhas em `captures/ue/` (`tk_*`, `cc_*`, `v2_*`).
+  - **13/10, a bronca da gravação ("compara a porra das cores"; a "lagarta voando").** A fumaça saía PRETA
+    (0,07–0,18 do brilho do chão de sol) contra a marrom-acinzentada dos alvos (0,66–0,92, medida em caixas;
+    scratchpad `folha_cor.py`/`topo.py`), e as esteiras saíam voando inteiras.
+    - **Esteiras:** na maquete elas ficam presas na torre; `TagNearestTank` solta e queima todas as peças do tanque
+      (até 7 m do casco). A torre escolhe o lado livre (lados, diagonais pra trás, trás; 3,5 m de folga das peças
+      com mais de 0,8 m), em formação ela cai pra trás.
+    - **Por que preta, medido:** (1) a fuligem escura da noite; (2) a fumaça do raymarch recebia o sol × seno da
+      altura (o "erro" do WebGL que deu a fumaça preta aprovada; com o sol a ~20°, 1/3 dele); (3) a luz do céu ~5,7×
+      abaixo do físico (convenção do WebGL); (4) faltava a luz que a areia devolve (as nuvens da Unreal:
+      `VolumetricCloud.usf`, GroundAlbedo); (5) a coluna e as bolas da carcaça no volume da Unreal (outra luz, outra
+      densidade): com qualquer albedo ficavam pretas — a sombra das explosões no sol NÃO era (o volume da Unreal não
+      lê função de luz; desligada, a medida é idêntica).
+    - **Opções novas (padrão = como antes, o arsenal aprovado não muda):** `-RmFullSun=1`, `-RmSkyGain=6.28` (físico),
+      `-RmGround=r,g,b` (albedo da areia), `-RmSoot`, `-ExplosionParams=SootR=;SootG=;SootB=;SootAlbedo=` (a fuligem do
+      material do volume agora é parâmetro, `build_explosion.py`), `-WreckRm=1` (as bolas da carcaça no raymarch:
+      `eg_gasoline_b96`, a gasolina da JangaFX convertida em 96³ a 36 qps; começam depois da fase branca,
+      `-WreckRmSkip`), `-Plume=0`. Caches de luz do raymarch 4 → 12.
+    - **Resultado:** a bola de 1 s com marrom 0,85, sol inteiro, céu físico e chão: 0,80 do chão, cor (156,114,81)
+      contra (146,103,66)/(164,98,50)/(166,114,76) nos alvos.
+    - **13/10 à tarde (o Felipe: "quadrado ridículo do nada", "o fogo que surge depois tá horrível, dá pra
+      distinguir que são 2 efeitos"; "a fuligem de tanque tem uma cor específica, o amarelo é a areia"):**
+      - O quadrado era `Tank1_ContactShadow` (chapa de 10×6 m da sombra de contato do look) com o carvão: peças
+        chatas ficam fora da troca. A torre assenta de pé ou de cabeça pra baixo. Rastros dos cometas com a cor
+        da fuligem e 0,35 m (`M_TrailSmoke` com `SmokeTint`), chapas 0,15 m; `-DebrisGlow=0.15` (faíscas laranja).
+      - **Fogo da carcaça como os AAA** (estudo de 13/10: fogo em loop preso ao casco, fumaça saindo dele, uma
+        luz): `-WreckLoop=eg_wreck_loop` — EmberGen "Game Fire Loop 2" com fumaça (gerada 60%, dissipa 6%/s),
+        Loop Simulation 600–855 (Dynamic/Quintic), VDB 64 quadros (passo 4), projeto em
+        `captures/embergen/fogo_carcaca_loop_v1.ember`; o raymarch toca em loop (`bLoop` no BRM2, conversor com
+        `loop`, fator só da temperatura em kelvin e a chama como fuligem incandescente). Escala 0,21, relógio
+        0,34 (Froude), espessura 4×. Sem bolas, coluna nem campo.
+      - **Fuligem cinza neutro** (medida nas colunas de tanque de 3 game shots: 0,53–0,61 do chão, razão por
+        canal igual): `-RmSoot=1.0,0.97,0.94,0.30`; a coluna fica em 0,53–0,62. O amarelo é só a poeira.
+      - O contraste das bolhas não vem da luz do céu (6,28 × 3: mesma razão p90/p10 ~1,84): é detalhe da gravação.
+      - **13/10 noite (o Felipe: "fogo rápido demais, é explosão comum do War Thunder"; "spawnando de cima do tanque,
+        um retângulo"; "a física do fluido tá boa, só a qualidade"):**
+        - Estudo War Thunder (agente): fumaça manda e a chama é pequena, chamas nas aberturas, ritmo calmo, coluna
+          preta que alarga e tomba com o vento, uma luz por carcaça.
+        - O retângulo era o emissor do preset Game Fire Loop 2: cilindro deitado (rot X 90°) de 26,7 m × 1 m a 8,4 m
+          do chão do domínio. Medido o tanque do look no GLB (`captures/look/tank_glb`): casco 8,13 × 3,79 m, topo
+          1,815 m; base da torre a 1,54 m, raio ~1,16 m no meio do casco. Emissor novo: disco em pé (rot 0) de raio
+          11,9 m EmberGen (= 1,15 m no mundo na escala 0,17 × 43,6/76,8), 1 m de altura, rente ao chão; combustível
+          250 %/s. Projeto `captures/embergen/fogo_carcaca_loop_v4_anel.ember`, VDB `captures/vdb/eg_wreck_loop4`,
+          gravação `eg_wreck_loop4` (128³, recorte de 256 voxels, a coluna se desfaz acima de 55%). Pé 27 cm abaixo do
+          teto do casco. Relógio 0,5, chama a 50% (`-WreckLoopEmit`).
+        - Qualidade: o conversor reduzia por interpolação linear (2 de cada 4–5 amostras): o detalhe fino da chama
+          virava grão. Agora a redução é pela média da área (`resample`, caixa exata).
+        - Coluna alta: a Smoke Plume da JangaFX no raymarch (`eg_plume_rm`, `-WreckPlume=`), em loop com emenda
+          (janela 1–4 s, emenda 1 s, no conversor) e endireitada (tombava 52°; fica 25%), pé no casco.
+        - Conversor (`build_raymarch_vdb.py`): loop, fator só da temperatura (os presets gravam kelvin), chama como
+          fuligem, recorte, coluna que se desfaz no alto, janela de loop, endireitar, velocidade na escala do domínio.
+        - Grão do fogo, 3 causas: a redução linear, o desfoque de movimento de 75% do Volume Processing do preset (zerado)
+          e a gravação sem velocidade (exportada agora); e o ruído de detalhe do WebGL encolhido junto com a escala 0,17
+          (agora por explosão, `RaymarchNoise`; o fogo usa 0).
+        - **Decisão do Felipe (13/10, noite): a v2 leva a morte de tanque SEM o fogo da carcaça** (`-WreckRm=1
+          -WreckBalls=0 -Plume=0` + as opções acima; `captures/gravacao_so_explosao.mp4`). Construções ficam com as
+          explosões antigas. O fogo da carcaça vai pra v3; defeitos abertos: fumaça creme, faixas horizontais, topo
+          achatado, coluna alta × tapar unidades.
+    - **Placa:** a maquete dos tanques em ultra usa ~5,3 GB no carregamento e cai (DEVICE_HUNG) quando outros
+      programas ocupam a placa; os testes usam `-dpcvars=r.Streaming.PoolSize=1000,r.Nanite.Streaming.StreamingPoolSize=256`
+      e tentam de novo.
+    - **No jogo (13/10, noite, pra v2):** `UBlastFxDirector::TankDeath` toca a `eg_tq_v2` no raymarch com as mesmas
+      opções do vídeo aprovado (escala 0,35, relógio 0,59, fuligem cinza, sol inteiro, céu físico, chão); `-TankBlast=0`
+      volta à antiga. As construções seguem com a Carga Pesada. O raymarch do jogo (`Game/Shaders`, `RTSShaders`, `BlastFx`)
+      é a cópia do BlastLab com o visual por explosão (o padrão de cada opção = o de antes). A gravação (271 MB; refeita de `captures/vdb/cbt_a` + `cbt_b`, projeto
+      `captures/embergen/tanque_comb_v1.ember`) mora em `BlastLab/Intermediate/Raymarch` com links físicos em
+      `Game/Intermediate/Raymarch` e `captures/raymarch_keep`. Fica pra depois: os destroços com rastro (`ABlastDebris`) no jogo.
 - **Rodar liso e lindo (11–12/10; o Felipe: "acho que dá pra aprovar").**
   - **Sombra da luz do fogo por campo de distância** abaixo do ultra (a virtual redesenhava a
     floresta inteira: 6 Cargas à noite 40,5 → 25,2 ms de placa; de dia igual à virtual; no baixa

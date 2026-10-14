@@ -777,9 +777,13 @@ def material():
     link(time, '', erosion, 'Time')
     link(seed, '', erosion, 'Seed')
     link(worley, '', erosion, 'Worley')
+    # A cor e o albedo da fuligem como parâmetros (13/10): eram constantes do material, e a coluna e o fogo da carcaça
+    # ficavam quase pretos (0.15 × 0.55) enquanto a bola do raymarch já tinha a cor própria; o C++ e o A/B
+    # (-ExplosionParams=SootR=...) põem a mesma fumaça em todos os corpos. Os valores de antes ficam de padrão
+    soot = dict(SootR=LOOK['sootColor'][0], SootG=LOOK['sootColor'][1], SootB=LOOK['sootColor'][2], SootAlbedo=LOOK['sootAlbedo'])
     look = {name: param(name, value, -1600 - 100 * i, x=-1000)
             for i, (name, value) in enumerate(list(EROSION.items())[:-1] + list(COLOR.items()) + list(PYRO.items())
-                                              + list(FUEL.items()))}
+                                              + list(FUEL.items()) + list(soot.items()))}
     link(look['ErodeTile'], '', erosion, 'ErodeTile')
 
     # a normal da fumaça, pré-calculada da gravação em baixa resolução (BakeNormal)
@@ -857,7 +861,7 @@ def material():
     link(kept, '', density, 'B')
     emission = param('EmissionScale', 1.0, 600)
 
-    shape = ('ErodeAmount', 'SootRef', 'DustRef', 'TempDetail', 'TempSplit', 'EdgeSharp', 'SkirtSoft') + tuple(FUEL)
+    shape = ('ErodeAmount', 'SootRef', 'DustRef', 'TempDetail', 'TempSplit', 'EdgeSharp', 'SkirtSoft') + tuple(FUEL) + tuple(soot)
     # a saia de poeira: o C++ põe a frente, a altura e a quantidade a cada instante
     skirt_p = {name: param(name, 0.0, 1600 + 100 * i, x=-1000)
                for i, name in enumerate(('SkirtRadius', 'SkirtHeight', 'SkirtDust'))}
@@ -896,9 +900,9 @@ def material():
                  'return sigT * %r;' % vox,
                  unreal.CustomMaterialOutputType.CMOT_FLOAT3, -200)
     alb = decode('Albedo', decode_code() +
-                 'float3 tint = lerp(lerp(%s, SkirtTint.rgb, wSkirt), float3%r, wS);\n'
-                 % ('SkirtTint.rgb' if DUST_BODY else 'float3%r' % (a['dustColor'],), a['sootColor']) +
-                 'float alb = lerp(DustAlbedo, %r, wS);\n' % a['sootAlbedo'] +
+                 'float3 tint = lerp(lerp(%s, SkirtTint.rgb, wSkirt), float3(SootR, SootG, SootB), wS);\n'
+                 % ('SkirtTint.rgb' if DUST_BODY else 'float3%r' % (a['dustColor'],)) +
+                 'float alb = lerp(DustAlbedo, SootAlbedo, wS);\n' +
                  '// as bolhas sombreadas: fresta escura entre elas e o lado oposto ao sol\n'
                  '// (a bolha vizinha na direção do sol mais alta que esta = sombra)\n'
                  'float bb0 = lerp(EN.x, SN.x, wSkirt), bbs = lerp(EN.z, SN.y, wSkirt);\n'
@@ -956,8 +960,8 @@ def material():
     fire_int.set_editor_property('default_value', unreal.LinearColor(0, 0, 0, 1))
     scale = param('SizeScale', 1.0, 1050, x=-1000)
     fill = decode('FireFill', decode_code() +
-                  'float3 tint = lerp(float3%r, float3%r, wS);\n' % (a['dustColor'], a['sootColor']) +
-                  'float alb = lerp(DustAlbedo, %r, wS);\n' % a['sootAlbedo'] +
+                  'float3 tint = lerp(float3%r, float3(SootR, SootG, SootB), wS);\n' % (a['dustColor'],) +
+                  'float alb = lerp(DustAlbedo, SootAlbedo, wS);\n' +
                   'float3 d = (UVW * %r - FirePos.xyz) * SizeScale;      // m do mundo\n' % DOMAIN_M +
                   'float3 irr = FireInt.rgb / (20.0 * SizeScale * SizeScale + dot(d, d));\n'
                   '// espalhamento isotrópico por voxel (mesma unidade da extinção)\n'
@@ -1198,7 +1202,12 @@ def battle_smoke_material():
 
 
 if __name__ == '__main__':
-    if BAKE_NAME:
+    if BAKE_NAME and os.environ.get('BLAST_ONLY') == 'material':
+        # só o material dessa gravação (o volume e os dados já importados ficam)
+        material()
+        unreal.EditorAssetLibrary.save_directory('/Game/Explosions', only_if_is_dirty=True, recursive=True)
+        log('done (material only, bake %s)' % BAKE_NAME)
+    elif BAKE_NAME:
         # outra gravação: o volume, os dados e o material dela (o mapa e o campo ficam)
         bake_asset(0, volume(0))
         material()

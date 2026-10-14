@@ -14,7 +14,8 @@ e no jogo continua sendo uma gravação só (custo de desenho só onde há poeir
   (canal a) é refeita com as duas (a poeira também faz sombra, como no conversor);
 - caixa justa e ocupação macro refeitas.
 
-Rodar: python BlastLab/Tools/brm2_merge_dust.py <explosao.brm2> <poeira.brm2> <saida.brm2> [escala_poeira=1] [atraso_s=0] [ganho=1]
+Rodar: python BlastLab/Tools/brm2_merge_dust.py <explosao.brm2> <poeira.brm2> <saida.brm2> [escala_poeira=1] [atraso_s=0] [ganho=1] [fuligem=1]
+(fuligem: multiplica a fuligem da explosão; 13/10, a nuvem da explosão de tanque mais areia e menos fuligem)
 """
 import json
 import os
@@ -63,6 +64,7 @@ def main():
     scale = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
     delay = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
     gain = float(sys.argv[6]) if len(sys.argv) > 6 else 1.0
+    soot_mult = float(sys.argv[7]) if len(sys.argv) > 7 else 1.0
     head, frames = read_brm2(src)
     dhead, dframes = read_brm2(dust_path)
     dust_frames = [A[..., 2].astype(np.float32) / 255.0 for A, F in dframes]   # √(poeira/2.5)
@@ -72,8 +74,15 @@ def main():
     te, td = times(head), times(dhead)
     src_dom = dhead['domain'] * scale
     out_head = {k: v for k, v in head.items() if k not in ('format', 'brick', 'frameBricks', 'frameOffsets')}
-    out_head['dustLayer'] = {'source': os.path.basename(dust_path), 'scale': scale, 'delay': delay, 'gain': gain}
+    out_head['dustLayer'] = {'source': os.path.basename(dust_path), 'scale': scale, 'delay': delay, 'gain': gain, 'soot': soot_mult}
     bounds = []
+    # a poeira some suave nos últimos metros antes da parede da caixa (de 84% a 97% do meio-lado, na
+    # horizontal): a saia que passava da caixa era cortada reta (o Felipe, 12/10: "parede invisível")
+    c = (np.arange(n) + 0.5) * vm - dom / 2
+    rr = np.sqrt(c[None, :] ** 2 + c[:, None] ** 2)            # [y][x]
+    e0, e1 = 0.84 * dom / 2, 0.97 * dom / 2
+    s = np.clip((rr - e0) / (e1 - e0), 0.0, 1.0)
+    edge_fade = (1.0 - s * s * (3.0 - 2.0 * s)).astype(np.float32)[None, :, :]
 
     def gen():
         for q, (A, F) in enumerate(frames):
@@ -84,8 +93,9 @@ def main():
                 j = int(np.clip(np.searchsorted(td, t) - 1, 0, len(td) - 2))
                 w = float(np.clip((t - td[j]) / max(td[j + 1] - td[j], 1e-6), 0.0, 1.0))
                 d = dust_frames[j] * (1 - w) + dust_frames[j + 1] * w
-                add = resample_dust(d, src_dom, n, dom) * gain
-            soot = 4.0 * (A[..., 0] / 255.0) ** 2
+                add = resample_dust(d, src_dom, n, dom) * gain * edge_fade
+            soot = np.clip(4.0 * (A[..., 0] / 255.0) ** 2 * soot_mult, 0.0, 4.0)
+            A[..., 0] = np.round(np.sqrt(soot / 4.0) * 255)
             dust = np.clip(2.5 * (A[..., 2] / 255.0) ** 2 + add, 0.0, 2.5)
             A[..., 2] = np.round(np.sqrt(dust / 2.5) * 255)
             # o céu refeito com as duas (o mesmo cálculo do conversor; o A[...,3] da explosão vinha só com a dela)

@@ -1,6 +1,6 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
-// BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
-// de aparência nascem lá e são trazidas pra cá.
+﻿// Cópia do BlastLab (13/10/2026, a morte de tanque da v2: a luz e a cor por explosão, a composição em duas camadas,
+// a emissão compensada pela exposição): a ponte até o plugin comum. A original continua sendo a referência:
+// mudanças de aparência nascem lá e são trazidas pra cá.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -40,6 +40,8 @@ namespace BlastRaymarch
 		TArray<int32> NumBricks;        // blocos com fumaça por quadro
 		TArray<int64> Offsets;          // começo de cada quadro em Data
 		int32 MaxBricks = 0;
+		bool bLightPhysical = false;    // a curva de luz já é física (as de VDB); a do WebGL vem comprimida (expoente 0.44)
+		bool bLoop = false;             // gravação em loop (o fogo da carcaça, 13/10): o quadro depois do último é o primeiro
 		TArray64<uint8> Data;
 
 		static TSharedPtr<FBakeData, ESPMode::ThreadSafe> Load(const FString& Path, FString& OutError);
@@ -53,7 +55,19 @@ namespace BlastRaymarch
 
 		/** js/bake.js timeOfFrame / frameOfTime: os quadros são densos no começo. */
 		float TimeOfFrame(float F) const { return Duration * FMath::Pow(FMath::Clamp(F / float(Frames - 1), 0.0f, 1.0f), Curve); }
-		float FrameOfTime(float T) const { return FMath::Pow(FMath::Clamp(T / Duration, 0.0f, 1.0f), 1.0f / Curve) * float(Frames - 1); }
+		float FrameOfTime(float T) const
+		{
+			if (bLoop)
+			{
+				// em loop: quadros iguais no tempo, o ciclo tem um quadro a mais que a duração (o último emenda no primeiro)
+				const float Period = LoopPeriod();
+				return FMath::Fmod(FMath::Max(T, 0.0f), Period) / Period * float(Frames);
+			}
+			return FMath::Pow(FMath::Clamp(T / Duration, 0.0f, 1.0f), 1.0f / Curve) * float(Frames - 1);
+		}
+		float LoopPeriod() const { return Duration * float(Frames) / float(FMath::Max(Frames - 1, 1)); }
+		/** O quadro depois de F (em loop, volta pro primeiro). */
+		int32 NextFrame(int32 F) const { return bLoop ? (F + 1) % Frames : FMath::Min(F + 1, Frames - 1); }
 	};
 	using FBakeRef = TSharedPtr<const FBakeData, ESPMode::ThreadSafe>;
 
@@ -68,6 +82,15 @@ namespace BlastRaymarch
 		float Seed = 0.0f;
 		float Keep = 1.0f;             // fração ainda visível (o sumiço no fim, o aquecimento)
 		float Thickness = 1.0f;
+		float NoiseScale = 1.0f;       // o ruído de detalhe do WebGL nesta (0 = só o detalhe da gravação; 13/10)
+		// a luz e a cor desta explosão (13/10: a morte de tanque nova no jogo; as construções ficam com as globais).
+		// Negativo / W ≤ 0 = a global (o padrão do BlastLab e as opções de linha de comando)
+		FVector4f SootLook = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);    // rgb, albedo da fuligem
+		FVector4f DustLook = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);    // rgb, albedo da poeira
+		float SunFull = -1.0f;                                       // 0 = o seno do WebGL, 1 = o sol inteiro
+		float SkyGain = -1.0f;                                       // o ganho da luz do céu (1,1 = o do WebGL; 6,28 = físico)
+		FVector4f GroundAlbedo = FVector4f(0.0f, 0.0f, 0.0f, 0.0f); // rgb: a areia; W > 0 = liga
+		float EmitScale = 1.0f;        // a emissão desta (o fogo da carcaça: a chama baixa, a fumaça manda; 13/10)
 		bool bNuclear = false;                       // a cor da nuvem nuclear (instances.js _nukeLook)
 		float Flash = 0.0f;                          // o clarão neste quadro (0–1): a média de exp(−t/τ) no intervalo do quadro
 		FTextureResource* Warp = nullptr;            // a deformação pelo que passa (UBattleSmokeSubsystem), ou nada
@@ -98,7 +121,9 @@ namespace BlastRaymarch
 		return FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * MaxSlots, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
 	}
 	constexpr int32 MaxInstances = 16;
-	constexpr int32 MaxLightCaches = 4;
+	// 12 (13/10): as bolas do fogo da carcaça no raymarch (-WreckRm=1) são ~10 ao mesmo tempo; com 4 a maioria ficava
+	// sem o sol de verdade (a transmitância do céu gravada) e saía com um contorno preto. 48³ × 4 B = 0,44 MB cada
+	constexpr int32 MaxLightCaches = 12;
 	constexpr int32 MaxWarps = 4;           // BattleSmoke::MaxWarps
 	constexpr float WarpMaxLocalM = 8.0f;   // BattleSmoke::WarpMaxLocalM: a fumaça empurrada sai da caixa até isso
 }
@@ -114,7 +139,36 @@ public:
 
 	virtual void SubscribeToPostProcessingPass(EPostProcessingPass Pass, const FSceneView& View, FPostProcessingPassDelegateArray& InOutPassCallbacks, bool bIsPassEnabled) override;
 
+	/** A névoa do mapa pra aplicar na explosão (13/10): a cena já tem a névoa e a explosão era desenhada limpa por cima ("parece um
+	 *  PNG em cima do cenário", o Felipe). Densidade e queda da névoa de altura da Unreal, já em metros; a volumétrica com o albedo dela. */
+	struct FFog
+	{
+		bool bOn = false;
+		float DensityPerM = 0.0f;      // FogDensity/1000 por cm × 100 × VolumetricFogExtinctionScale
+		float FalloffPerM = 0.0f;      // FogHeightFalloff/1000 por cm × 100 (base 2, como a Unreal)
+		float HeightCm = 0.0f;         // a altura da névoa no mundo
+		float StartM = 0.0f;           // onde ela começa (a regra de RTS: 0,739 × a distância ao foco)
+		FVector3f Albedo = FVector3f(1.0f);
+		float G = 0.6f;                // a fase da volumétrica
+	};
+	void SetFog_GameThread(const FFog& InFog);
+
+	/** A sombra da explosão no chão, nas casas e nas unidades (13/10; "parece um PNG": a nuvem não fazia sombra): a espessura
+	 *  óptica entre um plano do chão e o sol, num mapa visto de cima, que a light function do sol (M_SmokeShadowLF) lê. */
+	struct FShadow
+	{
+		class FTextureRenderTargetResource* Out = nullptr;
+		FVector2D OriginM = FVector2D::ZeroVector;   // canto do mapa no mundo (m)
+		float TexelM = 0.75f;
+		int32 Res = 256;
+		float GroundZM = 0.0f;                       // o plano no mundo (m)
+		FVector3f ToSun = FVector3f(0.0f, 0.0f, 1.0f);
+	};
+	void SetShadow_GameThread(const FShadow& InShadow);
+
 private:
+	FFog Fog;
+	FShadow Shadow;
 	void Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<BlastRaymarch::FInstance>&& List, const TArray<BlastRaymarch::FUpload>& Ups, FTextureResource* NoiseRes,
 		FTextureResource* WorleyRes, const FIntVector& PoolRes, int32 MaxBricks);
 	FScreenPassTexture Render_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& View, const FPostProcessMaterialInputs& Inputs);
@@ -142,7 +196,7 @@ private:
 	uint32 FrameCounter = 0;
 
 	// acúmulo temporal: o volume resolvido do quadro anterior e a câmera dele
-	TRefCountPtr<IPooledRenderTarget> History;
+	TRefCountPtr<IPooledRenderTarget> History, HistoryNear;   // as duas camadas da marcha (a de trás e a da frente)
 	FIntPoint HistorySize = FIntPoint::ZeroValue;
 	FMatrix PrevWorldToClip = FMatrix::Identity;
 	uint32 HistoryFrame = 0;

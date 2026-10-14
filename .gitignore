@@ -12,6 +12,21 @@ BlastLab/Saved/
 BlastLab/DerivedDataCache/
 BlastLab/.vs/
 BlastLab/*.sln
+# os campos de teste com chão de verdade: cópias das fatias do WorldForge
+# (fora do git lá também) e os mapas montados com elas — refeitos por
+# BlastLab/Tools/blast.ps1 worlds
+BlastLab/Content/Slice/
+# a maquete do look ligada por link físico (Game/Tools/look_share.py; os arquivos são os do jogo) e o plugin RTSLook
+# do jogo por junção (Source e Content são os de Game/Plugins/RTSLook; blast.ps1 refaz), 13/10
+BlastLab/Content/LookLab/
+BlastLab/Plugins/RTSLook/
+# o mapa Look_Desert montado à mão em 12/10 (regrediu; trocado pela maquete): texturas 4k geradas, 169 MB
+BlastLab/Content/Look/
+BlastLab/Content/Maps/Look_Desert.umap
+BlastLab/Content/Maps/Slice_*.umap
+BlastLab/Content/Maps/Range_*.umap
+BlastLab/Content/Materials/M_Water.uasset
+BlastLab/Content/Textures/T_WaterN.uasset
 
 # WorldForge (Unreal): o mesmo — o que a engine ou as ferramentas regeneram
 WorldForge/Binaries/

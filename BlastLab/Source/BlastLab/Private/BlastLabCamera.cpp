@@ -1,7 +1,13 @@
-#include "BlastLabCamera.h"
+﻿#include "BlastLabCamera.h"
 
+#include "BlastLabEnvironment.h"
 #include "BlastLabGround.h"
 #include "Camera/CameraComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Components/SkyAtmosphereComponent.h"
+#include "EngineUtils.h"
 
 namespace
 {
@@ -170,4 +176,49 @@ void ABlastLabCamera::Tick(float DeltaSeconds)
 	SetActorLocationAndRotation(Pos, (Target - Pos).Rotation() + ShakeRot);
 	// a Unreal pede o fov HORIZONTAL; com MaintainYFOV ele vale pra 16:9 e o vertical fica fixo
 	Camera->SetFieldOfView(FMath::RadiansToDegrees(2.0f * FMath::Atan(FMath::Tan(F * 0.5f) * 16.0f / 9.0f)));
+	FocusFog(float(FVector::Dist(Pos, Target)));
+}
+
+void ABlastLabCamera::FocusFog(float DistCm)
+{
+	// A regra de RTS da maquete do look (13/10): a névoa, a névoa volumétrica e a perspectiva aérea começam numa
+	// fração da distância da câmera ao foco (0,739 / 0,739 / 0,923, as da sequência dele), e o foco fica limpo em
+	// qualquer zoom. Só nos mapas sem o ambiente do BlastLab (o BlastLabEnvironment cuida da névoa dos campos de
+	// teste). Sem isto, na maquete aberta no BlastLab a névoa dourada calibrada pra câmera dele (~40 m) começava 60 m
+	// antes do foco e lavava a cena: contraste 0,40 contra 0,66 no render do look.
+	if (!bFocusFogChecked)
+	{
+		bFocusFogChecked = true;
+		if (!ABlastLabEnvironment::Find(this))
+		{
+			for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It)
+			{
+				FocusFogs.Add(It->GetComponent());
+			}
+			for (TActorIterator<ASkyAtmosphere> It(GetWorld()); It; ++It)
+			{
+				FocusSkies.Add(It->GetComponent());
+			}
+		}
+	}
+	if (FMath::Abs(DistCm - LastFocusCm) < 50.0f)
+	{
+		return;
+	}
+	LastFocusCm = DistCm;
+	for (const TWeakObjectPtr<UExponentialHeightFogComponent>& F : FocusFogs)
+	{
+		if (F.IsValid())
+		{
+			F->SetStartDistance(0.739f * DistCm);
+			F->SetVolumetricFogStartDistance(0.739f * DistCm);
+		}
+	}
+	for (const TWeakObjectPtr<USkyAtmosphereComponent>& S : FocusSkies)
+	{
+		if (S.IsValid())
+		{
+			S->SetAerialPerspectiveStartDepth(0.923f * DistCm / 100000.0f);
+		}
+	}
 }

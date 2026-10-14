@@ -14,6 +14,8 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "EngineUtils.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "BlastLabEnvironment.h"
 #include "BlastLabGround.h"
 #include "BlastLabMover.h"
@@ -97,6 +99,35 @@ UBlastLabSimulation* UBlastLabSimulation::Get(const UObject* WorldContext)
 {
 	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
 	return World ? World->GetSubsystem<UBlastLabSimulation>() : nullptr;
+}
+
+namespace
+{
+	// as bolas da carcaça no raymarch: de onde a gravação começa (s; 0,3 como no volume: o "clarão branco" que parecia a
+	// fase quente da gasolina era o fogo do campo de fumaça por baixo, 13/10)
+	float WreckRmSkipS()
+	{
+		static const float V = [] { float S = 0.3f; FParse::Value(FCommandLine::Get(), TEXT("WreckRmSkip="), S); return S; }();
+		return V;
+	}
+}
+
+FString UBlastLabSimulation::WreckPlumeSource()
+{
+	static const FString S = [] { FString V; FParse::Value(FCommandLine::Get(), TEXT("WreckPlume="), V); return V; }();
+	return S;
+}
+
+FString UBlastLabSimulation::WreckLoopSource()
+{
+	static const FString S = [] { FString V; FParse::Value(FCommandLine::Get(), TEXT("WreckLoop="), V); return V; }();
+	return S;
+}
+
+bool UBlastLabSimulation::WreckRaymarch()
+{
+	static const bool bOn = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("WreckRm="), V); return V != 0; }();
+	return bOn;
 }
 
 const TArray<FBlastWeapon>& UBlastLabSimulation::Arsenal()
@@ -232,11 +263,20 @@ AExplosionVolume* UBlastLabSimulation::Detonate(const FVector& Ground, int32 Wea
 			SkirtLife = 0.5f;
 		}
 	}
-	const float Scale = BallScale > 0.0f ? BallScale : W.SizeScale();
+	// medição (13/10, o tamanho e o ritmo contra os game shots): -BlastScale= multiplica o tamanho da bola (a opacidade
+	// fica a mesma: espessura × 1/escala, como a bola menor da Carga Pesada) e -BlastTime= fixa o relógio da gravação
+	// (< 1 toca mais rápido; o padrão é o do tamanho, W^(1/3))
+	static const float ScaleCfg = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("BlastScale="), V); return V; }();
+	static const float TimeCfg = [] { float V = 0.0f; FParse::Value(FCommandLine::Get(), TEXT("BlastTime="), V); return V; }();
+	const float Scale = (BallScale > 0.0f ? BallScale : W.SizeScale()) * ScaleCfg;
 	AExplosionVolume* E = Spawn(Ground, BodyBake, Scale * Jitter, BodyMaterial);
 	if (E && W.TimeYield > 0.0f)
 	{
 		E->TimeScale = W.TimeScale() * Jitter;
+	}
+	if (E && TimeCfg > 0.0f)
+	{
+		E->TimeScale = TimeCfg * Jitter;
 	}
 	if (E)
 	{
@@ -252,6 +292,10 @@ AExplosionVolume* UBlastLabSimulation::Detonate(const FVector& Ground, int32 Wea
 		// Pesada aprovada (a fuligem por metro da gravação levaria a bola de 0.55
 		// a meia opacidade, rala contra a bola cheia do vídeo)
 		E->Thickness = 1.0f / BallScale;
+	}
+	if (E && ScaleCfg != 1.0f)
+	{
+		E->Thickness /= ScaleCfg;
 	}
 	if (E)
 	{
@@ -295,6 +339,15 @@ AExplosionVolume* UBlastLabSimulation::Detonate(const FVector& Ground, int32 Wea
 	if (E && W.bTankDeath)
 	{
 		SpawnFlipbook(E, Ground);
+		TankDeath(Ground);
+	}
+	// -TankKill (13/10, a morte de tanque pelo combustível dos alvos 3, 6 e 19 e da referência da torre voando): a explosão
+	// gravada mais a torre e o cano arremessados, os destroços com rastro (ABlastDebris) e a carcaça queimando, no tanque
+	// mais perto (os da maquete do look não têm as tags da cena herói: ganham aqui, e o casco solta do cano, que é a raiz)
+	static const bool bTankKill = FParse::Param(FCommandLine::Get(), TEXT("TankKill"));
+	if (E && bTankKill && !W.bTankDeath)
+	{
+		TagNearestTank(Ground);
 		TankDeath(Ground);
 	}
 	if (E)
@@ -367,6 +420,10 @@ namespace
 	// do casco. No relógio da gravação (TimeScale 1): no da escala (1/0.42, 2.4×
 	// mais rápido) a fase amarela durava ~0.2 s e a bola nascia já crosta e fumaça
 	// (1ª rodada do P1); a 1× ela fica amarela ~0.5 s e a crosta cai em ~0.5–1.2 s
+	// o fogo em loop (-WreckLoop): entra aos 0,4 s, ainda dentro da nuvem, e cresce em 1,8 s (estudo de 13/10)
+	constexpr float WreckLoopStartS = 0.4f, WreckLoopRampS = 1.8f, WreckLoopLight = 0.5f;
+	// a coluna (-WreckPlume) entra quando a nuvem da explosão sobe e cresce devagar
+	constexpr float WreckPlumeStartS = 1.0f, WreckPlumeRampS = 3.0f;
 	constexpr float WreckBallStart = 0.8f;          // s depois da detonação (a bola grande ainda cobre o casco)
 	constexpr float WreckBallScale = 0.42f;         // ×0.8–1.2: bola de ~3.8 m (~0.48 tanque); a grande (1.0) tem ~9 m
 	constexpr float WreckBallSkipS = 0.3f;          // s da gravação: começa depois da esfera do clarão
@@ -487,6 +544,105 @@ void UBlastLabSimulation::SpawnFlipbook(AExplosionVolume* E, const FVector& Grou
 	UE_LOG(LogTemp, Display, TEXT("BlastLab: flipbook %s (câmera a %.0f°): %d×%d, %d quadros a %.0f qps, %.0f m"), *Tag, ElevDeg, Cols, Rows, Frames, Fps, SizeM);
 }
 
+void UBlastLabSimulation::TagNearestTank(const FVector& Ground)
+{
+	// as peças de um tanque (casco, torre, cano) pelas malhas, agrupadas pelo prefixo do rótulo ("Tank0_SM_..."), o grupo
+	// com o casco mais perto do ponto até 15 m
+	// Todas as peças do grupo (esteiras, rodas) vão junto: na maquete do look elas ficam presas na torre, e a torre
+	// arremessada levava as esteiras voando (a "lagarta voando" da gravação de 13/10)
+	struct FParts { AActor* Hull = nullptr; AActor* Turret = nullptr; AActor* Barrel = nullptr; TArray<AActor*> All; };
+	TMap<FString, FParts> Groups;
+	for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+	{
+		const UStaticMesh* M = It->GetStaticMeshComponent() ? It->GetStaticMeshComponent()->GetStaticMesh() : nullptr;
+		if (!M || It->ActorHasTag(TEXT("HeroVictim")))
+		{
+			continue;
+		}
+		const FString N = M->GetName();
+		FString Key = It->GetActorNameOrLabel();
+		int32 Cut;
+		if (Key.FindChar(TEXT('_'), Cut))
+		{
+			Key.LeftInline(Cut);
+		}
+		FParts& P = Groups.FindOrAdd(Key);
+		P.All.Add(*It);
+		if (N.EndsWith(TEXT("_Hull"))) P.Hull = *It;
+		else if (N.EndsWith(TEXT("_Turret"))) P.Turret = *It;
+		else if (N.EndsWith(TEXT("_Barrel"))) P.Barrel = *It;
+	}
+	const FParts* Best = nullptr;
+	double BestD = 1500.0;
+	for (const TPair<FString, FParts>& G : Groups)
+	{
+		if (G.Value.Hull && G.Value.Turret)
+		{
+			const double D = FVector::Dist2D(G.Value.Hull->GetActorLocation(), Ground);
+			if (D < BestD)
+			{
+				BestD = D;
+				Best = &G.Value;
+			}
+		}
+	}
+	if (!Best)
+	{
+		return;
+	}
+	// as peças deste tanque: as do grupo até 7 m do casco (um rótulo sem prefixo de tanque juntaria a cena inteira no grupo)
+	TArray<AActor*> Parts;
+	for (AActor* A : Best->All)
+	{
+		if (FVector::Dist2D(A->GetActorLocation(), Best->Hull->GetActorLocation()) <= 700.0)
+		{
+			Parts.AddUnique(A);
+		}
+	}
+	for (AActor* A : Parts)
+	{
+		A->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		if (USceneComponent* Root = A->GetRootComponent())
+		{
+			Root->SetMobility(EComponentMobility::Movable);
+		}
+		A->Tags.AddUnique(TEXT("HeroVictim"));
+	}
+	// a carcaça carbonizada (a referência: o casco escuro depois do estouro; a bola esconde a troca): o material de carvão
+	// do kit do look (Tools/build_look_desert.py, M_Look_Char), em todos os slots de todas as peças (esteiras e rodas juntas)
+	if (UMaterialInterface* Char = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Look/Materials/M_Look_Char.M_Look_Char")))
+	{
+		for (AActor* A : Parts)
+		{
+			// as peças chatas ficam como estão (a chapa de sombra falsa embaixo do tanque virava um retângulo escuro opaco
+			// com o carvão: o "quadrado do nada" de 13/10)
+			FVector BC, BE;
+			A->GetActorBounds(false, BC, BE);
+			UStaticMeshComponent* SMC = Cast<AStaticMeshActor>(A)->GetStaticMeshComponent();
+			UE_LOG(LogTemp, Display, TEXT("BlastLab: peça da vítima %s (%s), %.0f×%.0f×%.0f cm"), *A->GetActorNameOrLabel(),
+				SMC && SMC->GetStaticMesh() ? *SMC->GetStaticMesh()->GetName() : TEXT("-"), 2.0 * BE.X, 2.0 * BE.Y, 2.0 * BE.Z);
+			if (BE.Z < 10.0)
+			{
+				continue;
+			}
+			if (UStaticMeshComponent* C = SMC)
+			{
+				for (int32 i = 0; i < C->GetNumMaterials(); ++i)
+				{
+					C->SetMaterial(i, Char);
+				}
+			}
+		}
+	}
+	Best->Hull->Tags.AddUnique(TEXT("Hull"));
+	Best->Turret->Tags.AddUnique(TEXT("Turret"));
+	if (Best->Barrel)
+	{
+		Best->Barrel->Tags.AddUnique(TEXT("Barrel"));
+	}
+	UE_LOG(LogTemp, Display, TEXT("BlastLab: a vítima é o tanque %s, a %.1f m (%d peças)"), *Best->Hull->GetActorNameOrLabel(), BestD / 100.0, Parts.Num());
+}
+
 void UBlastLabSimulation::TankDeath(const FVector& Ground)
 {
 	// a vítima: as peças com as tags da cena herói até 15 m do ponto
@@ -540,15 +696,67 @@ void UBlastLabSimulation::TankDeath(const FVector& Ground)
 		// direita, como na arte 4.3): voando pra câmera ela passava na frente da
 		// bola de 1.3 a 2 s e tapava a casca com brasas (rodada j). ±20° de sorteio
 		FVector Side = PivotT.GetRotation().GetRightVector().GetSafeNormal2D();
+		FVector Away = PivotT.GetRotation().GetForwardVector().GetSafeNormal2D();
 		if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
 		{
 			if (PC->PlayerCameraManager)
 			{
 				const FVector View = (T.P - PC->PlayerCameraManager->GetCameraLocation()).GetSafeNormal2D();
 				Side = FVector::CrossProduct(FVector::UpVector, View).GetSafeNormal();
+				Away = View;
 			}
 		}
 		Side = (FMath::RandBool() ? Side : -Side).RotateAngleAxis(FMath::FRandRange(-20.0f, 20.0f), FVector::UpVector);
+		// pro lado livre: na cena dos tanques oliva ela caía encostada no tanque vizinho (13/10; em formação os vizinhos
+		// ficam a ~8 m dos dois lados). A folga é a distância do ponto de queda (~7,7 m: 2·subida/g de voo) até a caixa da
+		// peça grande mais perto: só o que tem mais de 0,8 m de altura e 1,5 m de lado (tanque, casa, muro; as pedrinhas e
+		// os destroços da maquete decidiam o lado) e menos de 40 m (o chão), fora o próprio tanque. Na ordem: os dois
+		// lados, as diagonais pra trás (longe da câmera) e pra trás; a primeira com 3,5 m de folga (a torre com o cano
+		// tem ~5 m), senão a de maior folga
+		{
+			const float LandCm = TurretSide * 2.0f * TurretUp / Gravity;
+			auto Clearance = [this, &T](const FVector& Dir)
+			{
+				const FVector Land = T.P + Dir * (TurretSide * 2.0f * TurretUp / Gravity);
+				double Best = 1e9;
+				for (TActorIterator<AStaticMeshActor> It(GetWorld()); It; ++It)
+				{
+					if (It->ActorHasTag(TEXT("HeroVictim")))
+					{
+						continue;
+					}
+					FVector C, E;
+					It->GetActorBounds(false, C, E);
+					if (E.Z < 40.0 || FMath::Max(E.X, E.Y) < 75.0 || E.X > 2000.0 || E.Y > 2000.0)
+					{
+						continue;
+					}
+					const double Dx = FMath::Max(FMath::Abs(Land.X - C.X) - E.X, 0.0), Dy = FMath::Max(FMath::Abs(Land.Y - C.Y) - E.Y, 0.0);
+					Best = FMath::Min(Best, FMath::Sqrt(Dx * Dx + Dy * Dy));
+				}
+				return Best;
+			};
+			const FVector Dirs[] = { Side, -Side, (Side + Away).GetSafeNormal(), (-Side + Away).GetSafeNormal(), Away };
+			int32 Pick = -1, BestI = 0;
+			double BestC = -1.0, Clear[5];
+			for (int32 i = 0; i < 5; ++i)
+			{
+				Clear[i] = Clearance(Dirs[i]);
+				if (Pick < 0 && Clear[i] >= 350.0)
+				{
+					Pick = i;
+				}
+				if (Clear[i] > BestC)
+				{
+					BestC = Clear[i];
+					BestI = i;
+				}
+			}
+			Pick = Pick >= 0 ? Pick : BestI;
+			Side = Dirs[Pick];
+			UE_LOG(LogTemp, Display, TEXT("BlastLab: a torre cai a %.1f m, direção %d com folga %.1f m (lados %.1f/%.1f, diagonais %.1f/%.1f, trás %.1f)"),
+				LandCm / 100.0f, Pick, Clear[Pick] / 100.0, Clear[0] / 100.0, Clear[1] / 100.0, Clear[2] / 100.0, Clear[3] / 100.0, Clear[4] / 100.0);
+		}
 		T.V = FVector(0.0f, 0.0f, TurretUp) + Side * TurretSide;
 		// giro em dois eixos (cambalhota + rolamento), quase nada em torno da vertical
 		T.Spin = FVector(FMath::FRandRange(0.6f, 1.0f) * (FMath::RandBool() ? 1.0f : -1.0f), FMath::FRandRange(0.4f, 0.8f), 0.1f).GetSafeNormal()
@@ -571,13 +779,89 @@ void UBlastLabSimulation::TankDeath(const FVector& Ground)
 	// o fogo da carcaça: as bolas nascem no teto do casco (UpdateTankDeaths)
 	W.RoofCm = RoofCm;
 	W.NextBallS = WreckBallStart;
+	// -WreckLoop=<gravação> (13/10, o Felipe: "o fogo que surge depois tá horrível, dá pra distinguir que são 2 efeitos"):
+	// como os AAA (estudo de 13/10: CoD, Battlefront II, WoT), UM fogo em loop preso ao casco, com a fumaça saindo dele,
+	// no mesmo raymarch da explosão; nasce dentro da nuvem e cresce enquanto ela se desfaz. Sem bolas, coluna nem campo
+	const FString WreckLoopName = WreckLoopSource();
+	if (!WreckLoopName.IsEmpty())
+	{
+		UExplosionBake* LoopBake = nullptr;
+		UMaterialInterface* LoopMaterial = nullptr;
+		if (LoadBody(TEXT("EgGasolineB"), LoopBake, LoopMaterial))      // o ator precisa de uma gravação: a do raymarch manda
+		{
+			// o tamanho e o relógio: a gravação (Game Fire Loop 2 do EmberGen, fogo de ~38 m no cubo de 105 m, convertido
+			// num domínio de 60 m locais: o fogo fica com ~21,6 m) encolhida pra ~4,5 m em cima do casco, e o relógio pela
+			// semelhança de Froude (t ∝ √tamanho: √(4,5/38) ≈ 0,34), como a explosão. -WreckLoopScale= -WreckLoopTime=
+			// -WreckLoopThick= (espessura × 1/escala; 1 = tão opaca quanto a gravação no tamanho dela)
+			static const float LoopScale = [] { float V = 0.21f; FParse::Value(FCommandLine::Get(), TEXT("WreckLoopScale="), V); return V; }();
+			static const float LoopTime = [] { float V = 0.34f; FParse::Value(FCommandLine::Get(), TEXT("WreckLoopTime="), V); return V; }();
+			static const float LoopThick = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckLoopThick="), V); return V; }();
+			// -WreckLoopEmit= (13/10, o War Thunder: a chama baixa, a fumaça manda): a emissão da gravação no raymarch
+			static const float LoopEmit = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckLoopEmit="), V); return V; }();
+			// o pé no anel da torre: o tanque do look tem a base da torre 27 cm abaixo do teto do casco (medido no GLB,
+			// 13/10: casco 8,13 × 3,79 m, topo 1,815 m; anel de ~2,3 m no meio do casco, base a 1,54 m)
+			if (AExplosionVolume* L = Spawn(RoofCm - FVector(0.0, 0.0, 27.0), LoopBake, LoopScale, LoopMaterial))
+			{
+				L->RaymarchSource = FName(*WreckLoopName);
+				L->LoopPeriod = 1.0e6f;          // o relógio corre; o raymarch dá a volta no ciclo da gravação
+				L->LoopLife = WreckDuration;
+				L->TimeScale = LoopTime;
+				L->Age = -WreckLoopStartS;
+				L->Opacity = 0.0f;
+				L->Thickness = LoopThick / LoopScale;
+				L->RaymarchEmit = LoopEmit;
+				// sem o ruído do WebGL: a gravação do EmberGen já tem o detalhe, e o ruído encolhido junto (escala 0,17)
+				// virava grão e fios verticais na fumaça que sobe (13/10). -WreckLoopNoise=
+				static const float LoopNoise = [] { float V = 0.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckLoopNoise="), V); return V; }();
+				L->RaymarchNoise = LoopNoise;
+				L->bFlash = false;
+				L->bSceneShadow = false;
+				L->SkirtHeight = 0.0f;
+				L->LightScale = WreckLoopLight;
+				Alive.Add(L);
+				W.Loop = L;
+				W.NextBallS = 1.0e9f;            // sem as bolas
+			}
+		}
+		// -WreckPlume=<gravação> (13/10, o War Thunder: a coluna preta alta que alarga e tomba com o vento manda; a
+		// chama é pequena): a Smoke Plume da JangaFX no raymarch, em loop com emenda (build_raymarch_vdb.py, janela de
+		// 3 s), endireitada na conversão (a simulação tomba ~52° com o próprio vento e deitava sobre as unidades: fica
+		// inclinação nenhuma), com o pé da fonte no casco: a base fica em (0; 2,0) m locais (medido na gravação, 13/10)
+		const FString PlumeName = WreckPlumeSource();
+		if (!PlumeName.IsEmpty() && LoadBody(TEXT("EgGasolineB"), LoopBake, LoopMaterial))
+		{
+			static const float PScale = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckPlumeScale="), V); return V; }();
+			static const float PTime = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckPlumeTime="), V); return V; }();
+			static const float PThick = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckPlumeThick="), V); return V; }();
+			const FVector Source(0.0, 2.0 * PScale * 100.0, 0.0);
+			if (AExplosionVolume* P = Spawn(RoofCm - FVector(0.0, 0.0, 40.0) - Source, LoopBake, PScale, LoopMaterial))
+			{
+				P->RaymarchSource = FName(*PlumeName);
+				P->LoopPeriod = 1.0e6f;
+				P->LoopLife = WreckDuration;
+				P->TimeScale = PTime;
+				P->Age = -WreckPlumeStartS;
+				P->Opacity = 0.0f;
+				P->Thickness = PThick / PScale;
+				P->RaymarchEmit = 0.0f;          // só fumaça: a chama é a do fogo em loop
+				P->bFlash = false;
+				P->bLights = false;
+				P->bSceneShadow = false;
+				P->SkirtHeight = 0.0f;
+				Alive.Add(P);
+				W.LoopPlume = P;
+			}
+		}
+	}
 	// A coluna preta: o loop de 3 s da Smoke Plume da JangaFX (BakeRaw/eg_plume_loop),
 	// entrando quando o chapéu da bola sobe; a base rala nos ~4 m de baixo (vista de
 	// cima ela cobria o tanque). Escala 0.85: a coluna de ~12 m vira ~10 m, 1.3
 	// tanque (o alvo é 1.1–1.4)
 	UExplosionBake* PlumeBake = nullptr;
 	UMaterialInterface* PlumeMaterial = nullptr;
-	if (LoadBody(TEXT("EgPlumeLoop"), PlumeBake, PlumeMaterial) && PlumeBake->FrameTimes.Num() > 1)
+	// -Plume=0 (13/10): sem a coluna (A/B: com as bolas no raymarch, ela é a única fumaça ainda no volume da Unreal)
+	static const bool bPlume = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("Plume="), V); return V != 0; }();
+	if (bPlume && !W.Loop.IsValid() && LoadBody(TEXT("EgPlumeLoop"), PlumeBake, PlumeMaterial) && PlumeBake->FrameTimes.Num() > 1)
 	{
 		// A fonte da Smoke Plume não fica no meio do cubo: nasce a +8.5 m em y e
 		// tomba ~55° pra −y com o vento do EmberGen (medido 07/10 nos dados). O pé
@@ -660,6 +944,20 @@ void UBlastLabSimulation::UpdateTankDeaths(float Dt)
 	{
 		if (T.bRest)
 		{
+			// assenta: tomba até a pose estável mais perto em ~0,3 s (na vila ela parava em pé, de lado, 13/10)
+			if (T.Settle > 0.0f)
+			{
+				T.Settle = FMath::Max(T.Settle - Dt, 0.0f);
+				T.Q = FQuat::Slerp(T.Q, T.RestQ, FMath::Clamp(Dt / FMath::Max(T.Settle + Dt, 1e-3f), 0.0f, 1.0f));
+				const FTransform PivotT(T.Q, T.P);
+				for (const FThrownPart& Part : T.Parts)
+				{
+					if (AActor* A = Part.Actor.Get())
+					{
+						A->SetActorTransform(Part.Local * PivotT);
+					}
+				}
+			}
 			continue;
 		}
 		if (T.Delay > 0.0f)
@@ -684,6 +982,12 @@ void UBlastLabSimulation::UpdateTankDeaths(float Dt)
 			if (T.V.Size() < 250.0f)
 			{
 				T.bRest = true;
+				// a pose estável mais perto: o eixo de cima da torre pra cima ou pra baixo (uma torre larga e chata não
+				// fica de lado), mantendo o giro em volta da vertical
+				const FVector Up = T.Q.GetUpVector();
+				const FVector Want = Up.Z >= 0.0f ? FVector::UpVector : -FVector::UpVector;
+				T.RestQ = FQuat::FindBetweenNormals(Up, Want) * T.Q;
+				T.Settle = 0.3f;
 			}
 		}
 		const FTransform PivotT(T.Q, T.P);
@@ -709,6 +1013,15 @@ void UBlastLabSimulation::UpdateTankDeaths(float Dt)
 			Wrecks.RemoveAtSwap(i);
 			continue;
 		}
+		// o fogo em loop: cresce em WreckLoopRampS e se desfaz no último terço
+		if (AExplosionVolume* L = W.Loop.Get())
+		{
+			L->Opacity = FMath::SmoothStep(0.0f, WreckLoopRampS, L->Age) * (1.0f - FMath::SmoothStep(0.66f * WreckDuration, WreckDuration, L->Age));
+		}
+		if (AExplosionVolume* P = W.LoopPlume.Get())
+		{
+			P->Opacity = FMath::SmoothStep(0.0f, WreckPlumeRampS, P->Age) * (1.0f - FMath::SmoothStep(0.66f * WreckDuration, WreckDuration, P->Age));
+		}
 		// as bolas do fogo entram e saem sem estalo (a gravação acaba de uma vez):
 		// a esfera do clarão fica de fora, e o último quinto se desfaz
 		W.Balls.RemoveAll([](const TWeakObjectPtr<AExplosionVolume>& B) { return !B.IsValid(); });
@@ -716,7 +1029,10 @@ void UBlastLabSimulation::UpdateTankDeaths(float Dt)
 		{
 			AExplosionVolume* E = B.Get();
 			const float T = E->BakeTime(), Dur = E->Bake ? E->Bake->Duration() : 1.0f;
-			E->Opacity = FMath::SmoothStep(WreckBallSkipS, WreckBallSkipS + 0.08f, T) * (1.0f - FMath::SmoothStep(0.8f * Dur, Dur, T));
+			// no raymarch elas começam em WreckRmSkipS e entram em 0,15 s
+			const bool bRm = !E->RaymarchSource.IsNone();
+			const float Skip = bRm ? WreckRmSkipS() : WreckBallSkipS;
+			E->Opacity = FMath::SmoothStep(Skip, Skip + (bRm ? 0.15f : 0.08f), T) * (1.0f - FMath::SmoothStep(0.8f * Dur, Dur, T));
 		}
 		if (W.Age < 0.0f)
 		{
@@ -738,7 +1054,9 @@ void UBlastLabSimulation::UpdateTankDeaths(float Dt)
 			// cinza-clara em cima da coluna; o fogo do campo, outra chama)
 			continue;
 		}
-		if (!Battle)
+		// com as bolas no raymarch (-WreckRm=1) elas são o fogo e a fumaça da carcaça: o campo por baixo punha uma
+		// terceira fumaça, preta, em volta da coluna (o "contorno preto" de 13/10)
+		if (!Battle || WreckRaymarch() || W.Loop.IsValid())
 		{
 			continue;
 		}
@@ -781,7 +1099,28 @@ void UBlastLabSimulation::SpawnWreckBall(FWreckFire& W)
 	E->Opacity = 0.0f;
 	E->Thickness = 1.0f / Scale;            // tão opaca por metro quanto a bola grande (a fuligem gravada é por voxel)
 	E->bFlash = false;
-	E->LightScale = WreckBallLightScale;
+	// -WreckBallLight= (13/10): na maquete do look as bolas da carcaça estouravam o casco de branco (a luz e o brilho delas,
+	// calibrados nos campos do BlastLab)
+	static const float BallLight = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckBallLight="), V); return V; }();
+	E->LightScale = WreckBallLightScale * BallLight;
+	// -WreckBallTemp= (13/10): a temperatura das bolas da carcaça no mapa do corpo negro (a bola grande usa 1,8): mais fria,
+	// o fogo da carcaça sai laranja em vez do branco que estourava o casco (a referência: o casco escuro, fogo laranja em cima)
+	static const float BallTemp = [] { float V = 0.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckBallTemp="), V); return V; }();
+	if (BallTemp > 0.0f)
+	{
+		E->TempBase = BallTemp;
+	}
+	// -WreckRm=1 (13/10): as bolas no MESMO raymarch da bola grande (a gasolina da JangaFX convertida, eg_gasoline_b96):
+	// no volume da Unreal elas saíam pretas com a mesma cor de fuligem (outra luz, outra densidade: duas fumaças na mesma
+	// cena). -WreckRmThick= escala a espessura (1 = tão opaca por metro quanto a bola grande)
+	if (WreckRaymarch())
+	{
+		static const float RmThick = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("WreckRmThick="), V); return V; }();
+		E->RaymarchSource = FName(TEXT("eg_gasoline_b96"));
+		E->Thickness *= RmThick;
+		// de onde a gravação começa (-WreckRmSkip=, s da gravação)
+		E->Age = WreckRmSkipS() * BallTime;
+	}
 	E->bSceneShadow = false;
 	E->SkirtHeight = 0.0f;                  // sem a saia de poeira
 	E->StreamMip = 1.0f;                    // ~8 cm de voxel no mundo, como a bola grande no mip 0

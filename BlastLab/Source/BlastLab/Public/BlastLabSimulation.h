@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Subsystems/WorldSubsystem.h"
 #include "BlastLabSimulation.generated.h"
@@ -82,6 +82,12 @@ public:
 	static UBlastLabSimulation* Get(const UObject* WorldContext);
 
 	static const TArray<FBlastWeapon>& Arsenal();
+	// as bolas do fogo da carcaça no raymarch (-WreckRm=1, 13/10): o subsistema do raymarch carrega a gravação delas
+	static bool WreckRaymarch();
+	// o fogo da carcaça em loop (-WreckLoop=<gravação>, 13/10): o nome da gravação do raymarch, ou vazio
+	static FString WreckLoopSource();
+	// a coluna alta da carcaça (-WreckPlume=<gravação>, 13/10)
+	static FString WreckPlumeSource();
 
 	/** Detona a arma (índice do arsenal) com o pé em Ground. */
 	AExplosionVolume* Detonate(const FVector& Ground, int32 Weapon);
@@ -216,6 +222,8 @@ private:
 	 * só, e a carcaça fica queimando (fogo contínuo no fluido do campo).
 	 */
 	void TankDeath(const FVector& Ground);
+	/** -TankKill: dá as tags da cena herói ao tanque mais perto (os da maquete do look não têm). */
+	void TagNearestTank(const FVector& Ground);
 
 	/**
 	 * Teste do flipbook (-BallFlipbook=1): a bola pré-renderizada no Cycles num
@@ -237,6 +245,8 @@ private:
 		FQuat Q = FQuat::Identity;
 		FVector Spin = FVector::ZeroVector;  // eixo · rad/s
 		bool bRest = false;
+		float Settle = 0.0f;                 // s até assentar (de pé ou de cabeça pra baixo) depois de parar
+		FQuat RestQ = FQuat::Identity;       // a pose assentada
 		float Delay = 0.0f;                  // s até soltar do casco
 		TWeakObjectPtr<ABlastDebris> Debris; // o rastro de fumaça e fogo atrás dela
 		int32 Trail = -1;
@@ -250,6 +260,8 @@ private:
 		FVector RoofCm = FVector::ZeroVector;      // o teto do casco, de onde saem as bolas do fogo
 		float NextBallS = 0.0f;                    // quando sai a próxima bola (s de Age)
 		TArray<TWeakObjectPtr<AExplosionVolume>> Balls;
+		TWeakObjectPtr<AExplosionVolume> Loop;     // o fogo em loop no casco (-WreckLoop), no lugar das bolas
+		TWeakObjectPtr<AExplosionVolume> LoopPlume; // a coluna alta saindo dele (-WreckPlume)
 	};
 	TArray<FWreckFire> Wrecks;
 	void UpdateTankDeaths(float Dt);

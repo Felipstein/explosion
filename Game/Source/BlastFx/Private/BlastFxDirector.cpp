@@ -1,4 +1,4 @@
-#include "BlastFxDirector.h"
+﻿#include "BlastFxDirector.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Components/HeterogeneousVolumeComponent.h"
@@ -8,6 +8,8 @@
 #include "ExplosionVolume.h"
 #include "GameFramework/PlayerController.h"
 #include "Materials/MaterialInterface.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "ShaderCompiler.h"
 
 namespace
@@ -22,7 +24,25 @@ namespace
 	// A morte de tanque sem o corpo do EmberGen, na proporção medida contra o
 	// vídeo da cena herói (BlastLabSimulation.cpp Detonate, 07/10): bola 0.55,
 	// poeira com 40% da altura e metade da vida, a gravação no relógio dela.
+	// (Desde 13/10 a morte de tanque é a nova, abaixo; estas ficam pro aquecimento e pra volta, -TankBlast=0.)
 	constexpr float TankBallScale = 0.55f;
+
+	// A morte de tanque da v2 (o Felipe, 13/10: "ficaremos desse jeito pra explosão de tanques"; as construções mantêm
+	// a antiga): a gravação do EmberGen do BlastLab (eg_tq_v2: a bola e a areia que sobe), do tamanho e no ritmo medidos
+	// contra os game shots (escala 0,35 do Carro-Bomba, relógio 0,59 = Froude), tão opaca quanto a gravação, com a
+	// fuligem cinza-carvão das colunas de tanque dos game shots e a luz do fim de tarde: o sol inteiro, a luz do céu
+	// física e a areia que devolve o sol (BlastLab: -RmSwap=eg_cb_v5f_96:eg_tq_v2 -BlastScale=0.35 -BlastTime=0.59
+	// -RmSoot=1.0,0.97,0.94,0.30 -RmDust=0.90,0.72,0.50,0.80 -RmFullSun=1 -RmSkyGain=6.28 -RmGround=0.50,0.38,0.26).
+	// Sem o fogo da carcaça (fica pra v3).
+	constexpr float TankBlastScale = 0.35f, TankBlastTime = 0.59f;
+	const FVector4f TankSoot(1.0f, 0.97f, 0.94f, 0.30f), TankDust(0.90f, 0.72f, 0.50f, 0.80f);
+	constexpr float TankSunFull = 1.0f, TankSkyGain = 6.28f;
+	const FVector4f TankGround(0.50f, 0.38f, 0.26f, 1.0f);
+	bool NewTankBlast()
+	{
+		static const bool bOn = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("TankBlast="), V); return V != 0; }();
+		return bOn;
+	}
 	constexpr float TankSkirtHeight = 0.4f;
 	constexpr float TankSkirtLife = 0.5f;
 	constexpr float SizeJitter = 0.1f;
@@ -98,6 +118,25 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 	}
 	UExplosionBake* Bake = Bakes[Variant % uint32(Bakes.Num())];
 	const float Jitter = 1.0f + (VariantFraction(Variant, 0x51ED) - 0.5f) * SizeJitter;
+	if (NewTankBlast())
+	{
+		// a nova: a gravação própria no raymarch (a variante da Carga Pesada só segura o ator e o volume de reserva)
+		AExplosionVolume* N = Spawn(Ground, Bake, TankBlastScale * Jitter, VariantFraction(Variant, 0xA11CE));
+		if (!N)
+		{
+			return nullptr;
+		}
+		N->RaymarchSource = FName(TEXT("eg_tq_v2"));
+		N->TimeScale = TankBlastTime * Jitter;
+		N->Thickness = 1.0f / TankBlastScale;
+		N->RaymarchSoot = TankSoot;
+		N->RaymarchDust = TankDust;
+		N->RaymarchSunFull = TankSunFull;
+		N->RaymarchSkyGain = TankSkyGain;
+		N->RaymarchGround = TankGround;
+		Alive.Add(N);
+		return N;
+	}
 	AExplosionVolume* E = Spawn(Ground, Bake, TankBallScale * Jitter, VariantFraction(Variant, 0xA11CE));
 	if (!E)
 	{

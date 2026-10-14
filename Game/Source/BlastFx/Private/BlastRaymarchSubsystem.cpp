@@ -1,4 +1,4 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
+﻿// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
 // BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
 // de aparência nascem lá e são trazidas pra cá.
 #include "BlastRaymarchSubsystem.h"
@@ -33,6 +33,10 @@ namespace
 
 	// as gravações que carregaram: sem o arquivo, a explosão fica no volume da Unreal em vez de sumir
 	bool GLoaded[3] = { false, false, false };
+	// as gravações próprias que carregaram (a morte de tanque, 13/10)
+	TSet<FName> GLoadedSources;
+	// as gravações próprias do jogo: a morte de tanque da v2 (BlastLab, 13/10: eg_tq_v2, Game/Intermediate/Raymarch)
+	const TCHAR* OwnBakes[] = { TEXT("eg_tq_v2") };
 
 	/** DA_HeavyCharge_v<n> → n; as outras gravações (os corpos da EmberGen) ficam no volume da Unreal. */
 	int32 VariantOf(const AExplosionVolume* E)
@@ -40,6 +44,11 @@ namespace
 		if (!E || !E->Bake)
 		{
 			return -1;
+		}
+		// com a gravação própria carregada: 0 só pra passar no filtro, o Tick troca pela gravação dela
+		if (!E->RaymarchSource.IsNone() && GLoadedSources.Contains(E->RaymarchSource))
+		{
+			return 0;
 		}
 		const FString Name = E->Bake->GetName();
 		if (!Name.StartsWith(TEXT("DA_HeavyCharge_v")) || Name.Len() != 17)
@@ -119,6 +128,17 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		Sources.Add(B128 ? B128 : LoadBake(FString::Printf(TEXT("r96_v%d.brm2"), V)));
 		GLoaded[V] = Sources[V].IsValid() && Noise != nullptr;
 	}
+	SourceOf.Reset();
+	GLoadedSources.Reset();
+	for (const TCHAR* Own : OwnBakes)
+	{
+		if (BlastRaymarch::FBakeRef B = LoadBake(FString(Own) + TEXT(".brm2")))
+		{
+			SourceOf.Add(FName(Own), Sources.Add(B));
+			GLoadedSources.Add(FName(Own));
+			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: gravação %s (%d³, %.1f m, %d quadros)"), Own, B->Res, B->Domain, B->Frames);
+		}
+	}
 	Extension = FSceneViewExtensions::NewExtension<FBlastRaymarchExtension>();
 	UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: ligado (gravações %s %s %s)"),
 		Sources[0] ? TEXT("v0") : TEXT("-"), Sources[1] ? TEXT("v1") : TEXT("-"), Sources[2] ? TEXT("v2") : TEXT("-"));
@@ -162,6 +182,10 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		}
 		FLive L;
 		L.Variant = V;
+		if (const int32* S = E->RaymarchSource.IsNone() ? nullptr : SourceOf.Find(E->RaymarchSource))
+		{
+			L.Variant = *S;          // a chave dos quadros no pool: separada das variantes
+		}
 		L.I.Bake = Sources[L.Variant];
 		L.I.FootCm = E->GetActorLocation();
 		L.I.Scale = E->SizeScale;
@@ -169,6 +193,11 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.Seed = E->Seed;
 		L.I.Keep = E->Opacity;
 		L.I.Thickness = E->Thickness;
+		L.I.SootLook = E->RaymarchSoot;
+		L.I.DustLook = E->RaymarchDust;
+		L.I.SunFull = E->RaymarchSunFull;
+		L.I.SkyGain = E->RaymarchSkyGain;
+		L.I.GroundAlbedo = E->RaymarchGround;
 		L.I.bNuclear = E->bNuclear;
 		// O clarão (10/10): a fase branca da bola real dura ~15–20 ms numa carga de
 		// 1–2 t, mas assim ele passava em 1 quadro (o Felipe: "mal vejo o branco");
@@ -219,7 +248,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	{
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		Needed.Add(Key(L.Variant, F0));
-		Needed.Add(Key(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1)));
+		Needed.Add(Key(L.Variant, L.I.Bake->NextFrame(F0)));
 	}
 	const int32 NumSlots = MaxSlots;
 	// os blocos do atlas: o que não couber faz sair das vagas os quadros velhos (os menos usados que
@@ -278,7 +307,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	{
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		L.I.Slot0 = SlotFor(L.Variant, F0);
-		L.I.Slot1 = SlotFor(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1));
+		L.I.Slot1 = SlotFor(L.Variant, L.I.Bake->NextFrame(F0));
 		if (L.I.Slot0 >= 0 && L.I.Slot1 >= 0)
 		{
 			List.Add(L.I);

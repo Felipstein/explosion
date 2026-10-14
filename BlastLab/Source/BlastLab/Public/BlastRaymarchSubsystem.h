@@ -76,4 +76,14 @@ private:
 	uint64 TickCount = 0;
 	TSet<TWeakObjectPtr<AExplosionVolume>> WarpLogged;
 	bool bWasEmpty = true;
+	// a névoa do mapa aplicada na explosão (BlastRaymarchSubsystem.cpp, SubmitFog)
+	void SubmitFog();
+	TWeakObjectPtr<class UExponentialHeightFogComponent> FogComp;
+	bool bFogSearched = false;
+	// a sombra das explosões no chão (BlastRaymarchSubsystem.cpp, SubmitShadow)
+	void SubmitShadow(bool bAny);
+	bool bShadowSetup = false;
+	UPROPERTY(Transient) TObjectPtr<class UTextureRenderTarget2D> ShadowTarget;
+	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> ShadowFunction;
+	TWeakObjectPtr<class UDirectionalLightComponent> ShadowSun;
 };

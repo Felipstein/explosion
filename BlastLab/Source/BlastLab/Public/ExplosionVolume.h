@@ -103,6 +103,10 @@ public:
 	/** Multiplica a fuligem e o fogo por metro (a bola menor que o rendimento continua opaca). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float Thickness = 1.0f;
+	/** A emissão no raymarch (1 = a da gravação; o fogo da carcaça baixa a chama pra fumaça mandar, 13/10). */
+	float RaymarchEmit = 1.0f;
+	/** O ruído de detalhe do raymarch (1 = o do WebGL; as gravações do EmberGen encolhidas ficavam com grão, 13/10). */
+	float RaymarchNoise = 1.0f;
 
 	/** A saia de poeira relativa à da Carga Pesada: altura e vida (início e τ do assentamento). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")

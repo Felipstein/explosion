@@ -1,4 +1,4 @@
-#include "BlastRaymarch.h"
+﻿#include "BlastRaymarch.h"
 
 #include "DataDrivenShaderPlatformInfo.h"
 #include "Dom/JsonObject.h"
@@ -169,6 +169,7 @@ TSharedPtr<FBakeData, ESPMode::ThreadSafe> FBakeData::Load(const FString& Path, 
 	B->Frames = J->GetIntegerField(TEXT("frames"));
 	B->Duration = float(J->GetNumberField(TEXT("duration")));
 	B->Curve = float(J->GetNumberField(TEXT("curve")));
+	J->TryGetBoolField(TEXT("loop"), B->bLoop);
 	B->Domain = float(J->GetNumberField(TEXT("domain")));
 	B->VelMax = float(J->GetNumberField(TEXT("velMax")));
 	auto Vec = [](const TSharedPtr<FJsonValue>& V, int32 Offset) {
@@ -259,20 +260,30 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, FlowPeriod)
 	SHADER_PARAMETER(float, DetailAmp2)
 	SHADER_PARAMETER(float, SkyGain)
+	SHADER_PARAMETER(float, SunFull)
+	SHADER_PARAMETER(FVector3f, GroundAlbedo)
 	SHADER_PARAMETER(float, FireGain)
 	SHADER_PARAMETER(float, MsExt)
 	SHADER_PARAMETER(float, MsScatter)
 	SHADER_PARAMETER(float, MsPhase)
 	SHADER_PARAMETER(int32, MsOctaves)
+	SHADER_PARAMETER(int32, JointMarch)
 	SHADER_PARAMETER(int32, SunSteps)
 	SHADER_PARAMETER(int32, FireSteps)
 	SHADER_PARAMETER(float, RadianceScale)
+	SHADER_PARAMETER(FVector4f, FogA)      // ligada, densidade (1/m), queda (1/m, base 2), começo (m)
+	SHADER_PARAMETER(FVector4f, FogB)      // albedo (linear), fase g
+	SHADER_PARAMETER(float, FogHeightRel)  // a altura da névoa relativa à câmera (m)
 	SHADER_PARAMETER(FVector4f, TermGain)
 	SHADER_PARAMETER(int32, DebugView)
 	SHADER_PARAMETER(int32, NumInstances)
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFoot, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFrame, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstMisc, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstNoise, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstLight2, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstGround, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstDust, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstLight, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstBoxMin, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstBoxMax, [MaxInstances])
@@ -327,6 +338,9 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, HistAlpha)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, SceneColorOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float2>, PoolLCOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ShadowOut)   // a sombra da explosão no chão (MainShadowMap)
+	SHADER_PARAMETER(FVector4f, ShadowA)   // canto do mapa relativo à câmera (m) xy, texel (m), o chão relativo à câmera (m)
+	SHADER_PARAMETER(FVector4f, ShadowB)   // a direção pro sol, a resolução
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearClamp)
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearWrap)
 END_SHADER_PARAMETER_STRUCT()
@@ -372,6 +386,7 @@ BLAST_RAYMARCH_SHADER(FBlastRaymarchLightCacheCS, "MainLightCache")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchMarchCS, "MainMarch")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchTemporalCS, "MainTemporal")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchCompositeCS, "MainComposite")
+BLAST_RAYMARCH_SHADER(FBlastRaymarchShadowMapCS, "MainShadowMap")
 
 namespace
 {
@@ -430,6 +445,18 @@ void FBlastRaymarchExtension::Submit_GameThread(TArray<FInstance>&& InInstances,
 		{
 			Self->Submit_RenderThread(RHICmdList, MoveTemp(List), Ups, NoiseRes, WorleyRes, PoolRes, MaxBricks);
 		});
+}
+
+void FBlastRaymarchExtension::SetFog_GameThread(const FFog& InFog)
+{
+	ENQUEUE_RENDER_COMMAND(BlastRaymarchFog)(
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), InFog](FRHICommandListImmediate&) { Self->Fog = InFog; });
+}
+
+void FBlastRaymarchExtension::SetShadow_GameThread(const FShadow& InShadow)
+{
+	ENQUEUE_RENDER_COMMAND(BlastRaymarchShadow)(
+		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), InShadow](FRHICommandListImmediate&) { Self->Shadow = InShadow; });
 }
 
 void FBlastRaymarchExtension::Submit_RenderThread(FRHICommandListImmediate& RHICmdList, TArray<FInstance>&& List, const TArray<FUpload>& Ups, FTextureResource* NoiseRes,
@@ -647,9 +674,13 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.SootExt = SootExt;
 	Base.DustExt = DustExt;
 	Base.SootAlbedo = SootAlbedo;
-	Base.DustAlbedo = DustAlbedo;
+	// medição (13/10): -RmDust=r,g,b,albedo troca a cor da poeira (a areia levantada das artes: caramelo)
+	static const FVector4f DustCfg = [] { FString S; FVector4f V(DustColor.X, DustColor.Y, DustColor.Z, DustAlbedo); TArray<FString> P;
+		if (FParse::Value(FCommandLine::Get(), TEXT("RmDust="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4) { V = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3])); }
+		return V; }();
+	Base.DustAlbedo = DustCfg.W;
 	Base.SootColor = SootColor;
-	Base.DustColor = DustColor;
+	Base.DustColor = FVector3f(DustCfg.X, DustCfg.Y, DustCfg.Z);
 	// O brilho do fogo compensado pela exposição (11/10): a câmera se ajusta à cena (à noite ela abre
 	// ~8 stops) e o fogo, que é luz própria, ia junto e estourava em branco; a noite aprovada
 	// (docs/concept/scenes/desert_night) tem o fogo laranja. Como o EyeAdaptationInverse dos efeitos da
@@ -682,7 +713,18 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.FlowPeriod = FlowPeriod;
 	static const float Detail2 = ParamOr(TEXT("RmDetail2="), 0.0f);
 	Base.DetailAmp2 = Detail2;
-	Base.SkyGain = SkyGain;
+	// a luz do céu (e a do chão, -RmGround) na fumaça: 1,1 × fase isotrópica é a convenção do WebGL, ~5,7× abaixo do
+	// físico (céu uniforme na metade de cima da esfera, fase 1/4π: 2π·L/4π = L/2 → ganho 2π). A/B: -RmSkyGain= (13/10)
+	static const float SkyGainCfg = ParamOr(TEXT("RmSkyGain="), SkyGain);
+	Base.SkyGain = SkyGainCfg;
+	// o sol inteiro na fumaça (13/10, A/B contra os game shots): -RmFullSun=1; 0 = o seno do WebGL (o arsenal aprovado)
+	static const float SunFullCfg = FMath::Clamp(ParamOr(TEXT("RmFullSun="), 0.0f), 0.0f, 1.0f);
+	Base.SunFull = SunFullCfg;
+	// a luz que volta do chão de sol pra barriga da fumaça (13/10): -RmGround=r,g,b é o albedo da areia; 0 = desligado
+	static const FVector3f GroundCfg = [] { FString S; TArray<FString> P; FVector3f V(0.0f);
+		if (FParse::Value(FCommandLine::Get(), TEXT("RmGround="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 3) { V = FVector3f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])); }
+		return V; }();
+	Base.GroundAlbedo = GroundCfg;
 	// a luz do fogo que a fumaça espalha é luz do próprio fogo: a mesma compensação da emissão (à noite, sem
 	// ela, a fumaça acesa por dentro estourava em creme mesmo com a emissão compensada; 11/10)
 	Base.FireGain = FireGain * EmitComp;
@@ -692,9 +734,15 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	// medição: -RmOctaves=1 (conta ou leitura de memória? 11/10)
 	static const int32 OctavesCfg = FMath::Clamp(int32(ParamOr(TEXT("RmOctaves="), float(MsOctaves))), 1, 4);
 	Base.MsOctaves = OctavesCfg;
+	// a marcha conjunta (as explosões que se cruzam numa marcha só, como o WebGL; 12/10): -RmJoint=0 desliga
+	static const int32 JointCfg = int32(ParamOr(TEXT("RmJoint="), 1.0f));
+	Base.JointMarch = JointCfg;
 	Base.SunSteps = LightSteps;
 	Base.FireSteps = FireSteps;
 	Base.RadianceScale = LuxPerUnit;
+	Base.FogA = FVector4f(Fog.bOn ? 1.0f : 0.0f, Fog.DensityPerM, Fog.FalloffPerM, Fog.StartM);
+	Base.FogB = FVector4f(Fog.Albedo, Fog.G);
+	Base.FogHeightRel = float((Fog.HeightCm - CamCm.Z) * 0.01);
 	// depuração: -RmTerms=sol,céu,fogo,emissão (ex. 0,1,0,0 = só a luz do céu)
 	static const FVector4f Terms = []
 	{
@@ -751,7 +799,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		const FInstance& I = Instances[i];
 		const FBakeData& B = *I.Bake;
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(I.Frame), 0, B.Frames - 1);
-		const int32 F1 = FMath::Min(F0 + 1, B.Frames - 1);
+		const int32 F1 = B.NextFrame(F0);
 		const float A = FMath::Clamp(I.Frame - F0, 0.0f, 1.0f);
 		// a caixa dos dois quadros, alargada pelo deslocamento do ruído (instances.js _box)
 		FBox3f Local(ForceInit);
@@ -793,12 +841,33 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstFrame[N] = FVector4f(float(I.Slot0), float(I.Slot1), A,
 			(B.TimeOfFrame(float(F1)) - B.TimeOfFrame(float(F0))) * (B.Res / B.Domain) * MvScale);
 		Base.InstMisc[N] = FVector4f(B.TimeOfFrame(I.Frame), I.Seed, I.Keep, float(S));
+		Base.InstNoise[N] = FVector4f(I.NoiseScale, 0.0f, 0.0f, 0.0f);
+		Base.InstLight2[N] = FVector4f(I.SunFull, I.SkyGain, 0.0f, 0.0f);
+		Base.InstGround[N] = FVector4f(I.GroundAlbedo.X, I.GroundAlbedo.Y, I.GroundAlbedo.Z, I.GroundAlbedo.W > 0.0f ? 1.0f : 0.0f);
+		Base.InstDust[N] = I.DustLook;
 		// A nuvem nuclear quase não tem fuligem: logo depois da bola de fogo ela é
 		// marrom-avermelhada (óxidos de nitrogênio do ar quente) e, quando esfria e o
 		// vapor condensa, fica branca (Glasstone & Dolan 1977, cap. II). A emissão é
 		// ∝ σ·(1−albedo) (Kirchhoff): o ganho compensa pra bola de fogo brilhar igual.
 		float Albedo = SootAlbedo, EmitGain = 1.0f;
 		FVector3f Look = SootColor;
+		// medição (13/10): -RmSoot=r,g,b,albedo troca a cor da fuligem (a explosão de tanque das artes: marrom-escura)
+		static const FVector4f SootCfg = [] { FString S; FVector4f V(-1.0f, 0.0f, 0.0f, 0.0f); TArray<FString> P;
+			if (FParse::Value(FCommandLine::Get(), TEXT("RmSoot="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4) { V = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3])); }
+			return V; }();
+		if (SootCfg.X >= 0.0f)
+		{
+			Look = FVector3f(SootCfg.X, SootCfg.Y, SootCfg.Z);
+			Albedo = SootCfg.W;
+			EmitGain = (1.0f - SootAlbedo) / FMath::Max(1.0f - Albedo, 0.05f);
+		}
+		if (I.SootLook.X >= 0.0f)
+		{
+			// a desta explosão (a morte de tanque no jogo)
+			Look = FVector3f(I.SootLook.X, I.SootLook.Y, I.SootLook.Z);
+			Albedo = I.SootLook.W;
+			EmitGain = (1.0f - SootAlbedo) / FMath::Max(1.0f - Albedo, 0.05f);
+		}
 		if (I.bNuclear)
 		{
 			const float K = FMath::Clamp((B.TimeOfFrame(I.Frame) - 1.0f) / 1.8f, 0.0f, 1.0f), Wn = K * K * (3.0f - 2.0f * K);
@@ -820,7 +889,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 			const float Hot = 1.0f - FMath::SmoothStep(2.0f, 4.0f, B.TimeOfFrame(I.Frame));
 			Base.InstDetail[N] = FVector4f(FMath::SmoothStep(2.7f, 5.3f, Px), FMath::SmoothStep(5.3f, 10.7f, Px), FMath::SmoothStep(10.7f, 21.0f, Px), Hot);
 		}
-		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain, float(WarpSlot));
+		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain * I.EmitScale, float(WarpSlot));
 		Base.InstBoxMin[N] = FVector4f(Rel(World.Min), 0.0f);
 		Base.InstBoxMax[N] = FVector4f(Rel(World.Max), 0.0f);
 		Base.InstFirePos[N] = FVector4f(Foot + LP * I.Scale, I.Flash);
@@ -907,6 +976,21 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		TShaderMapRef<FBlastRaymarchLightCacheCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch LightCache"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
 			Shader, P, FComputeShaderUtils::GetGroupCount(FIntVector(LCRes), FIntVector(4)));
+	}
+
+	// 1b) a sombra no chão: a espessura óptica entre o plano do chão e o sol, vista de cima (a light function do sol lê
+	// no quadro seguinte). Sem dono no jogo (mapas do BlastLab, que têm a sombra da fumaça de campo), não roda.
+	if (Shadow.Out && Shadow.Out->GetRenderTargetTexture())
+	{
+		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
+		Common(P);
+		FRDGTextureRef ShadowTex = External(GraphBuilder, Shadow.Out->GetRenderTargetTexture(), TEXT("BlastRaymarch.Shadow"));
+		P->ShadowOut = GraphBuilder.CreateUAV(ShadowTex);
+		P->ShadowA = FVector4f(float(Shadow.OriginM.X - CamCm.X * 0.01), float(Shadow.OriginM.Y - CamCm.Y * 0.01), Shadow.TexelM, float(Shadow.GroundZM - CamCm.Z * 0.01));
+		P->ShadowB = FVector4f(Shadow.ToSun, float(Shadow.Res));
+		TShaderMapRef<FBlastRaymarchShadowMapCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ShadowMap"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
+			Shader, P, FComputeShaderUtils::GetGroupCount(FIntPoint(Shadow.Res, Shadow.Res), FIntPoint(8, 8)));
 	}
 
 	// 2) a marcha, meia resolução

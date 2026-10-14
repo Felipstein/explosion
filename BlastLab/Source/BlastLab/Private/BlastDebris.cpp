@@ -1,10 +1,13 @@
 ﻿#include "BlastDebris.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 #include "BlastLabGround.h"
 #include "BlastLabSimulation.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
 
@@ -44,6 +47,13 @@ namespace
 	// topologia fixa (as mortas viram quads de tamanho zero): a seção delas nasce
 	// uma vez e só os vértices mudam
 	constexpr int32 TrailSamples = 48;
+
+	// o tamanho da bola (-BlastScale): os espinhos encolhem e esquentam junto (Start)
+	float SparkScaleCfg()
+	{
+		static const float V = [] { float S = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("BlastScale="), S); return FMath::Clamp(S, 0.2f, 1.0f); }();
+		return V;
+	}
 
 	FVector ToM(const FVector& Cm) { return Cm / 100.0; }
 	FVector ToCm(const FVector& M) { return M * 100.0; }
@@ -170,10 +180,11 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 		P.Spin = Rand.VRand() * Rand.FRandRange(6.0f, 20.0f);
 		P.Size = Rand.FRandRange(0.4f, 1.4f);
 		P.Shape = Rand.RandRange(0, NumShapes - 1);
-		// um terço solta um fio de fumaça escura (estava em brasa ou com óleo)
+		// um terço solta um fio de fumaça escura (estava em brasa ou com óleo). 13/10: 6 cm e albedo 0,12 eram fios pretos
+		// de arame dentro da nuvem marrom; agora nasce com 15 cm, engorda 0,5 m/s e é fuligem (0,3)
 		if (Rand.FRand() < 0.33f)
 		{
-			P.Trail = NewTrail(0.06f, 0.25f, 0.8f, 0.12f, 0.0f, 0.5f);
+			P.Trail = NewTrail(0.15f, 0.5f, 0.8f, 0.3f, 0.0f, 0.45f);
 		}
 	}
 	for (int32 i = 0; i < NumComets; ++i)
@@ -188,21 +199,27 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 		// rastro claro (propelente: óxidos e vapor, albedo ~0.6), fino na cabeça.
 		// No vídeo ele se vê ~6–10 m atrás da cabeça (~0.3–0.5 s a 20–30 m/s) e se
 		// desfaz: vida 0.9 s, engorda 0.4 m/s, opacidade ≤ 0.6 (a 1ª versão, 2.6 s
-		// e opaca, virou tentáculos de 40 m)
-		C.Trail = NewTrail(0.12f, 0.4f, 0.9f, 0.6f, 0.0f, 0.6f);
+		// e opaca, virou tentáculos de 40 m). Mais grosso desde 13/10 (0,12 m → 0,35 m, engorda 1,2 m/s): nos alvos
+		// 3/19 os rastros dos destroços são fumaça de ~0,5–1 m, e com 12 cm eram riscos de laser
+		C.Trail = NewTrail(0.35f, 1.2f, 0.9f, 0.6f, 0.0f, 0.5f);
 	}
 	// Espinhos: a estrela de riscos do vídeo (0.05–0.5 s), dezenas de pedaços em
 	// brasa a 40–90 m/s que o olho integra em riscos; pequenos, freiam rápido
 	// (terminal ~20 m/s) e apagam em 0.12–0.35 s. Fagulhas: as que caem piscando
 	// em volta depois (1–3 s), lentas e leves (terminal ~6 m/s, meio empuxo).
 	// Meta do painel da sessão de arte: 40–80 espinhos + 100–200 fagulhas.
-	for (int32 i = 0; i < NumSpikes + NumEmbers; ++i)
+	// Com a bola menor (-BlastScale, 13/10: a morte de tanque medida contra os alvos é 0,35–0,5 da gravação) os espinhos
+	// encolhem junto: a estrela de riscos brancos de 3 m feita pra bola de 9 m virava "palitos" em volta da bola de 4 m;
+	// e mais laranja, como as faíscas da referência da torre voando
+	const float SparkScale = SparkScaleCfg();
+	const int32 Spikes = FMath::RoundToInt(NumSpikes * SparkScale);
+	for (int32 i = 0; i < Spikes + NumEmbers; ++i)
 	{
 		FSpark& S = Sparks.AddDefaulted_GetRef();
-		S.bEmber = i >= NumSpikes;
+		S.bEmber = i >= Spikes;
 		const float Az = Rand.FRandRange(0.0f, 2.0f * PI);
 		const float El = FMath::DegreesToRadians(S.bEmber ? Rand.FRandRange(20.0f, 85.0f) : Rand.FRandRange(3.0f, 80.0f));
-		const float Speed = S.bEmber ? Rand.FRandRange(4.0f, 18.0f) : Rand.FRandRange(40.0f, 90.0f);
+		const float Speed = S.bEmber ? Rand.FRandRange(4.0f, 18.0f) : Rand.FRandRange(40.0f, 90.0f) * SparkScale;
 		S.P = O + FVector(Rand.FRandRange(-1.0f, 1.0f), Rand.FRandRange(-0.6f, 0.6f), Rand.FRandRange(-0.3f, 0.8f));
 		S.V = FVector(FMath::Cos(Az) * FMath::Cos(El), FMath::Sin(Az) * FMath::Cos(El), FMath::Sin(El)) * Speed;
 		S.Life = S.bEmber ? Rand.FRandRange(1.0f, 3.0f) : Rand.FRandRange(0.12f, 0.35f);
@@ -400,7 +417,7 @@ void ABlastDebris::UpdateGlows(const FVector& CamM)
 			V.Add(ToCm(C.P + Right * Sx + Up * Sy));
 			N.Add(ToCam);
 			UV.Add(FVector2D(0.5f + 0.5f * Sx, 0.5f + 0.5f * Sy));
-			Col.Add(CometHeadColor * Fade);            // o brilho absoluto vem do material (Intensity: a cor do vértice é de 8 bits)
+			Col.Add(FMath::Lerp(EmberColor, CometHeadColor, SparkScaleCfg()) * Fade);   // com a bola menor, laranja (a referência da torre voando: pedaços em chamas)            // o brilho absoluto vem do material (Intensity: a cor do vértice é de 8 bits)
 		}
 	}
 	// faíscas: o quad esticado ao longo da velocidade (o borrão de ~1/30 s que o
@@ -431,7 +448,7 @@ void ABlastDebris::UpdateGlows(const FVector& CamM)
 			N.Add(ToCam);
 			// u fixo no meio: o perfil do material só varia na largura (risco inteiro, não um ponto)
 			UV.Add(FVector2D(0.5f, 0.5f + 0.5f * Sy));
-			Col.Add((S.bEmber ? EmberColor : SpikeColor) * FMath::Clamp(Glow, 0.0f, 1.0f));
+			Col.Add((S.bEmber ? EmberColor : FMath::Lerp(EmberColor, SpikeColor, SparkScaleCfg())) * FMath::Clamp(Glow, 0.0f, 1.0f));
 		}
 	}
 	if (V.Num() == GlowVerts)
@@ -561,8 +578,35 @@ void ABlastDebris::Tick(float DeltaSeconds)
 	const float Dt = FMath::Min(Sim ? Sim->SimDelta(DeltaSeconds) : DeltaSeconds, 0.05f);
 	if (!GlowMesh->GetMaterial(0))
 	{
-		GlowMesh->SetMaterial(0, LoadObject<UMaterialInterface>(nullptr, GlowPath));
-		TrailMesh->SetMaterial(0, LoadObject<UMaterialInterface>(nullptr, TrailPath));
+		// -DebrisGlow= (13/10): o brilho das cabeças e faíscas (Intensity 2·10⁵ cd/m²) estourava em branco de dia (o
+		// vermelho ~13× acima do branco da tela depois da exposição); a ~3·10⁴ elas ficam laranja
+		UMaterialInterface* GlowBase = LoadObject<UMaterialInterface>(nullptr, GlowPath);
+		static const float GlowScale = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("DebrisGlow="), V); return V; }();
+		UMaterialInstanceDynamic* GM = GlowBase && GlowScale != 1.0f ? UMaterialInstanceDynamic::Create(GlowBase, this) : nullptr;
+		if (GM)
+		{
+			GM->SetScalarParameterValue(TEXT("Intensity"), 2.0e5f * GlowScale);
+		}
+		GlowMesh->SetMaterial(0, GM ? GM : GlowBase);
+		// os rastros com a cor da fuligem da explosão (-RmSoot=r,g,b,albedo, 13/10): eram riscos brancos contra a nuvem
+		// marrom, outra fumaça na mesma cena
+		UMaterialInterface* TrailBase = LoadObject<UMaterialInterface>(nullptr, TrailPath);
+		static const FLinearColor SootTint = []
+		{
+			FLinearColor C(0.95f, 0.92f, 0.88f, 1.0f);
+			FString S;
+			TArray<FString> P;
+			if (FParse::Value(FCommandLine::Get(), TEXT("RmSoot="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4)
+			{
+				C = FLinearColor(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), 1.0f);
+			}
+			return C;
+		}();
+		if (UMaterialInstanceDynamic* M = TrailBase ? UMaterialInstanceDynamic::Create(TrailBase, this) : nullptr)
+		{
+			M->SetVectorParameterValue(TEXT("SmokeTint"), SootTint);
+			TrailMesh->SetMaterial(0, M);
+		}
 	}
 	if (Dt > 0.0f)
 	{

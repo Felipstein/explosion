@@ -16,6 +16,7 @@
 		{ "Name": "NiagaraFluids", "Enabled": true },
 		{ "Name": "NiagaraSimCaching", "Enabled": true },
 		{ "Name": "InterchangeOpenVDB", "Enabled": true },
-		{ "Name": "ProceduralVegetationEditor", "Enabled": true }
+		{ "Name": "ProceduralVegetationEditor", "Enabled": true },
+		{ "Name": "RTSLook", "Enabled": true }
 	]
 }

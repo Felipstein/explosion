@@ -1,4 +1,4 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
+﻿// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
 // BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
 // de aparência nascem lá e são trazidas pra cá.
 #pragma once
@@ -106,6 +106,18 @@ public:
 	/** Multiplica a fuligem e o fogo por metro (a bola menor que o rendimento continua opaca). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float Thickness = 1.0f;
+
+	/**
+	 * A gravação própria no raymarch (13/10, a morte de tanque da v2: a eg_tq_v2 do BlastLab), no lugar da Carga
+	 * Pesada; vazio = a variante da Carga Pesada (as construções). E a luz e a cor dela (BlastRaymarch.h FInstance):
+	 * negativo / W ≤ 0 = as globais.
+	 */
+	FName RaymarchSource;
+	FVector4f RaymarchSoot = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
+	FVector4f RaymarchDust = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
+	float RaymarchSunFull = -1.0f;
+	float RaymarchSkyGain = -1.0f;
+	FVector4f RaymarchGround = FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
 
 	/** A saia de poeira relativa à da Carga Pesada: altura e vida (início e τ do assentamento). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")

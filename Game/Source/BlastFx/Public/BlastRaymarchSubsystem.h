@@ -1,4 +1,4 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
+﻿// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
 // BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
 // de aparência nascem lá e são trazidas pra cá.
 #pragma once
@@ -46,6 +46,8 @@ private:
 	TSharedPtr<FBlastRaymarchExtension, ESPMode::ThreadSafe> Extension;
 	/** As gravações carregadas: 0–2 = as variantes da Carga Pesada. O índice é a chave dos quadros no pool. */
 	TArray<BlastRaymarch::FBakeRef> Sources;
+	/** As gravações próprias pelo nome (a eg_tq_v2 da morte de tanque, 13/10): o índice delas em Sources. */
+	TMap<FName, int32> SourceOf;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture> Noise;

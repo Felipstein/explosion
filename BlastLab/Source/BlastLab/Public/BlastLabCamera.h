@@ -63,6 +63,8 @@ public:
 	{
 		Dist = InDist; Azim = InAzim; Elev = InElev; TargetY = InTargetY; BaseFov = InFovV;
 	}
+	/** O ponto do chão que a câmera olha (m, x/y da Unreal): a câmera do jogo da maquete do look olha (−6,1; −0,4). */
+	void SetCenter(float X, float Y) { Center = FVector2D(X, Y); }
 
 	float Distance() const { return Dist; }
 	/** Fov vertical atual (rad). */
@@ -91,4 +93,11 @@ private:
 	float QuakeAmp = 0.0f;
 	float QuakeT = 0.0f;
 	float T = 0.0f;
+
+	// a névoa começando numa fração da distância ao foco, nos mapas do look (BlastLabCamera.cpp, FocusFog)
+	void FocusFog(float DistCm);
+	bool bFocusFogChecked = false;
+	float LastFocusCm = -1.0f;
+	TArray<TWeakObjectPtr<class UExponentialHeightFogComponent>> FocusFogs;
+	TArray<TWeakObjectPtr<class USkyAtmosphereComponent>> FocusSkies;
 };

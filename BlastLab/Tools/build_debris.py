@@ -98,9 +98,11 @@ def trail_material():
         mel.connect_material_expressions(c, '', k, '')
         return k
     alb, fire, op = comp('r', 0), comp('g', 120), comp('b', 240)
-    # fumaça quase neutra, um pouco quente (a fuligem e os óxidos)
-    tint = mel.create_material_expression(m, unreal.MaterialExpressionConstant3Vector, -500, -140)
-    tint.set_editor_property('constant', unreal.LinearColor(0.95, 0.92, 0.88, 1.0))
+    # fumaça quase neutra, um pouco quente (a fuligem e os óxidos); parâmetro desde 13/10: o C++ põe a cor da fuligem
+    # da explosão (-RmSoot), pra os rastros serem a mesma fumaça da bola (eram riscos brancos contra a nuvem marrom)
+    tint = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -500, -140)
+    tint.set_editor_property('parameter_name', 'SmokeTint')
+    tint.set_editor_property('default_value', unreal.LinearColor(0.95, 0.92, 0.88, 1.0))
     base = mel.create_material_expression(m, unreal.MaterialExpressionMultiply, -300, -60)
     # o fogo logo atrás da peça: laranja de ~1300 K, ~3·10⁴ cd/m² no mais quente
     flame = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -500, 380)

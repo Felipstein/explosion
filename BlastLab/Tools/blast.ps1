@@ -96,6 +96,23 @@ function ImportWorlds {
   RunUnrealPython 'Tools\build_worlds.py'
 }
 
+# O plugin RTSLook do jogo (a luz e o chão da maquete do look, 13/10): o BlastLab.uproject o liga, por junções pro
+# Source e o Content de Game/Plugins/RTSLook (fora do git); refeitas aqui se faltarem, antes de qualquer comando
+function LinkLook {
+  $from = Join-Path $Repo 'Game\Plugins\RTSLook'
+  $to = Join-Path $Root 'Plugins\RTSLook'
+  if (-not (Test-Path (Join-Path $from 'RTSLook.uplugin'))) { return }
+  New-Item -ItemType Directory -Force $to | Out-Null
+  $plugin = Join-Path $to 'RTSLook.uplugin'
+  if (-not (Test-Path $plugin) -or (Get-FileHash $plugin).Hash -ne (Get-FileHash (Join-Path $from 'RTSLook.uplugin')).Hash) {
+    Copy-Item (Join-Path $from 'RTSLook.uplugin') $plugin -Force
+  }
+  foreach ($d in 'Source', 'Content') {
+    if (-not (Test-Path (Join-Path $to $d))) { New-Item -ItemType Junction -Path (Join-Path $to $d) -Target (Join-Path $from $d) | Out-Null }
+  }
+}
+LinkLook
+
 switch ($Command) {
   'setup' { Compile; BuildScene; BuildExplosion }
   'worlds' { ImportWorlds }

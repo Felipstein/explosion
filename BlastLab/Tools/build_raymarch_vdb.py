@@ -24,7 +24,7 @@ Mantaflow (density, flame, temperature, velocity; o calor dele vai a ~1, com os
 fatores do convert_pyro_vdb.py pra ele: calor × 0.30 + chama × 1.3).
 
 Rodar (no Python do Blender, que traz openvdb e numpy):
-  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem] [fumaca|poeira]
+  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem] [fumaca|poeira] [loop|-] [fator_temperatura] [chama_em_fuligem] [recorte_voxels] [desfaz_no_alto] [loop_início_s loop_duração_s loop_emenda_s] [bx,by,dydz,dxdz,fica]
 (a pasta do Mantaflow é a cache/data dele). Sai em BlastLab/Intermediate/Raymarch/<nome>.brm2 (em blocos,
 brm2.py; a densa intermediária .bin é apagada no fim).
 """
@@ -59,6 +59,31 @@ SOOT_FACTOR = float(argv[7]) if len(argv) > 7 else 0.35   # convert_pyro_vdb.py 
 # da explosão, como nos AAA (Battlefront II, Back 4 Blood: pesquisa de 11/10), tocada junto no mesmo ponto
 LAYER = argv[8] if len(argv) > 8 else 'fumaca'
 CURVE = 1.4                 # quadros mais densos no começo (js/bake.js timeOfFrame)
+# 'loop' (13/10, o fogo da carcaça: Looping Mode = Loop Simulation no EmberGen): quadros iguais no tempo e o cabeçalho
+# marcado; o raymarch emenda o último no primeiro (o ciclo = arquivos/qps). Passe quadros = número de arquivos
+LOOP = len(argv) > 9 and argv[9] == 'loop'
+# o fator só do canal de temperatura (13/10): os presets de fogo do EmberGen 1.2 gravam a temperatura em kelvin (o Game
+# Fire Loop 2 chega a 7180, p90 1957) e os VDBs da JangaFX em ~0–1,4; com o fator único o calor saturava em todo lugar
+HEAT_K = float(argv[10]) if len(argv) > 10 else 1.0
+# a chama vira fuligem também (13/10): a chama brilha porque é fuligem incandescente; o raymarch emite em proporção à
+# fuligem (Kirchhoff), e nos presets de fogo do EmberGen a zona da chama quase não tem densidade: ela sumia
+FLAME_SOOT = float(argv[11]) if len(argv) > 11 else 0.0
+# o recorte (13/10): o cubo de N voxels da fonte em volta do fogo (centro na horizontal, do chão pra cima); 0 = a caixa
+# inteira. O domínio de um fogo do EmberGen é alto (a coluna): o cubo inteiro deixava o fogo com ~35 voxels de largura
+CROP = int(argv[12]) if len(argv) > 12 else 0
+# a coluna se desfaz no alto (13/10): com o recorte a fumaça batia no teto do cubo e saía cortada reta. Acima desta
+# fração da altura a fuligem cai e as partes ralas somem primeiro (o topo fica com a forma da própria fumaça)
+TOP_FADE = float(argv[13]) if len(argv) > 13 else 0.0
+# a janela do loop com emenda (13/10; a mesma de convert_pyro_vdb.py): pra uma simulação que não foi feita em loop (a
+# Smoke Plume da JangaFX), a janela [início, início+duração) e, nos primeiros 'emenda' s, a mistura com o trecho logo
+# depois do fim da janela (o fim emenda no começo sem pulo). 0 0 0 = os arquivos todos (a simulação já é loop)
+LOOP_WIN = tuple(float(a) for a in argv[14:17]) if len(argv) > 16 else (0.0, 0.0, 0.0)
+# endireitar (13/10): 'bx,by,dydz,dxdz,fica' em m locais: a base da fonte vai pro centro do cubo e a inclinação da
+# coluna (o vento da simulação: a Smoke Plume da JangaFX tomba ~52°) fica só na fração 'fica'. Cada camada de altura
+# z anda −(base + (1 − fica)·inclinação·z) na horizontal (interpolado entre voxels)
+DESKEW = tuple(float(a) for a in argv[17].split(',')) if len(argv) > 17 else None
+if LOOP:
+    CURVE = 1.0
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.abspath(os.path.join(TOOLS, '..'))
 OUT = os.path.join(PROJECT, 'Intermediate', 'Raymarch')
@@ -77,10 +102,27 @@ def read(path, names):
 
 
 def resample(a, sizes):
-    """[z][y][x] → tamanhos por eixo, linear separável entre centros."""
+    """[z][y][x] → tamanhos por eixo, separável. Pra reduzir, a média da área que cada voxel novo cobre (caixa exata
+    por soma acumulada); pra aumentar, linear entre centros. (13/10: a linear também na redução pegava 2 amostras de cada
+    4–5 e jogava fora o detalhe fino da chama do EmberGen: o fogo saía granulado, serrilhado no tempo)"""
     for axis in range(3):
         m, n = a.shape[axis], sizes[axis]
         if m == n:
+            continue
+        if n < m:
+            S = np.cumsum(a, axis=axis, dtype=np.float64)
+            pad = [(0, 0)] * a.ndim
+            pad[axis] = (1, 0)
+            S = np.pad(S, pad)                                   # S[k] = soma de a[0:k]
+            edges = np.arange(n + 1) * (m / n)
+
+            def at(e):
+                k = np.clip(np.floor(e).astype(int), 0, m - 1)
+                f = (e - k).astype(np.float64)
+                sh = [1] * a.ndim
+                sh[axis] = -1
+                return np.take(S, k, axis=axis) * (1 - f.reshape(sh)) + np.take(S, k + 1, axis=axis) * f.reshape(sh)
+            a = ((at(edges[1:]) - at(edges[:-1])) / (m / n)).astype(np.float32)
             continue
         x = (np.arange(n) + 0.5) * m / n - 0.5
         i0 = np.clip(np.floor(x).astype(int), 0, m - 1)
@@ -132,6 +174,11 @@ def main():
     vel_names = ['velocity'] if 'velocity' in names else (['velocity_x', 'velocity_y', 'velocity_z'] if 'velocity_x' in names else [])
     has_vel = bool(vel_names)
     lo[2] = min(lo[2], 0)
+    if CROP > 0:
+        for i in (0, 1):
+            c = (lo[i] + hi[i]) // 2
+            lo[i], hi[i] = max(lo[i], c - CROP // 2), min(hi[i], c - CROP // 2 + CROP - 1)
+        hi[2] = min(hi[2], lo[2] + CROP - 1)
     dims = [hi[i] - lo[i] + 1 for i in range(3)]
     side = max(dims)
     n = RES if RES > 0 else -(-side // 8) * 8          # 0 = a resolução nativa da caixa (múltiplo de 8)
@@ -140,15 +187,36 @@ def main():
     domain = DOMAIN if DOMAIN > 0 else side * voxel
     vm = domain / n
     dur = (len(files) - 1) / FPS
+    if LOOP and LOOP_WIN[1] > 0.0:
+        dur = LOOP_WIN[1] * (FRAMES - 1) / FRAMES      # o raymarch fecha o ciclo em FRAMES/(FRAMES-1) × duração = a janela
     print(f'VDB2BRM {len(files)} quadros a {FPS:g} qps ({dur:.2f} s), canais {sorted(names)}, caixa {dims}, '
           f'cubo {side} → {n}³, domínio {domain:.2f} m ({vm * 100:.1f} cm por voxel)')
+
+    def shift_layers(c):
+        # c [z][y][x](+canais): a camada z anda (dx, dy) voxels, fração interpolada entre dois deslocamentos inteiros
+        bx, by, ky, kx, keep = DESKEW
+        out = np.zeros_like(c)
+        for z in range(n):
+            zm = (z + 0.5) * vm
+            dy = -(by + (1.0 - keep) * ky * zm) / vm
+            dx = -(bx + (1.0 - keep) * kx * zm) / vm
+            iy, fy = int(np.floor(dy)), dy - np.floor(dy)
+            ix, fx = int(np.floor(dx)), dx - np.floor(dx)
+            L = c[z]
+            acc = 0.0
+            for (oy_, wy) in ((iy, 1.0 - fy), (iy + 1, fy)):
+                for (ox_, wx) in ((ix, 1.0 - fx), (ix + 1, fx)):
+                    if wy * wx > 0.0:
+                        acc = acc + wy * wx * np.roll(np.roll(L, oy_, axis=0), ox_, axis=1)
+            out[z] = acc
+        return out
 
     def cube(a):
         """[x][y][z](+canais) do VDB → [z][y][x] da Unreal (y = −y), reamostrado e no pé do cubo."""
         c = np.zeros((n, n, n) + a.shape[3:], dtype=np.float32)
         a = np.ascontiguousarray(np.transpose(a, (2, 1, 0) + tuple(range(3, a.ndim)))[:, ::-1])
         c[:nz, oy:oy + ny, ox:ox + nx] = resample(a, (nz, ny, nx))
-        return c
+        return shift_layers(c) if DESKEW else c
 
     def fields(path):
         g = read(path, ['density', flame, 'temperature'] + vel_names)
@@ -174,6 +242,10 @@ def main():
                 a[..., c] = comp
             vel = cube(a)
             vel[..., 1] *= -1.0
+        if vel is not None:
+            # a velocidade da fonte (m/s nas unidades da simulação) nas unidades locais do domínio: o domínio pode
+            # encolher a simulação (o fogo da carcaça: 76,8 m do EmberGen viram 43,6 m locais); 1 quando é o nativo
+            vel *= domain / (side * voxel)
         return out + [vel]
 
     r = 4
@@ -184,14 +256,34 @@ def main():
     bounds, light_pos, light_col = [], [], []
     with open(tmp, 'wb') as body:
         for q in range(FRAMES):
-            t = dur * (q / (FRAMES - 1)) ** CURVE
-            src = files[min(len(files) - 1, int(round(t * FPS)))]
-            den, fl, heat, vel = fields(src)
-            soot = np.clip(den * SOOT_FACTOR, 0.0, 4.0)
+            if LOOP and LOOP_WIN[1] > 0.0:
+                step = LOOP_WIN[1] * FPS / FRAMES
+                i0 = int(round(LOOP_WIN[0] * FPS))
+                t = q * step / FPS
+                src = files[min(len(files) - 1, i0 + int(round(q * step)))]
+                den, fl, heat, vel = fields(src)
+                nx = int(round(LOOP_WIN[2] * FPS / step))
+                if q < nx:
+                    # emenda: no começo, mistura com o trecho logo depois do fim da janela
+                    w = q / nx
+                    d2, f2, h2, v2 = fields(files[min(len(files) - 1, i0 + int(round((q + FRAMES) * step)))])
+                    den, fl, heat = w * den + (1 - w) * d2, w * fl + (1 - w) * f2, w * heat + (1 - w) * h2
+                    if vel is not None and v2 is not None:
+                        vel = w * vel + (1 - w) * v2
+            else:
+                t = dur * (q / (FRAMES - 1)) ** CURVE
+                src = files[min(len(files) - 1, int(round(t * FPS)))]
+                den, fl, heat, vel = fields(src)
+            soot = np.clip(den * SOOT_FACTOR + fl * FLAME_SOOT, 0.0, 4.0)
+            if TOP_FADE > 0.0:
+                zf = (np.arange(n, dtype=np.float32) + 0.5) / n
+                f = np.clip((zf - TOP_FADE) / max(0.97 - TOP_FADE, 1e-3), 0.0, 1.0)
+                f = (f * f * (3.0 - 2.0 * f))[:, None, None]
+                soot = np.maximum(soot * (1.0 - f) - 0.6 * f, 0.0)
             dust = np.zeros_like(soot)
             if LAYER == 'poeira':
                 dust, soot = np.clip(den * SOOT_FACTOR, 0.0, 2.5), np.zeros_like(soot)
-            temp = np.clip((heat * temp_heat + fl * temp_flame) * TEMP_K, 0.0, 1.6)
+            temp = np.clip((heat * HEAT_K * temp_heat + fl * temp_flame) * TEMP_K, 0.0, 1.6)
             fuel = np.clip(fl, 0.0, 1.0)
             empty = (soot < 0.003) & (dust < 0.003) & (fuel < 0.05)
             soot[empty] = 0.0
@@ -247,6 +339,7 @@ def main():
         'duration': dur, 'curve': CURVE, 'domain': domain, 'velMax': VEL_MAX,
         'bounds': bounds, 'lightPos': light_pos, 'lightCol': light_col,
         'lightPhysical': True,          # Σ combustível·T⁴ (a do WebGL vem comprimida pelo expoente 0.44)
+        'loop': LOOP,
     }
     hb = json.dumps(head, separators=(',', ':')).encode('utf-8')
     hb += b' ' * ((-len(hb)) % 16)

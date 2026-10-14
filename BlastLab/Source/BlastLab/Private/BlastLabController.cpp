@@ -11,7 +11,9 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/Texture2D.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "ExplosionBake.h"
 #include "ExplosionVolume.h"
@@ -110,16 +112,56 @@ void ABlastLabController::BeginPlay()
 		}
 	}
 
-	// -Cam=dist,azim,elev,alvoY,fovV: enquadramento fixo (testes contra as referências do WebGL)
+	// -Cam=dist,azim,elev,alvoY,fovV[,x,y]: enquadramento fixo (testes contra as referências do WebGL)
 	FString CamArg;
 	if (FParse::Value(FCommandLine::Get(), TEXT("Cam="), CamArg, false))
 	{
 		TArray<FString> P;
 		CamArg.ParseIntoArray(P, TEXT(","));
-		if (P.Num() == 5)
+		if (P.Num() == 5 || P.Num() == 7)
 		{
 			// o pawn da câmera ainda pode não existir aqui: aplicado no primeiro PlayerTick
+			// (com 7 valores, os dois últimos são o ponto do chão que ela olha, em m: a câmera do jogo da maquete do look)
 			PendingView = { FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3]), FCString::Atof(*P[4]) };
+			if (P.Num() == 7)
+			{
+				PendingView.Add(FCString::Atof(*P[5]));
+				PendingView.Add(FCString::Atof(*P[6]));
+			}
+		}
+	}
+
+	// -Tank=x,y,giro[;x,y,giro...] (m, graus): o tanque USA da maquete do look (Tools/import_look_tank.py,
+	// casco de 7,9 m) no chão, pra comparar o tamanho das explosões com uma unidade (o Felipe, 12/10)
+	FString TankArg;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-Tank="), TankArg, false))
+	{
+		static const TCHAR* Parts[] = { TEXT("Hull"), TEXT("Turret"), TEXT("Barrel"), TEXT("Track_l"), TEXT("Track_r"), TEXT("Wheels") };
+		TArray<FString> Tanks;
+		TankArg.ParseIntoArray(Tanks, TEXT(";"));
+		for (const FString& T : Tanks)
+		{
+			TArray<FString> V;
+			T.ParseIntoArray(V, TEXT(","));
+			if (V.Num() < 2)
+			{
+				continue;
+			}
+			FVector P(FCString::Atof(*V[0]) * 100.0, FCString::Atof(*V[1]) * 100.0, 0.0);
+			P.Z = BlastLabGround::HeightAt(GetWorld(), P.X, P.Y);
+			const FRotator R(0.0, V.Num() > 2 ? FCString::Atof(*V[2]) : 0.0, 0.0);
+			for (const TCHAR* Part : Parts)
+			{
+				const FString Path = FString::Printf(TEXT("/Game/Units/LL_USATank/SM_LL_USATank_%s/StaticMeshes/SM_LL_USATank_%s.SM_LL_USATank_%s"), Part, Part, Part);
+				if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *Path))
+				{
+					if (AStaticMeshActor* A = GetWorld()->SpawnActor<AStaticMeshActor>(P, R))
+					{
+						A->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+						A->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+					}
+				}
+			}
 		}
 	}
 
@@ -380,10 +422,20 @@ void ABlastLabController::PlayerTick(float DeltaTime)
 	float X, Y;
 	const bool bHaveMouse = GetMousePosition(X, Y);
 	ABlastLabCamera* C = Cam();
-	if (C && PendingView.Num() == 5)
+	if (C && PendingView.Num() >= 5)
 	{
 		C->SetView(PendingView[0], PendingView[1], PendingView[2], PendingView[3], PendingView[4]);
+		if (PendingView.Num() == 7)
+		{
+			C->SetCenter(PendingView[5], PendingView[6]);
+		}
 		PendingView.Reset();
+	}
+	// os mapas do look têm câmeras de cinema que se ativam sozinhas pro jogador (13/10): a vista é sempre a do
+	// BlastLab (o -Cam, o arrasto e a névoa que acompanha o foco dependem dela)
+	if (C && GetViewTarget() != C)
+	{
+		SetViewTarget(C);
 	}
 	if (C && bHaveMouse)
 	{
@@ -601,6 +653,13 @@ void ABlastLabController::TickAutoTest(float RealDt)
 			// -AutoAim=x,y (fração da tela): detona pelo caminho do clique, o raio da
 			// tela até o terreno (testa o clique no relevo); sem ele, no pé da origem
 			FVector Ground(0.0, 0.0, BlastLabGround::HeightAt(GetWorld(), 0.0, 0.0));
+			// -AutoAt=x,y (m): detona nesse ponto do chão (13/10: no tanque da maquete do look que vai explodir)
+			FString At, AtX, AtY;
+			if (FParse::Value(FCommandLine::Get(), TEXT("AutoAt="), At, false) && At.Split(TEXT(","), &AtX, &AtY))
+			{
+				Ground = FVector(FCString::Atod(*AtX) * 100.0, FCString::Atod(*AtY) * 100.0, 0.0);
+				Ground.Z = BlastLabGround::HeightAt(GetWorld(), Ground.X, Ground.Y);
+			}
 			FString Aim;
 			if (FParse::Value(FCommandLine::Get(), TEXT("AutoAim="), Aim, false))
 			{
@@ -688,10 +747,13 @@ void ABlastLabController::TickAutoTest(float RealDt)
 		}
 		return;
 	}
-	// instantes na escala da gravação; depois que ela acaba (e sai de cena) o relógio segue sozinho
+	// instantes na escala da gravação; depois que ela acaba (e sai de cena) o relógio segue sozinho.
+	// -AutoRealTime (13/10): instantes no relógio real, desde a detonação, pra comparar explosões de tamanho e ritmo
+	// diferentes com o vídeo-alvo no mesmo segundo (o relógio da gravação muda com -BlastScale/-BlastTime)
+	static const bool bRealTime = FParse::Param(FCommandLine::Get(), TEXT("AutoRealTime"));
 	if (IsValid(AutoExplosion))
 	{
-		AutoScale = FMath::Max(AutoExplosion->SizeScale, 0.01f);
+		AutoScale = bRealTime ? 1.0f : FMath::Max(AutoExplosion->TimeScale > 0.0f ? AutoExplosion->TimeScale : AutoExplosion->SizeScale, 0.01f);
 		AutoT = AutoExplosion->Age / AutoScale;
 	}
 	else

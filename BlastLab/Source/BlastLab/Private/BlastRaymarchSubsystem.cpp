@@ -1,4 +1,4 @@
-#include "BlastRaymarchSubsystem.h"
+﻿#include "BlastRaymarchSubsystem.h"
 
 #include "BlastLabSimulation.h"
 
@@ -10,6 +10,13 @@
 #include "ExplosionVolume.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "BlastLabGround.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
@@ -32,13 +39,21 @@ namespace
 
 	// as gravações que carregaram: sem o arquivo, a explosão fica no volume da Unreal em vez de sumir
 	bool GLoaded[3] = { false, false, false };
+	// as gravações próprias que carregaram (RaymarchSource): um corpo da EmberGen com a dele vai pro raymarch
+	TSet<FName> GLoadedSources;
 
-	/** DA_HeavyCharge_v<n> → n; as outras gravações (os corpos da EmberGen) ficam no volume da Unreal. */
+	/** DA_HeavyCharge_v<n> → n; as outras gravações (os corpos da EmberGen) ficam no volume da Unreal, a não ser que
+	 * tragam a própria gravação do raymarch (as bolas do fogo da carcaça, -WreckRm=1): 0 só pra passar no filtro, o
+	 * Tick troca pela gravação delas. */
 	int32 VariantOf(const AExplosionVolume* E)
 	{
 		if (!E || !E->Bake)
 		{
 			return -1;
+		}
+		if (!E->RaymarchSource.IsNone() && GLoadedSources.Contains(E->RaymarchSource) && !E->Bake->GetName().StartsWith(TEXT("DA_HeavyCharge_v")))
+		{
+			return 0;
 		}
 		const FString Name = E->Bake->GetName();
 		if (!Name.StartsWith(TEXT("DA_HeavyCharge_v")) || Name.Len() != 17)
@@ -105,7 +120,8 @@ bool UBlastRaymarchSubsystem::RecordedLight(const AExplosionVolume* E, float T, 
 bool UBlastRaymarchSubsystem::Handles(const AExplosionVolume* E)
 {
 	const int32 V = VariantOf(E);
-	return Enabled() && V >= 0 && GLoaded[V] && E->LoopPeriod <= 0.0f;
+	// em loop só as gravações próprias marcadas como loop (o fogo da carcaça); a coluna antiga em loop fica no volume
+	return Enabled() && V >= 0 && GLoaded[V] && (E->LoopPeriod <= 0.0f || !E->RaymarchSource.IsNone());
 }
 
 void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -139,6 +155,7 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	};
 	Sources.Reset();
 	SourceOf.Reset();
+	GLoadedSources.Reset();
 	// a de 128 como padrão (-RmBake=128): as três variantes tocam a v0 dela
 	const BlastRaymarch::FBakeRef B128 = BakeRes() == 128 ? LoadBake(TEXT("r128_v0.brm2")) : nullptr;
 	// -RmBakeSuffix=_poeira: as variantes com a camada de poeira misturada (Tools/brm2_merge_dust.py, 11/10)
@@ -161,6 +178,20 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	{
 		Extra.AddUnique(Cmp);
 	}
+	// as bolas do fogo da carcaça (-WreckRm=1, BlastLabSimulation SpawnWreckBall)
+	if (UBlastLabSimulation::WreckRaymarch())
+	{
+		Extra.AddUnique(FName(TEXT("eg_gasoline_b96")));
+	}
+	// o fogo da carcaça em loop (-WreckLoop=<gravação>)
+	if (!UBlastLabSimulation::WreckLoopSource().IsEmpty())
+	{
+		Extra.AddUnique(FName(*UBlastLabSimulation::WreckLoopSource()));
+	}
+	if (!UBlastLabSimulation::WreckPlumeSource().IsEmpty())
+	{
+		Extra.AddUnique(FName(*UBlastLabSimulation::WreckPlumeSource()));
+	}
 	// -RmSwap=eg_charge:eg_charge_96: a arma toca outro arquivo (medir uma versão da gravação no lugar da outra)
 	FString Swap, SwapFrom, SwapTo;
 	FParse::Value(FCommandLine::Get(), TEXT("RmSwap="), Swap, false);
@@ -171,6 +202,7 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		if (BlastRaymarch::FBakeRef B = LoadBake(File + TEXT(".brm2")))
 		{
 			SourceOf.Add(Cmp, Sources.Add(B));
+			GLoadedSources.Add(Cmp);
 			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: gravação %s ← %s (%d³, %.1f m, %d quadros)"), *Cmp.ToString(), *File, B->Res, B->Domain, B->Frames);
 		}
 	}
@@ -228,6 +260,8 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.Seed = E->Seed;
 		L.I.Keep = E->Opacity;
 		L.I.Thickness = E->Thickness;
+		L.I.EmitScale = E->RaymarchEmit;
+		L.I.NoiseScale = E->RaymarchNoise;
 		L.I.bNuclear = E->bNuclear;
 		// O clarão (10/10): a fase branca da bola real dura ~15–20 ms numa carga de
 		// 1–2 t, mas assim ele passava em 1 quadro (o Felipe: "mal vejo o branco");
@@ -278,7 +312,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	{
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		Needed.Add(Key(L.Variant, F0));
-		Needed.Add(Key(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1)));
+		Needed.Add(Key(L.Variant, L.I.Bake->NextFrame(F0)));
 	}
 	const int32 NumSlots = MaxSlots;
 	// os blocos do atlas: o que não couber faz sair das vagas os quadros velhos (os menos usados que
@@ -337,16 +371,144 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	{
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		L.I.Slot0 = SlotFor(L.Variant, F0);
-		L.I.Slot1 = SlotFor(L.Variant, FMath::Min(F0 + 1, L.I.Bake->Frames - 1));
+		L.I.Slot1 = SlotFor(L.Variant, L.I.Bake->NextFrame(F0));
 		if (L.I.Slot0 >= 0 && L.I.Slot1 >= 0)
 		{
 			List.Add(L.I);
 		}
+	}
+	// depuração (-RmLog=1, 13/10): o que está vivo e o que entrou na lista, a cada ~1 s
+	static const bool bRmLog = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("RmLog="), V); return V != 0; }();
+	if (bRmLog && TickCount % 30 == 0)
+	{
+		FString S;
+		for (const FLive& L : Live)
+		{
+			S += FString::Printf(TEXT(" [v%d f%.1f s%d/%d k%.2f]"), L.Variant, L.I.Frame, L.I.Slot0, L.I.Slot1, L.I.Keep);
+		}
+		UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: vivas %d, na lista %d, blocos %d/%d:%s"), Live.Num(), List.Num(), UsedBricks, Capacity, *S);
 	}
 	if (List.IsEmpty() && bWasEmpty)
 	{
 		return;
 	}
 	bWasEmpty = List.IsEmpty();
+	SubmitFog();
+	SubmitShadow(!List.IsEmpty());
 	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes, MaxBricks);
+}
+
+void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
+{
+	// A sombra da explosão no chão (13/10), nos mapas sem o ambiente do BlastLab (lá o sol já tem a sombra da fumaça de
+	// campo, BattleSmokeSubsystem): a mesma light function (M_SmokeShadowLF) num mapa de sombra próprio. Só entra num sol
+	// sem light function. -RmShadow=0 desliga.
+	constexpr int32 Res = 256;
+	constexpr float TexelM = 0.75f;
+	static const int32 ShadowCfg = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("RmShadow="), V); return V; }();
+	if (!bShadowSetup)
+	{
+		bShadowSetup = true;
+		bool bLabEnv = false;
+		for (TActorIterator<AActor> It(GetWorld()); It && !bLabEnv; ++It)
+		{
+			bLabEnv = It->GetClass()->GetName() == TEXT("BlastLabEnvironment");
+		}
+		UMaterialInterface* Function = ShadowCfg && !bLabEnv ? LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_SmokeShadowLF.M_SmokeShadowLF")) : nullptr;
+		UDirectionalLightComponent* Best = nullptr;
+		for (TActorIterator<ADirectionalLight> It(GetWorld()); It && Function; ++It)
+		{
+			UDirectionalLightComponent* C = Cast<UDirectionalLightComponent>(It->GetLightComponent());
+			if (C && C->IsVisible() && (!Best || (C->bAtmosphereSunLight && C->AtmosphereSunLightIndex == 0) || C->Intensity > Best->Intensity))
+			{
+				Best = C;
+			}
+		}
+		if (Function && Best && !Best->LightFunctionMaterial)
+		{
+			ShadowTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("BlastRaymarchShadow"));
+			ShadowTarget->bCanCreateUAV = true;
+			ShadowTarget->ClearColor = FLinearColor::Black;
+			ShadowTarget->InitCustomFormat(Res, Res, PF_R32_FLOAT, true);
+			ShadowTarget->UpdateResourceImmediate(true);
+			ShadowFunction = UMaterialInstanceDynamic::Create(Function, this);
+			ShadowFunction->SetTextureParameterValue(TEXT("Shadow"), ShadowTarget);
+			ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(0.0f, 0.0f, 1.0f, 0.0f));
+			Best->SetLightFunctionMaterial(ShadowFunction);
+			// sem isto o sol cai à metade além de 1 km da câmera (DisabledBrightness 0,5 e FadeDistance 1000 m, os
+			// padrões da Unreal pra light function; pesquisa de 13/10, LightComponent.cpp)
+			Best->DisabledBrightness = 1.0f;
+			Best->LightFunctionFadeDistance = 1.0e7f;
+			Best->MarkRenderStateDirty();
+			ShadowSun = Best;
+			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: a sombra das explosões no sol %s"), *Best->GetOwner()->GetName());
+		}
+	}
+	if (!ShadowFunction || !ShadowSun.IsValid())
+	{
+		return;
+	}
+	// a janela em volta do ponto do chão pra onde a câmera olha, presa à grade dos texels
+	FVector Center = FVector::ZeroVector;
+	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
+	{
+		const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector Fwd = PC->PlayerCameraManager->GetCameraRotation().Vector();
+		if (!BlastLabGround::Ray(GetWorld(), Eye, Fwd, 1.0e6, Center))
+		{
+			Center = Eye + FVector(Fwd.X, Fwd.Y, 0.0).GetSafeNormal() * 10000.0;
+			Center.Z = 0.0;
+		}
+	}
+	const FVector ToSun = -ShadowSun->GetDirection();
+	const bool bOn = bAny && ToSun.Z > 0.05;
+	const float HalfM = 0.5f * Res * TexelM;
+	FBlastRaymarchExtension::FShadow S;
+	S.Res = Res;
+	S.TexelM = TexelM;
+	S.GroundZM = float(Center.Z / 100.0);
+	S.OriginM = FVector2D(FMath::GridSnap(Center.X / 100.0, double(TexelM)) - HalfM, FMath::GridSnap(Center.Y / 100.0, double(TexelM)) - HalfM);
+	S.ToSun = FVector3f(ToSun);
+	S.Out = bOn ? ShadowTarget->GameThread_GetRenderTargetResource() : nullptr;
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowMap"), FLinearColor(float(S.OriginM.X), float(S.OriginM.Y), 1.0f / (Res * TexelM), S.GroundZM));
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(ToSun.X, ToSun.Y, ToSun.Z, bOn ? 1.0f : 0.0f));
+	Extension->SetShadow_GameThread(S);
+}
+
+void UBlastRaymarchSubsystem::SubmitFog()
+{
+	// A névoa do mapa na explosão (13/10): nos mapas do look (sem o ambiente do BlastLab, que tem a névoa do WebGL
+	// calibrada à parte). -RmFog=0|1 força.
+	static const int32 FogCfg = [] { int32 V = -1; FParse::Value(FCommandLine::Get(), TEXT("RmFog="), V); return V; }();
+	if (!FogComp.IsValid() && !bFogSearched)
+	{
+		bFogSearched = true;
+		bool bLabEnv = false;
+		for (TActorIterator<AActor> It(GetWorld()); It && !bLabEnv; ++It)
+		{
+			bLabEnv = It->GetClass()->GetName() == TEXT("BlastLabEnvironment");
+		}
+		if (FogCfg == 1 || (FogCfg != 0 && !bLabEnv))
+		{
+			for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It)
+			{
+				FogComp = It->GetComponent();
+				break;
+			}
+		}
+	}
+	FBlastRaymarchExtension::FFog F;
+	if (const UExponentialHeightFogComponent* C = FogComp.Get())
+	{
+		const bool bVol = C->bEnableVolumetricFog;
+		F.bOn = true;
+		F.DensityPerM = C->FogDensity / 1000.0f * 100.0f * (bVol ? C->VolumetricFogExtinctionScale : 1.0f);
+		F.FalloffPerM = C->FogHeightFalloff / 1000.0f * 100.0f;
+		F.HeightCm = float(C->GetComponentLocation().Z);
+		F.StartM = (bVol ? C->VolumetricFogStartDistance : C->StartDistance) * 0.01f;
+		const FLinearColor Alb = bVol ? FLinearColor(C->VolumetricFogAlbedo) : C->FogInscatteringLuminance;
+		F.Albedo = FVector3f(Alb.R, Alb.G, Alb.B);
+		F.G = bVol ? C->VolumetricFogScatteringDistribution : 0.0f;
+	}
+	Extension->SetFog_GameThread(F);
 }
