@@ -108,6 +108,16 @@ O painel de montar do WorldForge continua com a luz leve.
 
 **Como a arte entra:** cada mundo aprovado vira kit (seção 3), cada hora vira receita, e cada `best/` vira o alvo da conferência de beleza.
 
+**A resposta do WorldForge (13/10):** encaixa no §10 do `docs/WORLDFORGE.md` e não conflita. As notas de quem implementa:
+- **O tipo decide os eixos.** As regras Nada/Pouco/Muito/Aleatório viram a sobreposição de cada eixo. O código curto quase existe (a impressão digital `W_<hash>` dos controles); falta escrever em texto curto.
+- **O "Muito" tem teto de jogabilidade:** no máximo ~10% de água e ~6,5% de penhasco, o p90 dos 195 mapas do ranqueado do ZH. O miolo fica aberto e a beleza vem da moldura.
+- **A beleza garantida roda na ferramenta, nunca na partida.** A foto depende da placa e muda de PC pra PC, e no online todos têm de gerar o mesmo mapa. Então a conferência serve pra afinar as faixas das regras e vetar combinações quando o mapa é montado. Na partida, o mapa sai só da semente e da tabela de combinações já aprovadas.
+- **A história do mapa:** de acordo. Ruína, carcaça e cratera nunca fecham corredor nem cobrem unidade.
+- **Transição e estação:** dá, com custo de material (duas paletas no mesmo chão; a neve por cima do kit já existe).
+- **A foto do lobby:** fácil, já existe a vista da câmera do jogo.
+- **A cratera por chão:** o chão já liga o peso do asfalto na cratera v2 do Look; grama, neve e estepe entram no mesmo canal.
+- A ordem é do Felipe. Hoje o WorldForge está na vila; depois volta às fases 3 e 4 do §10.
+
 ## 5. As decisões até agora
 
 - **O Gemini é o alvo de jogo** (câmera alta, escala de RTS). **O GPT é a beleza** (câmera baixa, "fantasia"). Vale em todos os mundos, como no deserto.
@@ -149,6 +159,7 @@ O painel de montar do WorldForge continua com a luz leve.
   - **neve que levanta**: o rastro de pó atrás das esteiras e a nuvem branca no impacto;
   - **neve caindo** e casas pegando fogo;
   - **coluna d'água** branca no tiro que cai no mar e espuma atrás dos barcos.
+  - **explosão na grama** (Felipe, 12/10, pra depois de aprovar a floresta): torrões de terra e tufos de grama voando, como na vida real. Hoje só a areia e a neve têm explosão de arrepiar.
   - **Quem faz o quê** (combinado com a sessão do look, 10/10):
     - **luz e material** (a explosão acendendo a cena, o chão molhado, as janelas e letreiros, a lua): o look;
     - **a explosão em si:** as sessões de explosão; o plugin do look entrega a luz da cena pra elas;

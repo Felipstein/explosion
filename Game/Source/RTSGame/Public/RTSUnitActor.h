@@ -47,6 +47,10 @@ public:
 	uint32 GetSimId() const { return SimId; }
 	/** Névoa: some (com sombra e luz) ou volta. Só troca quando muda (recriar as peças custa). */
 	void SetFogHidden(bool bHide);
+	/** As marcas de dano no material (0 = inteiro, 1 = quase morto). */
+	void SetDamage(float Damage);
+	/** A silhueta atrás de prédio (M_UnitSilhouette): o stencil é 1 + o dono; 0 desliga (carcaça, prédio). */
+	void SetSilhouette(int32 Stencil);
 	bool IsFogHidden() const { return bFogHidden; }
 	/** Carcaça na névoa: aparece como foi vista, sem o fogo "ao vivo" enquanto ninguém olha. */
 	void SetWreckLive(bool bLive);
@@ -56,6 +60,8 @@ public:
 	double LastSeenSeconds = -1.0e9;
 	bool IsDead() const { return bDead; }
 	float GetRadiusCm() const { return RadiusCm; }
+	/** A lagarta (cm): bitola e largura; zero = não risca o chão. */
+	FVector2D GetTracksCm() const { return TracksCm; }
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -95,6 +101,9 @@ private:
 	uint32 SimId = 0;
 	float RadiusCm = 300.0f;
 	float MuzzleForwardCm = 500.0f;
+	/** O eixo da torre no casco (cm): o pivô fica ali e as malhas da torre voltam pra origem do tanque. */
+	FVector TurretPivotCm = FVector::ZeroVector;
+	FVector2D TracksCm = FVector2D::ZeroVector;
 	float MuzzleHeightCm = 200.0f;
 	float RecoilCm = 0.0f;
 	FQuat TiltSmoothed = FQuat::Identity;
@@ -103,9 +112,15 @@ private:
 	bool bFogHidden = false;
 	bool bWreckLive = true;
 	float DeathAge = 0.0f;
+	float DamageShown = 0.0f;
 	bool bTurretFlying = false;
 	FVector TurretVelocity = FVector::ZeroVector;
-	FVector TurretSpinDegPerS = FVector::ZeroVector;
+	/** O giro da torre voando (eixo × rad/s) e a pose; pousada, assenta em 0,3 s de pé ou de ponta-cabeça. */
+	FVector TurretSpin = FVector::ZeroVector;
+	FQuat TurretQ = FQuat::Identity;
+	bool bTurretSettling = false;
+	float TurretSettle = 0.0f;
+	FQuat TurretRestQ = FQuat::Identity;
 
 	// prédio, Dozer e caminhão
 	UPROPERTY() TArray<TObjectPtr<USceneComponent>> SpinPivots;

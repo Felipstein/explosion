@@ -1,0 +1,29 @@
+{
+  "_": "Poeira do andar, versão EmberGen (13/10/2026): o puff simulado no EmberGen (captures/embergen/tread/tread_puff_v1.ember: a poeira_chao_v4 do BlastLab com o emissor de 0,9 m, voxel 5 cm, pressão 150 %/s), exportado em captures/vdb/tread_dust/puff_v3 e gravado em 6-way (bake_sixway.py, captures/fxlab/bake/tread_puff_v3). A versão feita à mão (dust_impact4) é o plano B: ?treadProfile=tread_handmade.json.",
+  "bake": "tread_puff_v3",
+  "spacing": 0.8,
+  "life": 2.2,
+  "frame0": 1,
+  "frame1": 31,
+  "size0": 0.45,
+  "size1": 0.9,
+  "kick": 1.0,
+  "side": 1.9,
+  "up": 0.15,
+  "alpha": 0.8,
+  "erode": 0.2,
+  "rotMax": 0.15,
+  "squashUp": 0.65,
+  "sand": {
+    "r": 1.0,
+    "g": 0.64,
+    "b": 0.38,
+    "albedo": 2.6,
+    "density": 0.9,
+    "life": 1.0,
+    "amount": 1.0,
+    "alpha": 1.0,
+    "size": 1.0
+  },
+  "_cor_altura": "13/10: a cor puxada pro tom da areia do mapa (medido: a poeira saía com claridade 0,81 contra 0,60 da areia) e a poeira achatada (squashUp) e menor ao nascer, rente ao chão"
+}

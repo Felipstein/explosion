@@ -30,6 +30,9 @@ public:
 	/** Quantas árvores estão no fantasma agora. */
 	int32 NumFaded() const;
 
+	/** As árvores mudaram (mapa novo na vista ao vivo): varre de novo no próximo Update. */
+	void Invalidate() { ScannedWorld = nullptr; Sources.Reset(); }
+
 private:
 	struct FSource
 	{

@@ -113,4 +113,7 @@ private:
 	int32 PlateVerts = 0;
 	// a seção das cabeças já criada (com quantos vértices): depois só atualizar
 	int32 GlowVerts = -1;
+	// o que já acabou e não precisa mais ir pra placa (14/10, medido no jogo; não muda a imagem): as chapas deitadas,
+	// as cabeças e faíscas apagadas, os rastros desfeitos. Com tudo acabado o ator para de vez até o fim da vida
+	bool bPlatesSettled = false, bGlowsDone = false, bTrailsDone = false;
 };

@@ -41,11 +41,17 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   - **O visual aprovado e como foi feito** (areia, cratera, vila, carcaça, asfalto, estrada):
     `docs/RECEITAS_DO_LOOK.md`. Leia antes de mexer em qualquer visual. Quem faz algo que
     o Felipe aprova anota lá o caminho, os números e os arquivos.
+- **Tudo que o Felipe aprovou (ou reprovou), com a imagem:** `docs/APROVADOS.md`, o índice único.
+  Leia a área antes de mexer em qualquer coisa.
 - `captures/` (fora do git): renders, capturas e testes (a arte conceitual
-  fica em `captures/concept/`).
+  fica em `captures/concept/`). É rascunho: nada aprovado mora só lá.
 
 ## Como trabalhar com o Felipe (regras combinadas)
 
+- **Aprovou, registrou na hora** (pedido dele, 13/10): quando ele aprova, escolhe ou reprova algo, a
+  sessão dona copia a imagem aprovada pra `docs/aprovados/<área>/` (jpg leve; vídeo vira 1 a 3 quadros) e
+  põe a linha em `docs/APROVADOS.md` no mesmo turno: data, o quê, a frase dele, a imagem, onde está a
+  receita e a sessão.
 - **Commit só com aprovação explícita.** Implementar, testar você mesmo,
   reportar e esperar o "aprovado" (ou "pode commitar"). Commit = versão
   aprovada. Ele usa tags por marco (v1…v6).
@@ -77,12 +83,3 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   qualquer Unreal com janela ou render na placa, siga a trava `captures/.gpu_lock`
   (`docs/GPU.md`): se existe e tem menos de 20 min, espere; senão crie, use e apague.
   As sessões se coordenam por ela, sem pedir ao Felipe pra liberar.
-- **Seu status no Hub (o painel do Felipe, `Hub/`).** Ele acompanha todas as sessões por
-  um painel que lê as filas sozinho; a única coisa que você faz é dizer o que está fazendo,
-  numa linha, **ao começar uma tarefa, ao mudar de tarefa e ao terminar**:
-  `powershell -NoProfile -File C:\Users\luisf\explosion\Hub\hub.ps1 set "<seu nome>" "<o que está fazendo>"`
-  Estados, com `-State`: `working` (padrão), `waiting` (esperando outra sessão ou a placa),
-  `review` (pronto pro Felipe ver), `blocked` (travada), `done` (terminou). `-Note "..."` pra um
-  detalhe curto. Seu nome é o curto da tabela em `~/.hub/names.json` (BlastLab, Jogo, Look,
-  WorldForge, Arte, Explosões, Hub); se você usa outro nome no `-Owner` das filas, passe
-  `-Alias "<esse nome>"` uma vez. As filas da placa e do EmberGen não mudam em nada.

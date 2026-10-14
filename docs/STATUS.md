@@ -230,7 +230,26 @@ como passo próprio depois do TSR e antes do bloom:
       volta à antiga. As construções seguem com a Carga Pesada. O raymarch do jogo (`Game/Shaders`, `RTSShaders`, `BlastFx`)
       é a cópia do BlastLab com o visual por explosão (o padrão de cada opção = o de antes). A gravação (271 MB; refeita de `captures/vdb/cbt_a` + `cbt_b`, projeto
       `captures/embergen/tanque_comb_v1.ember`) mora em `BlastLab/Intermediate/Raymarch` com links físicos em
-      `Game/Intermediate/Raymarch` e `captures/raymarch_keep`. Fica pra depois: os destroços com rastro (`ABlastDebris`) no jogo.
+      `Game/Intermediate/Raymarch` e `captures/raymarch_keep`. Os destroços entraram na madrugada de 14/10 (abaixo).
+    - **14/10, madrugada (o Felipe: "coloca rastro de fumaça também, é tudo que a gente homologou"; "a fumaça parece um
+      PNG no jogo, no seu tava mais encaixado").** O porquê do PNG: o jogo não tinha as duas coisas que encaixam a
+      explosão no BlastLab, a **sombra dela no chão e nos tanques** (`SubmitShadow`, `M_SmokeShadowLF` no sol) e a
+      **névoa do mapa na frente dela** (`SubmitFog`). As duas vieram pro `BlastFx` (`BlastRaymarchSubsystem.cpp`), e a
+      sombra aparece nas faixas escuras do mapa de diferença (`captures/game/dif_sombra_15.6.png`). Os destroços vieram
+      como `BlastFx/BlastDebris` (cópia do BlastLab com o relógio do jogo, o chão `BlastFxGround` e o tamanho, a cor e o
+      brilho passados pelo diretor; o rastro da torre segue o `TurretPivot` do `RTSUnitActor`). Os 4 materiais vêm do
+      BlastLab por link físico (`game.ps1 worlds`). A sessão do jogo pôs `bClassic` no `TankDeath`: os prédios e as
+      explosões menores ficam com a clássica (o Felipe: "a nova é só pra tanque").
+    - **O custo, medido com o perfil CSV da Unreal** (`game.ps1 view alta -Scenario carcaca -Extra '-csvGpuStats
+      -csvCaptureFrames=1300'`, lido por `BlastLab/Tools/game_perf.py`; 11 mortes no mesmo segundo, câmera a 50 m): os
+      destroços custavam **17,4 ms de processador em média** nos 5 s seguintes (p95 63, pico 87) e travavam o quadro.
+      Duas pegadinhas, nenhuma muda a imagem: (1) a altura do chão traçava contra os 256 pedaços do Landscape a cada
+      célula nova de 1 m (agora `GetHeightAtLocation`, direto do heightfield); (2) as chapas deitadas, as faíscas e os
+      rastros apagados continuavam indo pra placa por 2 minutos (agora cada parte para quando acaba, e o ator inteiro
+      também), e o rastro limpava e recriava a malha duas vezes por quadro. **Depois: 6,9 ms de média (p95 13, pico 15)**;
+      o processador do jogo nas mortes 35,5 → 22,7 ms, o quadro 47,3 → 39,6 ms (p95 87 → 55). Os picos de 300+ ms que
+      sobram no perfil são a foto do teste aos 25 s. **O pior caso na placa** agora é o raymarch: 11–21 ms por quadro
+      entre 1,1 e 2,4 s depois das mortes (as 11 nuvens no tamanho máximo). É o próximo alvo; o plano, as medidas e a pesquisa de AAA com fontes em `docs/OTIMIZACAO_EXPLOSOES.md`.
 - **Rodar liso e lindo (11–12/10; o Felipe: "acho que dá pra aprovar").**
   - **Sombra da luz do fogo por campo de distância** abaixo do ultra (a virtual redesenhava a
     floresta inteira: 6 Cargas à noite 40,5 → 25,2 ms de placa; de dia igual à virtual; no baixa

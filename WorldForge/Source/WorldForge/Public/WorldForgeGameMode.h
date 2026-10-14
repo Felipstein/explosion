@@ -71,8 +71,20 @@ public:
 	{
 		FString Name;
 		FWorldGenSettings Settings;
+		FString EditsFile;   // as edições à mão (Saved/WorldForge/edits/...), vazio sem
+		FString ImportFolder;   // mapa trazido de fora (WorldImport), vazio: do gerador
 	};
 	const TArray<FSavedMap>& GetSavedMaps();
+	/** Abre um mapa guardado: os controles e as edições à mão dele. */
+	void OpenSavedMap(int32 Index);
+	/** Abre um mapa trazido de fora (Saved/WorldForge/imported/<nome>): o relevo,
+	 *  as texturas e as peças dele no lugar do gerador, com o nosso acabamento. */
+	bool OpenImported(const FString& Folder, const FString& EditsFile = FString());
+	/** O mapa na tela é importado (o título; vazio: do gerador) e o que ficou de fora. */
+	const FString& GetImportTitle() const { return ImportTitle; }
+	const FString& GetImportNote() const { return ImportNote; }
+	/** Lê a lista de novo do arquivo (o teste devolve a lista como estava). */
+	void ReloadSavedMaps() { SavedMaps.Reset(); bSavedLoaded = false; GetSavedMaps(); }
 	/** Põe os controles de agora na lista (nome: bioma + semente). */
 	void AddSavedMap();
 
@@ -81,7 +93,91 @@ public:
 	FOnMapShown OnMapShown;
 
 private:
-	void OnGenerated(int32 Ticket, TSharedPtr<FWorldMap> Map);
+	void OnGenerated(int32 Ticket, TSharedPtr<FWorldMap> Map, TSharedPtr<struct FWorldLive> Live);
+
+public:
+	/** Pincel de chão: uma pincelada em P (m) com a camada e o raio do pincel.
+	 *  bStart: começo do arrasto (o desfazer volta o arrasto inteiro). */
+	void EditPaint(FVector2f P, bool bStart);
+	/** Camada do pincel (0–5, na ordem do bioma) e raio (m). */
+	int32 BrushLayer = 0;
+	float BrushRadius = 6.0f;
+	/** Pincel de altura: aplica em P (m) por DeltaSeconds (segurando, sobe/desce
+	 *  contínuo). Modo: 0 subir, 1 baixar, 2 aplainar (na altura do começo). */
+	void EditHeight(FVector2f P, bool bStart, float DeltaSeconds);
+	int32 HeightMode = 0;
+	/** Fim do arraste do pincel (chão ou altura): o pedaço é sorteado de novo
+	 *  (capim, pedra, árvore com as regras de verdade no chão novo). */
+	void EditStrokeEnd();
+	/** Quantas vezes um pedaço foi refeito (teste). */
+	int32 GetRegionRefreshes() const { return RegionRefreshes; }
+
+	/** Edição à mão: apaga a peça do espalhamento mais perto de P (m). Fica
+	 *  guardada (FWorldEdits) e vale pro "qualidade real" e pra gerar de novo. */
+	bool EditDeleteAt(FVector2f P);
+	/** Desfaz a última edição. */
+	bool EditUndo();
+	int32 EditCount() const;
+	/** Ferramenta de edição: 0 olhar (o clique não mexe no mapa), 1 apagar peça,
+	 *  2 pintar chão, 3 altura, 4 estrada, 5 mover peça. */
+	int32 EditTool = 0;
+
+	/** Mover peça: grava o lugar novo (m) e o giro (graus, somado) de uma peça
+	 *  pega (o arraste já mostrou na vista); vale pro "qualidade real". */
+	void EditMovePiece(const struct FMovePick& Pick, FVector2f To, float YawDeg);
+
+	// ---- estradas à mão (ferramenta 4) ----
+	// A estrada desenhada entra na rede do gerador (FWorldDetail::BuildRoads):
+	// escava, aterra e entronca como as dele; a do gerador escolhida vira
+	// desenhada na primeira mudança (os pontos de controle saem do traçado dela).
+	// Cada mudança refaz o mundo ao vivo (~4 s, fora do game thread).
+	/** Tipo da estrada nova: asfalto ou terra (no bioma sem asfalto, sempre terra). */
+	bool RoadPaved = false;
+	/** Pontos (m) da estrada sendo desenhada: o clique põe, Enter ou duplo clique termina. */
+	TArray<FVector2f> RoadDraft;
+	/** Termina a estrada desenhada (2+ pontos): entra na rede e o mundo é refeito. */
+	void RoadFinishDraft();
+	/** Escolhe a estrada que passa perto de P (m); false: nenhuma ali. */
+	bool RoadSelectAt(FVector2f P);
+	void RoadDeselect();
+	bool HasRoadSelection() const { return bRoadSelected; }
+	bool IsSelectedRoadPaved() const;
+	/** O bioma tem asfalto (deserto, neve; a floresta só tem terra). */
+	bool BiomeHasPavedRoads() const;
+	/** Os pontos de controle da escolhida (arrastáveis). */
+	const TArray<FVector2f>& GetRoadHandles() const { return RoadHandles; }
+	/** O traçado de verdade da escolhida no mundo ao vivo (null: nenhuma, ou o mundo sendo refeito). */
+	const TArray<FVector2f>* SelectedRoadLine() const;
+	/** Move um ponto de controle (fim do arraste) e refaz o mundo. */
+	void RoadMoveHandle(int32 Handle, FVector2f To);
+	/** Troca o tipo da escolhida (e o da próxima). */
+	void RoadSetPaved(bool bPaved);
+	void RoadDeleteSelected();
+
+private:
+	bool bRoadSelected = false;
+	int32 RoadSelUser = INDEX_NONE;                  // índice em Edits->Roads (desenhada à mão)
+	FVector2f RoadSelProbe = FVector2f::ZeroVector;  // um ponto da do gerador, longe das outras
+	TArray<FVector2f> RoadHandles;
+	/** Índice da escolhida na rede do mundo ao vivo (INDEX_NONE: não está lá). */
+	int32 FindSelectedRoad() const;
+	void RoadPushUndo();
+	/** A do gerador escolhida vira desenhada (sai a dela, entra uma com os pontos de controle). */
+	void RoadMakeUser();
+
+private:
+	TSharedPtr<struct FWorldEdits> Edits;
+	TArray<TSharedPtr<struct FEditUndo>> UndoStack;
+	// o mapa importado em uso: entra no lugar do gerador enquanto os controles
+	// forem os dele (mexeu num controle: volta pro gerador)
+	TSharedPtr<FWorldMap> ImportedMap;
+	FWorldGenSettings ImportedSettings;
+	FString ImportFolder, ImportTitle, ImportNote;
+	/** Refaz a altura final e as peças de um retângulo (m) da vista ao vivo. */
+	void RefreshRegion(FVector2f MinM, FVector2f MaxM);
+	int32 RegionRefreshes = 0;
+	/** Soma desvios de altura (por vértice) no mapa ao vivo e refaz malha, peças e chão. */
+	void ApplyHeightDeltas(const TMap<FIntPoint, float>& Deltas);   // (ponteiro: o tipo é do .cpp)
 	void CaptureStep();
 
 	FWorldGenSettings Settings;

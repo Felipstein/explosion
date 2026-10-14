@@ -3,6 +3,7 @@
 #include "RTSNetSession.h"
 
 #include "HAL/PlatformTime.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 
 #include "Camera/PlayerCameraManager.h"
@@ -10,6 +11,8 @@
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 #include "RTSCameraPawn.h"
+#include "LookDirector.h"
+#include "EngineUtils.h"
 #include "RTSGameData.h"
 #include "RTSGameModes.h"
 #include "RTSHUD.h"
@@ -17,6 +20,7 @@
 #include "RTSMatchSubsystem.h"
 #include "RTSSessionSubsystem.h"
 #include "Scalability.h"
+#include "Misc/ConfigCacheIni.h"
 
 namespace
 {
@@ -63,6 +67,24 @@ void ARTSPlayerController::BeginPlay()
 	{
 		Cam->SetMenuMode(bMenu);
 	}
+	// a primeira vez que o jogo abre num PC (14/10, o notebook do pai do Felipe): a Média, a que rodou bem na v1; depois,
+	// o que o jogador escolheu no Esc fica no GameUserSettings.ini e a Unreal já abre nele (o teste, com o -ExecCmds
+	// "Scalability N", fica de fora)
+	{
+		FString Exec;
+		const bool bTestLevels = FParse::Value(FCommandLine::Get(), TEXT("ExecCmds="), Exec) && Exec.Contains(TEXT("Scalability"));
+		int32 Saved = -1;
+		if (!bTestLevels && !GConfig->GetInt(TEXT("RTS"), TEXT("QualityPreset"), Saved, GGameUserSettingsIni))
+		{
+			ApplyQuality(1);
+		}
+	}
+	// a luz do Look no preset da Unreal de agora (o -ExecCmds "Scalability N" pode chegar depois do GameMode)
+	const int32 Level = FMath::Clamp(Scalability::GetQualityLevels().EffectsQuality, 1, 4);
+	for (TActorIterator<ALookDirector> It(GetWorld()); It; ++It)
+	{
+		It->ApplyPreset(Level);
+	}
 }
 
 URTSMatchSubsystem* ARTSPlayerController::Match() const
@@ -76,11 +98,24 @@ ARTSHUD* ARTSPlayerController::GetRTSHUD() const
 	return Cast<ARTSHUD>(GetHUD());
 }
 
+bool ARTSPlayerController::IsFacingDragging(FVector2D& OutA, FVector2D& OutB) const
+{
+	float X = 0.0f;
+	float Y = 0.0f;
+	if (!bLeftDown || !bFacingDrag || !ReadMouse(X, Y))
+	{
+		return false;
+	}
+	OutA = LeftDownPos;
+	OutB = FVector2D(X, Y);
+	return FVector2D::Distance(OutA, OutB) > DragThresholdPx;
+}
+
 bool ARTSPlayerController::IsDragging(FVector2D& OutA, FVector2D& OutB) const
 {
 	float X = 0.0f;
 	float Y = 0.0f;
-	if (!bLeftDown || !ReadMouse(X, Y))
+	if (!bLeftDown || bFacingDrag || !ReadMouse(X, Y))
 	{
 		return false;
 	}
@@ -105,7 +140,7 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 		UE_LOG(LogTemp, Log, TEXT("RTS seleção: %d → %d"), LoggedSelection, Selected.Num());
 		LoggedSelection = Selected.Num();
 	}
-	// presets (ferramenta de teste; pro jogador eles vão pra tela de opções)
+	// presets: as teclas (o atalho) e a linha QUALITY do Esc e do menu
 	const FKey QualityKeys[4] = { EKeys::F5, EKeys::F6, EKeys::F7, EKeys::F8 };
 	for (int32 Q = 0; Q < 4; ++Q)
 	{
@@ -114,14 +149,29 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 			ApplyQuality(Q);
 		}
 	}
+	if (WasInputKeyJustPressed(EKeys::F4))
+	{
+		// o HUD novo do HUDLab x o de hoje (o teste do Felipe, 13/10)
+		if (ARTSHUD* HUD = GetRTSHUD())
+		{
+			HUD->ToggleNewHud();
+			UE_LOG(LogTemp, Log, TEXT("RTS HUD: %s"), HUD->IsNewHud() ? TEXT("o novo (HUDLab)") : TEXT("o de hoje"));
+		}
+	}
 	if (WasInputKeyJustPressed(EKeys::F10))
 	{
 		bShowDebug = !bShowDebug;
 	}
 }
 
-void ARTSPlayerController::ApplyQuality(int32 Level)
+int32 ARTSPlayerController::GetQualityPreset() const
 {
+	return FMath::Clamp(Scalability::GetQualityLevels().EffectsQuality - 1, 0, 3);
+}
+
+void ARTSPlayerController::ApplyQuality(int32 Level, bool bRemember)
+{
+	Level = FMath::Clamp(Level, 0, 3);
 	// os mesmos níveis do BlastLab: baixa/média/alta/ultra = Médio/Alto/Épico/Cinematic do motor
 	static const int32 EngineLevel[4] = { 1, 2, 3, 4 };
 	static const float ResolutionPct[4] = { 50.0f, 58.0f, 67.0f, 100.0f };
@@ -129,6 +179,24 @@ void ARTSPlayerController::ApplyQuality(int32 Level)
 	Levels.SetFromSingleQualityLevel(EngineLevel[Level]);
 	Levels.ResolutionQuality = ResolutionPct[Level];
 	Scalability::SetQualityLevels(Levels);
+	// o look (plugin RTSLook) tem o seu preset por nível: Lumen, névoa volumétrica
+	for (TActorIterator<ALookDirector> It(GetWorld()); It; ++It)
+	{
+		It->ApplyPreset(Level + 1);
+	}
+	// o chão que afunda de verdade só no Alta e no Ultra; a poeira das lagartas pelo preset
+	if (URTSMatchSubsystem* M = GetWorld()->GetSubsystem<URTSMatchSubsystem>())
+	{
+		M->SetGroundDisplacement(Level >= 2);
+		M->SetDustQuality(Level);
+	}
+	if (bRemember)
+	{
+		GConfig->SetInt(TEXT("RTS"), TEXT("QualityPreset"), Level, GGameUserSettingsIni);
+		Scalability::SaveState(GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS qualidade: preset %d%s"), Level, bRemember ? TEXT(" (guardado)") : TEXT(""));
 }
 
 void ARTSPlayerController::OnButton(FName Id)
@@ -145,6 +213,14 @@ void ARTSPlayerController::OnButton(FName Id)
 	{
 		MenuPage = EMenuPage::Lan;
 		Net->StartBrowsing();
+	}
+	else if (Id == TEXT("lan_ip"))
+	{
+		bTypingIp = true;
+	}
+	else if (Id == TEXT("lan_ip_join"))
+	{
+		JoinTypedIp();
 	}
 	else if (Id == TEXT("lan_back"))
 	{
@@ -232,9 +308,39 @@ void ARTSPlayerController::OnButton(FName Id)
 	else if (Id == TEXT("resume"))
 	{
 		bPauseMenu = false;
+		bSurrenderArmed = false;
 		if (URTSMatchSubsystem* M = Match())
 		{
 			M->SetPaused(false);
+		}
+	}
+	// a pausa em rede, a volta e o voto pra derrubar quem sumiu (13/10)
+	else if (Id == TEXT("net_pause"))
+	{
+		Net->RequestPause();
+		bPauseMenu = false;
+		bSurrenderArmed = false;
+	}
+	else if (Id == TEXT("net_resume"))
+	{
+		Net->RequestResume();
+	}
+	else if (Id == TEXT("net_vote"))
+	{
+		Net->VoteDrop(Net->GetPause().WaitingFor);
+	}
+	else if (Id == TEXT("surrender"))
+	{
+		if (!bSurrenderArmed)
+		{
+			bSurrenderArmed = true;
+		}
+		else if (URTSMatchSubsystem* M = Match())
+		{
+			bSurrenderArmed = false;
+			bPauseMenu = false;
+			M->SetPaused(false);
+			M->OrderResign();
 		}
 	}
 	else if (Id == TEXT("menu"))
@@ -248,6 +354,10 @@ void ARTSPlayerController::OnButton(FName Id)
 			M->ToggleFogReveal();
 		}
 	}
+	else if (IdText.StartsWith(TEXT("quality_")))
+	{
+		ApplyQuality(FCString::Atoi(*IdText.RightChop(8)));
+	}
 	else if (Id == TEXT("fogsetting"))
 	{
 		Session->FogMode = URTSSessionSubsystem::NextFogMode(Session->FogMode);
@@ -258,13 +368,71 @@ void ARTSPlayerController::OnButton(FName Id)
 		const FString S = Id.ToString();
 		FString Action;
 		FString Arg;
+		// os botões do HUD novo (RTSHUDNew.cpp)
+		if (S.StartsWith(TEXT("group_")))
+		{
+			const int32 N = FCString::Atoi(*S.Mid(6));
+			if (const TArray<uint32>* Group = Groups.Find(N == 0 ? 9 : N - 1))
+			{
+				Selected = *Group;
+				PruneSelection();
+			}
+			return;
+		}
+		if (S.StartsWith(TEXT("unit_")))
+		{
+			// a casa de uma unidade selecionada: fica só ela
+			const uint32 One = uint32(FCString::Strtoui64(*S.Mid(5), nullptr, 10));
+			if (Selected.Contains(One))
+			{
+				Selected = { One };
+			}
+			return;
+		}
+		if (S.StartsWith(TEXT("queue_")))
+		{
+			if (const uint32 Structure = SelectedStructure())
+			{
+				M->OrderCancelProduce(Structure, FCString::Atoi(*S.Mid(6)));
+			}
+			return;
+		}
+		if (S == TEXT("cmd_attack_move"))
+		{
+			bAttackMoveArmed = !Selected.IsEmpty();
+			return;
+		}
+		if (S == TEXT("cmd_stop"))
+		{
+			if (!Selected.IsEmpty())
+			{
+				M->OrderStop(Selected);
+				++Orders;
+			}
+			return;
+		}
+		if (S == TEXT("mm_settings"))
+		{
+			bPauseMenu = true;
+			M->SetPaused(true);
+			return;
+		}
+		if (S == TEXT("hud_bg") || S.StartsWith(TEXT("mm_")) || S.StartsWith(TEXT("power_")) || S == TEXT("promote") || S.StartsWith(TEXT("cmd_")))
+		{
+			return;   // a peça do HUD segura o clique; os botões que ainda não existem na partida não fazem nada
+		}
 		if (S.StartsWith(TEXT("eco_")) && S.Mid(4).Split(TEXT("_"), &Action, &Arg))
 		{
 			const int32 N = FCString::Atoi(*Arg);
 			const uint32 Structure = SelectedStructure();
 			if (Action == TEXT("produce") && Structure != 0)
 			{
-				M->OrderProduce(Structure, uint16(N));
+				// Shift-click +5 (o clássico; a simulação recusa o que passar da fila)
+				const int32 Count = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift) ? 5 : 1;
+				for (int32 K = 0; K < Count; ++K)
+				{
+					M->OrderProduce(Structure, uint16(N));
+				}
 				++Orders;
 			}
 			else if (Action == TEXT("cancelq") && Structure != 0)
@@ -280,6 +448,53 @@ void ARTSPlayerController::OnButton(FName Id)
 				M->OrderCancelBuild(Structure);
 			}
 		}
+	}
+}
+
+void ARTSPlayerController::JoinTypedIp()
+{
+	URTSNetSession* Net = GetGameInstance()->GetSubsystem<URTSNetSession>();
+	FString NetError;
+	bTypingIp = false;
+	if (Net && !IpEntry.IsEmpty() && Net->Join(IpEntry, URTSNetSession::GamePort, NetError))
+	{
+		MenuPage = EMenuPage::Lobby;
+		// o último IP fica salvo: na próxima vez o campo já vem preenchido
+		FFileHelper::SaveStringToFile(IpEntry, *FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("LastLanIp.txt")));
+	}
+}
+
+void ARTSPlayerController::TickIpEntry()
+{
+	if (!bTypingIp)
+	{
+		return;
+	}
+	// o campo do IP: números, ponto, apagar, Enter entra, Esc sai
+	static const FKey Digits[10] = { EKeys::Zero, EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight, EKeys::Nine };
+	static const FKey Pad[10] = { EKeys::NumPadZero, EKeys::NumPadOne, EKeys::NumPadTwo, EKeys::NumPadThree, EKeys::NumPadFour, EKeys::NumPadFive, EKeys::NumPadSix, EKeys::NumPadSeven, EKeys::NumPadEight, EKeys::NumPadNine };
+	for (int32 K = 0; K < 10; ++K)
+	{
+		if ((WasInputKeyJustPressed(Digits[K]) || WasInputKeyJustPressed(Pad[K])) && IpEntry.Len() < 15)
+		{
+			IpEntry.AppendChar(TCHAR('0' + K));
+		}
+	}
+	if ((WasInputKeyJustPressed(EKeys::Period) || WasInputKeyJustPressed(EKeys::Decimal) || WasInputKeyJustPressed(EKeys::Comma)) && IpEntry.Len() < 15)
+	{
+		IpEntry.AppendChar(TEXT('.'));
+	}
+	if (WasInputKeyJustPressed(EKeys::BackSpace) && !IpEntry.IsEmpty())
+	{
+		IpEntry.LeftChopInline(1);
+	}
+	if (WasInputKeyJustPressed(EKeys::Enter))
+	{
+		JoinTypedIp();
+	}
+	if (WasInputKeyJustPressed(EKeys::Escape))
+	{
+		bTypingIp = false;
 	}
 }
 
@@ -346,6 +561,19 @@ void ARTSPlayerController::TickMenu()
 			}
 		}
 	}
+	if (MenuPage == EMenuPage::Lan)
+	{
+		if (IpEntry.IsEmpty() && !bTypingIp)
+		{
+			FFileHelper::LoadFileToString(IpEntry, *FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("LastLanIp.txt")));
+			IpEntry.TrimStartAndEndInline();
+		}
+		TickIpEntry();
+	}
+	else
+	{
+		bTypingIp = false;
+	}
 	// a sala caiu (o anfitrião saiu, recusou): volta pra lista
 	if (MenuPage == EMenuPage::Lobby && Net && !Net->IsActive())
 	{
@@ -405,12 +633,14 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement)
 	{
 		bPauseMenu = !bPauseMenu;
+		bSurrenderArmed = false;
 		if (M)
 		{
 			M->SetPaused(bPauseMenu);
 		}
 	}
-	if (bPauseMenu || bOver || !M)
+	// parado em rede, só os botões da tela respondem (a ordem não fica guardada pra depois da pausa)
+	if (bPauseMenu || bOver || !M || M->IsNetPaused())
 	{
 		bLeftDown = false;
 		if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse)
@@ -454,6 +684,25 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		M->OrderStop(Selected);
 		++Orders;
 	}
+	// as teclas das casas do HUD novo (as do clássico: QWERTYU em cima, ZXCVBNM embaixo); o R, posicionando um
+	// prédio, segue girando o prédio
+	if (ARTSHUD* HUD = GetRTSHUD(); HUD && HUD->IsNewHud())
+	{
+		static const TPair<TCHAR, FKey> Letters[] = {
+			{ 'Q', EKeys::Q }, { 'W', EKeys::W }, { 'E', EKeys::E }, { 'R', EKeys::R }, { 'T', EKeys::T }, { 'Y', EKeys::Y }, { 'U', EKeys::U },
+			{ 'Z', EKeys::Z }, { 'X', EKeys::X }, { 'C', EKeys::C }, { 'V', EKeys::V }, { 'B', EKeys::B }, { 'N', EKeys::N }, { 'M', EKeys::M } };
+		for (const TPair<TCHAR, FKey>& L : Letters)
+		{
+			if ((L.Key == 'R' && bPlacing) || !WasInputKeyJustPressed(L.Value))
+			{
+				continue;
+			}
+			if (const FName* Id = HUD->GetHotkeys().Find(L.Key))
+			{
+				OnButton(*Id);
+			}
+		}
+	}
 	HandleGroups();
 
 	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH)
@@ -466,9 +715,9 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		// sobre o minimapa: seta sem seleção, "andar" com seleção, mira com o ataque andando armado
 		Cursor = Selected.IsEmpty() ? EMouseCursor::Default : (bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross);
 	}
-	else if (bAttackMoveArmed)
+	else if (bAttackMoveArmed || (!Selected.IsEmpty() && (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))))
 	{
-		Cursor = EMouseCursor::Crosshairs;
+		Cursor = EMouseCursor::Crosshairs;   // (com o Ctrl: o tiro forçado, em qualquer coisa ou no chão)
 	}
 	else if (HoverId != 0 && M->GetUnit(HoverId, Hovered))
 	{
@@ -494,6 +743,21 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		{
 			bLeftDown = true;
 			LeftDownPos = Mouse;
+			// com tropa selecionada, o arraste que começa no chão dá a direção; começando em cima de uma
+			// unidade nossa, ou com Shift, é a caixa de seleção
+			FRTSUnitState Under;
+			const uint32 UnderId = PickUnit(Mouse);
+			const bool bOnOwn = UnderId != 0 && M->GetUnit(UnderId, Under) && Under.Owner == M->LocalPlayer();
+			const bool bShiftDown = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+			// (só com tropa: com só prédio selecionado, que não anda, o arraste é a caixa; o teste base de 13/10
+			// virou "linha de frente" com a War Factory selecionada)
+			bool bTroops = false;
+			for (const uint32 Id : Selected)
+			{
+				FRTSUnitState S;
+				bTroops |= M->GetUnit(Id, S) && !S.bStructure && S.Owner == M->LocalPlayer();
+			}
+			bFacingDrag = bTroops && !bShiftDown && !bOnOwn && !bMinimapMouse;
 		}
 	}
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton))
@@ -503,7 +767,11 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton) && bLeftDown)
 	{
 		bLeftDown = false;
-		if (FVector2D::Distance(LeftDownPos, Mouse) > DragThresholdPx)
+		if (FVector2D::Distance(LeftDownPos, Mouse) > DragThresholdPx && bFacingDrag)
+		{
+			HandleFacingDrag(LeftDownPos, Mouse);
+		}
+		else if (FVector2D::Distance(LeftDownPos, Mouse) > DragThresholdPx)
 		{
 			HandleBoxSelect(LeftDownPos, Mouse);
 		}
@@ -539,8 +807,35 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	In.PanAxis.X = FMath::Clamp(In.PanAxis.X, -EdgeScrollBoost, EdgeScrollBoost);
 	In.PanAxis.Y = FMath::Clamp(In.PanAxis.Y, -EdgeScrollBoost * VerticalScrollBias, EdgeScrollBoost * VerticalScrollBias);
 
+	// o HUD novo: o direito num botão de produzir tira um daquele tipo da fila (o clássico: Right-click −1)
+	bool bRightOnHud = false;
+	if (WasInputKeyJustPressed(EKeys::RightMouseButton) && bHasMouse)
+	{
+		ARTSHUD* HUD = GetRTSHUD();
+		const FString B = HUD && HUD->IsNewHud() ? HUD->ButtonAt(Mouse).ToString() : FString();
+		if (B.StartsWith(TEXT("eco_produce_")))
+		{
+			bRightOnHud = true;
+			const uint32 Structure = SelectedStructure();
+			const int32 Def = FCString::Atoi(*B.Mid(12));
+			TArray<uint16> Queue;
+			URTSMatchSubsystem* MM = Match();
+			if (Structure != 0 && MM)
+			{
+				MM->GetQueue(Structure, Queue);
+				for (int32 K = Queue.Num() - 1; K >= 0; --K)
+				{
+					if (Queue[K] == Def)
+					{
+						MM->OrderCancelProduce(Structure, K);
+						break;
+					}
+				}
+			}
+		}
+	}
 	// botão direito: arrastar rola (estilo Generals: quanto mais longe do ponto, mais rápido); clique rápido desseleciona
-	if (WasInputKeyJustPressed(EKeys::RightMouseButton) && bHasMouse && MinimapGesture == EMinimapGesture::None)
+	if (WasInputKeyJustPressed(EKeys::RightMouseButton) && bHasMouse && MinimapGesture == EMinimapGesture::None && !bRightOnHud)
 	{
 		bRightDown = true;
 		bRightScrolling = false;
@@ -642,7 +937,7 @@ void ARTSPlayerController::TickMinimap(float DeltaTime, ARTSCameraPawn* Cam, con
 		{
 			// com seleção, o esquerdo manda (andar, ou ataque andando se armado), como no ZH
 			const FRTSBakedMap* Map = M->BakedMap();
-			M->OrderMove(Selected, Cm, bAttackMoveArmed);
+			M->OrderMove(Selected, Cm, bAttackMoveArmed, IsInputKeyDown(EKeys::F));
 			AddMarker(FVector(Cm.X, Cm.Y, Map ? Map->GroundZCm(Cm) : 0.0f), bAttackMoveArmed);
 			MinimapPulses.Add({ Cm, 0.0f, bAttackMoveArmed });
 			bAttackMoveArmed = false;
@@ -751,11 +1046,36 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 		FVector Ground;
 		if (!Selected.IsEmpty() && GroundUnderCursor(Mouse, Ground))
 		{
-			M->OrderMove(Selected, FVector2D(Ground.X, Ground.Y), /*bAttackMove=*/true);
+			M->OrderMove(Selected, FVector2D(Ground.X, Ground.Y), /*bAttackMove=*/true, IsInputKeyDown(EKeys::F));
 			AddMarker(Ground, true);
 			++Orders;
 		}
 		bAttackMoveArmed = false;
+		return;
+	}
+
+	// o tiro forçado do C&C (Ctrl, pedido do Felipe em 13/10): ataca o que estiver embaixo do cursor, de qualquer dono
+	// (a própria unidade, o aliado, o prédio), ou o chão, onde o tiro cava a cratera da arma
+	const bool bCtrl = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
+	if (bCtrl && !Selected.IsEmpty())
+	{
+		const uint32 Target = PickUnit(Mouse);
+		FRTSUnitState TU;
+		const FRTSBakedMap* Map = M->BakedMap();
+		if (Target != 0 && M->GetUnit(Target, TU) && !(Selected.Num() == 1 && Selected.Contains(Target)))
+		{
+			M->OrderAttack(Selected, Target, /*bForced=*/true);
+			AddMarker(FVector(TU.PosCm.X, TU.PosCm.Y, Map ? Map->GroundZCm(TU.PosCm) : 0.0f), true);
+			++Orders;
+			return;
+		}
+		FVector Ground;
+		if (GroundUnderCursor(Mouse, Ground))
+		{
+			M->OrderAttackGround(Selected, FVector2D(Ground.X, Ground.Y));
+			AddMarker(Ground, true);
+			++Orders;
+		}
 		return;
 	}
 
@@ -802,10 +1122,39 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 	FVector Ground;
 	if (!Selected.IsEmpty() && GroundUnderCursor(Mouse, Ground))
 	{
-		M->OrderMove(Selected, FVector2D(Ground.X, Ground.Y), /*bAttackMove=*/false);
+		// segurando o F, o grupo vai em formação (C&C); sem, cada um na sua velocidade
+		M->OrderMove(Selected, FVector2D(Ground.X, Ground.Y), /*bAttackMove=*/false, IsInputKeyDown(EKeys::F));
 		AddMarker(Ground, false);
 		++Orders;
 	}
+}
+
+void ARTSPlayerController::HandleFacingDrag(const FVector2D& A, const FVector2D& B)
+{
+	// o ponto apertado é onde a linha de frente fica; o arraste é pra onde ela olha, e o comprimento é a
+	// largura dela (arraste curto = a largura do grupo). Com o F segurado, vai em formação; com o ataque
+	// andando armado, vai atacando
+	URTSMatchSubsystem* M = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
+	FVector From;
+	FVector To;
+	if (!M || Selected.IsEmpty() || !GroundUnderCursor(A, From) || !GroundUnderCursor(B, To))
+	{
+		return;
+	}
+	const FVector2D Dir(To.X - From.X, To.Y - From.Y);
+	const float LengthM = float(Dir.Size()) / 100.0f;
+	if (LengthM < 1.0f)
+	{
+		HandleLeftClick(A);
+		return;
+	}
+	const float FacingDeg = FMath::RadiansToDegrees(FMath::Atan2(float(Dir.Y), float(Dir.X)));
+	const float WidthM = LengthM >= 12.0f ? LengthM : 0.0f;   // até ~1,5 vaga é só a direção
+	M->OrderMove(Selected, FVector2D(From.X, From.Y), bAttackMoveArmed, IsInputKeyDown(EKeys::F), true, FacingDeg, WidthM);
+	AddMarker(From, bAttackMoveArmed);
+	UE_LOG(LogTemp, Log, TEXT("RTS ordem: linha de frente em (%.0f, %.0f) m, virada a %.0f°, %.0f m de largura"), From.X / 100.0, From.Y / 100.0, FacingDeg, WidthM);
+	bAttackMoveArmed = false;
+	++Orders;
 }
 
 void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& B)

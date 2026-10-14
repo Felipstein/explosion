@@ -40,6 +40,19 @@ private:
 	void Build();
 	FVector2D Target(const FString& Id, FVector2D Frac = FVector2D(0.5, 0.5)) const;
 	FVector2D ViewportPoint(FVector2D Frac) const;
+	/** Um ponto do mundo (cm) na tela, em coordenadas do Slate. */
+	FVector2D WorldPoint(const FVector& Cm) const;
+	FVector EditPieceCm = FVector::ZeroVector;
+	int32 PiecesBefore = 0;
+	FVector2f HeightProbe = FVector2f::ZeroVector;
+	float HeightBefore = 0.0f;
+	FVector2f RoadProbe = FVector2f::ZeroVector;   // um ponto de uma estrada do gerador
+	FVector2f MovePivot = FVector2f::ZeroVector;   // a pedra que o teste move
+	FString SavedListBefore;                       // maps.json antes do teste de guardar (volta no fim)
+	bool bHadSavedList = false;
+	int32 RoadsBefore = 0;
+	/** Pixel da tela (frações → pixels da viewport). */
+	FVector2D ViewportPixel(FVector2D Frac) const;
 	/** Ponto na faixa do controle deslizante que corresponde ao valor (0–1). */
 	FVector2D SliderPoint(const FString& Id, float Value, float YFrac) const;
 	void Move(FVector2D Pos);
@@ -50,6 +63,10 @@ private:
 	void Key(FKey K, bool bDown);
 	bool NewMapSince(int32 Ticket) const;
 	bool RealCursorOverWindow() const;
+
+	/** O mouse e o teclado de verdade ficam de fora durante o teste (só passam os sintéticos). */
+	TSharedPtr<class FForgeInputGate> Gate;
+	void Inject(TFunctionRef<void()> Fn);
 
 	TWeakObjectPtr<AWorldForgeGameMode> GameMode;
 	FString Folder;

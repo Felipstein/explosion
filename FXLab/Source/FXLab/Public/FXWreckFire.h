@@ -33,6 +33,9 @@ struct FFXBakeMeta
 	FVector2D Pivot = FVector2D(0.5, 0.5);
 	TArray<double> BallBottom;
 	TArray<int32> SimFrames;
+	TArray<double> Times;      // s: o tempo da simulação de cada quadro (times_s)
+	TArray<FVector4> BBox;     // a caixa do alfa de cada quadro (u0, v0, u1, v1; v pra cima), se o atlas_bbox.py rodou
+	TArray<TArray<FVector2D>> Cut8;   // o octógono do alfa dos quadros f e f+1 (atlas_cut8.py), u e v de baixo
 
 	bool Load(const FString& Path);
 };

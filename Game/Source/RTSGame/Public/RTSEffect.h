@@ -44,4 +44,6 @@ private:
 	FVector To = FVector::ZeroVector;
 	float Speed = 10000.0f;
 	float Length = 600.0f;
+	/** Traçante: espessura fixa (cm); negativa = pela distância da câmera a cada quadro. */
+	float Thickness = 0.0f;
 };

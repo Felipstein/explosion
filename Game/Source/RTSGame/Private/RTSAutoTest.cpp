@@ -1,4 +1,6 @@
 #include "RTSAutoTest.h"
+#include "EngineUtils.h"
+#include "LookDirector.h"
 
 #include "RTSFogOfWar.h"
 #include "RTSHUD.h"
@@ -60,6 +62,8 @@ void URTSAutoTest::Initialize(FSubsystemCollectionBase& Collection)
 	bLanClient = ScriptName == TEXT("lanclient");
 	bLan = ScriptName == TEXT("lanhost") || bLanClient;
 	bBase = ScriptName == TEXT("base") || bLan;
+	FString ScenarioArg;
+	bScenario = FParse::Value(FCommandLine::Get(), TEXT("-RTSScenario="), ScenarioArg);
 	FParse::Value(FCommandLine::Get(), TEXT("-RTSNetPlayers="), NetPlayers);
 	NetPlayers = FMath::Clamp(NetPlayers, 2, 8);
 	bExpectFog = !FParse::Param(FCommandLine::Get(), TEXT("RTSTestNoFog"));
@@ -292,7 +296,7 @@ void URTSAutoTest::Build()
 {
 	auto IsMenu = [this]() { return PC() && PC()->IsMenu() && PC()->GetHUD(); };
 
-	Steps.Add({ TEXT("menu"), nullptr, IsMenu, nullptr, 6.0f, 90.0f });
+	Steps.Add({ TEXT("menu"), nullptr, IsMenu, nullptr, bScenario ? 0.5f : 6.0f, 90.0f, !bScenario });
 
 	if (bLan)
 	{
@@ -537,6 +541,11 @@ void URTSAutoTest::Build()
 			5.0f, 120.0f });
 	}
 
+	if (bScenario)
+	{
+		BuildScenario();
+		return;
+	}
 	if (bBase)
 	{
 		BuildBase();
@@ -1149,8 +1158,17 @@ void URTSAutoTest::AddBuildSteps(const FString& Label, const FString& Key, ESpot
 			if (Timer >= RetryAt && Pending.IsEmpty())
 			{
 				RetryAt = Timer + 0.8f;
-				UE_LOG(LogTemp, Warning, TEXT("RTS TEST o clique no botão de %s não pegou; de novo"), *Key);
-				QueueClick(ButtonCenter(FName(*FString::Printf(TEXT("eco_build_%d"), DefIndex(Key)))));
+				const FName Id(*FString::Printf(TEXT("eco_build_%d"), DefIndex(Key)));
+				const FVector2D At = ButtonCenter(Id);
+				UE_LOG(LogTemp, Warning, TEXT("RTS TEST o clique no botão de %s não pegou; de novo em (%.0f, %.0f)"), *Key, At.X, At.Y);
+				if (At.X < 0.0f)
+				{
+					// o botão nem está no painel: o que está selecionado e o que o painel mostra
+					const ARTSHUD* HUD = PC() ? Cast<ARTSHUD>(PC()->GetHUD()) : nullptr;
+					UE_LOG(LogTemp, Warning, TEXT("RTS TEST   %s não está no painel: %d selecionados, prédio %u, posicionando %d; botões: %s"), *Id.ToString(),
+						PC() ? PC()->GetSelection().Num() : -1, PC() ? PC()->SelectedStructure() : 0u, PC() ? PC()->GetPlacingDef() : -2, HUD ? *HUD->ButtonIdsForTest() : TEXT("(sem HUD)"));
+				}
+				QueueClick(At);
 			}
 			return false;
 		},
@@ -1220,6 +1238,66 @@ void URTSAutoTest::AddBuildSteps(const FString& Label, const FString& Key, ESpot
 			return OwnOf(DefIndex(Key), Out) && Out[0].BuildFraction >= 1.0f ? FString() : TEXT("a obra não terminou");
 		},
 		1.5f, 150.0f });
+}
+
+void URTSAutoTest::BuildScenario()
+{
+	// a câmera parada no foco do cenário, e as fotos nos segundos de simulação (não nos do relógio: a
+	// mesma foto em toda rodada)
+	Steps.Add({ TEXT("cena_camera"),
+		[this]()
+		{
+			const FRTSScenario* Sc = Match() ? Match()->GetScenario() : nullptr;
+			ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+			if (Sc && Cam)
+			{
+				Cam->SetView(Sc->CameraYawDeg, Sc->CameraDistanceM, Sc->CameraPitchDeg);
+				Cam->JumpTo(Sc->CameraFocusM * 100.0);
+				if (!Sc->bHud && PC()->GetHUD())
+				{
+					PC()->GetHUD()->bShowHUD = false;   // (a foto sem o HUD, lado a lado com a maquete)
+				}
+				// o sol é posto pela câmera do começo: com a câmera do cenário girada, a receita de novo, pra o sol
+				// cair onde o jogador o vê na câmera dele (o Look, 13/10: a foto saía com o sol 90° fora)
+				for (TActorIterator<ALookDirector> It(GetWorld()); It; ++It)
+				{
+					It->ApplyRecipe();
+				}
+			}
+		},
+		[this]() { return Match() && Match()->IsReady() && Match()->GetScenario(); },
+		[this]() { return Match() && Match()->GetScenario() ? FString() : TEXT("o cenário não montou"); },
+		0.2f, 60.0f, false });
+	const FRTSScenario* Sc = nullptr;
+	FRTSScenario Loaded;
+	FString ScenarioName;
+	FString Error;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-RTSScenario="), ScenarioName) && FRTSGameData::LoadScenario(ScenarioName, Loaded, Error))
+	{
+		Sc = &Loaded;
+	}
+	TArray<float> Shots = Sc ? Sc->ShotsS : TArray<float>();
+	const float EndS = Sc ? Sc->EndS : 30.0f;
+	for (const float T : Shots)
+	{
+		const uint32 Tick = uint32(FMath::RoundToInt(T * 30.0f));
+		Steps.Add({ FString::Printf(TEXT("cena_%03ds"), FMath::RoundToInt(T)),
+			nullptr,
+			[this, Tick]() { return Match() && Match()->SimTick() >= Tick; },
+			nullptr,
+			0.0f, 120.0f });
+	}
+	Steps.Add({ TEXT("cena_fim"),
+		[this]()
+		{
+			if (Match())
+			{
+				Match()->DumpGroundMemory(Folder);
+			}
+		},
+		[this, EndS]() { return Match() && Match()->SimTick() >= uint32(FMath::RoundToInt(EndS * 30.0f)); },
+		nullptr,
+		0.0f, 120.0f, false });
 }
 
 void URTSAutoTest::BuildBase()
@@ -1463,6 +1541,16 @@ void URTSAutoTest::Tick(float DeltaTime)
 		P->SetEdgeScroll(false);
 	}
 	PumpInput();
+	// o cenário com a câmera deslizando (pan_m_s): o foco anda com o relógio da simulação, depois da foto do começo
+	if (bScenario && Index > 0)
+	{
+		const FRTSScenario* Sc = Match() ? Match()->GetScenario() : nullptr;
+		ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+		if (Sc && Cam && !Sc->CameraPanMS.IsZero() && Match()->IsReady())
+		{
+			Cam->JumpTo((Sc->CameraFocusM + Sc->CameraPanMS * Match()->MatchSeconds()) * 100.0);
+		}
+	}
 	if (bRecord && !bRecordDone)
 	{
 		URTSMatchSubsystem* M = Match();

@@ -58,9 +58,20 @@ public:
 	/** A página do menu: a principal, a da LAN (criar ou achar partida) e a sala de espera. */
 	enum class EMenuPage : uint8 { Main, Lan, Lobby };
 	EMenuPage GetMenuPage() const { return MenuPage; }
+	/** O IP digitado na tela da LAN (entrar direto, quando a sala não aparece na lista). */
+	const FString& GetIpEntry() const { return IpEntry; }
+	bool IsTypingIp() const { return bTypingIp; }
 	bool IsPauseMenuOpen() const { return bPauseMenu; }
+	/** O 1º clique no SURRENDER arma; o 2º rende (sem render-se sem querer). */
+	bool IsSurrenderArmed() const { return bSurrenderArmed; }
+	/** O preset de qualidade de agora (0 baixa … 3 ultra), pelo nível da Unreal. */
+	int32 GetQualityPreset() const;
 	bool IsAttackMoveArmed() const { return bAttackMoveArmed; }
+	/** Os grupos 1–0 (a tecla K = 0..9: o 1 é o 0, o 0 é o 9), pro HUD novo. */
+	const TMap<int32, TArray<uint32>>& GetGroups() const { return Groups; }
 	bool IsDragging(FVector2D& OutA, FVector2D& OutB) const;
+	/** O arraste com direção (com tropa selecionada): de onde (o ponto de chegada) pra onde (a direção). */
+	bool IsFacingDragging(FVector2D& OutA, FVector2D& OutB) const;
 	const TArray<uint32>& GetSelection() const { return Selected; }
 	const TArray<FRTSOrderMarker>& GetMarkers() const { return Markers; }
 	bool ShowDebug() const { return bShowDebug; }
@@ -100,6 +111,8 @@ public:
 
 	/** O letreiro "Unidade sob ataque" (some em 3 s). */
 	float AttackMessageAlpha() const { return FMath::Clamp(1.0f - (AttackMessageAge - 2.5f) / 0.5f, 0.0f, 1.0f) * (AttackMessageAge < 3.0f ? 1.0f : 0.0f); }
+	/** Os segundos desde o último "Unidade sob ataque" (o aviso do HUD novo entra deslizando nos primeiros 0,3 s). */
+	float AttackMessageSeconds() const { return AttackMessageAge; }
 
 private:
 	void TickMenu();
@@ -110,13 +123,15 @@ private:
 	void TickAlerts(float DeltaTime);
 	void HandleLeftClick(const FVector2D& Mouse);
 	void HandleBoxSelect(const FVector2D& A, const FVector2D& B);
+	void HandleFacingDrag(const FVector2D& A, const FVector2D& B);
 	void HandleGroups();
 	void SelectSameTypeOnScreen(uint32 Id);
 	uint32 PickUnit(const FVector2D& Mouse) const;
 	bool GroundUnderCursor(const FVector2D& Mouse, FVector& Out) const;
 	void PruneSelection();
 	void AddMarker(const FVector& At, bool bAttack);
-	void ApplyQuality(int32 Level);
+	/** bRemember: guarda no GameUserSettings.ini (o próximo jogo abre nele); o teste automático não guarda. */
+	void ApplyQuality(int32 Level, bool bRemember = true);
 	// economia e construção (RTSPlayerEconomy.cpp)
 	void BeginPlacing(int32 Def);
 	/** O modo de posicionar pega o clique e o Esc; true = a entrada foi dele neste quadro. */
@@ -140,9 +155,14 @@ private:
 	bool bMenu = true;
 	EMenuPage MenuPage = EMenuPage::Main;
 	bool bNetAutoDone = false;
+	FString IpEntry;
+	bool bTypingIp = false;
+	void TickIpEntry();
+	void JoinTypedIp();
 	double BotStartAt = 0.0;
 	double BotExitAt = 0.0;
 	bool bPauseMenu = false;
+	bool bSurrenderArmed = false;
 	bool bAttackMoveArmed = false;
 	bool bShowDebug = false;
 	bool bEdgeScroll = true;
@@ -156,6 +176,8 @@ private:
 
 	bool bLeftDown = false;
 	FVector2D LeftDownPos = FVector2D::ZeroVector;
+	/** O esquerdo desceu com tropa selecionada, no chão: arrastar dá a direção (e não a caixa de seleção). */
+	bool bFacingDrag = false;
 	uint32 LastClickedId = 0;
 	double LastClickTime = 0.0;
 	int32 LoggedSelection = 0;

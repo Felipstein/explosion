@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS Tread Dust",
+	"Description": "A poeira das lagartas e das rodas (docs/POEIRA_DAS_LAGARTAS.md): um ator só pra todos os veículos; o jogo chama SetSources() a cada quadro. Feito no FXLab (a sessão da arte); o jogo copia esta pasta pra Game/Plugins.",
+	"Category": "RTS",
+	"EnabledByDefault": true,
+	"CanContainContent": true,
+	"Plugins": [
+		{
+			"Name": "ProceduralMeshComponent",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "RTSTreadDust",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -358,6 +358,33 @@ O primeiro corte: lockstep com o anfitrião como relógio, só na LAN, sem pausa
 - **A rodada.** Cada partida da sala tem um número, e pacote atrasado de outra rodada não entra.
 - **As vagas.** Ao começar, as vagas ficam contínuas (0…N−1), e cada um recebe a sua no pacote da sala.
 
+**A pausa, render-se e a queda (N5, 13/10, sem o teste do Felipe):**
+- **Pausa pra todos:**
+  - No menu (Esc), o botão **PAUSE GAME (everyone)** para a partida em todos os PCs. A tela mostra "PAUSED by Red" e o botão **RESUME**.
+  - Qualquer um retoma, com a contagem "Resuming in 3".
+  - Na LAN não há limite de pausas (em casa não precisa; o online ganha cota no N8).
+  - **Como funciona:** o anfitrião é o relógio e para de fechar passo. Ninguém passa do último passo fechado, então todos param no mesmo passo e o log diz qual ("parado no passo N", com a impressão digital).
+  - Parado, as ordens não ficam guardadas pra depois; o efeito das explosões para junto.
+- **Render-se:** **SURRENDER** no menu, com um segundo clique pra confirmar. É o comando `Resign` da simulação (versão 11): tudo do jogador cai, como no ZH (`VictoryConditions::killPlayer`), e ele vira espectador. Vale no skirmish também.
+- **A queda**, pelos números do ZH (`GlobalData.cpp`: `NetworkDisconnectTime` 5000 e `NetworkPlayerTimeoutTime` 60000 ms; `DisconnectManager.cpp`: cai quando os votos chegam a todos os outros):
+  - **aos 5 s sem notícia:** a partida para, com "Waiting for Red", o tempo que falta e o botão **DROP Red**;
+  - **se ele volta:** a contagem de 3 s e segue;
+  - **aos 60 s, ou com o voto de todos os outros:** ele cai. O anfitrião manda o `Resign` pela vaga dele, então tudo dele cai igual em todo PC, e a partida segue.
+  - **quem sai pelo menu** cai na hora, sem a espera.
+  - **se o anfitrião some,** os outros veem "Connection lost": ele é o relógio, e a troca de anfitrião fica pro online.
+- **A versão da rede** subiu (0003): o jogo velho não entra na sala nova.
+- **Testado em 13–14/10, com 3 PCs na LAN de teste (o anfitrião com tela e 2 robôs sem placa):**
+  - **pausa:** os 3 pararam no mesmo passo (602), com a mesma impressão digital, e voltaram juntos;
+  - **render-se:** o robô se rendeu aos 30 s, virou espectador, e a partida seguiu;
+  - **queda:** o robô sumiu sem avisar no passo 900. Aos 5 s o anfitrião parou a partida no passo 1056, os outros dois votaram, ele caiu "votado pelos outros", e a partida voltou no mesmo passo nos dois que ficaram;
+  - **o engasgo do anfitrião:** um de 9 s derrubava todo mundo aos 8 s. Agora o cliente mostra "Waiting for the host" e espera até 60 s;
+  - **a volta pra sala:** quem caiu ficava na lista, e o anfitrião esperava por ele. Agora sai da sala na volta.
+- **Os testes:**
+  - `-Extra '-RTSNetTestPause=<passo>'`: o anfitrião do teste pausa e volta 4 s depois;
+  - `-BotExtra '-RTSNetBotResignAt=<passo>'`: o 1º robô se rende;
+  - `-BotExtra '-RTSNetBotQuitAt=<passo>','-RTSNetTestVote'`: o 1º robô some sem avisar e o 2º vota;
+  - `-RTSNetTestVote` no anfitrião: ele vota também.
+
 **Os testes com uma placa só** (`game.ps1 view -Folder X -Script lanhost|lanclient -Players 4 [-NoFog]`):
 - Os outros jogadores são jogos sem placa (`-nullrhi`), e o robô do skirmish joga por eles pela rede.
 - **lanhost:** a nossa tela cria a sala e fica vermelha no botão de cor. Só então os robôs entram, porque o teste abre a porta com um arquivo. Depois os 4 jogam a partida inteira e todos voltam pra sala.

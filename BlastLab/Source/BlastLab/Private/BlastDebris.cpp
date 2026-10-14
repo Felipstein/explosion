@@ -564,10 +564,15 @@ void ABlastDebris::UpdateTrails(const FVector& CamM)
 			}
 		}
 	}
-	TrailMesh->ClearMeshSection(0);
+	// criar a seção já a limpa (e refaz a caixa, a colisão e o desenho): limpar antes fazia tudo isso duas vezes por
+	// quadro e por destroço (fonte da Unreal 5.8, ProceduralMeshComponent.cpp; 14/10)
 	if (Tri.Num())
 	{
 		TrailMesh->CreateMeshSection_LinearColor(0, V, Tri, N, UV, Col, TArray<FProcMeshTangent>(), false);
+	}
+	else
+	{
+		TrailMesh->ClearMeshSection(0);
 	}
 }
 
@@ -608,13 +613,34 @@ void ABlastDebris::Tick(float DeltaSeconds)
 			TrailMesh->SetMaterial(0, M);
 		}
 	}
+	// Cada parte só vai pra placa enquanto muda (14/10, medido no jogo: os destroços de 11 mortes custavam 17 ms por
+	// quadro). As 32 chapas deitadas eram reenviadas todo quadro por 2 minutos, e como fazem sombra a sombra virtual
+	// redesenhava as páginas delas; as cabeças, faíscas e rastros apagados também. A última atualização de cada parte
+	// é a do estado final.
 	if (Dt > 0.0f)
 	{
 		T += Dt;
 		Integrate(Dt);
-		UpdatePlates();
+		if (!bPlatesSettled)
+		{
+			UpdatePlates();
+			bPlatesSettled = !Plates.ContainsByPredicate([](const FPlate& P) { return !P.bRest; });
+		}
 	}
 	const FVector Cam = CameraM(GetWorld());
-	UpdateGlows(Cam);
-	UpdateTrails(Cam);
+	if (!bGlowsDone)
+	{
+		UpdateGlows(Cam);
+		bGlowsDone = !Comets.ContainsByPredicate([](const FComet& C) { return C.Age < C.Burn; })
+			&& !Sparks.ContainsByPredicate([](const FSpark& S) { return S.Age <= S.Life; });
+	}
+	if (!bTrailsDone)
+	{
+		UpdateTrails(Cam);
+		bTrailsDone = !Trails.ContainsByPredicate([](const FTrail& Tr) { return Tr.bEmitting || Tr.Points.Num() > 0; });
+	}
+	if (bPlatesSettled && bGlowsDone && bTrailsDone)
+	{
+		SetActorTickEnabled(false);
+	}
 }

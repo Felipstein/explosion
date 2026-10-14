@@ -70,8 +70,10 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
   - **O nome vem na cor do jogador,** sem barra embaixo do nome (parecia vida).
   - **Aliado mostra dinheiro e energia.** A energia é uma barra, igual à sua, com os números.
   - **Inimigo comum não mostra nada:** sem "?" nem rótulo de facção.
-  - **Espionado:** a moldura fica laranja, aparece um olho no emblema e uma linha que esvazia com o tempo, e ele mostra dinheiro e energia como um aliado. É provisório: o desenho final vem na arte conceitual.
-  - **Derrotado:** fica cinza, com um X vermelho.
+  - **Espionado:** a moldura fica laranja e ele mostra dinheiro e energia como um aliado.
+    - **13/10, no HUDLab:** o olho é um selo redondo no canto do emblema (aro âmbar e olho âmbar, liso). O tempo que resta da espionagem é o aro escurecendo no sentido do relógio, igual ao carregamento do C&C. O quadradinho com um ponto foi reprovado ("parece uma criança").
+  - **13/10, cartão do topo de 8:** nada passa da borda do cartão. O emblema fica grande à esquerda e o nome e o dinheiro numa coluna ao lado. A energia aparece em número à direita e numa barra fina embaixo, na largura do texto. Todas as caixas de superarma usam a mesma letra.
+  - **Derrotado:** fica cinza, com um X vermelho (liso, por cima do emblema).
   - **Se não couber,** uma caixinha "+X" resume os que sobram.
 - **Superarmas** (`SuperweaponList`):
   - ficam numa caixa separada, pendurada embaixo do dono;
@@ -80,6 +82,12 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
   - as iguais **não** se juntam (cada uma tem o seu tempo);
   - depois de 3, o resto vira "+2 more";
   - com menos de 1 minuto, a linha fica vermelha e brilha.
+- **13/10, caixa das superarmas (no HUDLab, contra a peça `top_bar_8_players`):**
+  - uma mini tecla igual ao cartão de cima: azul no seu time, escura no inimigo, vermelha com brilho quando falta menos de 1 minuto;
+  - o trevo radioativo de verdade, liso;
+  - respiro nas pontas;
+  - a linha que vai sair fica vermelha, sem faixa por trás;
+  - no 1x1, cada lado mostra até 3 e o resto vira "+ n more".
 - **Decidido em 10/10:** fica o topo de hoje, mesmo ainda "carregado". As ideias A (nomes brancos com
   quadradinho de cor e uma linha só de superarma) e B (só ícone e tempo) foram vistas e não entraram.
 
@@ -93,6 +101,10 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
 
 ### Avisos (`AlertFeed`) e Seta de evento (`OffscreenArrow`)
 - O aviso do limpo ("Unit under attack" em vermelho).
+- **13/10, no HUDLab:**
+  - o triângulo é uma imagem lisa, vermelha com o "!" preto grosso (o feito no Canvas ficou "porco");
+  - ele fica dentro da parte escura da caixa, não em cima da ponta de metal;
+  - os parafusos da ponta são cor de aço (vieram rosa da folha do GPT).
 - "Low power" em amarelo, com o mesmo desenho.
 - A seta vermelha na borda da tela, do limpo, aponta o evento fora da vista.
 
@@ -103,6 +115,9 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
   - o tempo caindo em cima.
 - Só o ícone, sem o nome; o nome fica na dica.
 - Cada superarma sua tem o seu botão.
+- **Decidido em 13/10 (no HUDLab):**
+  - o botão é quadrado (1:1) e simples: a tecla escura da pele, sem a moldura alta e enfeitada;
+  - a coluna nasce logo acima do minimapa e cresce de baixo pra cima, não lá de cima, embaixo dos avisos.
 
 ### Minimapa (`Minimap`) e Botões do minimapa (`MinimapButtons`)
 - Um losango com névoa em três níveis: visto, explorado escurecido e nunca visto preto total.
@@ -118,6 +133,13 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
 
 ### Painel central (`CommandPanel`)
 - **Vai do minimapa até o cartão da direita, encostando nos dois.** É o pedido mais importante do painel; a referência é `classic_dozer`, que só faltou encostar no minimapa.
+- **13/10: colunas da grade.**
+  - O Felipe achou o painel apertado comparado à imagem final.
+  - A `classic_dozer` tem 8 colunas de casas grandes; a planta tinha 9 + 3 no mesmo espaço, com casas uns 30% menores.
+  - Decidido pela arte, com o Felipe dormindo e pedindo pra decidir: **7 + 3**, casas do tamanho do clássico, painel 24 px mais alto.
+  - As teclas seguem as fileiras: QWERTYU em cima, ZXCVBNM embaixo.
+  - A de 9 + 3 continua pronta pra comparar (`hudlab.ps1 shot -Cols 9`).
+  - As casas vazias são lisas (fundo escuro e um fio), como na peça `multi_select_captain`.
 - **Grade principal (`MainGrid`),** à esquerda:
   - mostra o que se constrói, ou as unidades selecionadas;
   - as fotos e o tamanho são os do clássico.
@@ -152,7 +174,8 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
   - insígnia de melhoria no canto de cima, à esquerda;
   - a moldura quadrada da patente, com as divisas, no canto de cima, à direita.
 - O nome e a vida em barra e em número.
-- **A fila (`ProductionQueue`)** fica dentro do cartão, como no clássico:
+- **A fila (`ProductionQueue`)** fica embaixo do cartão, colada nele, como no clássico. Em 13/10, no HUDLab, ela tinha
+  ido pra cima do cartão e o Felipe mandou voltar pra baixo:
   - usa o mesmo carregamento do C&C, com a %;
   - clicar cancela (um X vermelho no mouse);
   - arrastar muda a ordem.
@@ -212,3 +235,23 @@ O Felipe: "pra que ficar insistindo numa imagem coringa, a gente já tem tudo de
 - **Depois da aprovação:**
   - a imagem aprovada vai pra cá (`docs/concept/hud/`);
   - a sessão do jogo ("RTS game architecture e gráficos") recebe aviso por mensagem, pra montar o HUD em Slate com a planta, os nomes e este documento.
+
+## 13/10: estados, animações e facções (feitos pela arte no HUDLab; o Felipe avalia jogando)
+
+- **O mouse em cima:** a moldura acende na cor do neon da facção, com um véu claro. **Apertado:** o botão afunda e escurece.
+- **Animações** (o ZH modernizado, discretas):
+  - o READY respira (~1 vez por segundo);
+  - a superarma perto pulsa em vermelho;
+  - a barra de energia faltando pisca devagar;
+  - o aviso entra deslizando da esquerda (0,3 s);
+  - o painel central e as abas sobem da borda quando algo é selecionado (0,35 s).
+- **Telas:**
+  - em 16:10 nada se sobrepõe;
+  - no ultrawide, o HUD fica numa faixa 16:9 no meio, porque o olho não deve atravessar 3440 px pra achar o minimapa e o cartão;
+  - a seta de evento fica na borda de verdade.
+- **A pele de cada facção** (proposta):
+  - China com o neon vermelho sobre aço escuro quente;
+  - GLA com o neon âmbar de latão sobre ferro marrom;
+  - o verde continua sendo a ação em todas, por isso o GLA não é verde;
+  - o topo 1x1 não muda, porque o azul ali é "você".
+  - Folha: `captures/hudlab/faccoes.jpg`. Peças: `kit/skin/china/`, `kit/skin/gla/` (`art/tools/make_faction_skins.py`).

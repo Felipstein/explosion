@@ -92,6 +92,9 @@ private:
 	FString Folder;
 	FString ScriptName;
 	bool bBase = false;
+	/** -RTSScenario: o teste rápido (a partida pronta, fotos em segundos fixos de simulação). */
+	bool bScenario = false;
+	void BuildScenario();
 	bool bLan = false;
 	/** lanclient: a nossa tela entra na sala de um anfitrião sem tela (o robô joga por ele). */
 	bool bLanClient = false;

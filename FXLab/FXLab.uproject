@@ -22,6 +22,14 @@
 		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
+		},
+		{
+			"Name": "RTSLook",
+			"Enabled": true
+		},
+		{
+			"Name": "RTSTreadDust",
+			"Enabled": true
 		}
 	]
 }

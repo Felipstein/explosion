@@ -22,11 +22,18 @@ namespace
 	constexpr int32 MaxTicksPerPacket = 90;
 	constexpr double SendInterval = 1.0 / 60.0;
 	constexpr double LostSeconds = 8.0;
+	// a queda (o ZH, GlobalData: NetworkDisconnectTime 5000 e NetworkPlayerTimeoutTime 60000 ms; DisconnectManager:
+	// cai quando os votos chegam a todos os outros)
+	constexpr double NoticeSeconds = 5.0;
+	constexpr double DropSeconds = 60.0;
+	constexpr float ResumeCountdown = 3.0f;
 	constexpr int64 HashKeepTicks = 900;
 
 	enum class EMsg : uint8
 	{
-		Beacon = 1, Hello, Welcome, Reject, Lobby, SetupChunk, SetupAck, Ready, Go, Input, Ticks, Ping, Pong, Bye, Color, Team
+		Beacon = 1, Hello, Welcome, Reject, Lobby, SetupChunk, SetupAck, Ready, Go, Input, Ticks, Ping, Pong, Bye, Color, Team,
+		Control,     // cliente → anfitrião: pausa, volta, voto (13/10)
+		PauseState   // anfitrião → todos: o estado da pausa e da espera
 	};
 
 	void WriteString(Sim::ByteWriter& W, const FString& S)
@@ -139,8 +146,8 @@ uint64 URTSNetSession::VersionHash() const
 		FRTSGameData Data;
 		FString Err;
 		const uint64 Rules = Data.Load(Err) ? Data.Rules.Hash() : 0;
-		// (0002, 11/10: a sala ganhou time, IA e a névoa de 3 tipos; o jogo velho não entra)
-		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0002ull;
+		// (0002, 11/10: a sala ganhou time, IA e a névoa de 3 tipos; 0003, 13/10: a pausa e a queda; o jogo velho não entra)
+		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0003ull;
 	}
 	return CachedVersion;
 }
@@ -528,8 +535,11 @@ void URTSNetSession::ResetMatchData()
 	DesyncTick = -1;
 	Matched = 0;
 	bPeerLost = false;
+	Pause = FPauseState();
+	bPauseDirty = false;
 	for (FPeer& P : Peers)
 	{
+		P.bDropped = false;
 		P.bReady = false;
 		P.AckTick = -1;
 		P.NextInputSeq = 0;
@@ -543,6 +553,17 @@ void URTSNetSession::BackToLobby()
 	if (Role == ERTSNetRole::None)
 	{
 		return;
+	}
+	// quem caiu da partida (sumiu ou foi votado) sai da sala junto: senão o anfitrião espera por ele pra começar outra
+	// (o teste da queda, 14/10); se ele voltar, entra de novo pela lista da LAN
+	if (Role == ERTSNetRole::Host)
+	{
+		const int32 Before = Peers.Num();
+		Peers.RemoveAll([](const FPeer& P) { return P.bDropped; });
+		if (Peers.Num() != Before)
+		{
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: %d que caíram saíram da sala"), Before - Peers.Num());
+		}
 	}
 	ResetMatchData();
 	Phase = ERTSNetPhase::Lobby;
@@ -704,6 +725,241 @@ void URTSNetSession::SubmitLocal(const Sim::Command& C)
 	}
 }
 
+float URTSNetSession::HostSilentSeconds() const
+{
+	if (Role != ERTSNetRole::Client || Phase != ERTSNetPhase::Playing || !bGo)
+	{
+		return 0.0f;
+	}
+	const double Silent = Clock - LastHeardHost;
+	return Silent > NoticeSeconds ? float(Silent) : 0.0f;
+}
+
+void URTSNetSession::RequestPause()
+{
+	if (Phase != ERTSNetPhase::Playing || !bGo)
+	{
+		return;
+	}
+	if (Role == ERTSNetRole::Host)
+	{
+		HostControl(0, 1, 0);
+	}
+	else if (Role == ERTSNetRole::Client)
+	{
+		Sim::ByteWriter W = Begin(EMsg::Control);
+		W.U8(Epoch);
+		W.U8(1);
+		W.U8(0);
+		SendHost(ToArray(W));
+	}
+}
+
+void URTSNetSession::RequestResume()
+{
+	if (Phase != ERTSNetPhase::Playing || !bGo)
+	{
+		return;
+	}
+	if (Role == ERTSNetRole::Host)
+	{
+		HostControl(0, 2, 0);
+	}
+	else if (Role == ERTSNetRole::Client)
+	{
+		Sim::ByteWriter W = Begin(EMsg::Control);
+		W.U8(Epoch);
+		W.U8(2);
+		W.U8(0);
+		SendHost(ToArray(W));
+	}
+}
+
+void URTSNetSession::VoteDrop(uint8 Slot)
+{
+	if (Phase != ERTSNetPhase::Playing || !bGo)
+	{
+		return;
+	}
+	if (Role == ERTSNetRole::Host)
+	{
+		HostControl(0, 3, Slot);
+	}
+	else if (Role == ERTSNetRole::Client)
+	{
+		Sim::ByteWriter W = Begin(EMsg::Control);
+		W.U8(Epoch);
+		W.U8(3);
+		W.U8(Slot);
+		SendHost(ToArray(W));
+	}
+}
+
+void URTSNetSession::HostControl(uint8 Slot, uint8 Kind, uint8 Arg)
+{
+	if (Kind == 1)
+	{
+		// pausa (ou, na contagem pra voltar, cancela a contagem)
+		if (!Pause.bPaused || Pause.ResumeIn >= 0.0f)
+		{
+			Pause.bPaused = true;
+			Pause.BySlot = Pause.WaitingFor == 255 ? Slot : uint8(255);
+			Pause.ResumeIn = -1.0f;
+			bPauseDirty = true;
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: pausa pedida pela vaga %d, no passo %d"), Slot, Sealed.Num());
+		}
+	}
+	else if (Kind == 2)
+	{
+		// volta: a contagem de 3 s (com alguém sumido, a partida segue esperando por ele)
+		if (Pause.bPaused && Pause.WaitingFor == 255 && Pause.ResumeIn < 0.0f)
+		{
+			Pause.ResumeIn = ResumeCountdown;
+			bPauseDirty = true;
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: a vaga %d pediu pra voltar"), Slot);
+		}
+	}
+	else if (Kind == 3)
+	{
+		if (Pause.WaitingFor != 255 && Arg == Pause.WaitingFor && Slot != Arg && Slot < 8 && !(Pause.Votes & (1u << Slot)))
+		{
+			Pause.Votes |= uint8(1u << Slot);
+			bPauseDirty = true;
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: a vaga %d votou pra derrubar a vaga %d"), Slot, Arg);
+		}
+	}
+}
+
+void URTSNetSession::DropPeer(FPeer& P, const TCHAR* Why)
+{
+	if (P.bDropped)
+	{
+		return;
+	}
+	P.bDropped = true;
+	P.Inbox.Reset();
+	Pause.Dropped |= uint8(1u << (P.Slot & 7));
+	// o render-se pela vaga dele, no próximo passo: tudo dele cai, igual em todo PC
+	Sim::Command C;
+	C.Type = Sim::CommandType::Resign;
+	SubmitAs(P.Slot, C);
+	UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s (vaga %d) caiu da partida no passo %d: %s"), *P.Name, P.Slot, Sealed.Num(), Why);
+	if (Pause.WaitingFor == P.Slot)
+	{
+		Pause.WaitingFor = 255;
+		Pause.Votes = 0;
+		if (Pause.BySlot == 255)
+		{
+			Pause.bPaused = false;   // a espera era só por ele: segue na hora (o render-se precisa de passo)
+			Pause.ResumeIn = -1.0f;
+		}
+	}
+	bPauseDirty = true;
+}
+
+void URTSNetSession::UpdatePauseHost(float DeltaTime)
+{
+	// quem está jogando: o anfitrião e os clientes que não caíram
+	int32 Humans = 1;
+	for (const FPeer& P : Peers)
+	{
+		Humans += P.bDropped ? 0 : 1;
+	}
+	// alguém sem notícia há 5 s: a partida espera por ele (o ZH abre a janela da queda)
+	if (Pause.WaitingFor == 255)
+	{
+		for (FPeer& P : Peers)
+		{
+			if (!P.bDropped && Clock - P.LastHeard > NoticeSeconds)
+			{
+				Pause.WaitingFor = P.Slot;
+				Pause.Votes = 0;
+				WaitStart = P.LastHeard;
+				if (!Pause.bPaused || Pause.ResumeIn >= 0.0f)
+				{
+					Pause.bPaused = true;
+					Pause.BySlot = 255;
+				}
+				Pause.ResumeIn = -1.0f;
+				bPauseDirty = true;
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s (vaga %d) sem notícia há %.0f s: a partida espera, no passo %d"), *P.Name, P.Slot, NoticeSeconds, Sealed.Num());
+				break;
+			}
+		}
+	}
+	if (Pause.WaitingFor != 255)
+	{
+		FPeer* W = Peers.FindByPredicate([this](const FPeer& P) { return P.Slot == Pause.WaitingFor; });
+		if (!W || W->bDropped)
+		{
+			Pause.WaitingFor = 255;
+			bPauseDirty = true;
+		}
+		else if (Clock - W->LastHeard < 1.0)
+		{
+			// voltou: a contagem pra seguir (se a pausa era só a espera)
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s voltou"), *W->Name);
+			Pause.WaitingFor = 255;
+			Pause.Votes = 0;
+			if (Pause.BySlot == 255)
+			{
+				Pause.ResumeIn = ResumeCountdown;
+			}
+			bPauseDirty = true;
+		}
+		else
+		{
+			Pause.WaitLeft = float(FMath::Max(0.0, DropSeconds - (Clock - WaitStart)));
+			Pause.VotesNeeded = uint8(FMath::Max(1, Humans - 1));
+			const int32 Votes = FMath::CountBits(Pause.Votes);
+			if (Pause.WaitLeft <= 0.0f || Votes >= Pause.VotesNeeded)
+			{
+				DropPeer(*W, Pause.WaitLeft <= 0.0f ? TEXT("60 s sem notícia") : TEXT("votado pelos outros"));
+			}
+		}
+	}
+	if (Pause.ResumeIn >= 0.0f)
+	{
+		Pause.ResumeIn -= DeltaTime;
+		if (Pause.ResumeIn <= 0.0f)
+		{
+			Pause.bPaused = false;
+			Pause.ResumeIn = -1.0f;
+			Pause.BySlot = 255;
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: a partida volta no passo %d"), Sealed.Num());
+		}
+		bPauseDirty = true;
+	}
+	if (bPauseDirty || Clock - LastPauseSend > 0.25)
+	{
+		SendPause();
+	}
+}
+
+void URTSNetSession::SendPause()
+{
+	bPauseDirty = false;
+	LastPauseSend = Clock;
+	Sim::ByteWriter W = Begin(EMsg::PauseState);
+	W.U8(Epoch);
+	W.U8(Pause.bPaused ? 1 : 0);
+	W.U8(Pause.BySlot);
+	W.U16(Pause.ResumeIn < 0.0f ? uint16(0xFFFF) : uint16(FMath::Clamp(FMath::RoundToInt(Pause.ResumeIn * 1000.0f), 0, 0xFFFE)));
+	W.U8(Pause.WaitingFor);
+	W.U16(uint16(FMath::Clamp(FMath::RoundToInt(Pause.WaitLeft * 10.0f), 0, 0xFFFF)));
+	W.U8(Pause.Votes);
+	W.U8(Pause.VotesNeeded);
+	W.U8(Pause.Dropped);
+	const TArray<uint8> Packet = ToArray(W);
+	for (FPeer& P : Peers)
+	{
+		if (!P.bDropped)
+		{
+			SendTo(*P.Addr, Packet);
+		}
+	}
+}
+
 void URTSNetSession::SealTick(Sim::TickNumber T)
 {
 	check(Role == ERTSNetRole::Host && int64(T) == int64(Sealed.Num()));
@@ -827,6 +1083,29 @@ void URTSNetSession::SendBeacon()
 	All->SetBroadcastAddress();
 	All->SetPort(BeaconPort);
 	SendTo(*All, Packet);
+	// e pro fim de cada rede do PC (a.b.c.255): o 255.255.255.255 sai por um adaptador só, e o
+	// Windows com Hyper-V/WSL escolhe o virtual (vEthernet); o teste em casa (11/10) não achou a sala
+	TArray<TSharedPtr<FInternetAddr>> Adapters;
+	if (Sockets()->GetLocalAdapterAddresses(Adapters))
+	{
+		for (const TSharedPtr<FInternetAddr>& A : Adapters)
+		{
+			uint32 Ip = 0;
+			if (!A.IsValid() || A->GetProtocolType() != FNetworkProtocolTypes::IPv4)
+			{
+				continue;
+			}
+			A->GetIp(Ip);
+			if ((Ip >> 24) == 127 || Ip == 0)
+			{
+				continue;
+			}
+			TSharedRef<FInternetAddr> Subnet = Sockets()->CreateInternetAddr();
+			Subnet->SetIp(Ip | 0xFFu);
+			Subnet->SetPort(BeaconPort);
+			SendTo(*Subnet, Packet);
+		}
+	}
 	TSharedRef<FInternetAddr> Local = Sockets()->CreateInternetAddr();
 	bool bValid = false;
 	Local->SetIp(TEXT("127.0.0.1"), bValid);
@@ -970,6 +1249,10 @@ void URTSNetSession::Tick(float DeltaTime)
 			SendLobby();
 			for (FPeer& P : Peers)
 			{
+				if (P.bDropped)
+				{
+					continue;
+				}
 				Sim::ByteWriter W = Begin(EMsg::Ping);
 				W.U64(uint64(Clock * 1.0e6));
 				SendTo(*P.Addr, ToArray(W));
@@ -986,11 +1269,16 @@ void URTSNetSession::Tick(float DeltaTime)
 					Peers.RemoveAt(K);
 					RebuildLobby();
 				}
-				else if (Phase == ERTSNetPhase::Playing || Phase == ERTSNetPhase::Loading)
+				else if (Phase == ERTSNetPhase::Loading)
 				{
 					bPeerLost = true;
 				}
 			}
+		}
+		// na partida, quem some faz a partida esperar (a pausa), e cai aos 60 s ou pelo voto
+		if (Phase == ERTSNetPhase::Playing && bGo)
+		{
+			UpdatePauseHost(DeltaTime);
 		}
 		if (Clock - LastSend >= SendInterval)
 		{
@@ -1019,6 +1307,10 @@ void URTSNetSession::Tick(float DeltaTime)
 				const TArray<uint8> GoPacket = ToArray(GoMsg);
 				for (FPeer& P : Peers)
 				{
+					if (P.bDropped)
+					{
+						continue;   // quem caiu não recebe mais (o jogo dele pode ter fechado: a porta morta só gera erro)
+					}
 					SendTo(*P.Addr, GoPacket);
 					SendTicks(P);
 				}
@@ -1057,9 +1349,10 @@ void URTSNetSession::Tick(float DeltaTime)
 				SendHost(ToArray(W));
 			}
 		}
-		// sem resposta: antes de entrar, segue tentando (o anfitrião pode abrir depois); na sala ou
-		// na partida, a conexão caiu
-		if (Clock - LastHeardHost > LostSeconds && Phase != ERTSNetPhase::Ended)
+		// sem resposta: antes de entrar, segue tentando (o anfitrião pode abrir depois); na sala, a conexão caiu;
+		// na partida, a espera vai até 60 s (13/10: um engasgo de 9 s do anfitrião derrubava todo mundo aos 8 s)
+		const double Limit = Phase == ERTSNetPhase::Playing ? DropSeconds : LostSeconds;
+		if (Clock - LastHeardHost > Limit && Phase != ERTSNetPhase::Ended)
 		{
 			if (Phase == ERTSNetPhase::Idle)
 			{
@@ -1247,10 +1540,14 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 				{
 					return;
 				}
-				// só o próximo da sequência: o repetido (pacote duplicado ou reenviado) não entra duas vezes
+				// só o próximo da sequência: o repetido (pacote duplicado ou reenviado) não entra duas vezes; de quem já
+				// caiu, nada entra (o render-se por ele já foi)
 				if (FirstSeq + K == P->NextInputSeq)
 				{
-					P->Inbox.Add(MoveTemp(C));
+					if (!P->bDropped)
+					{
+						P->Inbox.Add(MoveTemp(C));
+					}
 					++P->NextInputSeq;
 				}
 			}
@@ -1297,6 +1594,15 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			}
 			return;
 		}
+		case EMsg::Control:
+		{
+			uint8 E = 0, Kind = 0, Arg = 0;
+			if (P && R.U8(E) && E == Epoch && R.U8(Kind) && R.U8(Arg) && Phase == ERTSNetPhase::Playing && !P->bDropped)
+			{
+				HostControl(P->Slot, Kind, Arg);
+			}
+			return;
+		}
 		case EMsg::Bye:
 			if (P)
 			{
@@ -1307,7 +1613,11 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 					Peers.RemoveAll([&Key](const FPeer& X) { return X.Key == Key; });
 					RebuildLobby();
 				}
-				else
+				else if (Phase == ERTSNetPhase::Playing)
+				{
+					DropPeer(*P, TEXT("saiu da partida"));   // saiu de propósito: cai na hora, sem a espera
+				}
+				else if (Phase == ERTSNetPhase::Loading)
 				{
 					bPeerLost = true;
 				}
@@ -1544,6 +1854,29 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 				TArray<Sim::Command> Moved = MoveTemp(*Next);
 				Early.Remove(Sealed.Num());
 				Sealed.Add(MoveTemp(Moved));
+			}
+			return;
+		}
+		case EMsg::PauseState:
+		{
+			uint8 E = 0, Paused = 0, By = 0, Waiting = 0, Votes = 0, Needed = 0, Dropped = 0;
+			uint16 ResumeMs = 0, WaitDs = 0;
+			if (R.U8(E) && E == Epoch && R.U8(Paused) && R.U8(By) && R.U16(ResumeMs) && R.U8(Waiting) && R.U16(WaitDs)
+				&& R.U8(Votes) && R.U8(Needed) && R.U8(Dropped))
+			{
+				const bool bWas = Pause.bPaused;
+				Pause.bPaused = Paused != 0;
+				Pause.BySlot = By;
+				Pause.ResumeIn = ResumeMs == 0xFFFF ? -1.0f : ResumeMs / 1000.0f;
+				Pause.WaitingFor = Waiting;
+				Pause.WaitLeft = WaitDs / 10.0f;
+				Pause.Votes = Votes;
+				Pause.VotesNeeded = Needed;
+				Pause.Dropped = Dropped;
+				if (bWas != Pause.bPaused)
+				{
+					UE_LOG(LogTemp, Log, TEXT("RTS LAN: o anfitrião %s a partida"), Pause.bPaused ? TEXT("pausou") : TEXT("retomou"));
+				}
 			}
 			return;
 		}

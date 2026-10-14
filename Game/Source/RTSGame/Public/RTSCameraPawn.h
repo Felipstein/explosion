@@ -10,12 +10,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "LookCamera.h"
 #include "RTSCameraPawn.generated.h"
 
 class UCameraComponent;
 
 UCLASS(Config = Game)
-class RTSGAME_API ARTSCameraPawn : public APawn
+class RTSGAME_API ARTSCameraPawn : public APawn, public ILookCamera
 {
 	GENERATED_BODY()
 
@@ -39,15 +40,36 @@ public:
 	void GlideTo(const FVector2D& Cm) { GlideTarget = Cm; bGliding = true; }
 	/** Pula pro ponto na hora, mantendo giro e zoom (o clique no minimapa: userLookAt do ZH). */
 	void JumpTo(const FVector2D& Cm);
+	/** O teste rápido: giro e distância na hora (sem a suavização), pra foto sempre igual. PitchDeg ≥ 0 força a
+	 *  inclinação (a foto lado a lado com a maquete; o jogador fica na curva do zoom). */
+	void SetView(float YawDeg, float InDistanceM, float PitchDeg = -1.0f)
+	{
+		Yaw = YawShown = YawDeg;
+		DistanceM = TargetDistanceM = InDistanceM;
+		if (PitchDeg >= 0.0f)
+		{
+			FreePitch = FreePitchShown = PitchDeg - CurvePitch(InDistanceM);
+		}
+	}
 	/**
 	 * Com névoa, a exposição local da Unreal não pode misturar a luminância borrada da tela (60%
 	 * por padrão): a névoa escura ao lado clarearia o que está à vista. Fica só a grade bilateral,
 	 * que separa por faixa de luminância (revisão de 08/10).
 	 */
 	void SetFogExposureFix(bool bOn);
+	/** O tremor de uma explosão grande (13/10, BASE_JOGAVEL): só perto do centro da tela, curto e pequeno (2–4 px:
+	 *  o clique quase não sente); Strength em cm de deslocamento no centro. */
+	void AddShake(const FVector2D& AtCm, float StrengthCm);
+	/** A silhueta das unidades atrás de prédio (M_UnitSilhouette) com a cor de cada jogador (o stencil 1 + dono). */
+	void SetSilhouetteColors(const TArray<FLinearColor>& Colors);
 	void SetMenuMode(bool bMenu) { bMenuMode = bMenu; }
 	void SetBounds(const FBox2D& Cm) { BoundsCm = Cm; }
 	FVector2D GetFocusCm() const { return FVector2D(Focus.X, Focus.Y); }
+
+	// ILookCamera (o plugin RTSLook): o ponto olhado, a distância até ele e o giro mostrado
+	virtual FVector GetLookFocusPoint() const override { return Focus; }
+	virtual float GetLookFocusDistance() const override { return DistanceM * 100.0f; }
+	virtual float GetLookYaw() const override { return YawShown; }
 	float GetYawDeg() const { return Yaw; }
 
 	virtual void Tick(float DeltaSeconds) override;
@@ -79,6 +101,10 @@ private:
 	float GroundZ(const FVector2D& Cm) const;
 
 	UPROPERTY() TObjectPtr<UCameraComponent> Camera;
+	UPROPERTY() TObjectPtr<class UMaterialInstanceDynamic> SilhouetteMID;
+	float ShakeCm = 0.0f;
+	float ShakeAge = 0.0f;
+	float ShakeSeed = 0.0f;
 
 	FVector Focus = FVector::ZeroVector;
 	/** A inclinação da curva do zoom pra esta distância. */

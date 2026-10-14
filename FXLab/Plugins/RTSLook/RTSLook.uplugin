@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS Look",
+	"Description": "O look do jogo: a receita de luz de cada ambiente (sol, céu, névoa, pós, pó do mundo) e o material das unidades. Sessão de gráficos (docs/GRAFICOS.md §8).",
+	"Category": "Rendering",
+	"CanContainContent": true,
+	"EnabledByDefault": false,
+	"Modules": [
+		{
+			"Name": "RTSLook",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

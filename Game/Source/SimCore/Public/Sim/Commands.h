@@ -33,12 +33,28 @@ namespace Sim
 		CancelBuild = 10, // desiste da obra Target (o prédio some e o dinheiro volta)
 		SetRally = 11,    // o ponto de encontro do prédio Target vira Point
 		Gather = 12,      // os caminhões do grupo vão coletar no depósito Value (índice)
+		// o tiro forçado do C&C (Ctrl, 13/10): no chão e em qualquer unidade (a própria, o aliado)
+		AttackGround = 13,// grupo atira no chão em Point até mandarem outra coisa
+		ForceAttack = 14, // grupo ataca Target mesmo sendo dele ou aliado
+		// a rede (13/10, N5): render-se, ou a queda que o anfitrião manda pela vaga de quem caiu
+		Resign = 15,      // o jogador desiste: tudo dele cai (o ZH, VictoryConditions::killPlayer)
 	};
 
 	/** Build: o tipo nos 16 bits de baixo e o lado pra onde o prédio olha (0 +X, 1 +Y, 2 −X, 3 −Y) em cima. */
 	constexpr int32_t BuildValue(uint16_t Def, int32_t Dir) { return int32_t(Def) | ((Dir & 3) << 16); }
 	constexpr uint16_t BuildDefOf(int32_t Value) { return uint16_t(Value & 0xFFFF); }
 	constexpr int32_t BuildDirOf(int32_t Value) { return (Value >> 16) & 3; }
+
+	/** Move/AttackMove: bit 0 = em formação (F segurado); bit 1 = com direção (o arraste do esquerdo); bits 2..7 =
+	 *  a largura da linha em passos de 2 m (0 = a do grupo); bits 16..31 = a direção (bam). */
+	constexpr int32_t MoveValue(bool bFormation, bool bFacing, int32_t WidthHalfM, uint16_t FacingBam)
+	{
+		return (bFormation ? 1 : 0) | (bFacing ? 2 : 0) | ((WidthHalfM < 0 ? 0 : (WidthHalfM > 63 ? 63 : WidthHalfM)) << 2) | (int32_t(FacingBam) << 16);
+	}
+	constexpr bool MoveFormationOf(int32_t Value) { return (Value & 1) != 0; }
+	constexpr bool MoveHasFacingOf(int32_t Value) { return (Value & 2) != 0; }
+	constexpr int32_t MoveWidthHalfMOf(int32_t Value) { return (Value >> 2) & 63; }
+	constexpr uint16_t MoveFacingBamOf(int32_t Value) { return uint16_t(uint32_t(Value) >> 16); }
 
 	struct Command
 	{
@@ -47,7 +63,8 @@ namespace Sim
 		CommandType Type = CommandType::Stop;
 		Vec2 Point;
 		EntityId Target = NoEntity;
-		int32_t Value = 0;            // tipo de unidade/prédio, item da fila ou depósito (economia)
+		int32_t Value = 0;            // tipo de unidade/prédio, item da fila ou depósito (economia);
+		                              // Move/AttackMove: MoveValue (formação, direção e largura do arraste)
 		std::vector<EntityId> Units;  // só no SetGroup
 	};
 

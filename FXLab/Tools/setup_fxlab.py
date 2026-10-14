@@ -57,13 +57,15 @@ def import_file(path, dest, name):
     return list(t.get_editor_property('imported_object_paths') or [])
 
 
-def import_bake(bake):
-    """As três folhas do cozimento em ponto flutuante (RGBA16F, sem compressão: o alfa e o fogo HDR ficam)."""
+def import_bake(bake, root='/Game/FX', emit=True):
+    """As três folhas do cozimento em ponto flutuante (RGBA16F, sem compressão: o alfa e o fogo HDR ficam).
+    root: onde (o plugin da poeira do jogo usa /RTSTreadDust); emit=False pula a folha do fogo (a poeira não lê)."""
     src = os.path.join(REPO, 'captures', 'fxlab', 'bake', bake)
     out = {}
-    for file, name in (('six_pos.exr', 'T_SixPos'), ('six_neg.exr', 'T_SixNeg'), ('emit.exr', 'T_Emit')):
-        import_file(os.path.join(src, file), f'/Game/FX/{bake}', name)
-        tex = unreal.load_asset(f'/Game/FX/{bake}/{name}')
+    files = (('six_pos.exr', 'T_SixPos'), ('six_neg.exr', 'T_SixNeg')) + ((('emit.exr', 'T_Emit'),) if emit else ())
+    for file, name in files:
+        import_file(os.path.join(src, file), f'{root}/{bake}', name)
+        tex = unreal.load_asset(f'{root}/{bake}/{name}')
         tex.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_HDR)
         tex.set_editor_property('srgb', False)
         tex.set_editor_property('never_stream', True)
@@ -79,7 +81,12 @@ def new_material(path):
     if eal.does_asset_exist(path):
         eal.delete_asset(path)
     d, n = path.rsplit('/', 1)
-    return asset_tools.create_asset(n, d, unreal.Material, unreal.MaterialFactoryNew())
+    m = asset_tools.create_asset(n, d, unreal.Material, unreal.MaterialFactoryNew())
+    if m is None:
+        # o registro não viu o pacote (conteúdo de plugin num commandlet), mas ele existe: remonta o mesmo, do zero
+        m = unreal.load_asset(path)
+        mel.delete_all_material_expressions(m)
+    return m
 
 
 def linker(m, failed):
@@ -144,6 +151,7 @@ E *= smoothstep(EmberCut * 0.5, EmberCut * 1.5, eL * EmitGain);
 float T = UV3.y;
 float3 col = (SunC * sunR * T + SkyC * skyR * lerp(0.5, 1.0, T)) * dk * Albedo * Tint.rgb + E * EmitGain * UV2.x * EmitScale;
 float va = UV1.y;
+clip(alpha * va * Fade - ClipAlpha);       // a poeira descarta o pixel quase transparente; o padrão −1 nunca descarta
 return float4(col * va, alpha * va) * Fade;
 '''
 
@@ -179,7 +187,7 @@ def sixway_material(tex):
     failed = []
     link = linker(m, failed)
     names = ['UV0', 'UV1', 'UV2', 'UV3', 'VC', 'SixPos', 'SixNeg', 'EmitTex', 'Grid', 'SunCol', 'SkyCol',
-             'EmitGain', 'Density', 'EmberCut', 'Albedo', 'Tint', 'Fade', 'SceneSun', 'SceneSky', 'SceneLight', 'EmitScale']
+             'EmitGain', 'Density', 'EmberCut', 'Albedo', 'Tint', 'Fade', 'SceneSun', 'SceneSky', 'SceneLight', 'EmitScale', 'ClipAlpha']
     c = custom(m, -300, 0, 'SixWay', SIXWAY_HLSL, names, unreal.CustomMaterialOutputType.CMOT_FLOAT4)
     scene_light_inputs(m, c, link, -900, 1000)
     for i in range(4):
@@ -200,7 +208,7 @@ def sixway_material(tex):
         v.set_editor_property('parameter_name', pname)
         v.set_editor_property('default_value', val)
         link(v, '', c, pname)
-    for i, (pname, val) in enumerate((('EmitGain', 13.7), ('Density', 2.6), ('EmberCut', 0.9), ('Albedo', 1.11))):
+    for i, (pname, val) in enumerate((('EmitGain', 13.7), ('Density', 2.6), ('EmberCut', 0.9), ('Albedo', 1.11), ('ClipAlpha', -1.0))):
         s = E(unreal.MaterialExpressionScalarParameter, -900, 640 + i * 60)
         s.set_editor_property('parameter_name', pname)
         s.set_editor_property('default_value', val)

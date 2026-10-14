@@ -1,0 +1,30 @@
+{
+  "ficha": "",
+  "rows": [],
+  "extra": [
+    {
+      "tag": "three_quarter",
+      "label": "3/4 pela frente-esquerda (o patio de conteineres com o portico; a arte da folha de ideias vem depois)"
+    },
+    {
+      "tag": "three_quarter_right",
+      "label": "3/4 pela frente-direita"
+    },
+    {
+      "tag": "low",
+      "label": "baixa, pela pista do caminhao"
+    },
+    {
+      "tag": "top",
+      "label": "planta (cima): o que a camera do RTS mais ve"
+    },
+    {
+      "tag": "game_cam",
+      "label": "a camera do jogo (37,5 graus), tanque USA na pista como regua"
+    },
+    {
+      "tag": "game_cam_close",
+      "label": "a camera do jogo, mais perto"
+    }
+  ]
+}

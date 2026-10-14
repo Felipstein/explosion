@@ -21,6 +21,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "RTSLook",
+			"Enabled": true
+		},
+		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
 		},

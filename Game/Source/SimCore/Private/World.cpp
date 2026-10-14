@@ -28,6 +28,17 @@ namespace Sim
 		constexpr Fix RepathGoalShift = Fix::FromInt(4);
 		/** Empurrão máximo entre unidades por passo (0,13 m = 3,9 m/s, metade da velocidade do tanque). */
 		constexpr Fix MaxPushPerTick = Fix::FromRatio(13, 100);
+		// as carcaças (13/10): no máximo 256 no mapa (a mais velha sai); o casco é dois círculos no eixo, a ±0,45 R e
+		// de raio 0,6 R (~2,1 R × 1,2 R, a planta do tanque); ela pesa o mesmo que o vivo do mesmo tipo (a massa ∝
+		// raio²), então o tanque que empurra anda à metade da velocidade (o Felipe: "ela segura o tanque também"); a
+		// batida nunca é reta (±9° no empurrão, pelo par), e a carcaça gira e escorrega pro lado em vez de ir na frente
+		// do tanque o caminho inteiro (o 1º teste: 60 m empurrada de frente); anda até R/4 e gira até 2° por passo;
+		// travada, espera meio segundo pra tentar de novo
+		constexpr size_t MaxWrecks = 256;
+		constexpr Fix WreckSubOffset = Fix::FromRatio(9, 20);
+		constexpr Fix WreckSubRadius = Fix::FromRatio(3, 5);
+		constexpr int64_t WreckMaxTurnBam = 364;
+		constexpr uint8_t WreckStuckTicks = 15;
 		/** Quem está parado a até isto de um aliado que leva tiro vai ajudar. */
 		constexpr Fix HelpRadius = Fix::FromInt(20);
 		/** A visão de quem morreu fica 1 s (no SC2 ela não some no mesmo instante). */
@@ -67,13 +78,14 @@ namespace Sim
 	{
 		Id.resize(N); Owner.resize(N); Def.resize(N); Pos.resize(N); Hull.resize(N);
 		TurretRel.resize(N); Speed.resize(N); Hp.resize(N); Cooldown.resize(N); Order.resize(N);
-		OrderPoint.resize(N); OrderTarget.resize(N); Engage.resize(N); FireTarget.resize(N);
+		OrderPoint.resize(N); OrderTarget.resize(N); ForcedAttack.resize(N); Engage.resize(N); FireTarget.resize(N);
 		LastAttacker.resize(N); TurretIdle.resize(N); Path.resize(N); PathIndex.resize(N);
 		PathGoal.resize(N); NeedsPath.resize(N); RepathWait.resize(N); StuckTicks.resize(N);
 		StuckAnchor.resize(N); EngageAnchor.resize(N); Ignore.resize(N); IgnoreUntil.resize(N);
 		LookCell.resize(N); BuildLeft.resize(N); Builder.resize(N); Queue.resize(N); QueueLeft.resize(N);
 		Rally.resize(N); HasRally.resize(N); Task.resize(N); TaskTarget.resize(N); TaskDock.resize(N);
 		TaskTimer.resize(N); Cargo.resize(N); AutoGather.resize(N); Blocking.resize(N); TaskPoint.resize(N);
+		ArriveFacing.resize(N); HasArriveFacing.resize(N); SpeedCap.resize(N); IdleTurret.resize(N);
 	}
 
 	// ---------------------------------------------------------------- montagem
@@ -341,6 +353,10 @@ namespace Sim
 		U.Def[I] = DefIndex;
 		U.Pos[I] = Pos;
 		U.Hull[I] = Facing;
+		U.ArriveFacing[I] = Facing;
+		U.HasArriveFacing[I] = 0;
+		U.SpeedCap[I] = Fix::Zero();
+		U.IdleTurret[I] = 0;
 		U.TurretRel[I] = 0;
 		U.Speed[I] = Fix::Zero();
 		U.Hp[I] = D.MaxHp;
@@ -348,6 +364,7 @@ namespace Sim
 		U.Order[I] = OrderType::Idle;
 		U.OrderPoint[I] = Pos;
 		U.OrderTarget[I] = NoEntity;
+		U.ForcedAttack[I] = 0;
 		U.Engage[I] = NoEntity;
 		U.FireTarget[I] = NoEntity;
 		U.LastAttacker[I] = NoEntity;
@@ -393,6 +410,12 @@ namespace Sim
 	int32_t World::IndexOf(EntityId Id) const
 	{
 		return Id < IdToIndex.size() ? IdToIndex[Id] : -1;
+	}
+
+	bool World::IsAliveUnit(EntityId Other) const
+	{
+		const int32_t J = IndexOf(Other);
+		return J >= 0 && U.Hp[J] > 0;
 	}
 
 	bool World::IsAliveEnemy(int32_t Self, EntityId Other) const
@@ -497,6 +520,7 @@ namespace Sim
 		UpdateMovement();
 		BuildBins();
 		SeparateUnits();
+		PushWrecks();
 		BuildBins();
 		UpdateTurrets();
 		UpdateProjectiles();
@@ -521,6 +545,19 @@ namespace Sim
 			return;
 		}
 		PlayerState& P = Players[C.Player];
+		if (C.Type == CommandType::Resign)
+		{
+			// render-se (13/10, N5 da rede; e a queda, que o anfitrião manda pela vaga de quem caiu): quem desiste
+			// perde tudo, como no ZH (VictoryConditions::killPlayer); a vitória marca a derrota no fim deste passo
+			for (int32_t I = 0; I < UnitCount(); ++I)
+			{
+				if (U.Owner[I] == C.Player)
+				{
+					U.Hp[I] = 0;
+				}
+			}
+			return;
+		}
 		if (C.Type == CommandType::SetGroup)
 		{
 			// só entra o que é do jogador e está vivo; ordem de ID, sem repetição
@@ -548,12 +585,13 @@ namespace Sim
 				Members.push_back(I);
 			}
 		}
-		if (C.Type >= CommandType::Produce)
+		const bool bCombat = C.Type == CommandType::Attack || C.Type == CommandType::ForceAttack || C.Type == CommandType::AttackGround;
+		if (C.Type >= CommandType::Produce && !bCombat)
 		{
 			ApplyEconomyCommand(C, Members);
 			return;
 		}
-		if (C.Type == CommandType::Attack)
+		if (bCombat)
 		{
 			// desarmado não ataca (o Dozer e o caminhão ficam onde estão)
 			Members.erase(std::remove_if(Members.begin(), Members.end(), [this](int32_t I) { return !DefOf(I).HasWeapon(); }), Members.end());
@@ -562,7 +600,7 @@ namespace Sim
 		{
 			return;
 		}
-		if (C.Type == CommandType::Move || C.Type == CommandType::AttackMove || C.Type == CommandType::Attack || C.Type == CommandType::Stop)
+		if (C.Type == CommandType::Move || C.Type == CommandType::AttackMove || bCombat || C.Type == CommandType::Stop)
 		{
 			// ordem do jogador: o Dozer larga a obra (ela fica parada) e o caminhão para de coletar
 			for (const int32_t I : Members)
@@ -588,24 +626,79 @@ namespace Sim
 		case CommandType::AttackMove:
 		{
 			const OrderType Order = C.Type == CommandType::Move ? OrderType::Move : OrderType::AttackMove;
+			// em formação (F segurado, como no C&C): o desenho do grupo anda junto, no passo do mais lento;
+			// sem a tecla, cada um vai na sua velocidade
+			const bool bFormation = MoveFormationOf(C.Value) && Members.size() > 1;
+			// o arraste do esquerdo (11/10, estudo AoE4, CoH, BAR): a linha de frente virada pra onde o jogador puxou
+			const bool bDragFacing = MoveHasFacingOf(C.Value);
+			const Angle DragFacing = Angle::FromBam(MoveFacingBamOf(C.Value));
 			std::vector<Vec2> Slots;
-			GroupSlots(Members, ClampToMap(C.Point), Slots);
+			if (bDragFacing)
+			{
+				LineSlots(Members, ClampToMap(C.Point), DragFacing, Fix::FromInt(2 * MoveWidthHalfMOf(C.Value)), Slots);
+			}
+			else if (bFormation)
+			{
+				FormationSlots(Members, ClampToMap(C.Point), Slots);
+			}
+			else
+			{
+				GroupSlots(Members, ClampToMap(C.Point), Slots);
+			}
+			Fix Slowest = Fix::Zero();
+			for (const int32_t M : Members)
+			{
+				if (!DefOf(M).IsStructure() && (Slowest == Fix::Zero() || DefOf(M).MaxSpeed < Slowest))
+				{
+					Slowest = DefOf(M).MaxSpeed;
+				}
+			}
+			// o grupo chega virado pra direção da marcha, do centro do grupo pro ponto
+			// (estudo de 11/10: CoH, AoE4, 0 A.D.; ordem curta, de menos de 3 células, não gira)
+			Vec2 Center = Vec2::Zero();
+			for (const int32_t M : Members)
+			{
+				Center += U.Pos[M] / Fix::FromInt(int64_t(Members.size()));
+			}
+			const bool bFace = bDragFacing || (!Members.empty() && DistSqRaw(Center, C.Point) > RadiusSqRaw(MapData.CellSize * 3));
+			const Angle March = bDragFacing ? DragFacing : (C.Point - Center).Heading();
 			for (size_t K = 0; K < Members.size(); ++K)
 			{
 				GiveMove(Members[K], Slots[K], Order);
+				if (bFormation)
+				{
+					U.SpeedCap[Members[K]] = Slowest;
+				}
+				if (bFace && !DefOf(Members[K]).IsStructure())
+				{
+					U.ArriveFacing[Members[K]] = March;
+					U.HasArriveFacing[Members[K]] = 1;
+				}
+			}
+			if (bFace)
+			{
+				FanTurrets(Members, Slots, March);
 			}
 			break;
 		}
 		case CommandType::Attack:
+		case CommandType::ForceAttack:
 		{
-			if (!IsAliveEnemy(Members.front(), C.Target))
+			const bool bForced = C.Type == CommandType::ForceAttack;
+			if (bForced ? !IsAliveUnit(C.Target) : !IsAliveEnemy(Members.front(), C.Target))
 			{
-				return;   // alvo morto ou aliado: ordem inválida, ignora (ataque forçado vem depois)
+				return;   // alvo morto, ou aliado sem o Ctrl: ordem inválida, ignora
 			}
 
 			for (const int32_t I : Members)
 			{
+				if (U.Id[I] == C.Target)
+				{
+					continue;   // ninguém atira em si mesmo
+				}
+				U.ForcedAttack[I] = bForced ? 1 : 0;
 				U.Order[I] = OrderType::Attack;
+				U.SpeedCap[I] = Fix::Zero();
 				U.OrderTarget[I] = C.Target;
 				U.Engage[I] = C.Target;
 				U.Path[I].clear();
@@ -615,6 +708,23 @@ namespace Sim
 			}
 			break;
 		}
+		case CommandType::AttackGround:
+			// o tiro forçado no chão (Ctrl, como no C&C): vai até o alcance e atira no ponto até mandarem outra coisa
+			for (const int32_t I : Members)
+			{
+				U.Order[I] = OrderType::AttackGround;
+				U.OrderPoint[I] = C.Point;
+				U.OrderTarget[I] = NoEntity;
+				U.ForcedAttack[I] = 0;
+				U.Engage[I] = NoEntity;
+				U.FireTarget[I] = NoEntity;
+				U.SpeedCap[I] = Fix::Zero();
+				U.Path[I].clear();
+				U.NeedsPath[I] = 1;
+				U.StuckTicks[I] = 0;
+				U.StuckAnchor[I] = U.Pos[I];
+			}
+			break;
 		case CommandType::Stop:
 			for (const int32_t I : Members)
 			{
@@ -624,6 +734,7 @@ namespace Sim
 				U.LastAttacker[I] = NoEntity;
 				U.Path[I].clear();
 				U.NeedsPath[I] = 0;
+				U.SpeedCap[I] = Fix::Zero();
 			}
 			break;
 		case CommandType::SetGroup:
@@ -643,6 +754,72 @@ namespace Sim
 		U.RepathWait[I] = 0;
 		U.StuckTicks[I] = 0;
 		U.StuckAnchor[I] = U.Pos[I];
+		U.HasArriveFacing[I] = 0;
+		U.SpeedCap[I] = Fix::Zero();
+		U.IdleTurret[I] = 0;
+	}
+
+	namespace
+	{
+		// o leque: as torres da ponta olham 25° pra fora (a vigia em todas as direções da doutrina de
+		// coluna blindada: cada um cobre o seu setor), o meio olha pra frente
+		constexpr int32_t TurretFanBam = Angle::FullTurn * 25 / 360;
+	}
+
+	void World::FanTurrets(const std::vector<int32_t>& Members, const std::vector<Vec2>& Slots, Angle March)
+	{
+		const int32_t N = int32_t(Members.size());
+		if (N < 2 || Slots.size() != Members.size())
+		{
+			return;
+		}
+		const Vec2 F = Vec2::FromAngle(March);
+		const Vec2 Left = Vec2::Make(-F.Y, F.X);
+		Vec2 Center = Vec2::Zero();
+		for (const Vec2& S : Slots)
+		{
+			Center += S / Fix::FromInt(int64_t(N));
+		}
+		std::vector<Fix> Lat(static_cast<size_t>(N));
+		Fix HalfWidth = Fix::Zero();
+		for (int32_t K = 0; K < N; ++K)
+		{
+			Lat[size_t(K)] = (Slots[size_t(K)] - Center).Dot(Left);
+			HalfWidth = Max(HalfWidth, Abs(Lat[size_t(K)]));
+		}
+		if (HalfWidth > Fix::FromInt(2))
+		{
+			// em linha ou em bloco: pelo lado de cada um (positivo = esquerda, como o giro da torre)
+			for (int32_t K = 0; K < N; ++K)
+			{
+				const int32_t I = Members[size_t(K)];
+				if (!DefOf(I).IsStructure() && DefOf(I).HasWeapon())
+				{
+					U.IdleTurret[I] = int32_t((Lat[size_t(K)] / HalfWidth * Fix::FromInt(TurretFanBam)).Round());
+				}
+			}
+			return;
+		}
+		// em fila indiana: o da frente olha pra frente e os de trás alternam esquerda e direita
+		std::vector<int32_t> Order(static_cast<size_t>(N));
+		for (int32_t K = 0; K < N; ++K)
+		{
+			Order[size_t(K)] = K;
+		}
+		std::sort(Order.begin(), Order.end(), [&](int32_t A, int32_t B)
+		{
+			const Fix FA = (Slots[size_t(A)] - Center).Dot(F);
+			const Fix FB = (Slots[size_t(B)] - Center).Dot(F);
+			return FA != FB ? FA > FB : A < B;
+		});
+		for (int32_t R = 0; R < N; ++R)
+		{
+			const int32_t I = Members[size_t(Order[size_t(R)])];
+			if (!DefOf(I).IsStructure() && DefOf(I).HasWeapon())
+			{
+				U.IdleTurret[I] = R == 0 ? 0 : ((R & 1) != 0 ? TurretFanBam : -TurretFanBam);
+			}
+		}
 	}
 
 	// ---------------------------------------------------------------- vagas do grupo
@@ -693,6 +870,156 @@ namespace Sim
 			return Pathfinder::NearestInRegion(MapData, RegionLabels[K], Region, C, 6, To) ? MapData.CellCenter(To) : Fallback;
 		}
 		return P;
+	}
+
+	void World::Uncross(const std::vector<int32_t>& Members, std::vector<Vec2>& Slots) const
+	{
+		// troca dois de vaga quando a soma das distâncias cai: com a distância simples (não a ao
+		// quadrado), a atribuição sem melhora por troca não tem caminhos que se cruzam (o "NoX" do
+		// BAR, estudo de 11/10). Passadas e teto fixos, por N e nunca por tempo: o lockstep exige
+		constexpr int32_t MaxUncross = 48;
+		constexpr int32_t Passes = 3;
+		const int32_t N = int32_t(Members.size());
+		if (N < 2 || N > MaxUncross)
+		{
+			return;
+		}
+		for (int32_t Pass = 0; Pass < Passes; ++Pass)
+		{
+			bool bSwapped = false;
+			for (int32_t A = 0; A < N; ++A)
+			{
+				for (int32_t B = A + 1; B < N; ++B)
+				{
+					const Vec2 PA = U.Pos[Members[size_t(A)]];
+					const Vec2 PB = U.Pos[Members[size_t(B)]];
+					const Fix Now = Distance(PA, Slots[size_t(A)]) + Distance(PB, Slots[size_t(B)]);
+					const Fix Swapped = Distance(PA, Slots[size_t(B)]) + Distance(PB, Slots[size_t(A)]);
+					if (Swapped + Fix::FromMilli(10) < Now)
+					{
+						std::swap(Slots[size_t(A)], Slots[size_t(B)]);
+						bSwapped = true;
+					}
+				}
+			}
+			if (!bSwapped)
+			{
+				break;
+			}
+		}
+	}
+
+	void World::FormationSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out)
+	{
+		// o "quadro mágico" do SC2 e a formação do C&C: o grupo é levado como está, só transladado
+		// (sem girar: ninguém troca de lado, nada cruza). Grupo espalhado demais é apertado até o
+		// tamanho de um bloco (raiz de N vagas de lado), pra o F não virar "cada um no seu canto do mapa".
+		const int32_t N = int32_t(Members.size());
+		Out.assign(size_t(N), Point);
+		if (N <= 1)
+		{
+			return;
+		}
+		Vec2 Sum = Vec2::Zero();
+		Fix MaxRadius = Fix::Zero();
+		int32_t Clearance = 1;
+		for (const int32_t I : Members)
+		{
+			Sum += U.Pos[I];
+			MaxRadius = Max(MaxRadius, DefOf(I).Radius);
+			Clearance = std::max(Clearance, MapData.ClearanceFor(DefOf(I).PathRadius));
+		}
+		const Vec2 Center = Vec2::Make(Sum.X / int64_t(N), Sum.Y / int64_t(N));
+		const Fix Spacing = MaxRadius * Fix::FromMilli(SlotSpacingPerRadiusMilli);
+		const Fix Reach = Spacing * int64_t(ISqrt(uint64_t(N)) + 1);
+		Fix Farthest = Fix::Zero();
+		for (const int32_t I : Members)
+		{
+			Farthest = Max(Farthest, Distance(U.Pos[I], Center));
+		}
+		Cell PointCell = MapData.CellOf(Point);
+		const int32_t Region = Pathfinder::NearestWalkable(MapData, PointCell, Clearance, 24, PointCell) ? RegionAt(Clearance, PointCell) : 0;
+		for (int32_t K = 0; K < N; ++K)
+		{
+			Vec2 Rel = U.Pos[Members[size_t(K)]] - Center;
+			if (Farthest > Reach)
+			{
+				Rel = Rel * (Reach / Farthest);   // aperta por igual: o desenho fica, só menor
+			}
+			const Vec2 Slot = ClampToMap(Point + Rel);
+			Out[size_t(K)] = Region != 0 ? IntoRegion(Clearance, Region, Slot, Point) : Slot;
+		}
+	}
+
+	void World::LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out)
+	{
+		// a linha de frente: as fileiras são de través da direção (de frente pro inimigo, não em coluna), a da
+		// frente no ponto apertado e as outras atrás. A largura vem do arraste (o BAR espalha pela linha
+		// puxada); arraste curto, a do grupo: até 4 numa fileira só, senão metade em cada (no máximo 8).
+		const int32_t N = int32_t(Members.size());
+		Out.assign(size_t(N), Point);
+		if (N <= 1)
+		{
+			return;
+		}
+		Vec2 Sum = Vec2::Zero();
+		Fix MaxRadius = Fix::Zero();
+		int32_t Clearance = 1;
+		for (const int32_t I : Members)
+		{
+			Sum += U.Pos[I];
+			MaxRadius = Max(MaxRadius, DefOf(I).Radius);
+			Clearance = std::max(Clearance, MapData.ClearanceFor(DefOf(I).PathRadius));
+		}
+		const Vec2 Center = Vec2::Make(Sum.X / int64_t(N), Sum.Y / int64_t(N));
+		const Fix Spacing = MaxRadius * Fix::FromMilli(SlotSpacingPerRadiusMilli);
+		int32_t Cols = N <= 4 ? N : std::min(8, (N + 1) / 2);
+		if (Width > Spacing)
+		{
+			Cols = int32_t((Width / Spacing).Round()) + 1;   // a largura é de centro a centro dos tanques das pontas
+		}
+		Cols = std::clamp(Cols, 1, N);
+		const Vec2 Dir = Vec2::FromAngle(Facing);
+		const Vec2 Side = Vec2::Make(-Dir.Y, Dir.X);
+		Cell PointCell = MapData.CellOf(Point);
+		const int32_t Region = Pathfinder::NearestWalkable(MapData, PointCell, Clearance, 24, PointCell) ? RegionAt(Clearance, PointCell) : 0;
+		const auto Settle = [&](Vec2 Slot) { return Region != 0 ? IntoRegion(Clearance, Region, ClampToMap(Slot), Point) : ClampToMap(Slot); };
+
+		// quem está mais à frente (na direção nova) vai pra fileira da frente; na fileira, cada um pelo seu lado
+		std::vector<int32_t> Order(static_cast<size_t>(N));
+		std::vector<Fix> Forward(static_cast<size_t>(N));
+		std::vector<Fix> Lateral(static_cast<size_t>(N));
+		for (int32_t K = 0; K < N; ++K)
+		{
+			const Vec2 Rel = U.Pos[Members[size_t(K)]] - Center;
+			Forward[size_t(K)] = Rel.Dot(Dir);
+			Lateral[size_t(K)] = Rel.Dot(Side);
+			Order[size_t(K)] = K;
+		}
+		std::sort(Order.begin(), Order.end(), [&](int32_t A, int32_t B)
+		{
+			return Forward[size_t(A)] != Forward[size_t(B)] ? Forward[size_t(A)] > Forward[size_t(B)] : A < B;
+		});
+		for (int32_t Row = 0; Row * Cols < N; ++Row)
+		{
+			const int32_t First = Row * Cols;
+			const int32_t Count = std::min(Cols, N - First);
+			std::sort(Order.begin() + First, Order.begin() + First + Count, [&](int32_t A, int32_t B)
+			{
+				return Lateral[size_t(A)] != Lateral[size_t(B)] ? Lateral[size_t(A)] < Lateral[size_t(B)] : A < B;
+			});
+			for (int32_t Col = 0; Col < Count; ++Col)
+			{
+				const Fix Lat = Spacing * int64_t(2 * Col - (Count - 1)) / 2;
+				Vec2 Slot = Point + Side * Lat - Dir * (Spacing * int64_t(Row));
+				if ((Row & 1) != 0)
+				{
+					Slot += Side * (Spacing * 5 / 16);   // a de trás meio desencontrada: cada um atira pelo vão da frente
+				}
+				Out[size_t(Order[size_t(First + Col)])] = Settle(Slot);
+			}
+		}
+		Uncross(Members, Out);
 	}
 
 	void World::GroupSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out)
@@ -771,6 +1098,7 @@ namespace Sim
 				Taken[size_t(Best)] = 1;
 				Out[size_t(Best)] = Candidates[S].Pos;
 			}
+			Uncross(Members, Out);
 			return;
 		}
 
@@ -840,6 +1168,7 @@ namespace Sim
 					Out[size_t(Members2[Row])] = Settle(Slot);
 				}
 			}
+			Uncross(Members, Out);
 			return;
 		}
 
@@ -973,8 +1302,18 @@ namespace Sim
 				continue;
 			}
 			const bool bScan = ((CurrentTick + U.Id[I]) % TargetScanInterval) == 0;
+			if (U.Order[I] == OrderType::AttackGround)
+			{
+				// atira no chão: nem persegue nem troca de alvo (a torre e a arma vão pelo OrderPoint)
+				U.Engage[I] = NoEntity;
+				U.FireTarget[I] = NoEntity;
+				continue;
+			}
+			// o alvo vale: inimigo vivo; no ataque forçado, o da ordem, de qualquer dono
+			const bool bForced = U.Order[I] == OrderType::Attack && U.ForcedAttack[I] != 0;
+			auto Valid = [&](EntityId T) { return bForced && T == U.OrderTarget[I] ? IsAliveUnit(T) && T != U.Id[I] : IsAliveEnemy(I, T); };
 
-			if (U.Order[I] == OrderType::Attack && !IsAliveEnemy(I, U.OrderTarget[I]))
+			if (U.Order[I] == OrderType::Attack && !Valid(U.OrderTarget[I]))
 			{
 				// alvo morreu: para onde está (o Vanguard tinha o bug de ir até o cadáver)
 				U.Order[I] = OrderType::Idle;
@@ -990,7 +1329,7 @@ namespace Sim
 					GiveMove(I, U.Pos[J], OrderType::AttackMove);
 				}
 			}
-			if (!IsAliveEnemy(I, U.Engage[I]) || (IndexOf(U.Engage[I]) >= 0 && !SeesUnit(I, IndexOf(U.Engage[I]))))
+			if (!Valid(U.Engage[I]) || (IndexOf(U.Engage[I]) >= 0 && !SeesUnit(I, IndexOf(U.Engage[I]))))
 			{
 				U.Engage[I] = NoEntity;   // morto, ou sumiu na névoa
 			}
@@ -1056,7 +1395,7 @@ namespace Sim
 			{
 				U.FireTarget[I] = U.Engage[I];
 			}
-			else if (U.FireTarget[I] != NoEntity && (!IsAliveEnemy(I, U.FireTarget[I]) || !WithinRaw(U.FireTarget[I], D.Weapon.Range)
+			else if (U.FireTarget[I] != NoEntity && (!Valid(U.FireTarget[I]) || !WithinRaw(U.FireTarget[I], D.Weapon.Range)
 				|| !SeesUnit(I, IndexOf(U.FireTarget[I]))))
 			{
 				U.FireTarget[I] = NoEntity;
@@ -1087,6 +1426,17 @@ namespace Sim
 				OutStopDistance = Stop;
 				return true;
 			}
+		}
+		if (U.Order[I] == OrderType::AttackGround)
+		{
+			const Fix Stop = DefOf(I).Weapon.Range * ChaseStopFraction;
+			if (DistSqRaw(U.Pos[I], U.OrderPoint[I]) <= RadiusSqRaw(Stop))
+			{
+				return false;   // no alcance: fica e atira no chão
+			}
+			OutGoal = U.OrderPoint[I];
+			OutStopDistance = Stop;
+			return true;
 		}
 		if (U.Order[I] == OrderType::Move || U.Order[I] == OrderType::AttackMove)
 		{
@@ -1230,9 +1580,10 @@ namespace Sim
 				{
 					Desired = (Waypoint - U.Pos[I]).Heading();
 					const int32_t Off = AbsInt(U.Hull[I].DeltaTo(Desired));
+					const Fix Top = U.SpeedCap[I] > Fix::Zero() ? Min(D.MaxSpeed, U.SpeedCap[I]) : D.MaxSpeed;
 					TargetSpeed = Off >= TurnInPlaceBam
 						? Fix::Zero()
-						: D.MaxSpeed * Fix::FromRatio(TurnInPlaceBam - Off, TurnInPlaceBam);
+						: Top * Fix::FromRatio(TurnInPlaceBam - Off, TurnInPlaceBam);
 					if (bLast)
 					{
 						// freia a tempo: v² = 2·a·d
@@ -1242,6 +1593,14 @@ namespace Sim
 				}
 			}
 
+			if (!bWantsToMove && U.HasArriveFacing[I] && U.Order[I] == OrderType::Idle && U.Engage[I] == NoEntity)
+			{
+				Desired = U.ArriveFacing[I];
+				if (AbsInt(U.Hull[I].DeltaTo(Desired)) <= D.TurnBam)
+				{
+					U.HasArriveFacing[I] = 0;
+				}
+			}
 			U.Hull[I] = U.Hull[I].RotatedTowards(Desired, D.TurnBam);
 			if (U.Speed[I] < TargetSpeed)
 			{
@@ -1295,7 +1654,7 @@ namespace Sim
 					if (!bMoved)
 					{
 						const bool bNear = DistSqRaw(U.Pos[I], Goal) <= RadiusSqRaw(D.Radius * 3 + Stop);
-						if (bNear && U.Engage[I] == NoEntity && U.Order[I] != OrderType::Attack)
+						if (bNear && U.Engage[I] == NoEntity && U.Order[I] != OrderType::Attack && U.Order[I] != OrderType::AttackGround)
 						{
 							U.Order[I] = OrderType::Idle;   // perto o bastante: o grupo encostou
 							U.Path[I].clear();
@@ -1385,6 +1744,170 @@ namespace Sim
 		}
 	}
 
+	void World::PushWrecks()
+	{
+		if (Wrecks.empty())
+		{
+			return;
+		}
+		const Fix BamPerRadian = Fix::FromRatio(10430378, 1000);   // 65536 / 2π
+		std::vector<Vec2> Move(Wrecks.size(), Vec2::Zero());
+		std::vector<int64_t> Turn(Wrecks.size(), 0);
+		std::vector<uint8_t> Contact(Wrecks.size(), 0);
+		std::vector<Vec2> Push(U.Id.size(), Vec2::Zero());
+		const auto Circles = [this](const WreckState& Wr, Vec2 (&C)[2], Fix& R)
+		{
+			const Fix Big = RulesData.Units[Wr.Def].Radius;
+			R = Big * WreckSubRadius;
+			const Vec2 Ax = Vec2::FromAngle(Wr.Hull) * (Big * WreckSubOffset);
+			C[0] = Wr.Pos + Ax;
+			C[1] = Wr.Pos - Ax;
+		};
+		// o empurrão fora do centro gira o casco: θ = (r × F) / (2·|r|²), r do centro ao círculo que levou o empurrão
+		const auto AddTurn = [&](size_t K, Vec2 At, Vec2 F)
+		{
+			const Vec2 Lever = At - Wrecks[K].Pos;
+			const Fix Den = Lever.Dot(Lever) * 2;
+			if (Den.Raw > 0)
+			{
+				Turn[K] += (((Lever.X * F.Y - Lever.Y * F.X) / Den) * BamPerRadian).Round();
+			}
+		};
+		// o vivo contra a carcaça: a sobreposição dividida pela massa
+		for (size_t K = 0; K < Wrecks.size(); ++K)
+		{
+			const WreckState& Wr = Wrecks[K];
+			Vec2 C[2];
+			Fix R;
+			Circles(Wr, C, R);
+			const Fix Big = RulesData.Units[Wr.Def].Radius;
+			const int64_t MassW = (Big * Big).Raw;
+			ForEachNear(Wr.Pos, Big + MaxUnitRadius, [&](int32_t J)
+			{
+				const UnitDef& DJ = DefOf(J);
+				if (DJ.IsStructure())
+				{
+					return;
+				}
+				const int64_t MassU = (DJ.Radius * DJ.Radius).Raw;
+				const Fix ShareW = Wr.Stuck > 0 ? Fix::Zero() : Fix::FromRatio(MassU, MassU + MassW);
+				for (int32_t S = 0; S < 2; ++S)
+				{
+					const Fix Reach = DJ.Radius + R;
+					const Vec2 Delta = U.Pos[J] - C[S];
+					if (Delta.LengthSqRaw() >= RadiusSqRaw(Reach))
+					{
+						continue;
+					}
+					const Fix Dist = Delta.Length();
+					const Vec2 Straight = Dist.Raw > 0 ? Delta / Dist : Vec2::FromAngle(Angle::FromBam(int32_t(Wr.Hull.Bam) + Angle::QuarterTurn));
+					// a batida torta: ±9° (1638 bam) pelo par carcaça × vivo, sempre o mesmo lado pro mesmo par
+					const int32_t Skew = ((Wr.Id * 2654435761u) ^ (U.Id[J] * 40503u)) & 1u ? 1638 : -1638;
+					const Vec2 Dir = Vec2::FromAngle(Angle::FromBam(int32_t(Straight.Heading().Bam) + Skew));
+					const Fix Overlap = Reach - Dist;
+					Push[size_t(J)] += Dir * (Overlap * (Fix::One() - ShareW));
+					const Vec2 F = -(Dir * (Overlap * ShareW));
+					Move[K] += F;
+					AddTurn(K, C[S], F);
+					Contact[K] = 1;
+				}
+			});
+		}
+		// carcaça com carcaça (duas mortes no mesmo lugar, ou uma empurrada contra a outra): meio a meio
+		for (size_t K = 0; K < Wrecks.size(); ++K)
+		{
+			for (size_t L = K + 1; L < Wrecks.size(); ++L)
+			{
+				const Fix BigK = RulesData.Units[Wrecks[K].Def].Radius;
+				const Fix BigL = RulesData.Units[Wrecks[L].Def].Radius;
+				if (DistSqRaw(Wrecks[K].Pos, Wrecks[L].Pos) >= RadiusSqRaw(BigK + BigL))
+				{
+					continue;
+				}
+				Vec2 CK[2], CL[2];
+				Fix RK, RL;
+				Circles(Wrecks[K], CK, RK);
+				Circles(Wrecks[L], CL, RL);
+				for (int32_t A = 0; A < 2; ++A)
+				{
+					for (int32_t B = 0; B < 2; ++B)
+					{
+						const Fix Reach = RK + RL;
+						const Vec2 Delta = CK[A] - CL[B];
+						if (Delta.LengthSqRaw() >= RadiusSqRaw(Reach))
+						{
+							continue;
+						}
+						const Fix Dist = Delta.Length();
+						const Vec2 Dir = Dist.Raw > 0 ? Delta / Dist : Vec2::FromAngle(Angle::FromBam(int32_t((Wrecks[K].Id * 2654435761u) >> 16)));
+						const Vec2 F = Dir * ((Reach - Dist) / 2);
+						Move[K] += F;
+						Move[L] -= F;
+						AddTurn(K, CK[A], F);
+						AddTurn(L, CL[B], -F);
+					}
+				}
+			}
+		}
+		// a carcaça anda e gira (até R/4 e 2° por passo); onde não cabe, trava e o vivo leva o empurrão inteiro
+		for (size_t K = 0; K < Wrecks.size(); ++K)
+		{
+			WreckState& Wr = Wrecks[K];
+			if (!Contact[K])
+			{
+				Wr.Stuck = 0;
+			}
+			else if (Wr.Stuck > 0)
+			{
+				--Wr.Stuck;
+			}
+			Vec2 M = Move[K];
+			const int64_t T = Turn[K] > WreckMaxTurnBam ? WreckMaxTurnBam : (Turn[K] < -WreckMaxTurnBam ? -WreckMaxTurnBam : Turn[K]);
+			if (M == Vec2::Zero() && T == 0)
+			{
+				continue;
+			}
+			const UnitDef& D = RulesData.Units[Wr.Def];
+			const Fix MaxMove = D.Radius / 4;
+			if (M.LengthSqRaw() > RadiusSqRaw(MaxMove))
+			{
+				M = M.Normalized() * MaxMove;
+			}
+			const Vec2 Next = Wr.Pos + M;
+			const Cell C = MapData.CellOf(Next);
+			if (MapData.IsWalkable(C.X, C.Y, MapData.ClearanceFor(D.PathRadius)))
+			{
+				Wr.Pos = Next;
+				Wr.Hull = Angle::FromBam(int32_t(Wr.Hull.Bam) + int32_t(T));
+			}
+			else
+			{
+				Wr.Stuck = WreckStuckTicks;
+			}
+		}
+		// o vivo segurado pela carcaça: a parte dele da sobreposição sai inteira no passo (até R/4), não o encosto suave
+		// entre dois tanques, senão ele entra meio casco na carcaça antes de empurrar (carcaca_empurra2, 13/10)
+		for (int32_t I = 0; I < UnitCount(); ++I)
+		{
+			Vec2 P = Push[size_t(I)];
+			if (P == Vec2::Zero())
+			{
+				continue;
+			}
+			const Fix MaxPush = DefOf(I).Radius / 4;
+			if (P.LengthSqRaw() > RadiusSqRaw(MaxPush))
+			{
+				P = P.Normalized() * MaxPush;
+			}
+			const Vec2 Next = U.Pos[I] + P;
+			const Cell C = MapData.CellOf(Next);
+			if (MapData.IsWalkable(C.X, C.Y, MapData.ClearanceFor(DefOf(I).PathRadius)))
+			{
+				U.Pos[I] = Next;
+			}
+		}
+	}
+
 	// ---------------------------------------------------------------- torre e armas
 
 	void World::UpdateTurrets()
@@ -1392,10 +1915,15 @@ namespace Sim
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			const UnitDef& D = DefOf(I);
-			int32_t DesiredRel = 0;
+			int32_t DesiredRel = U.IdleTurret[I];
 			int32_t Rate = D.TurretTurnBam;
 			const int32_t T = IndexOf(U.FireTarget[I]);
-			if (T >= 0)
+			if (U.Order[I] == OrderType::AttackGround && D.HasWeapon())
+			{
+				DesiredRel = U.Hull[I].DeltaTo((U.OrderPoint[I] - U.Pos[I]).Heading());
+				U.TurretIdle[I] = 0;
+			}
+			else if (T >= 0)
 			{
 				const Angle Bearing = (U.Pos[T] - U.Pos[I]).Heading();
 				DesiredRel = U.Hull[I].DeltaTo(Bearing);
@@ -1403,7 +1931,7 @@ namespace Sim
 			}
 			else
 			{
-				// sem alvo: depois de um tempo a torre volta pra frente, a meia velocidade (ZH)
+				// sem alvo: depois de um tempo a torre volta pra frente (ou pro seu lado do leque), a meia velocidade (ZH)
 				if (U.TurretIdle[I] < D.TurretIdleReturnTicks)
 				{
 					++U.TurretIdle[I];
@@ -1451,6 +1979,27 @@ namespace Sim
 			if (U.Cooldown[I] > 0)
 			{
 				--U.Cooldown[I];
+			}
+			if (U.Order[I] == OrderType::AttackGround && U.Cooldown[I] == 0 && DefOf(I).HasWeapon())
+			{
+				// o tiro forçado no chão: no alcance e com a torre alinhada, o projétil vai até o ponto e não acerta ninguém
+				const WeaponDef& W = DefOf(I).Weapon;
+				const Vec2 Aim = U.OrderPoint[I];
+				if (DistSqRaw(U.Pos[I], Aim) <= RadiusSqRaw(W.Range) && AbsInt(TurretWorld(I).DeltaTo((Aim - U.Pos[I]).Heading())) <= W.AimToleranceBam)
+				{
+					U.Cooldown[I] = W.ReloadTicks;
+					Projectile P;
+					P.Shooter = U.Id[I];
+					P.Target = NoEntity;
+					P.Pos = U.Pos[I] + Vec2::FromAngle(TurretWorld(I)) * DefOf(I).Radius;
+					P.Aim = Aim;
+					P.Step = W.ProjectileStep;
+					P.Damage = W.Damage;
+					P.Type = W.Type;
+					Projectiles.push_back(P);
+					Events.push_back({ EventType::WeaponFired, U.Id[I], NoEntity, Aim, 0 });
+				}
+				continue;
 			}
 			const int32_t T = IndexOf(U.FireTarget[I]);
 			if (T < 0 || U.Cooldown[I] > 0)
@@ -1570,6 +2119,20 @@ namespace Sim
 				DropCargo(U.Pos[I], U.Cargo[I]);   // a carga que cai
 				U.Cargo[I] = 0;
 			}
+			if (!D.IsStructure())
+			{
+				// o veículo vira carcaça no lugar, com o giro do casco (13/10)
+				WreckState Wr;
+				Wr.Id = U.Id[I];
+				Wr.Def = U.Def[I];
+				Wr.Pos = U.Pos[I];
+				Wr.Hull = U.Hull[I];
+				Wrecks.push_back(Wr);
+				if (Wrecks.size() > MaxWrecks)
+				{
+					Wrecks.erase(Wrecks.begin());
+				}
+			}
 		}
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
@@ -1591,7 +2154,7 @@ namespace Sim
 		Compact(U.Id, Keep); Compact(U.Owner, Keep); Compact(U.Def, Keep); Compact(U.Pos, Keep);
 		Compact(U.Hull, Keep); Compact(U.TurretRel, Keep); Compact(U.Speed, Keep); Compact(U.Hp, Keep);
 		Compact(U.Cooldown, Keep); Compact(U.Order, Keep); Compact(U.OrderPoint, Keep);
-		Compact(U.OrderTarget, Keep); Compact(U.Engage, Keep); Compact(U.FireTarget, Keep);
+		Compact(U.OrderTarget, Keep); Compact(U.ForcedAttack, Keep); Compact(U.Engage, Keep); Compact(U.FireTarget, Keep);
 		Compact(U.LastAttacker, Keep); Compact(U.TurretIdle, Keep); Compact(U.Path, Keep);
 		Compact(U.PathIndex, Keep); Compact(U.PathGoal, Keep); Compact(U.NeedsPath, Keep);
 		Compact(U.RepathWait, Keep); Compact(U.StuckTicks, Keep); Compact(U.StuckAnchor, Keep);
@@ -1600,6 +2163,7 @@ namespace Sim
 		Compact(U.QueueLeft, Keep); Compact(U.Rally, Keep); Compact(U.HasRally, Keep); Compact(U.Task, Keep);
 		Compact(U.TaskTarget, Keep); Compact(U.TaskDock, Keep); Compact(U.TaskTimer, Keep); Compact(U.Cargo, Keep);
 		Compact(U.AutoGather, Keep); Compact(U.Blocking, Keep); Compact(U.TaskPoint, Keep);
+		Compact(U.ArriveFacing, Keep); Compact(U.HasArriveFacing, Keep); Compact(U.SpeedCap, Keep); Compact(U.IdleTurret, Keep);
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
 			IdToIndex[U.Id[I]] = int32_t(I);
@@ -1847,7 +2411,7 @@ namespace Sim
 		{
 			H.Add(U.Id[I]); H.Add(U.Owner[I]); H.Add(U.Def[I]); H.Add(U.Pos[I]); H.Add(U.Hull[I]);
 			H.Add(U.TurretRel[I]); H.Add(U.Speed[I]); H.Add(U.Hp[I]); H.Add(U.Cooldown[I]);
-			H.Add(uint8_t(U.Order[I])); H.Add(U.OrderPoint[I]); H.Add(U.OrderTarget[I]); H.Add(U.Engage[I]);
+			H.Add(uint8_t(U.Order[I])); H.Add(U.OrderPoint[I]); H.Add(U.OrderTarget[I]); H.Add(U.ForcedAttack[I]); H.Add(U.Engage[I]);
 			H.Add(U.FireTarget[I]); H.Add(U.LastAttacker[I]); H.Add(U.TurretIdle[I]);
 			H.Add(uint64_t(U.Path[I].size()));
 			for (const Vec2& P : U.Path[I])
@@ -1866,6 +2430,7 @@ namespace Sim
 			H.Add(U.QueueLeft[I]); H.Add(U.Rally[I]); H.Add(U.HasRally[I]); H.Add(uint8_t(U.Task[I]));
 			H.Add(U.TaskTarget[I]); H.Add(U.TaskDock[I]); H.Add(U.TaskTimer[I]); H.Add(U.Cargo[I]);
 			H.Add(U.AutoGather[I]); H.Add(U.Blocking[I]); H.Add(U.TaskPoint[I]);
+			H.Add(U.ArriveFacing[I]); H.Add(U.HasArriveFacing[I]); H.Add(U.SpeedCap[I]); H.Add(U.IdleTurret[I]);
 		}
 		H.Add(uint64_t(Docks.size()));
 		for (const SupplyDock& D : Docks)
@@ -1882,6 +2447,11 @@ namespace Sim
 		{
 			H.Add(P.Shooter); H.Add(P.Target); H.Add(P.Pos); H.Add(P.Aim); H.Add(P.Step);
 			H.Add(P.Damage); H.Add(uint8_t(P.Type));
+		}
+		H.Add(uint64_t(Wrecks.size()));
+		for (const WreckState& Wr : Wrecks)
+		{
+			H.Add(Wr.Id); H.Add(Wr.Def); H.Add(Wr.Pos); H.Add(Wr.Hull); H.Add(Wr.Stuck);
 		}
 		return H.Value();
 	}

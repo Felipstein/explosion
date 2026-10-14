@@ -27,10 +27,12 @@ ARTSDockActor::ARTSDockActor()
 	Yard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Yard"));
 	Yard->SetupAttachment(Root);
 	Yard->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Yard->bReceivesDecals = false;
 	Yard->SetCanEverAffectNavigation(false);
 	Crates = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("Crates"));
 	Crates->SetupAttachment(Root);
 	Crates->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Crates->bReceivesDecals = false;
 	Crates->SetCanEverAffectNavigation(false);
 }
 

@@ -1,0 +1,40 @@
+{
+ "kind": "wreck",
+ "option": "A",
+ "variants": 6,
+ "size": 850,
+ "span_m": 20.0,
+ "range_m": 0.8,
+ "channels": "R altura com sinal (0,5 = zero), G escuro, B calor, A claro",
+ "params": {
+  "ra": 1.15,
+  "depth": 0.42,
+  "rim": 0.1,
+  "halo": 1.5,
+  "rays": [
+   7,
+   11
+  ],
+  "ray_len": [
+   2.0,
+   2.6
+  ],
+  "clusters": 14,
+  "singles": 25,
+  "apron": [
+   1.4,
+   2.4
+  ],
+  "spray": 2.5,
+  "note": "menor e mais rasa: o buraco pequeno, o halo curto"
+ },
+ "encoding": "ramp",
+ "clods": [
+  [],
+  [],
+  [],
+  [],
+  [],
+  []
+ ]
+}

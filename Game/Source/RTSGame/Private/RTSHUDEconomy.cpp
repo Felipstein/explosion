@@ -65,6 +65,13 @@ bool ARTSHUD::HasEconomy(URTSMatchSubsystem* Match) const
 	return Match->DockCount() > 0;
 }
 
+bool ARTSHUD::OwnsStructure(URTSMatchSubsystem* Match, uint8 Player) const
+{
+	TArray<FRTSUnitState> Units;
+	Match->GetUnits(Units);
+	return Units.ContainsByPredicate([Player](const FRTSUnitState& U) { return U.bStructure && U.Owner == Player; });
+}
+
 void ARTSHUD::DrawPanelButton(FName Id, const FString& Label, const FString& Sub, float X, float Y, float W, float H, bool bEnabled)
 {
 	const FBox2D Box(FVector2D(X, Y), FVector2D(X + W, Y + H));
@@ -131,9 +138,10 @@ void ARTSHUD::DrawEconomyTopBar(URTSMatchSubsystem* Match)
 	const FString Power = FText::Format(LOCTEXT("Power", "POWER {0} / {1}"), Made, Used).ToString();
 	const FVector2D PowerSize = DrawLabel(Power, X0 + 150.0f, 10.0f, 14, PowerColor, false, true);
 	const float Speed = Match->ProductionSpeed(Me);
-	if (Speed < 0.999f)
+	if (Speed < 0.999f && OwnsStructure(Match, Me))
 	{
-		// sem energia tudo anda mais devagar (ZH): o HUD diz, pra barra não mentir (decisão do Felipe, 10/10)
+		// sem energia tudo anda mais devagar (ZH): o HUD diz, pra barra não mentir (decisão do Felipe, 10/10); sem
+		// prédio nenhum não há o que produzir, e o aviso só confundia (a arte, 13/10)
 		const float Blink = 0.6f + 0.4f * FMath::Sin(float(FPlatformTime::Seconds()) * 6.0f);
 		DrawLabel(FText::Format(LOCTEXT("LowPower", "LOW POWER  x{0}"), FText::AsNumber(Speed, &FNumberFormattingOptions::DefaultNoGrouping())).ToString(),
 			X0 + 160.0f + PowerSize.X, 10.0f, 14, Alpha(EcoBad, Blink), false, true);

@@ -22,14 +22,17 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXFire, MAX_CARDS, sunDir } from './fxfire.js';
 import { UEFilmicShader } from './uefilmic.js';
 import { FXImpact, IMPACT_DEFAULTS } from './fximpact.js';
+import { FXTread, TREAD_DEFAULTS } from './fxtread.js';
 
 const ROOT = '../../';
 const TANK = ROOT + 'captures/concept/30_to_3d/usa_tank/parts_v2/';
-const SAND = ROOT + 'WorldForge/Intermediate/Assets/aerial_beach_01/aerial_beach_01_diff_4k.jpg';
+// a areia: a foto do WorldForge (Intermediate, pode ter sido limpa); senão, a areia procedural do laboratório
+const SAND = ROOT + (Q_SAND() || 'captures/fxlab/sand_lab.jpg');
+function Q_SAND() { return new URLSearchParams(location.search).get('sand'); }
 const VIDEO = ROOT + 'captures/fxlab/ref_v3_fogo.mp4';      // o fogo da carcaça do gameplay_v3, de 6 a 10 s
 const TANK_LEN = 7.9;
 const Q = new URLSearchParams(location.search);
-const FX = Q_FX();                  // 'fire' (fogo da carcaça) ou 'impact' (tiro no chão)
+const FX = Q_FX();                  // 'fire' (fogo da carcaça), 'impact' (tiro no chão) ou 'tread' (poeira do andar)
 function Q_FX() { return new URLSearchParams(location.search).get('fx') || 'fire'; }
 const toThree = p => new THREE.Vector3(p[0], p[2], p[1]);
 const toUE = v => [v.x, v.z, v.y];
@@ -104,15 +107,25 @@ composer.addPass(UE_CURVE ? filmic : new OutputPass());
 const sandTex = new THREE.TextureLoader().load(SAND);
 sandTex.colorSpace = THREE.SRGBColorSpace;
 sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
-sandTex.repeat.set(40, 40);
+sandTex.repeat.set(30, 30);
 sandTex.anisotropy = 8;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400),
   new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1, color: 0xd8c0a0 }));
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
+// a poeira do andar testa outros chãos: ?ground=snow|asphalt|mud (a areia é o padrão)
+{
+  const g = Q.get('ground');
+  if (g === 'snow') { ground.material.color.set(0xf4f6fa); ground.material.map = null; }
+  if (g === 'asphalt') { ground.material.color.set(0x5c5a57); ground.material.map = null; }
+  if (g === 'mud') { ground.material.color.set(0x8a7058); }
+}
 
-// tanque (as 5 peças já vêm montadas no lugar); devolve o anel da torre nos eixos da Unreal
+// tanque (as 5 peças já vêm montadas no lugar); devolve o anel da torre nos eixos da Unreal.
+// O pai (tankRoot) é o que anda na poeira do andar; parado, fica na origem.
+const tankRoot = new THREE.Group();
+scene.add(tankRoot);
 async function loadTank() {
   const gl = new GLTFLoader();
   const group = new THREE.Group();
@@ -128,8 +141,8 @@ async function loadTank() {
   const b = new THREE.Box3().setFromObject(group);
   const c = b.getCenter(new THREE.Vector3());
   group.position.set(-c.x, -b.min.y, -c.z);
-  scene.add(group);
-  group.updateMatrixWorld(true);
+  tankRoot.add(group);
+  tankRoot.updateMatrixWorld(true);
   const tb = new THREE.Box3().setFromObject(turret);
   // o anel da torre: o meio do topo dela, 25 cm pra dentro
   return toUE(new THREE.Vector3((tb.min.x + tb.max.x) / 2, tb.max.y - 0.25, (tb.min.z + tb.max.z) / 2));
@@ -359,7 +372,7 @@ primsMesh.frustumCulled = false;
 primsMesh.renderOrder = 11;
 scene.add(primsMesh);
 
-let fire = null, impact = null, PI = null;
+let fire = null, impact = null, PI = null, tread = null, PT = null;
 
 function drawCards(layer, cards) {
   const { aA, aB, aC, aD } = { aA: layer.at.iA, aB: layer.at.iB, aC: layer.at.iC, aD: layer.at.iD };
@@ -392,7 +405,22 @@ function depthPrepass() {
 }
 
 function draw() {
+  if (tread) {
+    // o tanque na pose da volta (a frente do modelo é o +x do three; yaw da Unreal → giro -yaw no y do three)
+    tankRoot.position.copy(toThree(tread.pos));
+    tankRoot.rotation.y = -tread.yaw + (PT.tankYaw || 0) * Math.PI / 180;
+    // a câmera segue o tanque (mesmo ângulo)
+    if (PT.follow) {
+      const tp = toThree(tread.pos), d = tp.clone().sub(controls.target); d.y = 0;
+      camera.position.add(d); controls.target.add(d); controls.update();
+    }
+  }
   depthPrepass();
+  if (tread) {
+    drawCards(LAYERS.dust, tread.outputs(camUE()));
+    fireLight.intensity = 0;
+    return;
+  }
   if (impact) {
     const cr = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
     const { layers, prims, light } = impact.outputs(camUE(), toUE(cr));
@@ -437,6 +465,16 @@ function applyLayer(name, u, d) {
   u.uDensity.value = P.density;
   u.uEmberCut.value = P.emberCut;
   u.uAlbedo.value = P.albedo;
+  if (PT) {                       // poeira do andar: o tom, a claridade e a densidade do chão
+    const G = PT[PT.ground] || PT.sand;
+    u.uDensity.value = G.density;
+    u.uAlbedo.value = G.albedo;
+    u.uTint.value.setRGB(G.r, G.g, G.b);
+    u.uStem.value = 0;
+    u.uSoft.value = 1.0;
+    u.uEmit.value = 0;
+    return;
+  }
   if (name !== 'fire') {           // tiro no chão: poeira clara e rala cor de areia; jato escuro; sem caule
     u.uDensity.value = PI.dustDensity;
     u.uAlbedo.value = name === 'geyser' ? PI.geyserAlbedo : name === 'ring' ? PI.ringAlbedo : PI.dustAlbedo;
@@ -511,6 +549,7 @@ const SHOT = Q.get('shot'), AT = (Q.get('at') || '').split(',').filter(Boolean).
 let simT = 0, refire = 0;
 // o tiro no chão repete a cada 5 s no laboratório (na captura, um tiro só, em t = 0)
 function stepFx(dt) {
+  if (tread) { tread.step(dt); return; }
   if (impact) {
     impact.step(dt);
     refire += dt;
@@ -552,7 +591,8 @@ function loop(now) {
   if (!paused) stepFx(dt * (slow ? 0.25 : 1));
   draw();
   composer.render();
-  if (impact) stats.textContent = `tiro no chão · ${impact.t.toFixed(2)} s · ${fpsAvg.toFixed(0)} qps`;
+  if (tread) stats.textContent = `poeira do andar · ${tread.cards.length} cartões · ${PT.speed} m/s · ${fpsAvg.toFixed(0)} qps`;
+  else if (impact) stats.textContent = `tiro no chão · ${impact.t.toFixed(2)} s · ${fpsAvg.toFixed(0)} qps`;
   else stats.textContent = `${fire.cards.length} cartões · ${fpsAvg.toFixed(0)} qps · bolota nasce em (${fire.hatch.map(x => x.toFixed(1)).join(', ')}) m`;
   requestAnimationFrame(loop);
 }
@@ -560,6 +600,13 @@ function loop(now) {
 async function main() {
   Object.assign(P, await fetch('../preset.json', { cache: 'no-store' }).then(r => r.json()));
   for (const [k, v] of Q) if (k in P && k !== 'bake') P[k] = parseFloat(v);
+  if (FX === 'tread') {
+    // o ajuste: tread.json (a versão EmberGen) ou ?treadProfile=tread_handmade.json (o plano B, feito à mão)
+    const prof = await fetch('../' + (Q.get('treadProfile') || 'tread.json'), { cache: 'no-store' }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+    PT = { ...TREAD_DEFAULTS, ...prof, follow: 1, tankYaw: 0 };
+    for (const [k, v] of Q) if (k in PT && typeof PT[k] === 'number') PT[k] = parseFloat(v);
+    if (Q.get('ground')) PT.ground = Q.get('ground');
+  }
   if (FX === 'impact') {
     const impactProfile = Q.get('impactProfile') || 'impact.json';
     PI = { ...IMPACT_DEFAULTS, ...(await fetch('../' + impactProfile, { cache: 'no-store' }).then(r => r.json())) };
@@ -581,7 +628,9 @@ async function main() {
   };
   const metas = {};
   const hatchP = loadTank();
-  if (PI) {
+  if (PT) {
+    metas.dust = await loadLayer('dust', PT.bake, 10);
+  } else if (PI) {
     metas.ring = await loadLayer('ring', PI.ringBake, 9);
     metas.dust = await loadLayer('dust', PI.dustBake, 10);
     metas.geyser = await loadLayer('geyser', PI.geyserBake, 10.5);
@@ -590,7 +639,13 @@ async function main() {
   }
   const hatch = await hatchP;
   const meta = metas.fire || metas.dust;
-  if (PI) {
+  if (PT) {
+    tread = new FXTread(metas.dust, PT, parseInt(Q.get('seed') || '5', 10));
+    // aquece: a volta já com o rastro formado (a foto não começa com o chão limpo)
+    for (let i = 0; i < 6 * 30; i++) tread.step(1 / 30);
+    document.querySelector('#panel h1').textContent = 'Poeira do andar · 6-way';
+    document.getElementById('ref').style.display = 'none';
+  } else if (PI) {
     impact = new FXImpact(metas, PI, [PI.originX, PI.originY, 0], parseInt(Q.get('seed') || '11', 10));
     impact.fire();
     document.querySelector('#panel h1').textContent = 'Tiro de tanque no chão · 6-way';
@@ -605,4 +660,8 @@ async function main() {
   requestAnimationFrame(loop);
 }
 
-main().catch(e => { document.getElementById('msg').textContent = 'erro: ' + e.message; console.error(e); });
+main().catch(e => {
+  console.error(e);
+  const m = document.getElementById('msg');
+  if (m) m.textContent = 'erro: ' + e.message; else document.title = 'erro: ' + e.message;
+});

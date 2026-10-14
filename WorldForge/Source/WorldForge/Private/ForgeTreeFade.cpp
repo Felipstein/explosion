@@ -150,9 +150,13 @@ void UForgeTreeFade::SetFaded(FSource& S, const TArray<int32>& Wanted)
 	{
 		if (!S.Faded.Contains(I))
 		{
-			// escondida no lugar (escala quase 0: um milímetro de árvore)
+			// escondida: escala quase 0 e 100 m abaixo do chão. Só a escala não basta pras
+			// palmeiras: Nanite com "preservar área" engorda os triângulos da folhagem
+			// minúscula, e a palmeira de um milímetro virava uma pedrinha com um halo claro
+			// no chão (foto do recorte, 13/10)
 			FTransform Hidden = S.Transforms[I];
 			Hidden.SetScale3D(FVector(1e-3));
+			Hidden.AddToTranslation(FVector(0.0, 0.0, -10000.0));
 			C->UpdateInstanceTransform(I, Hidden, true, true, true);
 		}
 	}
@@ -164,16 +168,23 @@ void UForgeTreeFade::SetFaded(FSource& S, const TArray<int32>& Wanted)
 		Ghost = NewObject<UInstancedStaticMeshComponent>(C->GetOwner(), NAME_None, RF_Transient);
 		Ghost->SetMobility(C->Mobility);
 		Ghost->SetStaticMesh(S.FadeMesh.Get());
+		// a cópia com materiais próprios "_Fade" (as palmeiras: a original fica opaca e só as
+		// poucas perto do cursor pagam o masked do Nanite, pedido do jogo 12/10) usa os dela;
+		// sem eles (as árvores do PVE), os da original
+		const TArray<FStaticMaterial>& Own = S.FadeMesh->GetStaticMaterials();
 		for (int32 M = 0; M < C->GetNumMaterials(); ++M)
 		{
-			Ghost->SetMaterial(M, C->GetMaterial(M));
+			UMaterialInterface* Mine = Own.IsValidIndex(M) ? Own[M].MaterialInterface.Get() : nullptr;
+			Ghost->SetMaterial(M, Mine && Mine->GetName().EndsWith(TEXT("_Fade")) ? Mine : C->GetMaterial(M));
 		}
 		Ghost->SetCastShadow(C->CastShadow);
 		Ghost->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		// entra e sai o tempo todo: fora da cena do Lumen (a árvore escondida no
-		// componente original já sai dela)
-		Ghost->bAffectDistanceFieldLighting = false;
-		Ghost->bAffectDynamicIndirectLighting = false;
+		// a luz igual à da original: fora do campo de distância a copa perdia a sombra própria
+		// (a oclusão da luz do céu vem do campo de distância da própria malha) e a palmeira no
+		// fantasma ficava mais clara e chapada, piscando de brilho quando o cursor chegava
+		// (foto do jogo, 12/10). Antes ficava fora da cena do Lumen por custo
+		Ghost->bAffectDistanceFieldLighting = C->bAffectDistanceFieldLighting;
+		Ghost->bAffectDynamicIndirectLighting = C->bAffectDynamicIndirectLighting;
 		Ghost->SetWorldTransform(FTransform::Identity);
 		Ghost->RegisterComponent();
 		S.Ghost = Ghost;

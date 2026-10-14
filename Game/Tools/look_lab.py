@@ -187,6 +187,7 @@ float2 p = WP.xy * 0.01;
 float2 luv = (p - float2(LX, LY)) / LS;
 float LANEX = (abs(p.x) > 12.0) ? 1.0 : 0.0;        // fora do cruzamento a rua corre em X; no meio, em Y
 float4 L = Layout.Sample(LayoutSampler, luv);
+float sandOcc = 1.0;   // a oclusão das frestas da areia (SANDAO)
 if (any(luv < 0.0) || any(luv > 1.0)) L = 0.0;
 
 // --- areia ---
@@ -212,7 +213,11 @@ if (SALB > 0.5) {
     // o acabamento fino (o Felipe, 12/10: "um leve acabamento melhor" no alvo): as frestinhas entre os grãos escurecem
     float gao = GravM.Sample(GravMSampler, p / 1.3).r;
     float4 Z = (ZON > 0.5) ? Zones.Sample(ZonesSampler, luv) : float4(0, 0, 0, 0);   // liso, ondulado, pedregoso, revirado
-    sand *= lerp(1.0, gao * gao, 0.7 * (1.0 - 0.6 * Z.r) + 0.3 * Z.b);              // o liso tem menos fresta; o pedregoso mais
+    float sOcc = lerp(1.0, gao * gao, 0.7 * (1.0 - 0.6 * Z.r) + 0.3 * Z.b);           // o liso tem menos fresta; o pedregoso mais
+    // 13/10 (a cartela de cores): a fresta é oclusão, não cor. Escurecendo o albedo ela tirava ~35% da areia ao sol e a
+    // exposição subia pra compensar (o resto estourava). SANDAO 1: vai pra saída AO (só a luz do céu escurece, a regra PBR)
+    sand *= lerp(sOcc, 1.0, SANDAO);
+    sandOcc = sOcc;
     sand *= lerp(1.0, 1.03, Z.r);                                                     // o compactado mais claro (pouco: a diferença é no grão, não em mancha)
     sand *= lerp(float3(1, 1, 1), float3(0.96, 0.95, 0.93), Z.b);                     // o pedregoso um pouco mais escuro e frio
     sand *= lerp(float3(1, 1, 1), float3(0.94, 0.92, 0.89), Z.a);                     // a areia revirada (solta, um pouco úmida)
@@ -450,7 +455,7 @@ if (CRN > 0.5) {
     }
 }
 Rough = r;
-AO = ao;
+AO = ao * lerp(1.0, sandOcc, SANDAO * saturate(1.0 - L.r));
 // o detalhe por cima da normal da malha (o relevo de verdade)
 float3 vn = normalize(VN);
 // a face da quebra da laje da estrada (a estrada com volume, 13/10): a parede do degrau é íngreme; o asfalto quebrado
@@ -526,6 +531,8 @@ def ground_material():
     sg = getattr(look_scene, 'GROUND_TINT', {}).get('sand', (1.0, 1.0, 1.0))       # o ajuste da areia por cena (a noite: mais clara e cinza)
     ag = getattr(look_scene, 'GROUND_TINT', {}).get('asphalt', (1.0, 1.0, 1.0))
     sa = getattr(look_scene, 'SAND_ALBEDO', None)        # o albedo da areia em linear (o caminho novo, 12/10)
+    if sa and os.environ.get('LOOK_SAND_SCALE'):          # o teste da escada de brilhos (13/10): a mesma cor, mais clara
+        sa = tuple(v * float(os.environ['LOOK_SAND_SCALE']) for v in sa)
     consts = [('LX', G['x0']), ('LY', G['y0']), ('LS', G['size']), ('SGR', sg[0]), ('SGG', sg[1]), ('SGB', sg[2]),
               ('AGR', ag[0]), ('AGG', ag[1]), ('AGB', ag[2]), ('SALB', 1.0 if sa else 0.0),
               ('SAR', (sa or (0, 0, 0))[0]), ('SAG', (sa or (0, 0, 0))[1]), ('SAB', (sa or (0, 0, 0))[2]),
@@ -536,7 +543,8 @@ def ground_material():
               ('ZON', 1.0 if getattr(look_scene, 'ZONES', None) is not None else 0.0),
               ('AERBLUR', 1.0 if getattr(look_scene, 'AER_BLUR', False) else 0.0),
               ('PAINTV2', 1.0 if getattr(look_scene, 'ROAD', {}).get('paint_v2', False) else 0.0),
-              ('ASPHV2', 1.0 if getattr(look_scene, 'ASPHALT_V2', False) else 0.0), ('OilPuddle', 0.07)]
+              ('ASPHV2', 1.0 if getattr(look_scene, 'ASPHALT_V2', False) else 0.0), ('OilPuddle', 0.07),
+              ('SANDAO', 1.0 if (os.environ.get('LOOK_SAND_AO') or getattr(look_scene, 'SAND_AO', False)) else 0.0)]
     crs = G.get('craters', [])[:2] if os.path.exists(cr_png) else []
     cpad = crs + [dict(x=0.0, y=0.0, yaw=0.0)] * (2 - len(crs))
     consts += [('CRN', float(len(crs))), ('CSPAN', float(crs[0]['span']) if crs else 14.0),
@@ -744,7 +752,73 @@ def flat_material(name, color, rough, metal=0.0, two_sided=False):
     return m
 
 
+def sand_family(ratio, fallback):
+    """A poeira e a sujeira seguem a areia do chão (13/10 volta 33): o albedo da areia da cena × a razão de cada uma (a
+    poeira das unidades mais clara e menos saturada que a areia, a fração fina; a sujeira das miudezas um pouco mais
+    escura). Sem SAND_ALBEDO na cena, o valor antigo."""
+    sa = getattr(look_scene, 'SAND_ALBEDO', None)
+    if sa and os.environ.get('LOOK_SAND_SCALE'):
+        sa = tuple(v * float(os.environ['LOOK_SAND_SCALE']) for v in sa)
+    return [sa[i] * ratio[i] for i in range(3)] if sa else list(fallback)
+
+
 HOUSE_MATS = {}
+PROP_MATS = {}
+
+# O material mestre das miudezas (13/10, o estudo: o que tira o "bloco de computação gráfica" vista do alto é o material,
+# não o modelo): a cor do slot, ±12% de valor e um pouco de matiz por peça (pela posição), a sujeira cor de areia subindo
+# do chão com a borda quebrada por ruído, e o pó nas faces de cima. Fontes: CoH3 (hierarquia por tom e valor), Klevestav
+# (Blizzard: pouco contraste entre materiais), a máscara de sujeira pela altura no mundo.
+PROP_CODE = r"""
+float3 n = normalize(N);
+float hsh = frac(sin(dot(Obj.xy * 0.01, float2(12.9898, 78.233))) * 43758.5453);
+float3 col = C * lerp(0.88, 1.12, hsh);
+col *= lerp(float3(1.0, 1.0, 1.0), float3(1.04, 1.0, 0.94), frac(hsh * 7.31));
+float3 q = WP * 0.01;
+float nz = Beach.Sample(BeachSampler, q.xy / 1.7 + q.z * 0.3).g;
+float zf = (WP.z - Obj.z) * 0.01;
+float dirt = 1.0 - smoothstep(0.04, 0.35 + 6.0 * (nz - 0.237), zf);
+float3 dust = DUSTRGB;
+col = lerp(col, dust, 0.7 * saturate(dirt));
+float up = smoothstep(0.6, 0.95, n.z);
+col = lerp(col, dust * 1.15, 0.22 * up);
+Rough = lerp(R, 0.95, 0.6 * saturate(dirt + 0.5 * up));
+return col;
+"""
+
+
+def prop_material(name, color, rough, metal=0.0, two_sided=False):
+    F1 = unreal.CustomMaterialOutputType.CMOT_FLOAT1
+    code = PROP_CODE.replace('C * lerp', 'float3({:.4f}, {:.4f}, {:.4f}) * lerp'.format(*color)).replace('lerp(R, 0.95', 'lerp({:.3f}, 0.95'.format(rough))
+    code = code.replace('DUSTRGB', 'float3({:.4f}, {:.4f}, {:.4f})'.format(*sand_family((0.816, 0.80, 0.78), (0.40, 0.32, 0.21))))
+    m, c = custom_material(name, code,
+                           [('WP', unreal.MaterialExpressionWorldPosition), ('N', unreal.MaterialExpressionVertexNormalWS),
+                            ('Obj', unreal.MaterialExpressionObjectPositionWS), ('Beach', TEX['BeachD'])],
+                           [('Rough', F1)])
+    m.set_editor_property('two_sided', two_sided)
+    mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    mel.connect_material_property(c, 'Rough', unreal.MaterialProperty.MP_ROUGHNESS)
+    if metal:
+        mt = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -400, 250)
+        mt.set_editor_property('r', metal)
+        mel.connect_material_property(mt, '', unreal.MaterialProperty.MP_METALLIC)
+    mel.recompile_material(m)
+    eal.save_loaded_asset(m)
+    return m
+
+
+def prop_materials():
+    """Os materiais das miudezas da vila (o vestir): o mestre com a cor de cada slot; o reboco continua o das casas."""
+    if not PROP_MATS:
+        PROP_MATS.update({
+            'Plaster': HOUSE_MATS.get('Plaster'),
+            'Dark': prop_material('M_LL_Prop_Dark', (0.02, 0.018, 0.016), 0.9),
+            'Wood': prop_material('M_LL_Prop_Wood', (0.11, 0.065, 0.035), 0.8),
+            'Metal': prop_material('M_LL_Prop_Metal', (0.20, 0.19, 0.17), 0.55, 0.6),
+            'Cloth': prop_material('M_LL_Prop_Cloth', (0.30, 0.22, 0.13), 0.95, two_sided=True),
+            'Rust': prop_material('M_LL_Prop_Rust', (0.14, 0.06, 0.025), 0.85, 0.15),
+        })
+    return PROP_MATS
 
 
 def house_materials():
@@ -899,6 +973,8 @@ def unit_dust_parent():
         pin = {'RoughnessFactor': 'R', 'MetallicFactor': 'M', 'DustTop': 'DustTop', 'DustLow': 'DustLow', 'DustHeight': 'DustH'}[name]
         mel.connect_material_expressions(e, '', c, pin)
         y += 100
+    sp = node(unreal.MaterialExpressionScalarParameter, -400, 300, parameter_name='SpecularFactor', default_value=0.5)
+    mel.connect_material_property(sp, '', unreal.MaterialProperty.MP_SPECULAR)
     dc = node(unreal.MaterialExpressionVectorParameter, -800, y, parameter_name='DustColor',
               default_value=unreal.LinearColor(0.5, 0.33, 0.18, 1))
     mel.connect_material_expressions(dc, '', c, 'DustColor')
@@ -1007,7 +1083,7 @@ def unit_dust_materials(R):
                 for sname in ('RoughnessFactor', 'MetallicFactor'):
                     mel.set_material_instance_scalar_parameter_value(mi, sname, mel.get_material_instance_scalar_parameter_value(src, sname))
                 mel.set_material_instance_vector_parameter_value(mi, 'BaseColorFactor', mel.get_material_instance_vector_parameter_value(src, 'BaseColorFactor'))
-            d = W['dust']
+            d = sand_family((1.0, 1.05, 1.15), W['dust'])
             mel.set_material_instance_vector_parameter_value(mi, 'DustColor', unreal.LinearColor(d[0], d[1], d[2], 1))
             mel.set_material_instance_scalar_parameter_value(mi, 'DustTop', W.get('unit_dust_top', 0.4))
             mel.set_material_instance_scalar_parameter_value(mi, 'DustLow', W.get('unit_dust_low', 0.6))
@@ -1091,6 +1167,11 @@ def wreck_materials(R):
     return out
 
 
+# a varredura da cor do time (13/10, volta 37): LOOK_TEAM_SWEEP="r,g,b;r,g,b;..." põe um azul candidato em cada tanque
+# da USA, sob a mesma luz, num render só (a cor escura e fosca recebe o reflexo laranja da areia: escolher medindo)
+TEAM_SWEEP = [tuple(float(v) for v in c.split(',')) for c in os.environ.get('LOOK_TEAM_SWEEP', '').split(';') if c.strip()]   # r,g,b[,specular]
+
+
 def kit_mat(R, paint, slot, cache):
     """O material de um slot da unidade (tinta da facção, pó do mundo, camuflagem), um por (slot, tinta, receita)."""
     global _DUST_PARENT
@@ -1109,6 +1190,10 @@ def kit_mat(R, paint, slot, cache):
         col = tuple(W.get('paints', {}).get(paint, col))     # a tinta da facção pode vir da receita (o alvo de cada ambiente)
     if key == 'Team':
         col = tuple(W.get('team', {}).get(paint, col))       # a cor do time também (13/10: o azul das favoritas é forte)
+        if paint.startswith('usa_sw'):
+            col = TEAM_SWEEP[int(paint[6:])][:3]
+    if key == 'Paint' and paint.startswith('usa_sw'):
+        col = tuple(W.get('paints', {}).get('usa', PAINTS['usa']))
     if paint == 'olive' and key in ('Team', 'Cloth'):
         col = (120, 40, 34) if key == 'Team' else (58, 62, 46)        # a estrela vermelha e a lona oliva
     if paint.startswith('china') and key in ('Team', 'Cloth'):
@@ -1127,11 +1212,20 @@ def kit_mat(R, paint, slot, cache):
         rough = W['unit_paint_roughness']
     mel.set_material_instance_scalar_parameter_value(mi, 'RoughnessFactor', rough)
     mel.set_material_instance_scalar_parameter_value(mi, 'MetallicFactor', metal)
-    d = W.get('dust', [0.5, 0.35, 0.2])
+    if key == 'Team':
+        spec = W.get('team_specular', 0.5)
+        if paint.startswith('usa_sw') and len(TEAM_SWEEP[int(paint[6:])]) > 3:
+            spec = TEAM_SWEEP[int(paint[6:])][3]
+        mel.set_material_instance_scalar_parameter_value(mi, 'SpecularFactor', spec)
+    TEAM_DUST = None
+    if key == 'Team' and paint.startswith('usa_sw') and len(TEAM_SWEEP[int(paint[6:])]) > 4:
+        TEAM_DUST = TEAM_SWEEP[int(paint[6:])][4] if TEAM_SWEEP[int(paint[6:])][4] >= 0 else None   # o pó de cima na peça do time (5º número; < 0 = o da receita)
+    d = sand_family((1.0, 1.05, 1.15), W.get('dust', [0.5, 0.35, 0.2]))
     mel.set_material_instance_vector_parameter_value(mi, 'DustColor', unreal.LinearColor(d[0], d[1], d[2], 1))
     k = 0.0 if key in ('Lens',) else 1.0
-    mel.set_material_instance_scalar_parameter_value(mi, 'DustTop', W.get('unit_dust_top', 0.0) * k)
+    mel.set_material_instance_scalar_parameter_value(mi, 'DustTop', (W.get('unit_dust_top', 0.0) if TEAM_DUST is None else TEAM_DUST) * k)
     mel.set_material_instance_scalar_parameter_value(mi, 'DustLow', W.get('unit_dust_low', 0.0) * k)
+    log(f'kit {paint} {key}: cor {tuple(round(c) for c in col)} pó de cima {(W.get("unit_dust_top", 0.0) if TEAM_DUST is None else TEAM_DUST) * k}') if key in ('Team', 'Paint') else None
     mel.set_material_instance_scalar_parameter_value(mi, 'DustHeight', W.get('unit_dust_height', 1.2))
     camo = None
     if key == 'Paint' and paint.startswith('china'):
@@ -1250,6 +1344,8 @@ def tanks(P, kits):
         x, y = t[0], t[1]
         yaw = t[2] if len(t) > 2 else 0.0
         paint = t[3] if len(t) > 3 else 'usa'
+        if paint == 'usa' and k < len(TEAM_SWEEP):      # a varredura da cor do time: um azul candidato por tanque
+            paint = f'usa_sw{k}'
         kit = kits(paint)
         loc = unreal.Vector(x * 100, y * 100, zs[k] * 100)
         rot = unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw)
@@ -1351,11 +1447,12 @@ def props(P):
         a = actors.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x * 100, y * 100, z * 100),
                                           unreal.Rotator(roll=0.0, pitch=0.0, yaw=yaw))
         a.static_mesh_component.set_static_mesh(m)
+        PM = prop_materials()
         for i, sm in enumerate(m.get_editor_property('static_materials')):
             slot = str(sm.get_editor_property('material_slot_name'))
-            key = next((kk for kk in HOUSE_MATS if slot.lower().startswith(kk.lower())), None)
-            if key:
-                a.static_mesh_component.set_material(i, HOUSE_MATS[key])
+            key = next((kk for kk in PM if slot.lower().startswith(kk.lower())), None)
+            if key and PM.get(key):
+                a.static_mesh_component.set_material(i, PM[key])
         a.set_actor_label(f'Dress_{nm}_{k}')
         a.set_folder_path('Dressing')
     pole = load('/Game/Slice/Models/modular_electricity_poles/preset_02_pole')
@@ -1406,6 +1503,120 @@ def explosions():
         e.set_actor_label('Explosion_' + bake)
         e.set_folder_path('Explosions')
         log(f'explosão {bake} em ({x}, {y}), {age} s')
+
+
+# A água de teste (13/10, o plano da água do WorldForge, WORLDFORGE.md §12.3): só pra medir na 1660 o custo do Single
+# Layer Water contra a água translúcida comum, com a mesma lagoa e a mesma câmera do jogo (look.ps1 perf). A receita da
+# variante traz "water": {"mode": "slw" | "translucent", "rect": [cx, cy, w, h] em m, "z": m}. Os dois materiais têm o
+# mesmo custo de base (duas amostras de normal correndo, a mesma conta): a diferença medida é a do caminho de render.
+WATER_CODE = r"""
+float2 p = WP.xy * 0.01;
+float t = Tsec;
+float2 n1 = WaterN.Sample(WaterNSampler, p / 7.0 + float2(0.013, 0.007) * t).rg * 2.0 - 1.0;
+float2 n2 = WaterN.Sample(WaterNSampler, p / 3.1 + float2(-0.009, 0.016) * t + 0.37).rg * 2.0 - 1.0;
+float2 nxy = (n1 + n2) * 0.12;
+Nrm = normalize(float3(nxy, 1.0));
+return float3(0.015, 0.045, 0.042);
+"""
+
+
+def water_material(mode):
+    F3 = unreal.CustomMaterialOutputType.CMOT_FLOAT3
+    name = 'M_LL_Water_' + ('SLW' if mode == 'slw' else 'Trans')
+    m, c = custom_material(name, WATER_CODE, [('WP', unreal.MaterialExpressionWorldPosition),
+                                              ('Tsec', unreal.MaterialExpressionTime), ('WaterN', TEX['BeachN'])],
+                           [('Nrm', F3)])
+    mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    mel.connect_material_property(c, 'Nrm', unreal.MaterialProperty.MP_NORMAL)
+    r = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -300, 250)
+    r.set_editor_property('r', 0.04)
+    mel.connect_material_property(r, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    if mode == 'slw':
+        m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_SINGLE_LAYER_WATER)
+        out = mel.create_material_expression(m, unreal.MaterialExpressionSingleLayerWaterMaterialOutput, 200, 300)
+        vals = {'ScatteringCoefficients': (0.01, 0.025, 0.02), 'AbsorptionCoefficients': (0.45, 0.09, 0.06),
+                'PhaseG': 0.1, 'ColorScaleBehindWater': 1.0}
+        y = 300
+        for k, v in vals.items():
+            if isinstance(v, tuple):
+                e = mel.create_material_expression(m, unreal.MaterialExpressionConstant3Vector, -100, y)
+                e.set_editor_property('constant', unreal.LinearColor(v[0], v[1], v[2], 1.0))
+            else:
+                e = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -100, y)
+                e.set_editor_property('r', v)
+            ok = mel.connect_material_expressions(e, '', out, k)
+            log(f'água SLW {k}: {"ligado" if ok else "NÃO ligou"}')
+            y += 90
+    else:
+        m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
+        m.set_editor_property('translucency_lighting_mode', unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
+        df = mel.create_material_expression(m, unreal.MaterialExpressionDepthFade, -300, 350)
+        df.set_editor_property('opacity_default', 0.85)
+        df.set_editor_property('fade_distance_default', 60.0)
+        mel.connect_material_property(df, '', unreal.MaterialProperty.MP_OPACITY)
+    mel.recompile_material(m)
+    eal.save_loaded_asset(m)
+    return m
+
+
+def water(rec):
+    W = rec.get('water')
+    if not W:
+        return
+    cx, cy, w, h = W['rect']
+    if os.environ.get('LOOK_WATER_RECT'):      # o tamanho da medida (o oásis 15% da tela, o lago 40%) sem outra receita
+        cx, cy, w, h = (float(v) for v in os.environ['LOOK_WATER_RECT'].split(','))
+    a = actors.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(cx * 100, cy * 100, W.get('z', 0.4) * 100),
+                                      unreal.Rotator(0, 0, 0))
+    smc = a.static_mesh_component
+    smc.set_static_mesh(load('/Engine/BasicShapes/Plane'))
+    a.set_actor_scale3d(unreal.Vector(w, h, 1.0))       # o plano da Unreal tem 1 m
+    smc.set_material(0, water_material(W['mode']))
+    smc.set_editor_property('cast_shadow', False)
+    a.set_actor_label('Water_' + W['mode'])
+    a.set_folder_path('Water')
+    log(f'água {W["mode"]}: {w}×{h} m em ({cx}, {cy}), z {W.get("z", 0.4)} m')
+
+
+# A cartela de cores (13/10, a look-dev dos estúdios): LOOK_CHECKER=1 põe a ColorChecker de 24 cores (placas de 2 m, foscas)
+# na praça, no centro da câmera do jogo, pra medir o que a luz e a gradação fazem com cada cor conhecida (o azul do time
+# saía lavanda e nada no material explicava). Só nas montagens de teste (a vaga LookTest).
+CHECKER = [(115, 82, 68), (194, 150, 130), (98, 122, 157), (87, 108, 67), (133, 128, 177), (103, 189, 170),
+           (214, 126, 44), (80, 91, 166), (193, 90, 99), (94, 60, 108), (157, 188, 64), (224, 163, 46),
+           (56, 61, 150), (70, 148, 73), (175, 54, 60), (231, 199, 31), (187, 86, 149), (8, 133, 161),
+           (243, 243, 242), (200, 200, 200), (160, 160, 160), (122, 122, 121), (85, 85, 85), (52, 52, 52)]
+CHECKER_CENTER = (7.3, 1.7)
+
+
+def color_checker():
+    if not os.environ.get('LOOK_CHECKER'):
+        return
+    m = fresh('M_LL_Checker', ROOT + '/Materials', unreal.Material, unreal.MaterialFactoryNew())
+    c = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -400, 0)
+    c.set_editor_property('parameter_name', 'C')
+    mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    r = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -400, 150)
+    r.set_editor_property('r', 0.85)
+    mel.connect_material_property(r, '', unreal.MaterialProperty.MP_ROUGHNESS)
+    mel.recompile_material(m)
+    eal.save_loaded_asset(m)
+    cube = load('/Engine/BasicShapes/Cube')
+    for k, col in enumerate(CHECKER):
+        mi = fresh(f'MI_LL_Checker_{k:02d}', ROOT + '/Materials', unreal.MaterialInstanceConstant,
+                   unreal.MaterialInstanceConstantFactoryNew())
+        mel.set_material_instance_parent(mi, m)
+        mel.set_material_instance_vector_parameter_value(mi, 'C', srgb_lin(col))
+        eal.save_loaded_asset(mi)
+        i, j = k % 6, k // 6
+        x = CHECKER_CENTER[0] + (i - 2.5) * 2.4
+        y = CHECKER_CENTER[1] + (j - 1.5) * 2.4
+        a = actors.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(x * 100, y * 100, 16.0), unreal.Rotator(0, 0, 0))
+        a.static_mesh_component.set_static_mesh(cube)
+        a.set_actor_scale3d(unreal.Vector(2.0, 2.0, 0.04))
+        a.static_mesh_component.set_material(0, mi)
+        a.set_actor_label(f'Checker_{k:02d}')
+        a.set_folder_path('Checker')
+    log(f'cartela de cores: 24 placas em {CHECKER_CENTER}')
 
 
 def scene_lights():
@@ -2202,6 +2413,8 @@ def build_map(variant, rec, mat, houses, gmesh):
     props(P)
     place_houses(houses)
     explosions()
+    water(rec)
+    color_checker()
     RC = rec.get('camera')          # a receita pode trazer a própria câmera (a comparação de perto)
     # o sol: o da câmera da receita (a comparação com o sol da arte de perto) ou o do mapa (sun_from_map: só a câmera gira)
     fog_c, sky_c = environment(rec, RC['yaw'] if RC and not RC.get('sun_from_map') else ART_CAM['yaw'])

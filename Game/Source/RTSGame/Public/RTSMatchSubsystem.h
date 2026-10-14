@@ -10,10 +10,12 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "RTSGameData.h"
 #include "RTSMatchSubsystem.generated.h"
 
 class ARTSUnitActor;
 class URTSFogOfWar;
+class URTSGroundMemory;
 class ARTSDockActor;
 struct FRTSBakedMap;
 namespace Sim
@@ -143,6 +145,10 @@ public:
 	bool IsNetMatch() const { return bNet; }
 	/** A cena pronta, esperando os outros jogadores (a LAN). */
 	bool IsWaitingForPlayers() const;
+	/** A partida em rede parada (a pausa de alguém, ou a espera por quem sumiu). */
+	bool IsNetPaused() const;
+	/** Render-se (13/10): tudo do jogador local cai, e ele vira espectador. */
+	void OrderResign();
 	bool IsRunning() const;
 	/** A cena acabou de carregar (shaders, texturas): só então a partida começa a contar. */
 	bool IsReady() const { return bReady; }
@@ -167,8 +173,14 @@ public:
 	bool IsPaused() const { return bPaused; }
 
 	// --- ordens do jogador local (viram comandos marcados com o passo)
-	void OrderMove(const TArray<uint32>& Units, const FVector2D& TargetCm, bool bAttackMove);
-	void OrderAttack(const TArray<uint32>& Units, uint32 TargetId);
+	/** bFormation: o jogador segura o F (o grupo anda junto, no passo do mais lento, com o desenho que tinha).
+	 *  bFacing: o arraste do esquerdo (a linha de frente virada pra FacingDeg, com WidthM de largura; 0 = a do grupo). */
+	void OrderMove(const TArray<uint32>& Units, const FVector2D& TargetCm, bool bAttackMove, bool bFormation = false,
+		bool bFacing = false, float FacingDeg = 0.0f, float WidthM = 0.0f);
+	/** bForced: o tiro forçado do C&C (Ctrl), que vale contra a própria unidade e o aliado. */
+	void OrderAttack(const TArray<uint32>& Units, uint32 TargetId, bool bForced = false);
+	/** O tiro forçado no chão (Ctrl no chão): o grupo vai até o alcance e atira no ponto até mandarem outra coisa. */
+	void OrderAttackGround(const TArray<uint32>& Units, const FVector2D& PointCm);
 	void OrderStop(const TArray<uint32>& Units);
 	// economia e construção (docs/ECONOMIA.md)
 	void OrderProduce(uint32 Structure, uint16 Def);
@@ -273,6 +285,36 @@ private:
 	TMap<uint32, TObjectPtr<ARTSUnitActor>> Views;
 	UPROPERTY()
 	TArray<TObjectPtr<ARTSUnitActor>> Wrecks;
+	/** A carcaça de veículo seguindo a da simulação (13/10, com física): a base no lugar da morte e o último desenho. */
+	struct FWreckPose
+	{
+		TWeakObjectPtr<ARTSUnitActor> Actor;
+		bool bInit = false;
+		FVector2D BaseCm = FVector2D::ZeroVector;
+		float BaseYaw = 0.0f;
+		FQuat BaseRot = FQuat::Identity;
+		float ZOff = 0.0f;
+		FVector LocalOffset = FVector::ZeroVector;
+		FVector2D LastCm = FVector2D::ZeroVector;
+		float LastYaw = 0.0f;
+		bool bMovedLogged = false;
+	};
+	TMap<uint32, FWreckPose> WreckPoses;
+	void UpdateWreckPoses();
+	/** A poeira das lagartas (13/10, o plugin RTSTreadDust da arte): um ator só, que recebe a cada quadro os veículos de
+	 *  lagarta perto da câmera (só desenho; nada volta pra simulação). */
+	TWeakObjectPtr<class ARTSTreadDust> TreadDust;
+	struct FDustMotion
+	{
+		FVector2D Cm = FVector2D::ZeroVector;
+		float YawDeg = 0.0f;
+		double Speed = 0.0;
+		double YawRate = 0.0;
+		bool bInit = false;
+	};
+	TMap<uint32, FDustMotion> DustMotion;
+	int32 DustQuality = 3;
+	void UpdateTreadDust(float DeltaTime);
 	UPROPERTY()
 	TArray<TObjectPtr<ARTSDockActor>> DockViews;
 	/** As explosões secundárias do prédio que caiu (segundos de mundo, onde, variação). */
@@ -307,6 +349,53 @@ private:
 	TArray<TObjectPtr<UObject>> KeepLoaded;
 	UPROPERTY()
 	TObjectPtr<URTSFogOfWar> Fog;
+	/** O cenário de teste rápido (-RTSScenario=<nome>, Config/RTS/Scenarios.json); as ordens já dadas. */
+	bool bScenario = false;
+	FRTSScenario Scenario;
+	int32 NextScenarioOrder = 0;
+	void IssueScenarioOrders(uint32 Now);
+public:
+	const FRTSScenario* GetScenario() const { return bScenario ? &Scenario : nullptr; }
+	/** O teste: grava os cadernos da memória do chão na pasta. */
+	void DumpGroundMemory(const FString& Folder);
+	/** O preset: o chão que afunda de verdade (Alta e Ultra). */
+	void SetGroundDisplacement(bool bOn);
+	/** O preset da poeira das lagartas (0 baixa … 3 ultra; a nuvem cobre igual em todos). */
+	void SetDustQuality(int32 Level);
+	uint32 SimTick() const;
+private:
+	/** A memória do chão: esteiras, queimados e crateras (só desenho; -RTSNoGround desliga, pro A/B). */
+	UPROPERTY()
+	TObjectPtr<URTSGroundMemory> GroundMemory;
+	/** A pausa em rede já mostrada (o efeito parado junto) e o log do passo onde parou. */
+	bool bNetPausedShown = false;
+	bool bNetFrozenLogged = false;
+	/** Os testes da LAN (N5): -RTSNetBotQuitAt=<passo> (o robô some sem avisar), -RTSNetBotResignAt=<passo>,
+	 *  -RTSNetTestPause=<passo> (pausa e volta 4 s depois) e -RTSNetTestVote (vota pra derrubar quem sumiu). */
+	void UpdateNetTests(class URTSNetSession* N);
+	double NetTestPausedAt = -1.0;
+	bool bNetTestPauseDone = false;
+	bool bNetTestResigned = false;
+	/** A vila desenhada pelo village.json (uma camada de instâncias por malha; uma vez por mundo). */
+	TWeakObjectPtr<AActor> VillageActor;
+	/** Os destroços em volta das carcaças (13/10; só desenho, junto da memória do chão). */
+	TWeakObjectPtr<class ARTSDebrisField> Debris;
+	void SpawnVillage(const FRTSMapInfo& Info);
+	/** De onde veio o último tiro em cada unidade (cm): a cratera da morte aponta pra longe do atirador. */
+	TMap<uint32, FVector2D> LastHitFrom;
+	/** O espalhamento do tiro no chão (só desenho), sorteado no disparo e usado no impacto, na mesma ordem em todo PC. */
+	TMap<uint32, TArray<FVector2D>> GroundShotSpread;
+	/** As mortes na névoa (13/10, a revisão da cratera): o avental e os destroços esperam a área ser vista, e
+	 *  aparecem junto da carcaça (sem isso a carcaça surgia no chão limpo). */
+	struct FHiddenMark
+	{
+		FVector2D Cm = FVector2D::ZeroVector;
+		FVector2D From = FVector2D::ZeroVector;
+		float YawDeg = 0.0f;
+	};
+	TArray<FHiddenMark> HiddenMarks;
+	double NextHiddenCheck = 0.0;
+	void RevealHiddenMarks();
 	bool bFogDisplay = true;
 	bool bFogPassOn = false;
 	uint32 LastVisionVersion = MAX_uint32;

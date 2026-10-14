@@ -39,17 +39,23 @@
 				"projectile_mps": 105.3
 			},
 			"visual": {
+				"_mesh": "o tanque da maquete do Look (look_tank.py, 11/10), com a cor do jogador no slot Team; o borrado de antes era /Game/Units/USA_MBT",
 				"hull": [
-					"/Game/Units/USA_MBT/SM_USA_MBT_Hull/StaticMeshes/SM_USA_MBT_Hull",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_l",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_r",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Wheels/StaticMeshes/wheel_*"
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Hull/StaticMeshes/SM_LL_USATank_Hull",
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Wheels/StaticMeshes/SM_LL_USATank_Wheels",
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Track_l/StaticMeshes/SM_LL_USATank_Track_l",
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Track_r/StaticMeshes/SM_LL_USATank_Track_r"
 				],
 				"turret": [
-					"/Game/Units/USA_MBT/SM_USA_MBT_Turret/StaticMeshes/SM_USA_MBT_Turret",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Barrel/StaticMeshes/SM_USA_MBT_Barrel"
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Turret/StaticMeshes/SM_LL_USATank_Turret",
+					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Barrel/StaticMeshes/SM_LL_USATank_Barrel"
 				],
-				"muzzle_height_m": 2.08
+				"turret_pivot_m": [0.10, 0.0],
+				"muzzle_height_m": 2.08,
+				"tracks_m": [2.85, 0.64],
+				"_impact_crater": "a cratera do tiro (13/10, o Felipe: o tiro de tanque é a A, do Game/Tools/bake_craters.py) e a parte dos tiros que passa raspando e cava o chão 6–12 m além do alvo (só desenho)",
+				"impact_crater": "A",
+				"near_miss": 0.2
 			},
 			"cost": 900,
 			"build_time_s": 10,
@@ -267,21 +273,35 @@
 				"usa_command_center"
 			],
 			"visual": {
+				"_mesh": "o Dozer provisório por script (Modelos 3D, 13/10, aprovado pelo Felipe): Game/Tools/model_usa_dozer.py → game.ps1 dozer → /Game/Units/USA_Dozer; o de antes era /Game/Structures/dozer com as esteiras do tanque",
 				"hull": [
-					"/Game/Structures/dozer/dozer/StaticMeshes/dozer",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_l",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Tracks/StaticMeshes/track_r",
-					"/Game/Units/USA_MBT/SM_USA_MBT_Wheels/StaticMeshes/wheel_*"
+					"/Game/Units/USA_Dozer/SM_USA_Dozer_Hull/StaticMeshes/SM_USA_Dozer_Hull",
+					"/Game/Units/USA_Dozer/SM_USA_Dozer_Wheels/StaticMeshes/SM_USA_Dozer_Wheels",
+					"/Game/Units/USA_Dozer/SM_USA_Dozer_Track_l/StaticMeshes/SM_USA_Dozer_Track_l",
+					"/Game/Units/USA_Dozer/SM_USA_Dozer_Track_r/StaticMeshes/SM_USA_Dozer_Track_r"
 				],
 				"turret": [],
+				"tracks_m": [2.56, 0.62],
 				"blade": {
-					"mesh": "/Game/Structures/dozer/dozer_blade/StaticMeshes/dozer_blade",
+					"mesh": "/Game/Units/USA_Dozer/SM_USA_Dozer_Blade/StaticMeshes/SM_USA_Dozer_Blade",
 					"at_m": [
-						-0.6,
+						-0.352,
 						0.0,
-						1.1
+						0.66
 					]
 				},
+				"spin": [
+					{
+						"_about": "a luz da sirene amarela do teto da cabine: gira e acende só enquanto o Dozer constrói (RTSUnitActor, o bloco da lâmina)",
+						"mesh": "/Game/Units/USA_Dozer/SM_USA_Dozer_Beacon/StaticMeshes/SM_USA_Dozer_Beacon",
+						"at_m": [
+							0.396,
+							0.264,
+							2.86
+						],
+						"rpm": 90
+					}
+				],
 				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
 			}
 		},
@@ -304,34 +324,19 @@
 			"build_time_s": 10,
 			"supply_boxes": 4,
 			"visual": {
+				"_mesh": "o caminhão de suprimento provisório por script (Modelos 3D, 14/10, aprovado pelo Felipe): Game/Tools/model_usa_supply_truck.py → game.ps1 truck → /Game/Units/USA_SupplyTruck; a caixa pequena (0,72 da do depósito) na carroceria",
 				"hull": [
-					"/Game/Structures/supply_truck/supply_truck/StaticMeshes/supply_truck",
-					"/Game/Structures/supply_truck/supply_truck_wheels/StaticMeshes/wheel_*"
+					"/Game/Units/USA_SupplyTruck/SM_USA_SupplyTruck_Hull/StaticMeshes/SM_USA_SupplyTruck_Hull",
+					"/Game/Units/USA_SupplyTruck/SM_USA_SupplyTruck_Wheels/StaticMeshes/wheel_*"
 				],
 				"turret": [],
 				"cargo": {
-					"mesh": "/Game/Structures/supply_crate/supply_crate/StaticMeshes/supply_crate",
+					"mesh": "/Game/Units/USA_SupplyTruck/SM_USA_SupplyCrate_Small/StaticMeshes/SM_USA_SupplyCrate_Small",
 					"slots_m": [
-						[
-							-3.55,
-							0.0,
-							1.38
-						],
-						[
-							-2.0,
-							0.0,
-							1.38
-						],
-						[
-							-0.45,
-							0.0,
-							1.38
-						],
-						[
-							1.1,
-							0.0,
-							1.38
-						]
+						[-1.764, -0.49, 0.936],
+						[-1.764, 0.49, 0.936],
+						[-0.612, -0.49, 0.936],
+						[-0.612, 0.49, 0.936]
 					]
 				},
 				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."

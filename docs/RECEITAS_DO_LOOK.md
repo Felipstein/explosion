@@ -15,6 +15,12 @@ O histórico dia a dia fica em `docs/GRAFICOS.md`; aqui fica só o que funciona.
 
 ## 0. O método que deu certo (vale pra tudo)
 
+> **A regra do Felipe (13/10 à noite): "bonito = jogo bonito otimizado".**
+> - A maquete é laboratório. Uma receita só está pronta quando roda no jogo (cenário rápido, câmera do jogo e zoom perto), ao lado da folha aprovada e medida.
+> - Todo visual nasce com o plano do jogo junto: o dado em tempo real (caderno, textura, MF), a resolução, a distância da câmera e o custo.
+> - Exemplo do que não pode repetir: a trilha da areia "C" (12/10) foi aprovada na maquete e chegou no jogo como risco chapado (os cadernos de 9,4 cm, a câmera a 100 m, a ondulação desligada na distância).
+
+
 Ele aprovou o resultado da cratera assim: "viu só como conseguimos com estudos? é esse tipo de resultado e investimento
 que quero pra tudo". O caminho:
 
@@ -46,7 +52,17 @@ que quero pra tudo". O caminho:
 
 ## 1. A areia do deserto v2 (aprovada em 13/10: "vale ir com a C mais marcada")
 
-**O que é:** a areia física com zonas. Os arquivos congelados são `Game/Tools/look_materials/sand_desert_v2.json` (todos os números) e `sand_desert_v2_ground.hlsl` (o shader). O WorldForge usa no mapa.
+> **Estado em 14/10: a ondulação desta areia nunca aparece no jogo.**
+> - No `WorldForge/Tools/build_slice.py` (o kT das ondulações), `1 - smoothstep(0.03, 0.06, fw)` desliga a onda quando o pixel cobre mais de 6 cm de chão.
+> - Na câmera do jogo, o pixel cobre de 7 a 12 cm (fw ~9–14 cm), no zoom normal (100 m, 50°) e no mais perto (67 m, 58°), em qualquer preset. Na folha aprovada, a câmera estava a 45 m com 21° de campo: ~1 cm por pixel.
+> - A onda de 22 cm não cabe: daria 2 pixels por onda e tremeria.
+> - No jogo sobram o grão e as zonas: o "chão liso" que o Felipe vê.
+> - **A lição:** o game shot desenha o detalhe maior que o real, pra ler de cima; nós fizemos no tamanho físico, que some a 100 m.
+> - **A medida do game shot (14/10):** na r1_raid_slabs, o casco do tanque (7,9 m) ocupa ~180 de 1024 px, então o quadro tem ~45 m de largura. O nosso zoom normal mostra ~94 m e o mais perto ~74 m: o game shot está ~2× mais perto. O tanque ocupa ~1/5 da largura lá e ~1/10 no nosso.
+> - **O zoom fica.** O Felipe: "nosso RTS precisa ter um zoom bom pra entender o jogo, precisa trabalhar em cima disso". Quem muda é o detalhe, desenhado pro zoom do jogo: nunca desligar, trocar de escala com a distância (sulco largo, ondulação maior nas zonas que comportam), e o padrão fino pré-filtrado pra virar tom em vez de sumir.
+> - **Na v3:** a ondulação, o sulco e a borda redesenhados na escala que a câmera do jogo lê, e o detalhe fino só onde couber. A v2 está congelada.
+
+**O que é:** a areia física com zonas. Os arquivos congelados são `Game/Tools/look_materials/sand_desert_v2.json` (todos os números) e `sand_desert_v2_ground.hlsl` (o shader). **Atenção (14/10): o mapa do jogo NÃO usa esta areia.** Desde 13/10 às 03:31 o WorldForge monta o `World_TestSalt2` com `SAND=classic` (o log diz `FORGE desert sand: classic`), porque a v2 estourava na luz antiga do jogo. A luz mudou na noite de 13/10 (`desert_golden_dust`) e o A/B pra trocar, que era do Look, não foi feito. A areia v2 só existe nos mapas de teste.
 
 **Como chegou lá:**
 1. **v1 (12/10, "uma das melhores até agora"):**
@@ -198,6 +214,8 @@ A MF tem a entrada `Surf` (o peso do asfalto): no asfalto o escuro é quase pret
 
 ## 6. A estrada com volume (13/10, protótipo)
 
+> **Estado em 14/10: só na maquete, nunca foi pro jogo.** O Felipe procurou na vila do jogo e viu a estrada pintada no chão. Fica pra v3 (a v2 não tem mais ajuste), com a prova na câmera do jogo. Os 3 tipos que ele viu: `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`.
+
 **O pedido:** "a nossa é textura pintada no chão; a do game shot é uma estrada em cima do chão, uma camadinha bonita".
 
 **O estudo:**
@@ -243,3 +261,49 @@ A MF tem a entrada `Surf` (o peso do asfalto): no asfalto o escuro é quase pret
   - o fantasma de 18%;
   - as lascas, o corte da trinca e o encardido pela idade.
 - **A ordem:** a mistura da areia vem depois.
+
+---
+
+## 8. A luz da v2: o deserto na hora dourada com poeira (13/10, escolhida pelo Felipe)
+
+**O que é:** a receita `Game/Tools/look_recipes/desert_golden_dust.json`, que vira `/RTSLook/Recipes/DA_Look_desert_golden_dust` pelo `look.ps1 recipes`. É a luz padrão do World_TestSalt2 (`Game/Config/RTS/Maps.json`, `look_recipe`).
+- **Sol:** 8° de altura, em contraluz pela direita (from_camera −42 na câmera inicial de verdade).
+- **Base:** a luz A da bancada.
+- **Poeira dourada:** só no terço de cima do quadro.
+
+**Como chegou lá:**
+1. **A luz A no jogo:** as receitas da bancada no jogo, em A/B, com o cenário `vila_foto`. O Felipe achou a A bonita no jogo. A B, calibrada pela cartela com a gradação zerada, foi descartada: a 2ª opinião a chamou de "filtro sépia" (a sombra saturada demais e quase sem alta-luz).
+2. **O lado do sol:** o `ALookDirector` fixa o sol pela câmera do começo da partida (o giro 45°, `DefaultYawDeg`). Fotos de cenário que giram a câmera mostram o sol deslocado. Por isso foram criados os cenários `look_inicial` (100,4 m, 37,5°, giro 45°) e `look_zoom` (67 m, 28°), no Scenarios.json. Ali o −42 dá a contraluz pela direita dos game shots de deserto.
+3. **O horário:** 4 alturas na câmera real (8, 12, 18, 24°). O Felipe escolheu 8°. A EV de cada altura saiu da luz que chega no chão (sen da altura × transmitância), e a 8° fica em 12,1 no jogo.
+4. **A poeira dourada,** estudada com 2 opiniões antes do código:
+   - **A física e a Unreal:** a fonte da 5.8. Os pontos usados:
+     - σ = 0,05·densidade/m na volumétrica;
+     - o início é um plano de profundidade, escalado pela distância da câmera no `UpdateFocus`;
+     - o brilho direcional da névoa não é físico (proibido);
+     - o albedo laranja de antes absorvia 76% do azul e dava sépia.
+   - **A medição dos 9 game shots:** o véu mora só nos 30% de cima, ~0,10–0,15. Ele quase não cresce com a câmera deitada, não clareia pro lado do sol, levanta a sombra do topo pra ~`#57422F` e não tira a cor.
+   - **3 voltas no jogo, medidas com o mesmo script dos game shots** (`haze_measure.py --img`):
+     - **1ª** (início 1,15×, densidade 0,10, g 0,6): forte no canto do sol.
+     - **2ª:** perdida, porque o jogo quebrava na abertura enquanto o BlastLab trocava o shader.
+     - **3ª** (o pedido do Felipe: "suavizar o degradê, um pouco menos densa, alongar"): início 1,0× a distância (o degradê ~1,4× mais longo), g 0,35, densidade 0,06.
+
+**Os números da escolhida** (o bloco `game` da receita):
+- **Névoa:** densidade 0,06, falloff 0,25, `start_ratio` 1,0. A volumétrica com o mesmo início, albedo (252,249,247), espalhamento 0,35, extinção 1,0, distância 250 m.
+- **Atmosfera:** `aerial_start_ratio` 1,0.
+- **Pós:** EV 12,1, saturação 0,82, exposição local da sombra 0,62.
+- **Medido contra o alvo:**
+  - véu no topo 0,10 (alvo 0,09–0,15);
+  - sombra do topo `#5E4731` (alvo `#57422F`);
+  - contraste topo/base 0,54 (alvo 0,5–0,6);
+  - a metade de baixo limpa.
+- **O que ficou acima do alvo:** o lado do sol 2,1× mais claro (os game shots ≤ 1,0). Boa parte disso é a cena em contraluz a 8°, que já dava 1,8 sem névoa.
+
+**O que ficou pra v3:**
+- o `r.SupportExpFogMatchesVolumetricFog` (a névoa analítica com fase física; ele recompila todos os shaders);
+- o `VolumetricScatteringIntensity` da SkyLight;
+- a névoa nos presets baixa e média, que ficam sem a volumétrica.
+
+**Erros que custaram rodadas:**
+- fotos com a câmera girada (o sol aparece no lugar errado);
+- uma foto travada segurando a placa (agora toda cadeia de fotos usa um vigia que mata pelo PID se o log parar 120 s);
+- o jogo quebrando na abertura enquanto outra sessão trocava o shader.

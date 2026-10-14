@@ -1,4 +1,5 @@
 #include "RTSUnitActor.h"
+#include "Components/DecalComponent.h"
 
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -7,6 +8,9 @@
 #include "Misc/Paths.h"
 #include "RTSEffect.h"
 #include "RTSGameData.h"
+#include "Camera/PlayerCameraManager.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 
 namespace
 {
@@ -69,6 +73,11 @@ namespace
 	constexpr int32 DataPlayerColor = 0;   // 0–3
 	constexpr int32 DataPower = 4;
 	constexpr int32 DataCut = 5;           // metros acima do pivô
+	constexpr int32 DataBurnt = 6;         // carcaça: 1 veículo queimado, 2 prédio (o M_Structure e o M_UnitDust do RTSLook)
+	constexpr int32 DataHeat = 7;          // o miolo quente da carcaça: 1 → 0 em WreckFireSeconds
+	constexpr int32 DataEmbers = 8;        // os pontinhos de brasa depois: 1 → 0 em EmberSeconds
+	constexpr float EmberSeconds = 20.0f;
+	constexpr int32 DataDamage = 9;        // 1 − a vida: as marcas de dano no material
 	/** A solda na obra: faíscas por segundo e a luz de cada uma (pequena: é detalhe, não clarão). */
 	constexpr float SparksPerSecond = 14.0f;
 	constexpr float SparkCandela = 7.0e4f;
@@ -110,6 +119,8 @@ namespace
 ARTSUnitActor::ARTSUnitActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// (14/10, a poeira da arte) a unidade fica fora do mapa de sombra do cenário que o RTSTreadDust tira no começo
+	Tags.Add(TEXT("RTSUnit"));
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent = Root;
 	Body = CreateDefaultSubobject<USceneComponent>(TEXT("Body"));
@@ -118,7 +129,9 @@ ARTSUnitActor::ARTSUnitActor()
 	TurretPivot->SetupAttachment(Body);
 	FireLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FireLight"));
 	FireLight->SetupAttachment(Body);
-	FireLight->SetRelativeLocation(FVector(0, 0, 180));
+	// a luz quente da carcaça acima do anel da torre: a 1,8 m e 400 mil cd ela encostava no teto do casco e
+	// passava do sol ali (o "ponto de lâmpada" da 1ª gameplay); o miolo quente agora é do material
+	FireLight->SetRelativeLocation(FVector(0, 0, 320));
 	FireLight->SetIntensityUnits(ELightUnits::Candelas);
 	FireLight->SetIntensity(0.0f);
 	FireLight->SetAttenuationRadius(1600.0f);
@@ -156,6 +169,7 @@ void ARTSUnitActor::AddParts(const TArray<FString>& Paths, USceneComponent* Pare
 			}
 			Part->SetupAttachment(Attach);
 			Part->SetStaticMesh(Mesh);
+			Part->SetReceivesDecals(false);
 			Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Part->SetMobility(EComponentMobility::Movable);
 			Part->SetCanEverAffectNavigation(false);
@@ -170,6 +184,7 @@ UStaticMeshComponent* ARTSUnitActor::AddPart(UStaticMesh* Mesh, USceneComponent*
 	UStaticMeshComponent* Part = NewObject<UStaticMeshComponent>(this);
 	Part->SetupAttachment(Parent);
 	Part->SetStaticMesh(Mesh);
+	Part->SetReceivesDecals(false);
 	Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Part->SetMobility(EComponentMobility::Movable);
 	Part->SetCanEverAffectNavigation(false);
@@ -185,6 +200,13 @@ void ARTSUnitActor::Setup(uint32 InSimId, const FRTSUnitVisual& Visual)
 	MuzzleHeightCm = Visual.MuzzleHeightM * 100.0f;
 	AddParts(Visual.HullMeshes, Body, HullParts);
 	AddParts(Visual.TurretMeshes, TurretPivot, TurretParts);
+	TurretPivotCm = FVector(Visual.TurretPivotM.X * 100.0f, Visual.TurretPivotM.Y * 100.0f, 0.0f);
+	TracksCm = Visual.TracksM * 100.0;
+	TurretPivot->SetRelativeLocation(TurretPivotCm);
+	for (UStaticMeshComponent* Part : TurretParts)
+	{
+		Part->SetRelativeLocation(-TurretPivotCm);
+	}
 	// o que gira sozinho: um pivô no eixo, a malha com a origem nele
 	for (const FRTSSpinPart& Spin : Visual.SpinParts)
 	{
@@ -240,12 +262,37 @@ void ARTSUnitActor::Setup(uint32 InSimId, const FRTSUnitVisual& Visual)
 		HeightCm = FMath::Max(100.0f, float(Box.Max.Z));
 		FootprintCm = FBox2D(FVector2D(Box.Min.X, Box.Min.Y), FVector2D(Box.Max.X, Box.Max.Y));
 	}
+	if (!bStructure && FootprintCm.bIsValid)
+	{
+		// o contato com o chão (12/10): a mancha escura macia sob o casco (M_UnitContact), um pouco maior que a
+		// planta; o decal olha pra baixo (o X dele é a profundidade) e anda e gira com o casco
+		static TWeakObjectPtr<UMaterialInterface> ContactMat;
+		if (!ContactMat.IsValid())
+		{
+			ContactMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_UnitContact.M_UnitContact"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
+		if (ContactMat.IsValid())
+		{
+			UDecalComponent* Contact = NewObject<UDecalComponent>(this, TEXT("Contact"));
+			Contact->SetupAttachment(Body);
+			const FVector2D C = FootprintCm.GetCenter();
+			const FVector2D E = FootprintCm.GetExtent();
+			Contact->SetRelativeLocation(FVector(C.X, C.Y, 0.0));
+			Contact->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
+			// 90 cm além do casco: a parte que a câmera de cima vê (embaixo do casco, ela fica tapada)
+			Contact->DecalSize = FVector(150.0, E.Y + 90.0, E.X + 90.0);
+			Contact->SetDecalMaterial(ContactMat.Get());
+			Contact->SetFadeScreenSize(0.0f);
+			Contact->SortOrder = 5;   // por cima da memória do chão
+			Contact->RegisterComponent();
+		}
+	}
 	// a boca do cano: a ponta da malha do cano (as peças saem no lugar, com origem no centro do tanque)
 	for (const UStaticMeshComponent* Part : TurretParts)
 	{
 		if (Part->GetStaticMesh() && Part->GetStaticMesh()->GetName().Contains(TEXT("Barrel")))
 		{
-			MuzzleForwardCm = Part->GetStaticMesh()->GetBoundingBox().Max.X;
+			MuzzleForwardCm = Part->GetStaticMesh()->GetBoundingBox().Max.X - TurretPivotCm.X;
 		}
 	}
 }
@@ -399,7 +446,7 @@ void ARTSUnitActor::TickStructure(float DeltaSeconds)
 			const FVector At = Body->GetComponentTransform().TransformPosition(FVector(P.X, P.Y, Z));
 			// o brilho e, em metade delas, a gota caindo: um risco de 25 cm (o traçante de 6 m virava laser, 10/10;
 			// só o brilho de 14 cm ficou fraco demais pra ver de cima)
-			ARTSEffect::SpawnFlash(GetWorld(), At, 24.0f, SparkCandela, 0.09f, FLinearColor(5.0f, 2.6f, 0.8f));
+			ARTSEffect::SpawnFlash(GetWorld(), At, 24.0f, SparkCandela, 0.09f, FLinearColor(0.6f, 0.3f, 0.08f));   // sem estourar pra branco (12/10)
 			if (Random01(SparkSeed) < 0.6f)
 			{
 				const FVector Drop(Random01(SparkSeed) * 140.0f - 70.0f, Random01(SparkSeed) * 140.0f - 70.0f, -60.0f - Random01(SparkSeed) * 120.0f);
@@ -429,6 +476,18 @@ void ARTSUnitActor::SetPose(const FVector& Location, float HullYawDeg, float Tur
 		BladeClock += DeltaSeconds;
 		const float Pitch = BladeAmount * (4.0f + 5.0f * FMath::Sin(BladeClock * 2.4f)) - (1.0f - BladeAmount) * 3.0f;
 		BladePivot->SetRelativeRotation(FRotator(Pitch, 0.0f, 0.0f));
+		// a sirene amarela (Modelos 3D, 13/10, pedido do Felipe): a luz que gira ('spin' do Units.json) só roda na obra,
+		// e a cúpula (slot Beacon, que pisca pelo material) acende pelo DataPower, que acompanha a lâmina
+		for (int32 K = 0; K < SpinPivots.Num(); ++K)
+		{
+			SpinAngleDeg[K] = FMath::Fmod(SpinAngleDeg[K] + SpinRpm[K] * 6.0f * BladeAmount * DeltaSeconds, 360.0f);
+			SpinPivots[K]->SetRelativeRotation(FRotator(0.0f, SpinAngleDeg[K], 0.0f));
+		}
+		if (FMath::Abs(BladeAmount - LastPowerSent) > 0.01f)
+		{
+			SetPartsFloat(DataPower, BladeAmount);
+			LastPowerSent = BladeAmount;
+		}
 	}
 	// velocidade e aceleração do casco (do desenho interpolado), pra rodas e suspensão
 	const FVector Forward = FRotator(0.0f, HullYawDeg, 0.0f).Vector();
@@ -468,7 +527,7 @@ void ARTSUnitActor::SetPose(const FVector& Location, float HullYawDeg, float Tur
 	const FQuat Sway = FRotator(SuspPitch, 0.0f, SuspRoll).Quaternion();
 	Body->SetWorldRotation(TiltSmoothed * Yaw * Sway);
 	TurretPivot->SetRelativeRotation(FRotator(0.0f, FRotator::NormalizeAxis(TurretYawWorldDeg - HullYawDeg), 0.0f));
-	TurretPivot->SetRelativeLocation(FVector(-RecoilCm, 0.0f, 0.0f));
+	TurretPivot->SetRelativeLocation(TurretPivotCm + FVector(-RecoilCm, 0.0f, 0.0f));
 }
 
 FVector ARTSUnitActor::MuzzleLocation() const
@@ -514,7 +573,40 @@ void ARTSUnitActor::PlayFire()
 	const float Rel = FMath::DegreesToRadians(TurretPivot->GetRelativeRotation().Yaw);
 	SuspPitchRate += FireKickDeg * FMath::Cos(Rel);
 	SuspRollRate -= FireKickDeg * FMath::Sin(Rel);
-	ARTSEffect::SpawnFlash(GetWorld(), MuzzleLocation() + MuzzleDirection() * 60.0f, 90.0f, 1.5e6f, 0.09f, FLinearColor(3.0f, 2.0f, 0.9f));
+	// o clarão de boca provisório (o de verdade é da sessão de explosões): miolo amarelo-laranja, borda laranja.
+	// Com 3,0/2,0/0,9 (~380 mil nits) virava uma bola branca chapada na exposição do look (vila_tiro1, 12/10)
+	ARTSEffect::SpawnFlash(GetWorld(), MuzzleLocation() + MuzzleDirection() * 60.0f, 60.0f, 1.5e6f, 0.09f, FLinearColor(0.35f, 0.16f, 0.04f));
+}
+
+void ARTSUnitActor::SetDamage(float Damage)
+{
+	// as marcas de dano (o M_Structure: placas de tinta queimada e de fuligem crescendo com o dano, a partir
+	// dos 70% de vida, como o modelo danificado do ZH); só quando mudar, pra não mexer no dado à toa
+	// (14/10, o Felipe: no veículo as placas liam camuflagem pintada por cima, "um negócio porco"; fora até ter um bem
+	// feito; o prédio segue com elas)
+	if (bDead || !bStructure || FMath::Abs(Damage - DamageShown) < 0.02f)
+	{
+		return;
+	}
+	DamageShown = Damage;
+	SetPartsFloat(DataDamage, Damage);
+}
+
+void ARTSUnitActor::SetSilhouette(int32 Stencil)
+{
+	// todas as peças do veículo (13/10, o Felipe: as caixas da carga fora da lista tapavam o caminhão e o contorno
+	// pintava de vermelho em cima delas)
+	for (TArray<TObjectPtr<UStaticMeshComponent>>* List : { &HullParts, &TurretParts, &SpinParts, &CargoParts })
+	{
+		for (UStaticMeshComponent* Part : *List)
+		{
+			if (Part)
+			{
+				Part->SetRenderCustomDepth(Stencil > 0);
+				Part->SetCustomDepthStencilValue(FMath::Clamp(Stencil, 0, 255));
+			}
+		}
+	}
 }
 
 void ARTSUnitActor::SetFogHidden(bool bHide)
@@ -533,7 +625,7 @@ void ARTSUnitActor::SetWreckLive(bool bLive)
 		bWreckLive = bLive;
 		if (bDead)
 		{
-			FireLight->SetVisibility(bLive);
+			FireLight->SetVisibility(bLive && bStructure && DeathAge < WreckFireSeconds);
 		}
 	}
 }
@@ -546,9 +638,10 @@ void ARTSUnitActor::Die()
 	}
 	bDead = true;
 	DeathAge = 0.0f;
+	SetSilhouette(0);   // a carcaça não tem silhueta
 	Char();
 	// o clarão e a bola são da explosão (BlastFx, a Carga Pesada aprovada); aqui só a carcaça
-	FireLight->SetVisibility(bWreckLive);
+	FireLight->SetVisibility(bWreckLive && bStructure);   // (v2: o veículo sem fogo; o prédio com)
 	if (bStructure)
 	{
 		// a obra destruída fica do tamanho que estava (o recorte continua); o andaime cai
@@ -563,12 +656,73 @@ void ARTSUnitActor::Die()
 	}
 	// a torre voa em ~1 de cada 3 mortes (munição detonando), não em toda (Vanguard ADR-0027)
 	const uint32 H = CosmeticHash(SimId);
-	if (H % 3 == 0 && TurretParts.Num())
+	// a v2 (13/10, a do vídeo aprovado do BlastLab, BlastLabSimulation.cpp): a torre voa em toda morte, sobe a 12,5 m/s e
+	// vai pro lado a 3 m/s (cai a ~7,7 m), em cambalhota e rolamento a 300°/s. O lado é perpendicular à câmera (±20°), o
+	// primeiro de 5 (os dois lados, as diagonais pra trás e pra trás) com 3,5 m de folga até a peça grande mais perto
+	// (mais de 0,8 m de altura e 1,5 m de lado, até 40 m, fora este), senão o de maior folga: sem isso ela caía encostada
+	// no tanque vizinho
+	if (TurretParts.Num())
 	{
+		constexpr float TurretUp = 1250.0f;
+		constexpr float TurretSide = 300.0f;
+		constexpr float TurretSpinDeg = 300.0f;
+		FVector View(1.0, 0.0, 0.0);
+		const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (PC && PC->PlayerCameraManager)
+		{
+			View = (GetActorLocation() - PC->PlayerCameraManager->GetCameraLocation()).GetSafeNormal2D();
+		}
+		FVector Side = FVector::CrossProduct(FVector::UpVector, View).GetSafeNormal();
+		Side = ((H & 1u) ? Side : -Side).RotateAngleAxis(float((H >> 1) % 41u) - 20.0f, FVector::UpVector);
+		const FVector P0 = TurretPivot->GetComponentLocation();
+		const float LandCm = TurretSide * 2.0f * TurretUp / GravityCm;
+		const auto Clearance = [&](const FVector& Dir)
+		{
+			const FVector Land = P0 + Dir * LandCm;
+			double Best = 1e9;
+			for (TActorIterator<ARTSUnitActor> It(GetWorld()); It; ++It)
+			{
+				if (*It == this)
+				{
+					continue;
+				}
+				FVector C, E;
+				It->GetActorBounds(false, C, E);
+				if (E.Z < 40.0 || FMath::Max(E.X, E.Y) < 75.0 || FVector::Dist2D(C, Land) > 4000.0)
+				{
+					continue;
+				}
+				const double Dx = FMath::Max(FMath::Abs(Land.X - C.X) - E.X, 0.0);
+				const double Dy = FMath::Max(FMath::Abs(Land.Y - C.Y) - E.Y, 0.0);
+				Best = FMath::Min(Best, FMath::Sqrt(Dx * Dx + Dy * Dy));
+			}
+			return Best;
+		};
+		const FVector Dirs[] = { Side, -Side, (Side + View).GetSafeNormal(), (-Side + View).GetSafeNormal(), View };
+		int32 Pick = -1;
+		int32 BestI = 0;
+		double BestC = -1.0;
+		for (int32 I = 0; I < 5; ++I)
+		{
+			const double C = Clearance(Dirs[I]);
+			if (Pick < 0 && C >= 350.0)
+			{
+				Pick = I;
+			}
+			if (C > BestC)
+			{
+				BestC = C;
+				BestI = I;
+			}
+		}
+		const FVector Dir = Dirs[Pick >= 0 ? Pick : BestI];
 		bTurretFlying = true;
-		const float Angle = float(H % 360);
-		TurretVelocity = FVector(FMath::Cos(FMath::DegreesToRadians(Angle)) * 150.0f, FMath::Sin(FMath::DegreesToRadians(Angle)) * 150.0f, 750.0f + float(H % 200));
-		TurretSpinDegPerS = FVector(float(H % 120) - 60.0f, 180.0f + float(H % 140), float(H % 90) - 45.0f);
+		TurretVelocity = FVector(0.0f, 0.0f, TurretUp) + Dir * TurretSide;
+		const float F1 = float((H >> 8) & 0xFFu) / 255.0f;
+		const float F2 = float((H >> 16) & 0xFFu) / 255.0f;
+		TurretSpin = FVector(FMath::Lerp(0.6f, 1.0f, F1) * ((H & 0x10000000u) ? 1.0f : -1.0f), FMath::Lerp(0.4f, 0.8f, F2), 0.1f).GetSafeNormal()
+			* FMath::DegreesToRadians(TurretSpinDeg);
+		TurretQ = TurretPivot->GetComponentQuat();
 		TurretPivot->SetUsingAbsoluteLocation(true);
 		TurretPivot->SetUsingAbsoluteRotation(true);
 	}
@@ -576,6 +730,11 @@ void ARTSUnitActor::Die()
 
 void ARTSUnitActor::Char()
 {
+	// o queimado por dado de primitiva (6), o que o M_UnitDust do plugin RTSLook lê: escurece e tira
+	// o brilho sem instância dinâmica (combinado com a sessão de gráficos, 11/10)
+	SetPartsFloat(DataBurnt, bStructure ? 2.0f : 1.0f);
+	SetPartsFloat(DataHeat, 0.0f);   // (v2, 13/10: o veículo só carbonizado, sem o miolo quente)
+	SetPartsFloat(DataEmbers, 0.0f);
 	// carcaça queimada: escurece a cor e tira o brilho (parâmetros do M_UnitPBR)
 	auto Burn = [](UStaticMeshComponent* Part)
 	{
@@ -586,6 +745,11 @@ void ARTSUnitActor::Char()
 				MID->SetVectorParameterValue(TEXT("BaseColorFactor"), FLinearColor(0.07f, 0.064f, 0.058f, 1.0f));
 				MID->SetScalarParameterValue(TEXT("RoughnessFactor"), 0.95f);
 				MID->SetScalarParameterValue(TEXT("MetallicFactor"), 0.0f);
+				// o material dos provisórios (o tanque do Look e os prédios): os mesmos, com outro nome
+				MID->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.07f, 0.064f, 0.058f, 1.0f));
+				MID->SetScalarParameterValue(TEXT("Roughness"), 0.95f);
+				MID->SetScalarParameterValue(TEXT("Metallic"), 0.0f);
+				MID->SetScalarParameterValue(TEXT("PlayerMask"), 0.0f);
 			}
 		}
 	};
@@ -657,20 +821,57 @@ void ARTSUnitActor::Tick(float DeltaSeconds)
 	if (bTurretFlying)
 	{
 		TurretVelocity.Z -= GravityCm * DeltaSeconds;
-		const FVector P = TurretPivot->GetComponentLocation() + TurretVelocity * DeltaSeconds;
-		TurretPivot->SetWorldLocationAndRotation(P, TurretPivot->GetComponentRotation() + FRotator::MakeFromEuler(TurretSpinDegPerS * DeltaSeconds));
-		if (P.Z < GetActorLocation().Z + 60.0f && TurretVelocity.Z < 0.0f)
+		FVector P = TurretPivot->GetComponentLocation() + TurretVelocity * DeltaSeconds;
+		const float SpinRad = TurretSpin.Size() * DeltaSeconds;
+		if (SpinRad > 0.0f)
 		{
-			bTurretFlying = false;   // caiu
+			TurretQ = FQuat(TurretSpin.GetSafeNormal(), SpinRad) * TurretQ;
 		}
+		const float Floor = float(GetActorLocation().Z) + 60.0f;
+		if (P.Z < Floor && TurretVelocity.Z < 0.0f)
+		{
+			// quica uma vez, sem força, e fica; a pose estável mais perto: o eixo de cima pra cima ou pra baixo (uma
+			// torre larga e chata não fica de lado), mantendo o giro em volta da vertical
+			P.Z = Floor;
+			TurretVelocity = FVector(TurretVelocity.X * 0.4f, TurretVelocity.Y * 0.4f, -TurretVelocity.Z * 0.2f);
+			TurretSpin *= 0.35f;
+			if (TurretVelocity.Size() < 250.0f)
+			{
+				bTurretFlying = false;
+				bTurretSettling = true;
+				TurretSettle = 0.3f;
+				const FVector Up = TurretQ.GetUpVector();
+				TurretRestQ = FQuat::FindBetweenNormals(Up, Up.Z >= 0.0f ? FVector::UpVector : -FVector::UpVector) * TurretQ;
+			}
+		}
+		TurretPivot->SetWorldLocationAndRotation(P, TurretQ);
 	}
-	// o fogo da carcaça tremula e se apaga
+	else if (bTurretSettling)
+	{
+		TurretSettle = FMath::Max(TurretSettle - DeltaSeconds, 0.0f);
+		TurretQ = FQuat::Slerp(TurretQ, TurretRestQ, FMath::Clamp(DeltaSeconds / FMath::Max(TurretSettle + DeltaSeconds, 1e-3f), 0.0f, 1.0f));
+		TurretPivot->SetWorldRotation(TurretQ);
+		bTurretSettling = TurretSettle > 0.0f;
+	}
+	// a v2 (13/10, o Felipe pelo vídeo aprovado do BlastLab): o veículo fica só carbonizado, sem fogo, luz nem brasa; o
+	// prédio segue com o fogo que tremula e se apaga (a tremida de ruído, 1–3 Hz: o seno lia como lâmpada piscando)
+	if (!bStructure)
+	{
+		if (!bTurretFlying && !bTurretSettling)
+		{
+			SetActorTickEnabled(false);
+		}
+		return;
+	}
 	const float Fade = FMath::Clamp(1.0f - DeathAge / WreckFireSeconds, 0.0f, 1.0f);
-	const float Flicker = 0.75f + 0.18f * FMath::Sin(DeathAge * 13.0f) + 0.1f * FMath::Sin(DeathAge * 31.0f + 1.3f);
-	FireLight->SetIntensity(4.0e5f * Fade * Flicker);
+	const float Flicker = 0.75f + 0.25f * (0.5f + 0.5f * FMath::PerlinNoise1D(DeathAge * 2.1f + float(GetUniqueID() % 97)));
+	FireLight->SetIntensity(6.0e4f * Fade * Fade * Flicker);
 	if (Fade <= 0.0f)
 	{
 		FireLight->SetVisibility(false);
+	}
+	if (DeathAge > WreckFireSeconds)
+	{
 		SetActorTickEnabled(false);
 	}
 }

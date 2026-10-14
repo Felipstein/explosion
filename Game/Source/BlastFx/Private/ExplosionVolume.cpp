@@ -770,9 +770,29 @@ void AExplosionVolume::UpdateLights(float T)
 		// sem ela. 12 Cargas Pesadas eram 12 luzes pontuais com sombra virtual: ~8 ms
 		// de luzes + ~8 ms de sombras e uma travada de 2.4 s quando nasciam (08/10,
 		// deserto, captures/ue/RM_barr12)
+		// Abaixo do ultra a sombra da do cenário é por campo de distância (11/10), como a do clarão:
+		// a virtual de uma luz pontual é um cubo de 6 mapas que redesenha a floresta inteira (Nanite)
+		// quando a luz nasce ou anda; medido na floresta com 6 Cargas Pesadas no 1º segundo, ~8 ms de
+		// ShadowDepths + ~5 ms de projeção, mais que o raymarch inteiro (2,9 ms). O campo de distância
+		// não depende dos triângulos (Epic, "Distance Field Soft Shadows"; Wright, SIGGRAPH 2015:
+		// 30–50% mais barato que o cubo) e não segue o vento das folhas, que de cima em 1–3 s não se vê.
+		// Medido à noite (6 Cargas, quadro inteiro da placa): virtual 40,5 ms, campo de distância
+		// 30,8 ms, com 32 passos (r.DFShadowQuality 2, DefaultScalability) 27,0 ms, sem sombra 22,5 ms;
+		// de dia a sombra fica igual à virtual (captures/ue/sombra_fogo_*.jpg). No baixa a Unreal
+		// desliga o campo de distância (r.DistanceFieldShadowing 0): lá o fogo fica sem sombra, não
+		// volta pra virtual. Medição: -FireShadow=0 sem sombra, 1 virtual, 2 campo de distância.
+		static const int32 ForcedFireShadow = [] { int32 M = -1; FParse::Value(FCommandLine::Get(), TEXT("-FireShadow="), M); return M; }();
+		static const IConsoleVariable* DFShadowing = IConsoleManager::Get().FindConsoleVariable(TEXT("r.DistanceFieldShadowing"));
+		const bool bDFAvailable = !DFShadowing || DFShadowing->GetInt() != 0;
+		const bool bDistanceField = !bVolume && (ForcedFireShadow == 2 || (ForcedFireShadow < 0 && !FullDetail() && bDFAvailable));
+		if (L->bUseRayTracedDistanceFieldShadows != bDistanceField)
+		{
+			L->SetUseRayTracedDistanceFieldShadows(bDistanceField);   // recria a luz: só na troca de preset
+		}
 		const bool bShadow = bVolume ? bOnScreen
-			: (bSceneShadow && bShadowRegionOnScreen && ScreenFrac > MinShadowFraction && (LoopPeriod <= 0.0f || FullDetail() || Age < LoopShadowS)
-				&& (FullDetail() || LodFloor == 0));
+			: (ForcedFireShadow != 0 && (ForcedFireShadow > 0 || FullDetail() || bDFAvailable)
+				&& bSceneShadow && bShadowRegionOnScreen && ScreenFrac > MinShadowFraction
+				&& (LoopPeriod <= 0.0f || FullDetail() || Age < LoopShadowS) && (FullDetail() || LodFloor == 0));
 		if (L->CastShadows != bShadow)
 		{
 			L->SetCastShadows(bShadow);

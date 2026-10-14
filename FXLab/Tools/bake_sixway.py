@@ -2,7 +2,7 @@
 
 Uso:
     blender -b --factory-startup -P bake_sixway.py -- <pasta_vdb> <saida_dir> <m_por_voxel> <qps_da_sim> \
-        <elevação_da_câmera_graus> [quadros=48] [quadro_inicial=5] [quadro_final=-1] [res=256] [amostras=64] [albedo=0.3]         [lado_m=auto] [desloca_direita_m=0] [desloca_cima_m=0]
+        <elevação_da_câmera_graus> [quadros=48] [quadro_inicial=5] [quadro_final=-1] [res=256] [amostras=64] [albedo=0.3]         [lado_m=auto] [desloca_direita_m=0] [desloca_cima_m=0] [potência_do_tempo=1] [rebotes_no_volume=1]
 
 Por que (07/10/2026): os jogos AAA não desenham a bola de fogo como volume ao
 vivo. Simulam uma vez (Houdini/EmberGen), gravam a sequência e o jogo só toca
@@ -54,7 +54,12 @@ os.makedirs(OUT, exist_ok=True)
 
 files = sorted(glob.glob(os.path.join(SRC, '*.vdb')), key=lambda f: int(re.findall(r'(\d+)\.vdb$', f)[0]))
 F1 = len(files) - 1 if F1 < 0 else min(F1, len(files) - 1)
-sim_frames = [int(round(F0 + (F1 - F0) * k / (NFRAMES - 1))) for k in range(NFRAMES)]
+# TIME_POW > 1: mais quadros no começo (o jato da poeira das lagartas muda rápido nos primeiros 0,4 s); 1 = uniforme
+TIME_POW = float(argv[14]) if len(argv) > 14 else 1.0
+sim_frames = [int(round(F0 + (F1 - F0) * (k / (NFRAMES - 1)) ** TIME_POW)) for k in range(NFRAMES)]
+if TIME_POW != 1.0:
+    for k in range(1, NFRAMES):
+        sim_frames[k] = min(max(sim_frames[k], sim_frames[k - 1] + 1), F1)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -165,7 +170,9 @@ sc.render.engine = 'CYCLES'
 sc.cycles.device = 'CPU'                 # a placa é da Unreal (a 1660 cai com as duas)
 sc.cycles.samples = SAMPLES
 sc.cycles.use_denoising = False          # o denoiser não age nos passes de grupo de luz
-sc.cycles.volume_bounces = 1
+# rebotes de luz dentro do volume (poeira clara, albedo ~0,93, precisa de vários: Dubovik 2002); 1 = o de sempre
+VOL_BOUNCES = int(argv[15]) if len(argv) > 15 else 1
+sc.cycles.volume_bounces = VOL_BOUNCES
 sc.cycles.volume_step_rate = 1.5
 sc.render.film_transparent = True
 sc.render.resolution_x = sc.render.resolution_y = RES

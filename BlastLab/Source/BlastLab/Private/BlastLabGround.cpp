@@ -1,4 +1,4 @@
-#include "BlastLabGround.h"
+﻿#include "BlastLabGround.h"
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -54,9 +54,23 @@ bool BlastLabGround::Ray(const UWorld* World, const FVector& Origin, const FVect
 
 double BlastLabGround::HeightAt(const UWorld* World, double X, double Y)
 {
+	if (!World)
+	{
+		return 0.0;
+	}
+	// A altura direto do heightfield de colisão do pedaço debaixo do ponto (14/10, medido no jogo): o traço do
+	// ActorLineTraceSingle percorre todos os pedaços do Landscape (256 no mapa do jogo), e com 11 mortes juntas os
+	// destroços custavam 17 ms de processador por quadro. O traço fica de reserva.
+	for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+	{
+		if (const TOptional<float> H = It->GetHeightAtLocation(FVector(X, Y, 0.0)); H.IsSet())
+		{
+			return H.GetValue();
+		}
+	}
 	FVector Hit;
 	bool bHasLandscape = false;
-	return World && TraceLandscape(World, FVector(X, Y, 1.0e6), FVector(X, Y, -1.0e6), Hit, bHasLandscape) ? Hit.Z : 0.0;
+	return TraceLandscape(World, FVector(X, Y, 1.0e6), FVector(X, Y, -1.0e6), Hit, bHasLandscape) ? Hit.Z : 0.0;
 }
 
 double BlastLabGround::HeightAtCached(const UWorld* World, double X, double Y)

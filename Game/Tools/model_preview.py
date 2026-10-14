@@ -72,6 +72,26 @@ MODELS = {
         'game': [('game_cam', 37.5, 200.0, 50.0, 0.8), ('game_cam_close', 37.5, 200.0, 28.0, 0.75)],
         'scaffold': 'SM_USA_Patriot_Scaffold',
     },
+    'supply_dock': {
+        'parts': [('SM_SupplyDock_Yard', (0, 0, 0))],
+        'layout': 'dock_layout.json',                                                  # as caixas do monte e as vazias
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1400, 1400)),
+                  ('three_quarter', 'persp', 34.0, 215.0, (1600, 1000), 32.0, 0.95),
+                  ('three_quarter_right', 'persp', 34.0, 145.0, (1600, 1000), 32.0, 0.95),
+                  ('low', 'persp', 18.0, 200.0, (1600, 900), 35.0, 0.95)],
+        'usa_at': (2.0, 8.5, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85), ('game_cam_close', 37.5, 200.0, 30.0, 0.8)],
+    },
+    'supply_yard': {
+        'parts': [('SM_SupplyYard', (0, 0, 0))],
+        'layout': 'yard_layout.json',
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1400, 1400)),
+                  ('three_quarter', 'persp', 34.0, 215.0, (1600, 1000), 32.0, 0.95),
+                  ('three_quarter_right', 'persp', 34.0, 145.0, (1600, 1000), 32.0, 0.95),
+                  ('low', 'persp', 16.0, 200.0, (1600, 900), 35.0, 0.95)],
+        'usa_at': (0, 0.0, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85), ('game_cam_close', 37.5, 200.0, 30.0, 0.8)],
+    },
     'gla_war_factory': {
         'parts': [('gla_war_factory', (0, 0, 0))],
         'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1500, 1200)),           # a planta: frente embaixo, direita (+Y) à esquerda
@@ -221,6 +241,24 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 for name, at in spec['parts']:
     path = os.path.join(REPO, name + '.glb') if '/' in name else os.path.join(SRC, name + '.glb')
     objs += load(path, at)
+if spec.get('layout'):
+    import json
+    lay = json.load(open(os.path.join(SRC, spec['layout']), encoding='utf-8'))
+    for key, mesh in (('heap_m', lay['crate']), ('empties_m', lay.get('crate_empty'))):
+        if not mesh:
+            continue
+        src_objs = load(os.path.join(SRC, mesh + '.glb'), (0, 0, 0))
+        src = [o for o in src_objs if o.type == 'MESH'][0]
+        for (x, y, z, yaw) in lay.get(key, []):
+            c = src.copy()
+            c.data = src.data
+            bpy.context.scene.collection.objects.link(c)
+            c.location = Vector((x, -y, z))
+            c.rotation_euler = (0.0, 0.0, math.radians(-yaw))
+            objs.append(c)
+        for o in src_objs:
+            bpy.data.objects.remove(o, do_unlink=True)
+            objs = [q for q in objs if q is not o]
 fix_materials()
 bpy.context.view_layer.update()
 lo, hi = bounds(objs)

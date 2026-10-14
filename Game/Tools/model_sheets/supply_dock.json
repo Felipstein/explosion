@@ -1,0 +1,30 @@
+{
+  "ficha": "",
+  "rows": [],
+  "extra": [
+    {
+      "tag": "three_quarter",
+      "label": "3/4 pela frente-esquerda: a piramide de suprimento (a caixa do C&C, a altura e o estoque)"
+    },
+    {
+      "tag": "three_quarter_right",
+      "label": "3/4 pela frente-direita"
+    },
+    {
+      "tag": "low",
+      "label": "baixa, pela doca (a rampa)"
+    },
+    {
+      "tag": "top",
+      "label": "planta (cima): o monte dourado listrado"
+    },
+    {
+      "tag": "game_cam",
+      "label": "a camera do jogo (37,5 graus), tanque USA na doca como regua"
+    },
+    {
+      "tag": "game_cam_close",
+      "label": "a camera do jogo, mais perto"
+    }
+  ]
+}

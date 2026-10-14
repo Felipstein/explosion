@@ -120,6 +120,61 @@ O método da cena manteve a War Factory igual nos dois geradores, mas:
 - **O acabamento-alvo é o do Gemini:** texturas com cara de jogo. O GPT detalhou tanto que ficou ruim.
 - **Direção aprovada pras unidades:** o Chinook do Gemini e o Dozer do GPT.
 
+## 3b. Estudo: o que faz um prédio do ZH ficar na memória (13/10/2026)
+
+O Felipe deixou o desenho da base pra "bem depois, com estudo próprio do que torna um prédio icônico".
+Este é o estudo, feito sobre os prédios do Generals/Zero Hour que todo jogador lembra.
+
+| Facção | Prédio | A assinatura (o que se lembra) | Como lê de cima |
+|---|---|---|---|
+| USA | Command Center | o radar grande girando em cima do bloco blindado, o heliponto | um círculo grande (a antena) no meio de um retângulo |
+| USA | Cold Fusion Reactor (usina) | o reator cilíndrico com anéis | círculos concêntricos |
+| USA | Supply Center | o heliponto com o Chinook pousando e decolando com a carga | o "H" e o helicóptero indo e vindo |
+| USA | Barracks | o hangar arredondado com sacos de areia e a bandeira | meio-cilindro com nervuras |
+| USA | Strategy Center | o domo blindado com os telões de plano de batalha | um domo, a maior bola da base |
+| USA | Particle Cannon | a antena-canhão apontada pro céu | um disco grande |
+| China | Command Center / Nuclear Reactor / Propaganda Center | o telhado de pagode; as torres de resfriamento com vapor; os alto-falantes e a estrela vermelha | as camadas do telhado; dois círculos fumegando; a estrela |
+| GLA | Command Center / Palace / Scud Storm / Supply Stash | o pátio de adobe com lona; o palácio de cúpula; os trilhos de lançamento; o monte de caixas | pátios abertos, cúpula, trilhos, pilhas |
+
+**O que se repete (as regras):**
+1. **Uma palavra por prédio.** Cada um é UM objeto que todo mundo conhece: radar, reator, heliponto,
+   hangar, domo, canhão. A pergunta é "qual objeto é este prédio?", e a resposta tem de ser uma
+   palavra só, antes de qualquer detalhe.
+2. **A assinatura é redonda num mundo de retângulos.** Quase todas são círculos vistos de cima
+   (antena, reator, domo, torre de resfriamento, heliponto). Num chão de lotes retangulares, o círculo
+   é o que o olho acha primeiro. Isso vale porque a câmera do RTS vê de cima.
+3. **A assinatura se mexe.** O radar gira, o Chinook pousa e decola, o reator pulsa, a torre solta
+   vapor, a bandeira tremula, o alto-falante chia. O movimento faz o prédio parecer vivo e aponta o
+   olho pra ele.
+4. **Hierarquia de tamanho.** O Centro de Comando é o maior e o mais "importante"; as defesas são
+   pequenas. Dá pra contar a base de longe pela altura das coisas.
+5. **A função aparece:** a porta de onde a unidade sai, o pátio de reparo, o heliponto da carga.
+6. **Três estados de dano** bem visíveis: inteiro, danificado (fogo e fumaça numa parte) e quase
+   destruído (estrutura à mostra, fogo grande). No ZH, o jogador lê a vida do prédio pelo fogo, não pela
+   barra.
+7. **A cor do jogador sempre nos mesmos objetos** (na USA, a lona azul e as faixas, como no tanque).
+
+**Como erramos na base v1 (11/10):** os prédios novos saíram como "um prédio com muitas coisas", e
+não como "um objeto". O Centro de Comando era um bloco grande com detalhe espalhado; nada nele era a
+palavra.
+
+**A proposta pra USA (uma palavra e o objeto que se mexe):**
+
+| Prédio | A palavra | O que se mexe |
+|---|---|---|
+| Centro de Comando | o radar (antena grande girando) | a antena gira; o Dozer sai da garagem |
+| Usina | o reator (cilindro com anéis) | o vapor branco sobe; os anéis acendem com a carga |
+| Quartel | o hangar arredondado | a bandeira; os soldados saem pela porta |
+| Supply Center | o heliponto | o Chinook pousa e decola com a carga |
+| Tech Center | o domo blindado | o domo abre uma fresta; as antenas giram |
+| Aeroporto | a pista com o hangar | os aviões taxiando |
+| Orbital Lance | o disco do uplink | o disco aponta pro céu e carrega |
+
+**A ordem (uma de cada vez, regra da cena):** o Centro de Comando primeiro, porque é o maior e é
+dele que sai o Dozer. Depois a usina e o Supply Center, que já aparecem na partida de hoje.
+
+O prompt da folha de ideias do Centro de Comando está em `captures/concept/44_usa_buildings/PROMPTS.md`.
+
 ## 4. Como fazer uma construção nova
 
 1. **Folha de ideias (GPT):** 4 designs, cada um com **um elemento-assinatura

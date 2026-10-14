@@ -68,4 +68,16 @@ private:
 	uint64 TickCount = 0;
 	TSet<TWeakObjectPtr<AExplosionVolume>> WarpLogged;
 	bool bWasEmpty = true;
+
+	// O encaixe na cena (do BlastLab, 13/10; no jogo desde 14/10): sem os dois a explosão parecia "um PNG em cima do
+	// cenário" (o Felipe). A névoa do mapa aplicada na explosão (SubmitFog)
+	void SubmitFog();
+	TWeakObjectPtr<class UExponentialHeightFogComponent> FogComp;
+	bool bFogSearched = false;
+	// e a sombra das explosões no chão, nos tanques e nas casas (SubmitShadow)
+	void SubmitShadow(bool bAny);
+	bool bShadowSetup = false;
+	UPROPERTY(Transient) TObjectPtr<class UTextureRenderTarget2D> ShadowTarget;
+	UPROPERTY(Transient) TObjectPtr<class UMaterialInstanceDynamic> ShadowFunction;
+	TWeakObjectPtr<class UDirectionalLightComponent> ShadowSun;
 };

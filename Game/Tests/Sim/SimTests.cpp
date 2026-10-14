@@ -425,6 +425,37 @@ namespace
 		std::printf("  juntar: menor distancia %.1f m, a mais longe a %.1f m do ponto\n", MinGap(Gather), GatherFar);
 		Check(MinGap(Gather) > 7.2, "juntar: ninguem encostado");
 		Check(GatherFar < 18.0, "juntar: todos em volta do ponto");
+
+		// sem cruzar (11/10, o "NoX" do BAR): 6 tanques numa diagonal, mandados pra longe na
+		// outra diagonal; nenhum caminho (posição → vaga, em linha reta) cruza o de outro
+		const auto Cross = [](Vec2 A, Vec2 B, Vec2 C, Vec2 D)
+		{
+			const auto Side = [](Vec2 P, Vec2 Q, Vec2 R)
+			{
+				const double V = (Q.X.ToDouble() - P.X.ToDouble()) * (R.Y.ToDouble() - P.Y.ToDouble())
+					- (Q.Y.ToDouble() - P.Y.ToDouble()) * (R.X.ToDouble() - P.X.ToDouble());
+				return V > 1e-6 ? 1 : (V < -1e-6 ? -1 : 0);
+			};
+			return Side(A, B, C) * Side(A, B, D) < 0 && Side(C, D, A) * Side(C, D, B) < 0;
+		};
+		std::vector<Vec2> Before;
+		for (int32_t K = 1; K <= 6; ++K)
+		{
+			UnitView V;
+			W.FindUnit(EntityId(K), V);
+			Before.push_back(V.Pos);
+		}
+		const std::vector<Vec2> FarSlots = OrderSlots(W, 6, Vec2::Make(Fix::FromInt(-40), Fix::FromInt(70)));
+		int32_t Crossings = 0;
+		for (size_t A = 0; A < FarSlots.size(); ++A)
+		{
+			for (size_t B = A + 1; B < FarSlots.size(); ++B)
+			{
+				Crossings += Cross(Before[A], FarSlots[A], Before[B], FarSlots[B]) ? 1 : 0;
+			}
+		}
+		std::printf("  sem cruzar: %d cruzamento(s) nos caminhos ate as vagas\n", Crossings);
+		Check(Crossings == 0, "nenhum caminho ate a vaga cruza o de outro");
 	}
 
 	// ------------------------------------------------------------------ 4d. visão e névoa
@@ -461,6 +492,233 @@ namespace
 			C.Tick = W.Tick();
 		}
 		W.Step(Commands);
+	}
+
+	/** Andar em formação (F, 11/10): 3 tanques e um rápido atrás. Com F, o rápido segue no passo dos
+	 *  tanques, todos chegam juntos e o desenho do grupo fica; sem F, ele passa na frente. */
+	struct FormationRun
+	{
+		double ArriveSpread = 0;   // s entre o primeiro e o último a parar
+		double FastLead = 0;       // s que o rápido chega antes do último tanque
+		double ShapeError = 0;     // m: o maior desvio do lugar que cada um tinha no grupo
+		bool bAllArrived = false;
+	};
+
+	FormationRun RunFormation(bool bFormation)
+	{
+		MatchSetup S;
+		S.Map = MakeOpenMap(64, 64);
+		S.bFogOfWar = false;
+		S.Rules.Units.push_back(UnitDef::FromSpec(TankSpec()));
+		UnitSpec Fast = TankSpec();
+		Fast.Key = "fast_scout";
+		Fast.SpeedMmPerS = 15000;
+		S.Rules.Units.push_back(UnitDef::FromSpec(Fast));
+		PlayerSetup P0;
+		const int32_t Xs[4] = { -60, -60, -68, -68 };
+		const int32_t Ys[4] = { -4, 4, -4, 4 };
+		for (int32_t K = 0; K < 4; ++K)
+		{
+			StartingUnit U;
+			U.Key = K == 3 ? "fast_scout" : "usa_mbt";
+			U.Pos = Vec2::Make(Fix::FromInt(Xs[K]), Fix::FromInt(Ys[K]));
+			P0.Units.push_back(U);
+		}
+		PlayerSetup P1;
+		P1.Team = 1;
+		StartingUnit Far;
+		Far.Key = "usa_mbt";
+		Far.Pos = Vec2::Make(Fix::FromInt(110), Fix::FromInt(110));
+		P1.Units.push_back(Far);
+		S.Players = { P0, P1 };
+		World W;
+		W.Init(S);
+		Vec2 Before[4];
+		Vec2 Center0 = Vec2::Zero();
+		for (int32_t K = 0; K < 4; ++K)
+		{
+			UnitView V;
+			W.FindUnit(EntityId(K + 1), V);
+			Before[K] = V.Pos;
+			Center0 += V.Pos / Fix::FromInt(4);
+		}
+		Command G;
+		G.Tick = W.Tick();
+		G.Type = CommandType::SetGroup;
+		G.Units = { 1, 2, 3, 4 };
+		Command M;
+		M.Tick = W.Tick();
+		M.Type = CommandType::Move;
+		M.Point = Vec2::Make(Fix::FromInt(60), Fix::Zero());
+		M.Value = bFormation ? 1 : 0;
+		W.Step({ G, M });
+		int32_t Arrived[4] = { -1, -1, -1, -1 };
+		for (int32_t T = 1; T < 40 * TicksPerSecond; ++T)
+		{
+			W.Step({});
+			bool bAll = true;
+			for (int32_t K = 0; K < 4; ++K)
+			{
+				UnitView V;
+				W.FindUnit(EntityId(K + 1), V);
+				if (Arrived[K] < 0 && V.Order == OrderType::Idle && V.Speed == Fix::Zero() && V.PathLeft == 0)
+				{
+					Arrived[K] = T;
+				}
+				bAll = bAll && Arrived[K] >= 0;
+			}
+			if (bAll)
+			{
+				break;
+			}
+		}
+		FormationRun R;
+		R.bAllArrived = Arrived[0] >= 0 && Arrived[1] >= 0 && Arrived[2] >= 0 && Arrived[3] >= 0;
+		int32_t First = 1 << 30, Last = 0, LastTank = 0;
+		for (int32_t K = 0; K < 4; ++K)
+		{
+			First = std::min(First, Arrived[K]);
+			Last = std::max(Last, Arrived[K]);
+			if (K < 3)
+			{
+				LastTank = std::max(LastTank, Arrived[K]);
+			}
+		}
+		R.ArriveSpread = double(Last - First) / TicksPerSecond;
+		R.FastLead = double(LastTank - Arrived[3]) / TicksPerSecond;
+		Vec2 Center1 = Vec2::Zero();
+		Vec2 After[4];
+		for (int32_t K = 0; K < 4; ++K)
+		{
+			UnitView V;
+			W.FindUnit(EntityId(K + 1), V);
+			After[K] = V.Pos;
+			Center1 += V.Pos / Fix::FromInt(4);
+		}
+		for (int32_t K = 0; K < 4; ++K)
+		{
+			R.ShapeError = std::max(R.ShapeError, Distance(After[K] - Center1, Before[K] - Center0).ToDouble());
+		}
+		return R;
+	}
+
+	void TestFormationMove()
+	{
+		std::printf("[formacao com F]\n");
+		const FormationRun Free = RunFormation(false);
+		const FormationRun Form = RunFormation(true);
+		std::printf("  sem F: chegada espalhada em %.1f s, o rapido chega %.1f s antes, desenho %.1f m fora\n", Free.ArriveSpread, Free.FastLead, Free.ShapeError);
+		std::printf("  com F: chegada espalhada em %.1f s, o rapido chega %.1f s antes, desenho %.1f m fora\n", Form.ArriveSpread, Form.FastLead, Form.ShapeError);
+		Check(Free.bAllArrived && Form.bAllArrived, "formacao: todos chegam");
+		Check(Free.FastLead > 3.0, "formacao: sem F o rapido passa na frente");
+		Check(Form.FastLead < 1.0, "formacao: com F o rapido segue no passo dos tanques");
+		Check(Form.ArriveSpread < 1.5, "formacao: com F chegam juntos");
+		Check(Form.ShapeError < 2.0, "formacao: com F o desenho do grupo fica");
+	}
+
+	template <typename Fn>
+	int32_t RunUntil(World& W, int32_t MaxTicks, Fn&& Done);
+
+	/** O arraste com direção (11/10): 6 tanques em bloco a oeste vão pra (40, 0).
+	 *  - pra frente (leste, contra o inimigo), 40 m: uma linha de frente só, de 42 m, de través da marcha;
+	 *  - pra frente, arraste curto: a do grupo, 3 por fileira, 2 fileiras;
+	 *  - de lado (norte), 40 m: a linha fica ao longo da marcha e os tanques entram no mesmo corredor; a regra
+	 *    do ZH "empacou perto do destino = chegou" para alguns antes da vaga (limite conhecido: o certo é marchar
+	 *    em formação e só abrir perto). Aqui só a direção e a largura mínima são cobradas. */
+	void TestLineDrag()
+	{
+		std::printf("[arraste com direcao]\n");
+		struct FCase
+		{
+			const char* Name;
+			int32_t FacingBam;
+			int32_t WidthHalfM;
+		};
+		const FCase Cases[3] = { { "pra frente, 40 m", 0, 20 }, { "pra frente, curto", 0, 0 }, { "de lado, 40 m", Angle::QuarterTurn, 20 } };
+		for (const FCase& Case : Cases)
+		{
+			MatchSetup S;
+			S.Map = MakeOpenMap(64, 64);
+			S.bFogOfWar = false;
+			S.Rules.Units.push_back(UnitDef::FromSpec(TankSpec()));
+			PlayerSetup P0;
+			for (int32_t K = 0; K < 6; ++K)
+			{
+				StartingUnit U;
+				U.Key = "usa_mbt";
+				U.Pos = Vec2::Make(Fix::FromInt(-60 - (K / 3) * 8), Fix::FromInt((K % 3) * 8 - 8));
+				P0.Units.push_back(U);
+			}
+			PlayerSetup P1;
+			P1.Team = 1;
+			StartingUnit Far;
+			Far.Key = "usa_mbt";
+			Far.Pos = Vec2::Make(Fix::FromInt(110), Fix::FromInt(110));
+			P1.Units.push_back(Far);
+			S.Players = { P0, P1 };
+			World W;
+			W.Init(S);
+			Command G;
+			G.Tick = W.Tick();
+			G.Type = CommandType::SetGroup;
+			G.Units = { 1, 2, 3, 4, 5, 6 };
+			Command M;
+			M.Tick = W.Tick();
+			M.Type = CommandType::Move;
+			M.Point = Vec2::Make(Fix::FromInt(40), Fix::Zero());
+			M.Value = MoveValue(false, true, Case.WidthHalfM, uint16_t(Case.FacingBam));
+			W.Step({ G, M });
+			RunUntil(W, 60 * TicksPerSecond, [&]()
+			{
+				for (int32_t K = 1; K <= 6; ++K)
+				{
+					UnitView V;
+					W.FindUnit(EntityId(K), V);
+					if (V.Order != OrderType::Idle || V.Speed != Fix::Zero())
+					{
+						return false;
+					}
+				}
+				return true;
+			});
+			RunUntil(W, 3 * TicksPerSecond, []() { return false; });   // o giro final no lugar
+			// largura = de través da direção pedida; fundo = ao longo dela
+			const double FacingDeg = double(Case.FacingBam) * 360.0 / double(Angle::FullTurn);
+			const double DX = std::cos(FacingDeg * 3.14159265358979 / 180.0), DY = std::sin(FacingDeg * 3.14159265358979 / 180.0);
+			std::vector<Vec2> Ends;
+			double A0 = 1e9, A1 = -1e9, L0 = 1e9, L1 = -1e9;
+			int32_t Facing = 0;
+			for (int32_t K = 1; K <= 6; ++K)
+			{
+				UnitView V;
+				W.FindUnit(EntityId(K), V);
+				Ends.push_back(V.Pos);
+				const double X = V.Pos.X.ToDouble(), Y = V.Pos.Y.ToDouble();
+				const double Along = X * DX + Y * DY, Across = -X * DY + Y * DX;
+				A0 = std::min(A0, Along); A1 = std::max(A1, Along);
+				L0 = std::min(L0, Across); L1 = std::max(L1, Across);
+				double Off = std::fmod(std::abs(V.Hull.ToDegrees() - FacingDeg), 360.0);
+				Off = std::min(Off, 360.0 - Off);
+				Facing += Off < 10.0 ? 1 : 0;
+			}
+			const double Width = L1 - L0, Depth = A1 - A0;
+			std::printf("  %s: linha de %.0f m de largura por %.0f m de fundo, %d de 6 virados, par mais perto a %.1f m\n",
+				Case.Name, Width, Depth, Facing, MinGap(Ends));
+			Check(Facing == 6, "arraste: todos chegam virados pra direcao puxada");
+			Check(MinGap(Ends) > 7.0, "arraste: ninguem encostado");
+			if (Case.FacingBam == 0 && Case.WidthHalfM > 0)
+			{
+				Check(Width > 36.0 && Depth < 5.0, "arraste longo pra frente: uma fileira so, da largura puxada");
+			}
+			else if (Case.FacingBam == 0)
+			{
+				Check(Width > 14.0 && Width < 22.0 && Depth > 6.0 && Depth < 13.0, "arraste curto: 3 por fileira, 2 fileiras");
+			}
+			else
+			{
+				Check(Width > 24.0, "arraste de lado: a linha abre (mesmo com o corredor)");
+			}
+		}
 	}
 
 	void TestVision()
@@ -1078,6 +1336,112 @@ namespace
 		Check(W.Player(0).PowerMade > PowerBefore, "o Dozer sai pelo lado livre e a obra termina");
 	}
 
+	// 5d. o "desfile" (11/10): os tanques da fábrica paravam em fila indiana no ponto de encontro,
+	// cada um encostando no de trás. No ZH cada um acha a vaga livre mais perto (adjustDestination)
+	void TestRallySpread()
+	{
+		std::printf("[ponto de encontro]\n");
+		MatchSetup S;
+		S.Seed = 6;
+		S.Map = MakeOpenMap(160, 160);
+		S.Rules = EconomyRuleset();
+		S.bFogOfWar = false;
+		const Vec2 C = S.Map.CellCenter(Cell{ 60, 60 });
+		PlayerSetup P0;
+		P0.Units = { { "usa_command_center", Offset(C, -70, 0), Angle() }, { "usa_power_plant", Offset(C, -40, -40), Angle() },
+			{ "usa_power_plant", Offset(C, -25, -40), Angle() }, { "usa_war_factory", C, Angle() } };
+		PlayerSetup P1;
+		P1.Team = 1;
+		P1.Units = { { "usa_command_center", S.Map.CellCenter(Cell{ 145, 145 }), Angle() } };
+		S.Players = { P0, P1 };
+		World W;
+		Check(W.Init(S), "montagem do ponto de encontro");
+		const uint16_t Mbt = uint16_t(W.Rules().FindUnit("usa_mbt"));
+		const EntityId Factory = FindOf(W, 0, uint16_t(W.Rules().FindUnit("usa_war_factory")));
+		const Vec2 Rally = Offset(C, 45, 0);
+		std::vector<Command> Orders = { Order(0, CommandType::SetRally, Factory, 0, Rally) };
+		for (int32_t K = 0; K < 6; ++K)
+		{
+			Orders.push_back(Order(0, CommandType::Produce, Factory, Mbt));
+		}
+		StepWith(W, Orders);
+		const auto Tanks = [&]()
+		{
+			std::vector<UnitView> Out;
+			for (int32_t I = 0; I < W.UnitCount(); ++I)
+			{
+				const UnitView V = W.Unit(I);
+				if (V.Owner == 0 && V.Def == Mbt)
+				{
+					Out.push_back(V);
+				}
+			}
+			return Out;
+		};
+		RunUntil(W, 180 * TicksPerSecond, [&]()
+		{
+			const std::vector<UnitView> T = Tanks();
+			if (T.size() < 6)
+			{
+				return false;
+			}
+			for (const UnitView& V : T)
+			{
+				if (V.Order != OrderType::Idle)
+				{
+					return false;
+				}
+			}
+			return true;
+		});
+		RunUntil(W, 3 * TicksPerSecond, []() { return false; });   // o giro final no lugar
+		const std::vector<UnitView> T = Tanks();
+		double MinGap = 1e9;
+		double MaxFromRally = 0.0;
+		double SpanX = 0.0;
+		double SpanY = 0.0;
+		double X0 = 1e9, X1 = -1e9, Y0 = 1e9, Y1 = -1e9;
+		for (size_t A = 0; A < T.size(); ++A)
+		{
+			const double Ax = T[A].Pos.X.ToDouble(), Ay = T[A].Pos.Y.ToDouble();
+			MaxFromRally = std::max(MaxFromRally, std::hypot(Ax - Rally.X.ToDouble(), Ay - Rally.Y.ToDouble()));
+			X0 = std::min(X0, Ax); X1 = std::max(X1, Ax); Y0 = std::min(Y0, Ay); Y1 = std::max(Y1, Ay);
+			for (size_t B = A + 1; B < T.size(); ++B)
+			{
+				MinGap = std::min(MinGap, std::hypot(Ax - T[B].Pos.X.ToDouble(), Ay - T[B].Pos.Y.ToDouble()));
+			}
+		}
+		SpanX = X1 - X0;
+		SpanY = Y1 - Y0;
+		std::printf("  %zu tanques: o mais longe do ponto a %.1f m, o par mais perto a %.1f m, o bolo %.0f x %.0f m\n",
+			T.size(), MaxFromRally, MinGap, SpanX, SpanY);
+		Check(T.size() == 6, "os 6 tanques saem da fabrica");
+		Check(MaxFromRally < 20.0, "todos param perto do ponto de encontro (bolo, nao fila)");
+		Check(std::min(SpanX, SpanY) > 6.0, "espalhados nos dois sentidos (nao em fila indiana)");
+		Check(MinGap > 6.0, "sem tanque encostado no outro");
+		// a área de reunião: todos virados pra longe da fábrica (o ponto está a +X dela), ±10°
+		int32_t Facing = 0;
+		for (const UnitView& V : T)
+		{
+			const double Deg = V.Hull.ToDegrees();
+			Facing += (Deg < 10.0 || Deg > 350.0) ? 1 : 0;
+		}
+		std::printf("  virados pra longe da fabrica: %d de %zu\n", Facing, T.size());
+		Check(Facing == int32_t(T.size()), "chegam virados pra frente da area de reuniao");
+		// o leque: as torres das pontas olham pra fora, nenhuma passa de 25°
+		double Left = 0.0, Right = 0.0, Widest = 0.0;
+		for (const UnitView& V : T)
+		{
+			const double Rel = double(V.Hull.DeltaTo(V.Turret)) * 360.0 / double(Angle::FullTurn);
+			Left = std::max(Left, Rel);
+			Right = std::min(Right, Rel);
+			Widest = std::max(Widest, std::abs(Rel));
+		}
+		std::printf("  torres em leque: de %.0f a %.0f graus do casco\n", Right, Left);
+		Check(Left > 10.0 && Right < -10.0, "as torres paradas abrem em leque (as pontas olham pra fora)");
+		Check(Widest < 26.0, "o leque nao passa de 25 graus");
+	}
+
 	void TestEconomy()
 	{
 		std::printf("[economia e construcao]\n");
@@ -1401,6 +1765,185 @@ namespace
 		const BattleResult R = RunBattle(Setup, 30 * TicksPerSecond);
 		std::printf("  800 tanques, 30 s: %.3f ms por passo\n", R.MsPerTick);
 	}
+
+	// o tiro forçado do C&C (Ctrl, 13/10): no chão e na própria unidade
+	void TestForceFire()
+	{
+		std::printf("tiro forcado (Ctrl)\n");
+		MatchSetup S = TwoTankSetup(Cell{ 10, 10 }, Cell{ 60, 60 }, false);
+		StartingUnit Mate = S.Players[0].Units[0];
+		Mate.Pos = S.Map.CellCenter(Cell{ 14, 10 });
+		S.Players[0].Units.push_back(Mate);
+		World W;
+		W.Init(S);
+		UnitView A, B;
+		Check(W.FindUnit(1, A) && W.FindUnit(2, B) && A.Owner == 0 && B.Owner == 0, "os dois tanques sao do jogador 0");
+
+		// sem o Ctrl, atacar o colega é ignorado
+		StepWith(W, { Group(0, { 1 }), Order(0, CommandType::Attack, 2) });
+		W.FindUnit(1, A);
+		Check(A.Order == OrderType::Idle, "atacar o proprio tanque sem o Ctrl e ignorado");
+
+		// os comandos novos viajam em bytes
+		{
+			Command G = Order(0, CommandType::AttackGround, NoEntity, 0, S.Map.CellCenter(Cell{ 10, 20 }));
+			G.Tick = 5;
+			ByteWriter BW;
+			WriteCommand(BW, G);
+			WriteCommand(BW, Order(0, CommandType::ForceAttack, 2));
+			ByteReader BR(BW.Bytes.data(), BW.Bytes.size());
+			Command G2, F2;
+			Check(ReadCommand(BR, G2) && G2.Type == CommandType::AttackGround && G2.Point == G.Point && G2.Tick == 5, "AttackGround ida e volta em bytes");
+			Check(ReadCommand(BR, F2) && F2.Type == CommandType::ForceAttack && F2.Target == 2, "ForceAttack ida e volta em bytes");
+		}
+
+		// com o Ctrl, o colega leva tiro
+		StepWith(W, { Order(0, CommandType::ForceAttack, 2) });
+		const int32_t Ticks = RunUntil(W, 15 * TicksPerSecond, [&]() { UnitView V; return W.FindUnit(2, V) && V.Hp < V.MaxHp; });
+		W.FindUnit(2, B);
+		std::printf("  o colega levou o 1o tiro em %d passos (vida %d de %d)\n", Ticks, B.Hp, B.MaxHp);
+		Check(B.Hp < B.MaxHp, "o ataque forcado fere o proprio tanque");
+
+		// no chão: vai até o alcance, atira no ponto, e o tiro não fere ninguém
+		const Vec2 Spot = S.Map.CellCenter(Cell{ 10, 40 });
+		StepWith(W, { Order(0, CommandType::AttackGround, NoEntity, 0, Spot) });
+		const int32_t HpB = B.Hp;
+		int32_t GroundHits = 0, Damaged = 0;
+		for (int32_t T = 0; T < 25 * TicksPerSecond; ++T)
+		{
+			StepWith(W, {});
+			for (const SimEvent& E : W.LastEvents())
+			{
+				GroundHits += (E.Type == EventType::ProjectileHit && E.Target == NoEntity && E.Point == Spot) ? 1 : 0;
+				Damaged += E.Type == EventType::UnitDamaged ? 1 : 0;
+			}
+		}
+		W.FindUnit(1, A);
+		W.FindUnit(2, B);
+		std::printf("  tiros no chao: %d, unidades feridas: %d, o tanque ficou a %.1f m do ponto\n", GroundHits, Damaged, Distance(A.Pos, Spot).ToDouble());
+		Check(GroundHits >= 3, "o tiro no chao chega no ponto, varias vezes");
+		Check(Damaged == 0 && B.Hp == HpB, "o tiro no chao nao fere ninguem");
+		Check(A.Order == OrderType::AttackGround, "a ordem de atirar no chao continua ate mandarem outra coisa");
+		Check(W.VisionSelfCheck(), "a visao confere depois do tiro forcado");
+	}
+
+}
+
+namespace
+{
+	// ------------------------------------------------------------------ a água do WorldForge (13/10)
+
+	void TestWaterGrid()
+	{
+		std::printf("[agua]\n");
+		SimMap M = MakeOpenMap(32, 32);
+		M.ComputeClearance();
+		const uint64_t Dry = M.Hash();
+		// um lago em X = 12..19: margem nas bordas, vau no meio de cima, fundo no resto; o baker marca só o fundo como água
+		M.Water.assign(M.Pass.size(), uint8_t(WaterState::Dry));
+		M.WaterBodyId.assign(M.Pass.size(), 0);
+		M.WaterBodies.push_back(WaterBody{ 1, 0, -1000, 0, 0 });
+		for (int32_t Y = 0; Y < 32; ++Y)
+		{
+			for (int32_t X = 12; X < 20; ++X)
+			{
+				const WaterState W = (X == 12 || X == 19) ? WaterState::Shore : (Y >= 26 ? WaterState::Ford : WaterState::Deep);
+				M.Water[size_t(M.Index(X, Y))] = uint8_t(W);
+				M.WaterBodyId[size_t(M.Index(X, Y))] = 1;
+				M.Pass[size_t(M.Index(X, Y))] = uint8_t(W == WaterState::Deep ? CellPass::Water : CellPass::Open);
+			}
+		}
+		M.ComputeClearance();
+		Check(M.Hash() != Dry, "a água entra no hash do mapa");
+		Check(M.WaterAt(15, 28) == WaterState::Ford && M.WaterAt(15, 5) == WaterState::Deep && M.WaterAt(3, 3) == WaterState::Dry, "a água por célula");
+		// o caminho de um lado ao outro passa pelo vau (o fundo bloqueia)
+		Pathfinder P;
+		std::vector<Vec2> Path;
+		const bool bFound = P.FindPath(M, M.CellCenter(Cell{ 4, 10 }), M.CellCenter(Cell{ 27, 10 }), 1, Path);
+		bool bDeep = false;
+		int32_t MaxY = 0;
+		for (const Vec2& Wp : Path)
+		{
+			const Cell C = M.CellOf(Wp);
+			bDeep |= M.WaterAt(C.X, C.Y) == WaterState::Deep;
+			MaxY = C.Y > MaxY ? C.Y : MaxY;
+		}
+		Check(bFound && !bDeep, "o caminho não entra no fundo");
+		Check(bFound && MaxY >= 25, "o caminho atravessa pelo vau");
+		// o mesmo mapa de novo dá o mesmo hash (a grade é determinística)
+		SimMap N = M;
+		Check(N.Hash() == M.Hash(), "a mesma água, o mesmo hash");
+		N.WaterBodies[0].LevelMm = -900;
+		Check(N.Hash() != M.Hash(), "o nível do corpo entra no hash");
+	}
+}
+
+namespace
+{
+	// ------------------------------------------------------------------ render-se e a queda (13/10, N5 da rede)
+
+	void TestResign()
+	{
+		std::printf("[render-se]\n");
+		MatchSetup S = TwoTankSetup(Cell{ 10, 10 }, Cell{ 60, 60 }, false);
+		World W;
+		W.Init(S);
+		{
+			ByteWriter BW;
+			WriteCommand(BW, Order(1, CommandType::Resign, NoEntity));
+			ByteReader BR(BW.Bytes.data(), BW.Bytes.size());
+			Command R2;
+			Check(ReadCommand(BR, R2) && R2.Type == CommandType::Resign && R2.Player == 1, "Resign ida e volta em bytes");
+		}
+		StepWith(W, {});
+		Check(!W.IsMatchOver(), "a partida segue antes do render-se");
+		StepWith(W, { Order(1, CommandType::Resign, NoEntity) });
+		RunUntil(W, 2 * TicksPerSecond, [&]() { return W.IsMatchOver(); });
+		Check(W.IsMatchOver() && W.WinningTeam() == int32_t(W.TeamOf(0)), "quem se rende perde, e o outro ganha");
+		UnitView V;
+		Check(!W.FindUnit(2, V), "o tanque de quem se rendeu cai");
+	}
+}
+
+namespace
+{
+	// ------------------------------------------------------------------ a carcaça com física (13/10)
+
+	void TestWreckPush()
+	{
+		std::printf("[carcaca]\n");
+		// o colega (tanque 2, do jogador 0) morre pelo tiro forçado do tanque 1 e vira carcaça no caminho dele
+		MatchSetup S = TwoTankSetup(Cell{ 10, 30 }, Cell{ 60, 60 }, false);
+		StartingUnit Mate = S.Players[0].Units[0];
+		Mate.Pos = S.Map.CellCenter(Cell{ 20, 30 });
+		S.Players[0].Units.push_back(Mate);
+		World W;
+		W.Init(S);
+		const Vec2 Start = Mate.Pos;
+		StepWith(W, { Group(0, { 1 }), Order(0, CommandType::ForceAttack, 2) });
+		RunUntil(W, 40 * TicksPerSecond, [&]() { return W.WreckCount() > 0; });
+		Check(W.WreckCount() == 1, "o tanque morto vira carcaça");
+		if (W.WreckCount() != 1)
+		{
+			return;
+		}
+		const World::WreckView W0 = W.Wreck(0);
+		Check(W0.Id == 2 && DistSqRaw(W0.Pos, Start) < RadiusSqRaw(Fix::FromInt(1)), "a carcaça fica onde ele morreu, com o id dele");
+		// o tanque 1 passa pela carcaça: ela é empurrada (e o tanque segue)
+		const Vec2 Goal = S.Map.CellCenter(Cell{ 34, 30 });
+		StepWith(W, { Group(0, { 1 }), Order(0, CommandType::Move, NoEntity, 0, Goal) });
+		RunUntil(W, 30 * TicksPerSecond, [&]() { UnitView A; return W.FindUnit(1, A) && DistSqRaw(A.Pos, Goal) < RadiusSqRaw(Fix::FromInt(3)); });
+		UnitView A;
+		W.FindUnit(1, A);
+		const World::WreckView W1 = W.Wreck(0);
+		const double Moved = std::sqrt(double(DistSqRaw(W1.Pos, W0.Pos))) / double(Fix::OneRaw);
+		std::printf("  a carcaca andou %.1f m e girou %.0f graus; o tanque chegou a %.1f m do ponto\n", Moved,
+			std::abs(double(int16_t(uint16_t(W1.Hull.Bam - W0.Hull.Bam)))) * 360.0 / 65536.0,
+			std::sqrt(double(DistSqRaw(A.Pos, Goal))) / double(Fix::OneRaw));
+		Check(Moved > 1.0, "o tanque empurra a carcaca");
+		Check(Moved < 20.0, "a carcaca escorrega pro lado (nao vai na frente do tanque o caminho inteiro)");
+		Check(DistSqRaw(A.Pos, Goal) < RadiusSqRaw(Fix::FromInt(3)), "o tanque passa (a carcaca nao o prende pra sempre)");
+	}
 }
 
 int main(int Argc, char** Argv)
@@ -1411,11 +1954,18 @@ int main(int Argc, char** Argv)
 	TestFuzz();
 	TestSpawn();
 	TestGroupSlots();
+	TestFormationMove();
+	TestLineDrag();
 	TestVision();
 	TestFogBattle();
 	TestEconomy();
 	TestLotExitBlocked();
+	TestRallySpread();
 	TestEconomyMatch();
+	TestForceFire();
+	TestWaterGrid();
+	TestResign();
+	TestWreckPush();
 	const uint64_t Final = TestBattle();
 	if (bScale)
 	{

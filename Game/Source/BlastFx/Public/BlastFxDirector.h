@@ -45,7 +45,7 @@ public:
 	 * altura e metade da vida; BlastLabSimulation.cpp Detonate). Variant escolhe a
 	 * gravação e o ruído (sorteio só visual).
 	 */
-	AExplosionVolume* TankDeath(const FVector& Ground, uint32 Variant);
+	AExplosionVolume* TankDeath(const FVector& Ground, uint32 Variant, bool bClassic = false);
 
 	/** Desenha cada gravação invisível na frente da câmera por uns quadros: o shader compila antes da 1ª morte. */
 	void Prewarm(const FVector& At);

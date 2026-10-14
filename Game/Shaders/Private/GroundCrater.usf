@@ -1,0 +1,113 @@
+// As marcas de explosão no caderno do chão (13/10): cada cratera e cada morte de tanque carimbam uma variante do
+// atlas (Game/Tools/bake_craters.py) nos dois cadernos da mesma janela, numa passada por marca:
+//   - MarkCS, no GroundTrack (4,7 cm): G = o escuro (terra revirada, fuligem, combustível), B = o calor (a brasa,
+//     o jogo apaga em ~30 s), A = o claro (a areia espirrada, a borda e os torrões), todos pelo máximo; R (a esteira)
+//     fica;
+//   - HeightCS, na altura das crateras (R16F em cm, 9,4 cm): a altura somada, com limite.
+// A composição não depende da ordem (soma e máximo): o redesenho do caderno dá o mesmo que a gravação aos poucos
+// (a revisão de 13/10). O atlas: as variantes lado a lado, R altura com sinal (±AtlasRangeCm), G escuro, B calor,
+// A claro; o +X do carimbo vai no Axis.
+// (13/10, o plano com o Look) RampMode = 1: o G e o A do atlas vêm como rampas de distância (< 0,5 fora, até ~12 cm da
+// borda; 0,5 + 0,5·intensidade dentro): a MF corta a borda nítida pelo fwidth; o máximo continua sendo a união, e o
+// Dark/LightMul só escala a intensidade (a parte de dentro). A mancha do queimado (o tiro, o prédio) vem pelo mesmo
+// carimbo, esticada no Axis (Stretch).
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D AtlasTex;
+SamplerState AtlasSampler;
+RWTexture2D<float4> TargetTex;
+RWTexture2D<float> CraterOut;
+
+int2 Origin;
+int2 Size;
+float2 SheetMinCm;      // o canto do caderno no mundo
+float SheetTexelCm;
+float2 CenterCm;
+float2 Axis;            // o +X do carimbo no mundo (unitário)
+float Scale;            // o tamanho (1 = o do atlas)
+float Stretch;          // a esticada no Axis (a mancha do tiro mirado: 1,6)
+int RampMode;
+float Mirror;           // ±1: o espelho do lado (dobra as variantes)
+float HeightMul;
+float DarkMul;
+float HeatMul;
+float LightMul;
+float Variant;
+float Variants;
+float SpanCm;           // o lado de uma variante no chão, em escala 1
+float AtlasTexels;      // texels de uma variante
+float AtlasRangeCm;
+int Taps;               // a caixa de filtro (o caderno grosso tem texel ~11× maior que o do atlas)
+
+bool SampleMark(int2 P, out float4 S)
+{
+	S = 0.0;
+	const float2 D = SheetMinCm + (float2(P) + 0.5) * SheetTexelCm - CenterCm;
+	const float2 L = float2(dot(D, Axis) / max(Stretch, 0.01), dot(D, float2(-Axis.y, Axis.x)) * Mirror) / Scale;
+	const float2 UV = L / SpanCm + 0.5;
+	if (any(UV < 0.0) || any(UV > 1.0))
+	{
+		return false;
+	}
+	// a média no pedaço do carimbo que um texel do caderno cobre (sem serrilhar o torrão no caderno grosso)
+	const float Foot = SheetTexelCm / (SpanCm * Scale * min(max(Stretch, 0.01), 1.0));
+	const float Edge = 0.5 / AtlasTexels;
+	for (int J = 0; J < Taps; ++J)
+	{
+		for (int I = 0; I < Taps; ++I)
+		{
+			const float2 U = UV + ((float2(I, J) + 0.5) / Taps - 0.5) * Foot;
+			S += AtlasTex.SampleLevel(AtlasSampler, float2((Variant + clamp(U.x, Edge, 1.0 - Edge)) / Variants, clamp(U.y, Edge, 1.0 - Edge)), 0);
+		}
+	}
+	S /= float(Taps * Taps);
+	return true;
+}
+
+[numthreads(8, 8, 1)]
+void MarkCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(Id.xy >= uint2(Size)))
+	{
+		return;
+	}
+	const int2 P = Origin + int2(Id.xy);
+	float4 S;
+	if (!SampleMark(P, S) || max(S.g, max(S.b, S.a)) < 0.002)
+	{
+		return;
+	}
+	const float4 Old = TargetTex[P];
+	float G = S.g * DarkMul;
+	float A = S.a * LightMul;
+	if (RampMode != 0)
+	{
+		// a rampa de fora fica; só a intensidade de dentro escala
+		G = S.g >= 0.5 ? 0.5 + (S.g - 0.5) * DarkMul : S.g;
+		A = S.a >= 0.5 ? 0.5 + (S.a - 0.5) * LightMul : S.a;
+	}
+	TargetTex[P] = float4(Old.r, max(Old.g, saturate(G)), max(Old.b, saturate(S.b * HeatMul)), max(Old.a, saturate(A)));
+}
+
+[numthreads(8, 8, 1)]
+void HeightCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(Id.xy >= uint2(Size)))
+	{
+		return;
+	}
+	const int2 P = Origin + int2(Id.xy);
+	float4 S;
+	if (!SampleMark(P, S))
+	{
+		return;
+	}
+	const float H = (S.r - 0.5) * 2.0 * AtlasRangeCm * HeightMul;
+	if (abs(H) < 0.02)
+	{
+		return;
+	}
+	// a soma (duas crateras juntas afundam mais), com limite: −90 cm a +40 cm
+	CraterOut[P] = clamp(CraterOut[P] + H, -90.0, 40.0);
+}

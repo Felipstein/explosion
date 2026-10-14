@@ -1,0 +1,15 @@
+{
+  "ficha": "docs/concept/buildings/gla_war_factory_sheet.webp",
+  "rows": [
+    {"tag": "top", "label": "planta (cima)", "crop": [0.0, 0.02, 0.42, 0.54]},
+    {"tag": "three_quarter", "label": "3/4 pela frente", "crop": [0.5, 0.02, 1.0, 0.44]},
+    {"tag": "front", "label": "frente", "crop": [0.5, 0.44, 1.0, 0.72]},
+    {"tag": "back_three_quarter", "label": "3/4 por tras", "crop": [0.0, 0.55, 0.5, 1.0]},
+    {"tag": "side", "label": "lado do armazem", "crop": [0.5, 0.72, 1.0, 1.0]}
+  ],
+  "extra": [
+    {"tag": "game_cam", "label": "a camera do jogo (37,5 graus), tanque USA saindo da rampa"},
+    {"tag": "game_cam_close", "label": "a camera do jogo, mais perto"},
+    {"tag": "game_cam_scaffold", "label": "em obra: o andaime"}
+  ]
+}

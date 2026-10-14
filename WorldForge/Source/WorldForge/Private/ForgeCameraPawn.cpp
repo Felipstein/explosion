@@ -169,6 +169,12 @@ void AForgeCameraPawn::UpdateTreeFade()
 		{
 			TreeFade = NewObject<UForgeTreeFade>(this);
 		}
+		// mapa novo na vista ao vivo: as árvores são outras
+		if (Terrain && Terrain->GetSceneVersion() != SeenSceneVersion)
+		{
+			SeenSceneVersion = Terrain->GetSceneVersion();
+			TreeFade->Invalidate();
+		}
 		TreeFade->Update(GetWorld(), Cam, Ground * 100.0, RadiusCm);
 	}
 	UKismetMaterialLibrary::SetVectorParameterValue(this, Fade.Get(), TEXT("TreeFadeCamera"), FLinearColor(Cam.X, Cam.Y, Cam.Z, 0.0f));

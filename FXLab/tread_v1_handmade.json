@@ -1,0 +1,18 @@
+{
+  "_": "Poeira do andar, plano B (13/10/2026): a feita à mão com a Dust Impact da JangaFX (os números de fábrica do fxtread.js).",
+  "bake": "dust_impact4",
+  "size0": 0.2,
+  "size1": 0.65,
+  "squashUp": 0.65,
+  "sand": {
+    "r": 1.0,
+    "g": 0.64,
+    "b": 0.38,
+    "albedo": 2.6,
+    "density": 0.9,
+    "life": 1.0,
+    "amount": 1.0,
+    "alpha": 1.0,
+    "size": 1.0
+  }
+}

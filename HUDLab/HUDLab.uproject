@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "HUDLab: o laboratório do HUD do jogo (sessão de arte), separado do Game/. O HUD mora no plugin RTSHud e só desenha um estado de dados; o laboratório monta estados de teste por cima das cenas aprovadas.",
+	"Modules": [
+		{
+			"Name": "HUDLab",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "RTSHud",
+			"Enabled": true
+		}
+	]
+}

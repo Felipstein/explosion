@@ -308,3 +308,128 @@ semente), `sheet_fix9.jpg` (quadro a quadro ao lado do vídeo do Veo, com os nú
 - O fogo da carcaça é um stand-in da própria simulação (uma língua de ~1 T): o fogo e as poças de verdade são do FXLab
   (sessão de arte), ainda não pedidos.
 - Custo em ms não medido hoje (placa sempre ocupada por outras sessões); fica pra fechar com a placa livre.
+
+**16:15, decisão do Felipe (via sessão do BlastLab):** a branch `night-explosion` fica guardada como está, sem merge em main
+("eu falei pra manter salvo ali"). O "aprovado por enquanto" vale pro visual da morte de tanque; quando e como juntar com a
+morte de tanque da sessão do BlastLab é decisão dele. Próxima rodada pedida: a coluna de 5–20 s e o custo em ms.
+
+### 6.6 Custo medido (16:30, fila da placa, EmberGen fechado): a morte de tanque nova (A6e) na câmera do jogo, 1600×900
+
+`profilegpu` aos 1,0 s (o pico da bola), passe `BlastRaymarch`:
+
+| preset | resolução da marcha | raymarch (GPU) |
+|---|---|---|
+| alta | 536×300 (⅓ da tela) | **0,79 ms** |
+| ultra | 800×447 (½ da tela) | **13,3 ms** |
+
+Memória: atlas de blocos 108 + 22 MB (pool de 29³ blocos, 113 MB). O tempo de quadro do teste automático saiu travado
+em 33,3 ms porque o teste roda com passo fixo (`-UseFixedTimeStep`): pra custo vale o `profilegpu`; `night.ps1 -NoFixed`
+tira o passo fixo nas medições. O ultra a 13 ms está MUITO acima do teto de 2,5 ms da FICHA (meta 15): antes de qualquer
+coluna longa, descobrir o que o ultra liga (cache de luz com sombra do fogo, passos, meia resolução) e onde cortar. A
+"alta" cabe. O custo da fase de coluna (3–20 s) ainda não foi medido (o dump de 3,0 s coincidiu com o fim do teste).
+Aos 3,0 s (fase de coluna, caixa da fumaça 27×31×39 m): **alta 1,20 ms, ultra 17,4 ms**: a coluna custa MAIS que a bola
+(caixa maior na tela). A coluna de 5–20 s tem que ser mais barata por instância (menos passos na fase segurada, caixa
+menor pelo fade do topo), senão 6 colunas vivas = 7 ms só em "alta".
+Correção (cost_report.py, 16:50): nos dois dumps a memória de vídeo rastreada passava da placa (alta 6,2 GB, ultra
+9,2 GB "Total tracked", pool de render targets 1,8 / 3,2 GB; a 1660 tem 6 GB): os outros editores Unreal abertos nas
+outras sessões seguram VRAM, e o número do ultra (13–17 ms) é PAGINAÇÃO, não o shader. Medida válida só com a VRAM
+sã (≤ 5,5 GB rastreados, cabeçalho de cada medida). Outro achado: o passe "Lights" custa 1,3 ms em alta (5,4 no ultra)
+com uma morte: a luz do fogo com sombra de distance field + a do clarão + a da carcaça; a medir por luz.
+Por que o ultra custa 15×: a marcha roda a ½ da tela (`-RmRes=`, padrão 0,5) em cima da porcentagem de tela do preset
+(alta ≈ 67 % → 536×300; ultra 100 % → 800×447 = 2,2× os pixels) e só o ultra liga o cache de luz com a sombra do fogo
+dentro do volume (`FullDetail`, `-RmLightCaches=`, "~6 ms na morte de tanque" em 07/10). A/B a fazer com a placa livre:
+ultra com `-RmLightCaches=0` e com `-RmSteps=` menor, pra saber o que paga o quê; fora do escopo desta rodada.
+
+## 8. Rodada da coluna de 5–20 s (13/10, 16:30–)
+
+**Estudo** (3 lentes + 3 refutadores + diretor, `scratchpad/a9/coluna_plano.txt` da sessão): três fatos medidos mudaram
+o COMO: (1) a gravação A6e não tem velocidade (os VDB só trazem density/temperature/flames: todos os bytes de velocidade
+do brm2 são 128); (2) os últimos quadros são um caule estacionário (massa constante nos últimos 10 quadros) com a
+textura subindo a 6–18 m/s; um ping-pong de 20–30 quadros mostraria a fumaça DESCENDO metade do tempo; (3) na tela a
+coluna de 3–6 s sai 3–5× mais fraca que o VDB (τ 2 a 8–12 m no VDB, nada acima de 0,5 T na tela): causa a achar antes de
+confiar no hold (passo offline, zero placa).
+
+**O mecanismo (feito, compilado):** opt-in por instância (`HoldS`, 0 no arsenal aprovado: o caminho antigo fica bit a
+bit igual). Com `-HoldS=15` a morte de tanque vive 20 s: depois do fim da gravação o raymarch segura o fim dela por um
+dos três segmentos (`-RmHoldMode=loop|flow|pingpong`: loop pra frente dos últimos 10 quadros com emenda de 0,15 s;
+um quadro + flow map no volume com fase por amostra; vai-e-vem curto sobre 6 quadros), o ruído de detalhe passa a andar
+no tempo REAL (antes congelava com o quadro), a velocidade vira uma pluma analítica (Heskestad u ∝ z^(−1/3) de 12 → 5 m/s
+em τ 3 s, abertura MTT 7°, entranhamento 0,1 u, vento `-RmWind=`), a densidade decai com τ 6 s (afina pelas bordas, pela
+erosão absoluta) e apaga de vez nos últimos 3 s; a chama gravada apaga em τ 2 s; passos × 0,66 no hold; a luz gravada
+apaga no hold (fica a da carcaça, teto de 8 FIFO). Política pra N mortes: `-HoldMax=` colunas em hold na tela (3 por
+padrão); passando, a mais velha recebe o corte (fade contínuo de 1,5 s). Na seleção das 16 instâncias: na tela > em
+curso > hold mais novo > mais perto (a composição continua por distância). Teste: `-AutoMultiEvery=<s>` escalona N
+mortes em volta do herói. `ScreenFraction` corrigido (caixa toda atrás da câmera = 0, não a tela toda).
+Arquivos: ExplosionVolume.h/.cpp, BlastRaymarch.h/.cpp, BlastRaymarchSubsystem.cpp, BlastRaymarch.usf,
+BlastLabSimulation.cpp, BlastLabController.h/.cpp; `Tools/night/run_hold_look.ps1` (rodada 1), `death_measure.py`
+(metas de 5–20 s, coluna por trecho contíguo, vizinhos atrás, IoU/fluxo), `cost_report.py`, `hold_offline.py`.
+
+**Offline (hold_offline.py, zero placa, 17:00):**
+- A perda de contraste da coluna (3–5×) tem causa: a **erosão absoluta** do raymarch (0,008 nesta gravação): a coluna
+  tem fuligem S ≈ 0,02–0,04 e tirar 0,004–0,008 absolutos come 20–25 % no miolo e 50–80 % nas partes ralas (pé e topo);
+  a interpolação entre quadros em espaço √ (sem velocidade gravada o BakeAtMV é um lerp puro) perde mais 6–25 %. A
+  reamostragem 0,16 → 0,42 m não perde massa (1,000), o limiar tira só o véu, 8 bits < 1 %, BoxFade 0. O próprio VDB só dá
+  τ 1,1–1,6 pelo miolo a 37,5° (transmitância 20–33 %: a coluna já nasce fina). Remédio em teste: erosão 0,008 → 0,002
+  nesta gravação (`-RmErode=0.002`, rodada 1b), A/B contra o fix9 também no 0–5 s; lerp linear é mudança global (depois).
+- Candidatos do hold (sequências sintéticas de 2 s): **B (flow map)** sobe sempre (4,7–5,5 m/s em todas as alturas),
+  textura mais contínua (corr 0,87), mas silhueta parada (IoU 1,00: o risco "congelada"); **A (loop 110–119)** silhueta
+  viva sem pulsar demais (IoU 0,85 a 1 s, pulso 24 %), fluxo sempre pra cima (4–7 m/s), mas um salto de velocidade na
+  emenda a cada 0,52 s; **C (ping-pong)** rejeitado (metade do tempo a fumaça desce); **A20** rejeitado (respira 51 %).
+  Os dois pro vídeo: B e A; o ping-pong fica como controle. Pluma analítica calibrada no quadro 119: meia-largura
+  1,9 m (0–4 m) → 2,7 m (8–12) → 3,75 m (16–20) → b0 ≈ 2 m + 0,09 z (o shader usa 3 + 0,12 z: um pouco larga).
+
+**Rodada 1 (17:30, 3 candidatos + mapa de depuração, `captures/night/hold_*`):** o hold funciona (a instância vive 20 s,
+a torre pousa, a luz da carcaça fica), mas a coluna de 5 s em diante é um fiapo bege de 0,25–0,3 T de largura e 1,1–1,4 T de
+altura, e some aos 8–10 s; vizinhos atrás 0,92–0,99 (legíveis demais: não há coluna). O render de depuração (`-RmDebug=1`,
+`hold_tau`) mostra a coluna INTEIRA (0,5 T de largura, 2,5 T de altura, de 3 a 10 s): os dados existem; no render normal
+ela some porque (1) é rala (τ ~1 a 37,5°) e (2) a fuligem rala acesa pelo sol inteiro (`-RmSootSun=1`, cor 0,62/0,50/0,38)
+fica da cor da areia: contraste zero. **Rodada 1b** (erosão 0,002): a coluna de 3–4,5 s volta a aparecer (1,3–2 T de largura,
+topo 2,5–2,8 T) e de 6 a 15 s fica um véu bege mais visível, mas ainda bege. Fila: **1c** (gravação `A6esB3f_96`: fuligem
+× 2,5 de 2 → 4 s, erosão 0,002) e **1d** (a mesma com `-RmSootSun=0.35`: menos sol na fuligem, núcleo escuro como a arte
+type_4_3: 0,12× o chão no núcleo, 0,85× no lado ao sol).
+
+**Rodada 1c (17:45, `A6esB3f_96`: fuligem × 2,5 de 2 → 4 s, erosão 0,002, loop):** a coluna EXISTE e lê como fumaça
+preta de carcaça da câmera do jogo: 3 s largura 0,9/0,7 T (0–1/1–2 T), topo 4 T; 4,5 s 0,54/0,62/0,73 T, escura 0,27/0,38 T;
+6 s 0,51/0,48/0,59 T; 8 s 0,45/0,42/0,54 T; 10 s 0,40/0,40 T, topo 1,8 T; 12 s 0,31/0,27 T; 15 s 0,18 T (véu); 18–20 s nada.
+Silhueta 5,9 % (3 s) → 2,0 % (6 s) → 0,6 % (15 s). O 0–2 s é idêntico ao fix9 (a rampa começa em 2 s). **Defeito:** cobre
+demais as unidades atrás: correlação 0,75/0,47/0,57 (1/2/3 T atrás) aos 6 s, 0,78/0,83/0,44 aos 4,5 s (meta ≥ 0,5 em hold,
+≥ 0,7 em curso). Próxima: `A6etB3f_96` (× 1,8 em vez de 2,5) e, se precisar, τ da densidade 6 → 4 s. Incidente: as 5 rodadas
+de vídeo de 20 s (600 PNG cada) encheram o disco (0 GB, aviso da sessão do Look): apaguei 6,5 GB de quadros meus; os
+scripts passam a apagar os quadros logo depois do mp4.
+
+**Rodada 1e (18:10, `A6etB3f_96`: fuligem × 1,8 de 2 → 4 s, erosão 0,002):** o candidato **loop** passa no gate de
+jogabilidade: vizinhos atrás (1/2/3 T) 0,82/0,90/0,71 aos 4,5 s, 0,82/0,73/0,78 aos 6 s, 0,89/0,88/0,90 aos 8 s; coluna
+0,49/0,54/0,62 T (4,5 s), 0,45/0,42/0,56 T (6 s), 0,36 T (8 s), 0,32 T (10 s), 0,26 T (12 s), véu aos 15 s; topo 3,5 T (4,5 s) →
+2,9 T (6 s) → 1,8 T (8 s) → 1,1 T (10 s); silhueta 3,5 % → 1,4 %. Os quadros mudam 6–10 % dos pixels a cada 0,5 s (a textura
+vive). O candidato **flow map** saiu praticamente PARADO (0,5 % dos pixels por 0,5 s): o jitter de fase por amostra (0,5
+do período) espalhava as duas cópias por todas as fases; corrigido pra 0,15 (Vlachos), a re-renderizar. O flow de ×2,5
+(1c) foi perdido com o disco cheio (quadros cortados). **Escolha de hoje: loop × 1,8.** Entregas: `captures/night/
+coluna_loop_16s.mp4`, `coluna_loop_densa_20s.mp4` (× 2,5, cobre demais), `coluna_sheet.jpg`.
+
+**Rodada 2 (18:30, custo e N mortes; alta, 1600×900, `cost_report.py`; VRAM rastreada 5,9–6,0 GB: no limite da placa,
+medir de novo com os outros editores fechados):**
+
+| cena | raymarch 3 s | 6 s | 10 s | 15 s | 20 s | luzes | hitch |
+|---|---|---|---|---|---|---|---|
+| 1 morte (`cost_hold`, loop × 1,8) | 1,39 ms | 0,68 | 0,58 | 0,56 | — | 0,9–1,1 ms | 0 |
+| 10 mortes em 10 s (`n10_hold`, 1/s, política teto 3) | — | — | 6,47 ms | 4,41 | 3,66 | 0,9–1,5 ms | 0 |
+
+Uma coluna em hold custa **0,56–0,68 ms** (meta ≤ 1,0 ✓); a fase ativa da coluna (3 s) 1,39 ms. Com 10 mortes o pico
+(6,5 ms aos 10 s) vem das explosões AINDA ATIVAS (as de 5–9 s, 1,0–1,4 ms cada): a política cortou as colunas em hold
+além de 3 (7 cortes no log, fade de 1,5 s), mas o raymarch ainda marcha todas as ativas com os passos cheios (o LodFloor
+da simulação não chega ao raymarch: 56/37/28 passos por classe é a próxima alavanca); aos 20 s (3 colunas + rabos) 3,7 ms.
+Atlas 30³ blocos (125 MB), nunca cheio; 0 engasgos; os tempos de parede saem travados a 33,3 ms (passo fixo).
+Legibilidade com 10 mortes (1/s, anel de 22 m em volta do herói, `n10_hold`, fotos): união das silhuetas 21,6 % da tela aos
+5 s (meta ≤ 25 % ✓), 14,8 % aos 10 s, 5,6 % aos 15 s, 3,6 % aos 20 s; escuro na tela 17,7 % aos 5 s (meta ≤ 10 %: ✗ na
+fase das bolas, que a política não governa), 15,2 % aos 10 s, 7,0 % aos 15 s ✓, 2,7 % aos 20 s ✓; aos 15 s todos os
+vizinhos legíveis (0,9–1,0). A política cortou 7 colunas (teto 3 em hold na tela) sem pop visível nas fotos.
+
+**Estado ao fim da rodada (18:40):** coluna de 5–20 s = `-HoldS=15 -RmHoldMode=loop` + gravação `A6etB3f_96`
+(fuligem × 1,8 de 2 s em diante, erosão 0,002). Pendências: re-render do flow map com o jitter 0,15 (A/B pro Felipe
+escolher em movimento); passos por classe no raymarch (56/37/28) pra 10 mortes caberem em 4 ms; custo do ultra com a VRAM
+sã; arsenal aprovado conferido no `compare.py` (bit a bit igual por construção, HoldS = 0; render de confirmação pendente);
+porte pro jogo (BlastFx) quando o Felipe decidir a integração; vento do mapa (RTSLook) e a fumaça fina de 15 s+ do FXLab.
+
+**19:05, pausado pelo Felipe.** Estado: tudo compilado na branch `night-explosion`; aprovado "por enquanto" a morte de
+tanque (`look_fix9`); a coluna de 5–20 s entregue em vídeo sem veredito; a rodada "fumaça × veículos" ficou no estudo
+(interrompido antes do plano do diretor) com o flag de teste `-AutoDrive` já no código. Nada em main além deste relatório.

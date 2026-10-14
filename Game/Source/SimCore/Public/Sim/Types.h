@@ -20,5 +20,5 @@ namespace Sim
 	constexpr int32_t MaxGroupSize = 500;
 
 	/** Versão das regras da simulação: replay de outra versão não reproduz. */
-	constexpr uint32_t SimVersion = 5;   // 5 (11/10): o Dozer sai do lote pelo lado livre
+	constexpr uint32_t SimVersion = 12;   // 12 (13/10): a carcaça com física (o vivo empurra, ela segura); 11: render-se e a queda em rede (Resign); 10: a água do WorldForge (grid.png: fundo bloqueia; margem, vau e gelo passam); 9: o tiro forçado (no chão e em qualquer unidade);   // 5 (11/10): o Dozer sai do lote pelo lado livre; 6: vaga livre no ponto de encontro; 7: área de reunião e chegada virada; 8: formação (F)
 }

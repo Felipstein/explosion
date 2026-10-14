@@ -1,4 +1,4 @@
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 // As explosões volumétricas do BlastLab no jogo (cópia do volume e da gravação,
 // com um diretor próprio no lugar do simulador). As gravações e os materiais vêm
@@ -9,5 +9,7 @@ public class BlastFx : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "RTSShaders", "RenderCore", "RHI", "Renderer" });
+		// os destroços da morte de tanque (BlastDebris: malha procedural) e o chão deles (BlastFxGround: o Landscape), 14/10
+		PrivateDependencyModuleNames.AddRange(new string[] { "ProceduralMeshComponent", "Landscape" });
 	}
 }

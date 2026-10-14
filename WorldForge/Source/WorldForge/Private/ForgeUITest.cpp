@@ -7,9 +7,14 @@
 #include "Engine/World.h"
 #include "ForgeCameraPawn.h"
 #include "ForgePlayerController.h"
+#include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "SForgePanel.h"
+#include "Generation/WorldDetail.h"
 #include "UnrealClient.h"
 #include "Widgets/SViewport.h"
 #include "WorldForgeGameMode.h"
@@ -26,9 +31,49 @@ namespace
 	}
 }
 
+/**
+ * O portão da entrada: enquanto o teste roda, o movimento do mouse de verdade
+ * (o Felipe usando o PC, o mouse em cima da janela) não chega ao app; só o que
+ * o teste injeta (bInjecting). Sem ele os cliques sintéticos
+ * iam pro lugar do mouse real e o teste falhava sem motivo (11–16 passos, 12/10).
+ */
+class FForgeInputGate : public IInputProcessor
+{
+public:
+	bool bInjecting = false;
+	virtual void Tick(const float, FSlateApplication&, TSharedRef<ICursor>) override {}
+	// o movimento (leva o cursor e o "em cima de" pro lugar do mouse real) e o
+	// teclado (a janela do teste pega o foco ao abrir: o Enter do Felipe escrevendo
+	// noutra janela terminava ou apagava a estrada do teste). Os botões do mouse
+	// passam: barrar eles travava os cliques do teste nos botões (12/10)
+	virtual bool HandleMouseMoveEvent(FSlateApplication&, const FPointerEvent&) override { return !bInjecting; }
+	virtual bool HandleKeyDownEvent(FSlateApplication&, const FKeyEvent&) override { return !bInjecting; }
+	virtual bool HandleKeyUpEvent(FSlateApplication&, const FKeyEvent&) override { return !bInjecting; }
+	virtual const TCHAR* GetDebugName() const override { return TEXT("ForgeUITestGate"); }
+};
+
+void FForgeUITest::Inject(TFunctionRef<void()> Fn)
+{
+	if (Gate.IsValid()) Gate->bInjecting = true;
+	Fn();
+	if (Gate.IsValid()) Gate->bInjecting = false;
+}
+
 FForgeUITest::FForgeUITest(AWorldForgeGameMode* InGameMode, const FString& InFolder)
 	: GameMode(InGameMode), Folder(InFolder)
 {
+	if (FSlateApplication::IsInitialized())
+	{
+		Gate = MakeShared<FForgeInputGate>();
+		FSlateApplication::Get().RegisterInputPreProcessor(Gate, 0);
+	}
+	// a Slate repõe o cursor no lugar do mouse de verdade a cada quadro (o
+	// "movimento sintético"): com o mouse do Felipe parado em cima da janela, os
+	// cliques do teste iam pro lugar dele. Desligado só durante o teste
+	if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("Slate.EnableSyntheticCursorMoves")))
+	{
+		V->Set(0, ECVF_SetByCode);
+	}
 	Build();
 }
 
@@ -69,11 +114,24 @@ FVector2D FForgeUITest::ViewportPoint(FVector2D Frac) const
 	return FVector2D(G.LocalToAbsolute(FVector2D(G.GetLocalSize()) * Frac));
 }
 
+FVector2D FForgeUITest::WorldPoint(const FVector& Cm) const
+{
+	AWorldForgeGameMode* GM = GameMode.Get();
+	APlayerController* PC = GM ? GM->GetWorld()->GetFirstPlayerController() : nullptr;
+	FVector2D Screen(0, 0), Size(1, 1);
+	if (!PC || !PC->ProjectWorldLocationToScreen(Cm, Screen) || !GEngine || !GEngine->GameViewport)
+	{
+		return FVector2D::ZeroVector;
+	}
+	GEngine->GameViewport->GetViewportSize(Size);
+	return ViewportPoint(Screen / Size);
+}
+
 void FForgeUITest::Move(FVector2D Pos)
 {
 	FSlateApplication& App = FSlateApplication::Get();
 	const FPointerEvent E(App.GetUserIndexForMouse(), FSlateApplication::CursorPointerIndex, Pos, LastPos, Pressed, EKeys::Invalid, 0.0f, FModifierKeysState());
-	App.ProcessMouseMoveEvent(E);
+	Inject([&]() { App.ProcessMouseMoveEvent(E); });
 	LastPos = Pos;
 }
 
@@ -89,7 +147,7 @@ void FForgeUITest::Down(FVector2D Pos, FKey Button)
 	}
 	Pressed.Add(Button);
 	const FPointerEvent E(App.GetUserIndexForMouse(), FSlateApplication::CursorPointerIndex, Pos, LastPos, Pressed, Button, 0.0f, FModifierKeysState());
-	App.ProcessMouseButtonDownEvent(nullptr, E);
+	Inject([&]() { App.ProcessMouseButtonDownEvent(nullptr, E); });
 	LastPos = Pos;
 }
 
@@ -98,7 +156,7 @@ void FForgeUITest::Up(FVector2D Pos, FKey Button)
 	FSlateApplication& App = FSlateApplication::Get();
 	Pressed.Remove(Button);
 	const FPointerEvent E(App.GetUserIndexForMouse(), FSlateApplication::CursorPointerIndex, Pos, LastPos, Pressed, Button, 0.0f, FModifierKeysState());
-	App.ProcessMouseButtonUpEvent(E);
+	Inject([&]() { App.ProcessMouseButtonUpEvent(E); });
 	LastPos = Pos;
 }
 
@@ -107,15 +165,14 @@ void FForgeUITest::Wheel(FVector2D Pos, float Delta)
 	FSlateApplication& App = FSlateApplication::Get();
 	Move(Pos);
 	const FPointerEvent E(App.GetUserIndexForMouse(), FSlateApplication::CursorPointerIndex, Pos, Pos, Pressed, EKeys::Invalid, Delta, FModifierKeysState());
-	App.ProcessMouseWheelOrGestureEvent(E, nullptr);
+	Inject([&]() { App.ProcessMouseWheelOrGestureEvent(E, nullptr); });
 }
 
 void FForgeUITest::Key(FKey K, bool bDown)
 {
 	FSlateApplication& App = FSlateApplication::Get();
 	const FKeyEvent E(K, FModifierKeysState(), App.GetUserIndexForKeyboard(), false, 0, 0);
-	if (bDown) App.ProcessKeyDownEvent(E);
-	else App.ProcessKeyUpEvent(E);
+	Inject([&]() { if (bDown) App.ProcessKeyDownEvent(E); else App.ProcessKeyUpEvent(E); });
 }
 
 bool FForgeUITest::RealCursorOverWindow() const
@@ -169,6 +226,10 @@ void FForgeUITest::Build()
 			if (!M || M->Settings.Seed == SeedBefore) return TEXT("a semente não mudou");
 			return M->bConnected ? FString() : TEXT("mapa novo sem caminho entre as bases");
 		} });
+	Steps.Add({ TEXT("tab_world"), [this]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GameMode->GetWorld()->GetFirstPlayerController())) PC->GetPanel()->SetTab(0);
+		}, Always, []() { return FString(); }, 0.4f });
 	Steps.Add({ TEXT("players4"), [this, Remember]() { Remember(); Click(Target(TEXT("Players_4"))); }, NewMap,
 		[Map]() -> FString { return Map() && Map()->Settings.Players == 4 && Map()->Starts.Num() == 4 ? FString() : TEXT("não ficou com 4 bases"); } });
 	Steps.Add({ TEXT("desert"), [this, Remember]() { Remember(); Click(Target(TEXT("Biome_1"))); }, NewMap,
@@ -306,6 +367,494 @@ void FForgeUITest::Build()
 		}, 1.5f };
 	DoubleClick.SecondClick = EKeys::MiddleMouseButton;
 	Steps.Add(DoubleClick);
+
+	// edição à mão: com a ferramenta "apagar", o clique numa árvore (ou pedra)
+	// de verdade tira a peça; Ctrl+Z devolve
+	Steps.Add({ TEXT("tab_edit"), [this]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GameMode->GetWorld()->GetFirstPlayerController())) PC->GetPanel()->SetTab(1);
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("edit_frame"), [this, GM, Pawn]()
+		{
+			GM()->EditTool = 1;
+			AWorldForgeTerrain* T = GM()->GetTerrain();
+			if (T && (T->FindLivePiece(TEXT("Tree"), EditPieceCm) || T->FindLivePiece(TEXT("RockLarge"), EditPieceCm)))
+			{
+				Pawn()->SetView(FVector2f(EditPieceCm.X / 100.0, EditPieceCm.Y / 100.0), 0.0f, 55.0f, 90.0f);
+			}
+		}, Always, [this]() -> FString { return EditPieceCm.IsZero() ? TEXT("sem peça de verdade no mapa (falta a tabela live_<bioma>.json?)") : FString(); }, 1.5f });
+	Steps.Add({ TEXT("edit_delete"), [this, GM]()
+		{
+			PiecesBefore = GM()->GetTerrain()->LiveInstanceCount();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Click(WorldPoint(EditPieceCm + FVector(0, 0, 150)));
+		}, Always,
+		[this, GM]() -> FString
+		{
+			const int32 N = GM()->GetTerrain()->LiveInstanceCount();
+			return GM()->EditCount() == 1 && N == PiecesBefore - 1 ? FString()
+				: FString::Printf(TEXT("edições %d, peças %d → %d"), GM()->EditCount(), PiecesBefore, N);
+		}, 1.0f });
+	Steps.Add({ TEXT("edit_undo"), [this]()
+		{
+			// o Ctrl fica apertado até a conferência (como a mão: o jogo lê o Ctrl
+			// apertado no quadro em que o Z desce)
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, Always,
+		[this, GM]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			const int32 N = GM()->GetTerrain()->LiveInstanceCount();
+			GM()->EditTool = 0;
+			return GM()->EditCount() == 0 && N == PiecesBefore ? FString()
+				: FString::Printf(TEXT("edições %d, peças %d (antes %d)"), GM()->EditCount(), N, PiecesBefore);
+		}, 1.0f });
+
+	// pincel de chão: uma pincelada de asfalto (camada 5 no deserto) arrastada
+	// no meio da tela; o peso do asfalto no meio da pincelada sobe e o Ctrl+Z volta
+	Steps.Add(Drag({ TEXT("edit_paint"), [this, GM]()
+		{
+			GM()->EditTool = 2;
+			GM()->BrushLayer = 5;
+			GM()->BrushRadius = 6.0f;
+			PiecesBefore = GM()->GetTerrain()->LiveInstanceCount();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+		}, Always,
+		[this, GM]() -> FString
+		{
+			FWorldLive* L = GM()->GetTerrain()->GetLive();
+			if (!L || !L->Edits.IsValid()) return TEXT("sem o mundo de verdade");
+			int32 Strong = 0;
+			for (const FColor& C : L->WeightsB) Strong += C.G > 200 ? 1 : 0;
+			return L->Edits->Paint.Num() > 20 && Strong > 20 && GM()->GetRegionRefreshes() > 0 ? FString()
+				: FString::Printf(TEXT("células pintadas %d, texels de asfalto %d, pedaços refeitos %d"), L->Edits->Paint.Num(), Strong, GM()->GetRegionRefreshes());
+		}, 1.0f }, EKeys::LeftMouseButton, FVector2D(0.55, 0.5), FVector2D(0.7, 0.55), 0.6f));
+	Steps.Add({ TEXT("edit_paint_undo"), [this]()
+		{
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, Always,
+		[this, GM]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			GM()->EditTool = 0;
+			FWorldLive* L = GM()->GetTerrain()->GetLive();
+			// desfeita a pincelada, o pedaço sorteado de novo tem as mesmas peças de antes
+			const int32 N = GM()->GetTerrain()->LiveInstanceCount();
+			return L && L->Edits->Paint.Num() == 0 && N == PiecesBefore ? FString()
+				: FString::Printf(TEXT("ainda há %d células pintadas; peças %d (antes %d)"), L ? L->Edits->Paint.Num() : -1, N, PiecesBefore);
+		}, 1.0f });
+
+	// pincel de altura: segurar "subir" ~1 s no meio da tela levanta o chão ali; Ctrl+Z volta
+	Steps.Add(Drag({ TEXT("edit_height"), [this, GM]()
+		{
+			GM()->EditTool = 3;
+			GM()->HeightMode = 0;
+			GM()->BrushRadius = 6.0f;
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			FVector P;
+			AForgeCameraPawn* Cam = GM()->GetWorld()->GetFirstPlayerController()->GetPawn<AForgeCameraPawn>();
+			HeightProbe = Cam && Cam->PixelGroundPoint(ViewportPixel(FVector2D(0.6, 0.5)), P) ? FVector2f(P.X, P.Y) : FVector2f::ZeroVector;
+			FWorldLive* L = GM()->GetTerrain()->GetLive();
+			HeightBefore = L ? L->Display->HeightAt(HeightProbe) : 0.0f;
+		}, Always,
+		[this, GM]() -> FString
+		{
+			FWorldLive* L = GM()->GetTerrain()->GetLive();
+			const float H = L ? L->Display->HeightAt(HeightProbe) : 0.0f;
+			return H > HeightBefore + 0.6f ? FString() : FString::Printf(TEXT("altura %.2f → %.2f m"), HeightBefore, H);
+		}, 0.5f }, EKeys::LeftMouseButton, FVector2D(0.6, 0.5), FVector2D(0.6, 0.5), 1.0f));
+	Steps.Add({ TEXT("edit_height_undo"), [this]()
+		{
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, Always,
+		[this, GM]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			GM()->EditTool = 0;
+			FWorldLive* L = GM()->GetTerrain()->GetLive();
+			const float H = L ? L->Display->HeightAt(HeightProbe) : 0.0f;
+			return FMath::Abs(H - HeightBefore) < 0.05f ? FString() : FString::Printf(TEXT("ficou em %.2f m (antes %.2f)"), H, HeightBefore);
+		}, 1.0f });
+
+	// estrada à mão: três cliques no chão e Enter desenham uma de terra; o mundo
+	// é refeito com ela. Depois: vira asfalto pelo painel, Delete apaga, Ctrl+Z volta
+	auto Live = [GM]() -> FWorldLive* { return GM() && GM()->GetTerrain() ? GM()->GetTerrain()->GetLive() : nullptr; };
+	// (num areal aberto, longe de estrada: na beira do oásis a de terra some no
+	// chão de terra úmida e a foto não mostra nada)
+	Steps.Add({ TEXT("road_frame"), [this, Pawn, Live]()
+		{
+			FWorldLive* L = Live();
+			if (!L) return;
+			const int32 R = L->WeightRes;
+			auto Sand = [L, R](FVector2f P)
+			{
+				const int32 I = FMath::Clamp(FMath::FloorToInt(P.X / L->SizeM * R + 0.5f * R), 0, R - 1);
+				const int32 J = FMath::Clamp(FMath::FloorToInt(P.Y / L->SizeM * R + 0.5f * R), 0, R - 1);
+				return L->WeightsA[J * R + I].R;
+			};
+			// o lugar com mais areia no pior ponto (o chão do teste muda com os
+			// controles: o limiar fixo de antes às vezes não achava nenhum)
+			int32 Best = -1;
+			for (float Y = -0.35f * L->SizeM; Y <= 0.35f * L->SizeM; Y += 24.0f)
+			{
+				for (float X = -0.35f * L->SizeM; X <= 0.35f * L->SizeM; X += 24.0f)
+				{
+					const FVector2f C(X, Y);
+					if (L->Detail->RoadAt(C).D < 45.0f || L->Detail->InVillage(C, 60.0f)) continue;
+					int32 Worst = 255;
+					for (int32 K = 0; K < 25; ++K) Worst = FMath::Min<int32>(Worst, Sand(C + FVector2f((K % 5 - 2) * 20.0f, (K / 5 - 2) * 12.0f)));
+					if (Worst > Best) { Best = Worst; RoadProbe = C; }
+				}
+			}
+			if (Best >= 0) Pawn()->SetView(RoadProbe, 0.0f, 55.0f, 90.0f);
+		}, Always, [this]() -> FString { return RoadProbe.IsZero() ? TEXT("sem areal aberto no mapa") : FString(); }, 1.5f });
+	const FVector2D RoadClicks[] = { FVector2D(0.45, 0.62), FVector2D(0.58, 0.5), FVector2D(0.72, 0.58) };
+	for (int32 K = 0; K < 3; ++K)
+	{
+		const FVector2D At = RoadClicks[K];
+		Steps.Add({ FString::Printf(TEXT("road_point%d"), K + 1), [this, GM, At, K]()
+			{
+				if (K == 0)
+				{
+					GM()->EditTool = 4;
+					GM()->RoadDeselect();
+					GM()->RoadDraft.Reset();
+					GM()->RoadPaved = false;
+				}
+				FSlateApplication::Get().SetAllUserFocusToGameViewport();
+				Click(ViewportPoint(At));
+			}, Always,
+			[GM, K]() -> FString
+			{
+				return GM()->RoadDraft.Num() == K + 1 ? FString()
+					: FString::Printf(TEXT("%d pontos no rascunho (escolheu uma estrada? %d)"), GM()->RoadDraft.Num(), GM()->HasRoadSelection() ? 1 : 0);
+			}, 0.5f });
+	}
+	auto UserRoads = [Live]() -> FString
+	{
+		FWorldLive* L = Live();
+		if (!L) return TEXT("sem o mundo de verdade");
+		FString S = FString::Printf(TEXT("desenhadas %d:"), L->Edits->Roads.Num());
+		for (int32 U = 0; U < L->Detail->UserRoadIndex.Num(); ++U)
+		{
+			const int32 G = L->Detail->UserRoadIndex[U];
+			S += G == INDEX_NONE ? TEXT(" fora") : FString::Printf(TEXT(" %d m %s"), L->Detail->GRoads[G].P.Num(), L->Detail->GRoads[G].bPaved ? TEXT("asfalto") : TEXT("terra"));
+		}
+		return S;
+	};
+	auto RoadIs = [Live](int32 Count, int32 Paved) -> bool
+	{
+		FWorldLive* L = Live();
+		if (!L || L->Edits->Roads.Num() != Count || L->Detail->UserRoadIndex.Num() != Count) return false;
+		for (const int32 G : L->Detail->UserRoadIndex)
+		{
+			if (G == INDEX_NONE || L->Detail->GRoads[G].P.Num() < 20) return false;
+			if (Paved >= 0 && L->Detail->GRoads[G].bPaved != (Paved == 1)) return false;
+		}
+		return true;
+	};
+	Steps.Add({ TEXT("road_finish"), [this, Remember]()
+		{
+			Remember();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::Enter, true);
+		}, NewMap,
+		[this, GM, RoadIs, UserRoads]() -> FString
+		{
+			Key(EKeys::Enter, false);
+			return RoadIs(1, 0) && GM()->HasRoadSelection() ? FString() : UserRoads();
+		}, 1.0f });
+	auto ScrollTo = [this, GM](const FString& Id)
+	{
+		return FStep{ TEXT("scroll_") + Id, [GM, Id]()
+			{
+				if (AForgePlayerController* PC = Cast<AForgePlayerController>(GM()->GetWorld()->GetFirstPlayerController()))
+				{
+					PC->GetPanel()->ScrollToTarget(Id);
+				}
+			}, []() { return true; }, []() { return FString(); }, 0.4f };
+	};
+	Steps.Add(ScrollTo(TEXT("RoadType_1")));
+	Steps.Add({ TEXT("road_paved"), [this, Remember]() { Remember(); Click(Target(TEXT("RoadType_1"))); }, NewMap,
+		[RoadIs, UserRoads]() -> FString { return RoadIs(1, 1) ? FString() : UserRoads(); }, 1.0f });
+	Steps.Add({ TEXT("road_delete"), [this, Remember]()
+		{
+			Remember();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::Delete, true);
+		}, NewMap,
+		[this, GM, RoadIs, UserRoads]() -> FString
+		{
+			Key(EKeys::Delete, false);
+			return RoadIs(0, -1) && !GM()->HasRoadSelection() ? FString() : UserRoads();
+		}, 1.0f });
+	Steps.Add({ TEXT("road_delete_undo"), [this, Remember]()
+		{
+			Remember();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, NewMap,
+		[this, RoadIs, UserRoads]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			return RoadIs(1, 1) ? FString() : UserRoads();
+		}, 1.0f });
+
+	// a estrada do gerador: clicar nela escolhe; Delete tira; Ctrl+Z devolve
+	Steps.Add({ TEXT("road_gen_frame"), [this, GM, Pawn, Live]()
+		{
+			GM()->RoadDeselect();
+			FWorldLive* L = Live();
+			if (!L || L->Detail->NumGenRoads == 0) return;
+			const TArray<FVector2f>& P = L->Detail->GRoads[0].P;
+			RoadProbe = P[P.Num() / 2];
+			RoadsBefore = L->Detail->GRoads.Num();
+			Pawn()->SetView(RoadProbe, 0.0f, 55.0f, 90.0f);
+		}, Always, [this]() -> FString { return RoadsBefore > 0 ? FString() : TEXT("o mapa não tem estrada"); }, 1.5f });
+	Steps.Add({ TEXT("road_gen_select"), [this, Live]()
+		{
+			FWorldLive* L = Live();
+			const float Z = L ? L->Display->HeightAt(RoadProbe) : 0.0f;
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Click(WorldPoint(FVector(RoadProbe.X * 100.0, RoadProbe.Y * 100.0, Z * 100.0 + 30.0)));
+		}, Always,
+		[GM]() -> FString
+		{
+			return GM()->HasRoadSelection() && GM()->SelectedRoadLine() && GM()->GetRoadHandles().Num() >= 2 ? FString()
+				: FString::Printf(TEXT("escolhida %d, pontos %d"), GM()->HasRoadSelection() ? 1 : 0, GM()->GetRoadHandles().Num());
+		}, 0.5f });
+	Steps.Add({ TEXT("road_gen_delete"), [this, Remember]()
+		{
+			Remember();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::Delete, true);
+		}, NewMap,
+		[this, Live]() -> FString
+		{
+			Key(EKeys::Delete, false);
+			FWorldLive* L = Live();
+			float Near = 1e9f;
+			for (int32 R = 0; L && R < L->Detail->NumGenRoads; ++R) { int32 I; Near = FMath::Min(Near, FWorldDetail::NearestOn(L->Detail->GRoads[R].P, RoadProbe, I)); }
+			return L && L->Detail->GRoads.Num() == RoadsBefore - 1 && L->Edits->RemovedRoads.Num() == 1 && Near > 3.0f ? FString()
+				: FString::Printf(TEXT("estradas %d (antes %d), tiradas %d, a mais perto do ponto a %.1f m"), L ? L->Detail->GRoads.Num() : -1, RoadsBefore, L ? L->Edits->RemovedRoads.Num() : -1, Near);
+		}, 1.0f });
+	Steps.Add({ TEXT("road_gen_undo"), [this, Remember]()
+		{
+			Remember();
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, NewMap,
+		[this, GM, Live]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			GM()->EditTool = 0;
+			FWorldLive* L = Live();
+			return L && L->Detail->GRoads.Num() == RoadsBefore && L->Edits->RemovedRoads.Num() == 0 ? FString()
+				: FString::Printf(TEXT("estradas %d (antes %d)"), L ? L->Detail->GRoads.Num() : -1, RoadsBefore);
+		}, 1.0f });
+
+	// mover: arrastar uma pedra com a ferramenta Mover leva ela; Ctrl+Z volta; e
+	// o mundo refeito põe a pedra no lugar novo (o mesmo caminho do "qualidade real")
+	Steps.Add({ TEXT("move_frame"), [this, GM, Pawn]()
+		{
+			GM()->EditTool = 5;
+			AWorldForgeTerrain* T = GM()->GetTerrain();
+			FVector Cm;
+			AWorldForgeTerrain::FPicked Pk;
+			if (T && T->FindLivePiece(TEXT("Rock"), Cm) && T->PickPiece(FVector2f(Cm.X / 100.0, Cm.Y / 100.0), 4.0f, Pk, TEXT("Rock")))
+			{
+				MovePivot = Pk.Pivot;
+				Pawn()->SetView(MovePivot, 0.0f, 55.0f, 60.0f);
+			}
+		}, Always, [this]() -> FString { return MovePivot.IsZero() ? TEXT("sem pedra no mapa") : FString(); }, 1.5f });
+	auto MovedCheck = [this, GM, Live](int32 Want, float MinDist) -> FString
+	{
+		FWorldLive* L = Live();
+		if (!L) return TEXT("sem o mundo de verdade");
+		if (L->Edits->Moved.Num() != Want) return FString::Printf(TEXT("movidas %d (queria %d)"), L->Edits->Moved.Num(), Want);
+		if (Want == 0) return FString();
+		const FWorldEdits::FMoved& M = L->Edits->Moved[0];
+		const float D = FVector2f::Distance(M.To, MovePivot);
+		return D > MinDist ? FString() : FString::Printf(TEXT("%s andou só %.1f m"), *M.Kind, D);
+	};
+	auto MoveDrag = [this, GM, Drag](const TCHAR* Name, TFunction<FString()> Check)
+	{
+		return Drag({ Name, [this, GM]()
+			{
+				GM()->EditTool = 5;
+				PiecesBefore = GM()->GetTerrain()->LiveInstanceCount();
+				FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			}, [](){ return true; }, Check, 1.0f }, EKeys::LeftMouseButton, FVector2D(0.5, 0.5), FVector2D(0.62, 0.5), 0.6f);
+	};
+	Steps.Add(MoveDrag(TEXT("move_drag"), [this, GM, MovedCheck]() -> FString
+		{
+			const FString E = MovedCheck(1, 3.0f);
+			const int32 N = GM()->GetTerrain()->LiveInstanceCount();
+			return !E.IsEmpty() ? E : (N == PiecesBefore ? FString() : FString::Printf(TEXT("peças %d → %d"), PiecesBefore, N));
+		}));
+	Steps.Add({ TEXT("move_undo"), [this]()
+		{
+			FSlateApplication::Get().SetAllUserFocusToGameViewport();
+			Key(EKeys::LeftControl, true);
+			Key(EKeys::Z, true);
+		}, Always,
+		[this, GM, MovedCheck]() -> FString
+		{
+			Key(EKeys::Z, false);
+			Key(EKeys::LeftControl, false);
+			const FString E = MovedCheck(0, 0.0f);
+			AWorldForgeTerrain::FPicked Pk;
+			const bool bBack = GM()->GetTerrain()->PickPiece(MovePivot, 1.0f, Pk, TEXT("Rock")) && FVector2f::Distance(Pk.Pivot, MovePivot) < 0.1f;
+			return !E.IsEmpty() ? E : (bBack ? FString() : TEXT("a pedra não voltou pro lugar"));
+		}, 1.0f });
+	Steps.Add(MoveDrag(TEXT("move_drag_again"), [MovedCheck]() { return MovedCheck(1, 3.0f); }));
+	Steps.Add({ TEXT("move_rebuild"), [this, GM, Remember]()
+		{
+			Remember();
+			GM()->Generate(GM()->GetSettings());
+		}, NewMap,
+		[this, GM, Live]() -> FString
+		{
+			GM()->EditTool = 0;
+			FWorldLive* L = Live();
+			if (!L || L->Edits->Moved.Num() != 1) return TEXT("a edição sumiu ao refazer");
+			const FWorldEdits::FMoved& M = L->Edits->Moved[0];
+			AWorldForgeTerrain::FPicked Pk;
+			if (!GM()->GetTerrain()->PickPiece(M.To, 1.5f, Pk)) return TEXT("nada no lugar novo");
+			return Pk.Kind == M.Kind && FVector2f::Distance(Pk.Origin, M.From) < 0.1f && FVector2f::Distance(Pk.Pivot, M.To) < 0.3f ? FString()
+				: FString::Printf(TEXT("no lugar novo: %s a %.2f m (queria %s de (%.1f, %.1f))"), *Pk.Kind, FVector2f::Distance(Pk.Pivot, M.To), *M.Kind, M.From.X, M.From.Y);
+		}, 1.0f });
+
+	// guardar na lista leva as edições: guarda, sorteia outro mundo (zera) e
+	// abre o guardado pelo botão da lista; a lista do Felipe volta como estava
+	const FString MapsJson = FPaths::ProjectSavedDir() / TEXT("WorldForge/maps.json");
+	Steps.Add(ScrollTo(TEXT("Dice")));
+	Steps.Add({ TEXT("tab_maps"), [this]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GameMode->GetWorld()->GetFirstPlayerController())) PC->GetPanel()->SetTab(2);
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("saved_with_edits"), [this, GM, Remember, MapsJson]()
+		{
+			bHadSavedList = FFileHelper::LoadFileToString(SavedListBefore, *MapsJson);
+			GM()->AddSavedMap();
+			Remember();
+			Click(Target(TEXT("Dice")));
+		}, NewMap,
+		[Live]() -> FString
+		{
+			FWorldLive* L = Live();
+			return L && L->Edits->IsEmpty() ? FString() : TEXT("semente nova não zerou as edições");
+		}, 1.0f });
+	Steps.Add({ TEXT("saved_refresh"), [GM]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GM()->GetWorld()->GetFirstPlayerController()))
+			{
+				PC->GetPanel()->RefreshSavedMaps();
+			}
+		}, Always, []() { return FString(); }, 0.3f });
+	Steps.Add({ TEXT("scroll_saved"), [GM]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GM()->GetWorld()->GetFirstPlayerController()))
+			{
+				// o guardado com edição fica antes dos importados (o último sem pasta de importação)
+				const TArray<AWorldForgeGameMode::FSavedMap>& Maps = GM()->GetSavedMaps();
+				int32 I = Maps.Num() - 1;
+				while (I > 0 && !Maps[I].ImportFolder.IsEmpty() && Maps[I].EditsFile.IsEmpty()) --I;
+				PC->GetPanel()->ScrollToTarget(FString::Printf(TEXT("Saved_%d"), I));
+			}
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("saved_open"), [this, GM, Remember]()
+		{
+			Remember();
+			const TArray<AWorldForgeGameMode::FSavedMap>& Maps = GM()->GetSavedMaps();
+			int32 I = Maps.Num() - 1;
+			while (I > 0 && !Maps[I].ImportFolder.IsEmpty() && Maps[I].EditsFile.IsEmpty()) --I;
+			Click(Target(FString::Printf(TEXT("Saved_%d"), I)));
+		}, NewMap,
+		[Live]() -> FString
+		{
+			FWorldLive* L = Live();
+			return L && L->Edits->Moved.Num() == 1 ? FString()
+				: FString::Printf(TEXT("abriu com %d peças movidas (queria 1)"), L ? L->Edits->Moved.Num() : -1);
+		}, 1.0f });
+	// devolve a lista do Felipe como estava e apaga os arquivos de edição do teste
+	// (passo próprio: roda mesmo se abrir o guardado falhou; os testes que caíam no
+	// meio deixavam "Deserto, semente N · 2 edições" na lista dele, 12/10)
+	Steps.Add({ TEXT("saved_cleanup"), [this, GM, MapsJson]()
+		{
+			for (const AWorldForgeGameMode::FSavedMap& M : GM()->GetSavedMaps())
+			{
+				if (!M.EditsFile.IsEmpty() && !SavedListBefore.Contains(M.EditsFile))
+				{
+					IFileManager::Get().Delete(*(FPaths::ProjectSavedDir() / TEXT("WorldForge") / M.EditsFile));
+				}
+			}
+			if (bHadSavedList) FFileHelper::SaveStringToFile(SavedListBefore, *MapsJson);
+			else IFileManager::Get().Delete(*MapsJson);
+			GM()->ReloadSavedMaps();
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GM()->GetWorld()->GetFirstPlayerController()))
+			{
+				PC->GetPanel()->RefreshSavedMaps();
+			}
+		}, Always, []() { return FString(); }, 0.3f });
+
+	// mapa do Zero Hour (Tools/zh_import.py): abre pela lista, com as estradas
+	// de lá como edições, e as vistas de cima e de perto da base
+	Steps.Add({ TEXT("tab_maps_import"), [this]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GameMode->GetWorld()->GetFirstPlayerController())) PC->GetPanel()->SetTab(2);
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("scroll_import"), [GM]()
+		{
+			const TArray<AWorldForgeGameMode::FSavedMap>& Maps = GM()->GetSavedMaps();
+			const int32 I = Maps.IndexOfByPredicate([](const AWorldForgeGameMode::FSavedMap& M) { return !M.ImportFolder.IsEmpty() && M.Name.Contains(TEXT("Desert Fury")); });
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GM()->GetWorld()->GetFirstPlayerController()))
+			{
+				PC->GetPanel()->ScrollToTarget(FString::Printf(TEXT("Saved_%d"), I));
+			}
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("import_open"), [this, GM, Remember]()
+		{
+			Remember();
+			const TArray<AWorldForgeGameMode::FSavedMap>& Maps = GM()->GetSavedMaps();
+			const int32 I = Maps.IndexOfByPredicate([](const AWorldForgeGameMode::FSavedMap& M) { return !M.ImportFolder.IsEmpty() && M.Name.Contains(TEXT("Desert Fury")); });
+			if (I != INDEX_NONE) Click(Target(FString::Printf(TEXT("Saved_%d"), I)));
+		}, NewMap,
+		[GM, Live]() -> FString
+		{
+			FWorldLive* L = Live();
+			const FWorldMap* M = GM()->GetTerrain()->GetMap();
+			const int32 Roads = L ? L->Detail->GRoads.Num() - L->Detail->NumGenRoads : 0;
+			return GM()->GetImportTitle() == TEXT("Desert Fury") && M && M->Starts.Num() == 2 && Roads >= 20 ? FString()
+				: FString::Printf(TEXT("título '%s', bases %d, estradas %d (falta rodar Tools/zh_import.py?)"), *GM()->GetImportTitle(), M ? M->Starts.Num() : -1, Roads);
+		}, 2.0f });
+	Steps.Add({ TEXT("import_whole"), [Pawn]() { Pawn()->FrameWholeMap(true); }, Always, []() { return FString(); }, 2.0f });
+	Steps.Add({ TEXT("import_base"), [GM, Pawn]()
+		{
+			const FWorldMap* M = GM()->GetTerrain()->GetMap();
+			if (M && M->Starts.Num()) Pawn()->SetView(M->Starts[0].Pos, 30.0f, 55.0f, 160.0f);
+		}, Always, []() { return FString(); }, 2.0f });
+	Steps.Add({ TEXT("import_center"), [Pawn]() { Pawn()->SetView(FVector2f::ZeroVector, 30.0f, 50.0f, 220.0f); }, Always, []() { return FString(); }, 2.0f });
+}
+
+FVector2D FForgeUITest::ViewportPixel(FVector2D Frac) const
+{
+	FVector2D Size(1, 1);
+	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
+	return Size * Frac;
 }
 
 bool FForgeUITest::Tick(float DeltaSeconds)
@@ -317,6 +866,15 @@ bool FForgeUITest::Tick(float DeltaSeconds)
 	if (Index >= Steps.Num())
 	{
 		UE_LOG(LogTemp, Display, TEXT("FORGE UI test done: %d of %d steps failed"), Failures, Steps.Num());
+		if (IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(TEXT("Slate.EnableSyntheticCursorMoves")))
+		{
+			V->Set(1, ECVF_SetByCode);
+		}
+		if (Gate.IsValid() && FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().UnregisterInputPreProcessor(Gate);
+			Gate.Reset();
+		}
 		return true;
 	}
 	FStep& S = Steps[Index];

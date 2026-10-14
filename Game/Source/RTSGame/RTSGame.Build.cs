@@ -7,9 +7,9 @@ public class RTSGame : ModuleRules
 	public RTSGame(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "SimCore", "BlastFx" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "SimCore", "BlastFx", "RTSLook" });
 		PrivateDependencyModuleNames.AddRange(new string[] {
-			"Slate", "SlateCore", "MoviePlayer", "Landscape", "Json", "Projects", "RTSShaders", "RenderCore", "RHI", "Sockets", "Networking"
+			"Slate", "SlateCore", "MoviePlayer", "Landscape", "Json", "Projects", "RTSShaders", "RenderCore", "RHI", "Sockets", "Networking", "ImageWrapper", "RTSHud", "RTSTreadDust"
 		});
 	}
 }

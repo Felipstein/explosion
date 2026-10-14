@@ -72,6 +72,7 @@ namespace Sim
 		Move,
 		Attack,
 		AttackMove,
+		AttackGround,   // atira no OrderPoint (o tiro forçado no chão)
 	};
 
 	/** O que o Dozer ou o caminhão está fazendo por conta própria (fora das ordens de andar e atacar). */
@@ -190,6 +191,23 @@ namespace Sim
 
 		int32_t UnitCount() const { return int32_t(U.Id.size()); }
 		UnitView Unit(int32_t Index) const;
+
+		/** Uma carcaça (13/10, o Felipe: "a carcaça tem física"): o veículo morto fica no mapa, e o vivo que encosta
+		 *  empurra (ela pesa a metade dele) e é segurado por ela (anda mais devagar empurrando; contra o penhasco ou o
+		 *  prédio ela trava). O empurrão fora do centro gira o casco. Id = o do veículo que morreu. */
+		struct WreckView
+		{
+			EntityId Id = NoEntity;
+			uint16_t Def = 0;
+			Vec2 Pos;
+			Angle Hull;
+		};
+		int32_t WreckCount() const { return int32_t(Wrecks.size()); }
+		WreckView Wreck(int32_t Index) const
+		{
+			const WreckState& W = Wrecks[size_t(Index)];
+			return WreckView{ W.Id, W.Def, W.Pos, W.Hull };
+		}
 		bool FindUnit(EntityId Id, UnitView& Out) const;
 
 		int32_t PlayerCount() const { return int32_t(Players.size()); }
@@ -256,6 +274,7 @@ namespace Sim
 			std::vector<OrderType> Order;
 			std::vector<Vec2> OrderPoint;
 			std::vector<EntityId> OrderTarget;   // alvo da ordem de ataque
+			std::vector<uint8_t> ForcedAttack;   // o ataque é forçado (Ctrl): vale contra o próprio dono e aliado
 			std::vector<EntityId> Engage;        // em quem a unidade está indo atrás (ordem ou reação)
 			std::vector<EntityId> FireTarget;    // em quem a torre mira
 			std::vector<EntityId> LastAttacker;
@@ -286,6 +305,10 @@ namespace Sim
 			std::vector<uint8_t> AutoGather;     // caminhão coleta sozinho (ordem de andar desliga; Gather liga)
 			std::vector<uint8_t> Blocking;       // prédio: as células dele já estão bloqueadas na grade
 			std::vector<Vec2> TaskPoint;         // caminhão: o ponto de encaixe atual (entrada, saída ou porta)
+			std::vector<Angle> ArriveFacing;     // pra onde o casco vira ao chegar (formação, área de reunião)
+			std::vector<uint8_t> HasArriveFacing;
+			std::vector<Fix> SpeedCap;           // em formação (F): o passo do mais lento do grupo; zero = livre
+			std::vector<int32_t> IdleTurret;     // pra onde a torre sem alvo olha (bam, relativa ao casco): o leque do grupo
 
 			void Resize(size_t N);
 		};
@@ -329,6 +352,8 @@ namespace Sim
 		void UpdatePaths();
 		void UpdateMovement();
 		void SeparateUnits();
+		/** O vivo empurra a carcaça e ela segura o vivo (depois do separar). */
+		void PushWrecks();
 		void UpdateTurrets();
 		void UpdateWeapons();
 		void UpdateProjectiles();
@@ -358,6 +383,18 @@ namespace Sim
 		void CompleteStructure(int32_t Index);
 		/** Unidade nova saindo do prédio, já indo pro ponto de encontro. */
 		EntityId SpawnFrom(int32_t Structure, uint16_t UnitDefIndex);
+		/** O lugar livre mais perto de P pra unidade parar (ZH Pathfinder::adjustDestination): espiral
+		 *  pelas células, longe dos amigos parados ali ou indo pra lá. Sem isso, os tanques da fábrica
+		 *  paravam em fila indiana no ponto de encontro (o "desfile", 11/10). */
+		Vec2 FreeSpotNear(int32_t Unit, Vec2 P) const;
+		/** Uma vaga longe dos amigos parados ali ou indo pra lá, com chão andável pra unidade. */
+		bool SpotFree(int32_t Unit, Vec2 Q) const;
+		/** A área de reunião da fábrica (estudo de 11/10: SupCom, BAR, 0 A.D.): fileiras escalonadas
+		 *  de 4 viradas pra longe da fábrica, cada vaga com um tremido fixo de ±0,5 m e ±4°; o tanque
+		 *  pega a primeira livre. Devolve a vaga e a direção de chegada. */
+		Vec2 StagingSlot(int32_t Structure, int32_t Unit, Vec2 Rally, Angle& OutFacing, int32_t* OutLateralHalf = nullptr) const;
+		/** O leque das torres de um grupo que vai pras vagas Slots, marchando na direção March. */
+		void FanTurrets(const std::vector<int32_t>& Members, const std::vector<Vec2>& Slots, Angle March);
 		bool IsComplete(int32_t Index) const { return U.BuildLeft[Index] == 0; }
 		/** A obra já pode começar a ocupar a grade? Se tem unidade em cima, manda as amigas saírem. */
 		bool ClaimFootprint(int32_t Structure);
@@ -382,6 +419,7 @@ namespace Sim
 		EntityId Spawn(PlayerIndex Owner, uint16_t DefIndex, Vec2 Pos, Angle Facing);
 		int32_t IndexOf(EntityId Id) const;
 		bool IsAliveEnemy(int32_t Self, EntityId Other) const;
+		bool IsAliveUnit(EntityId Other) const;
 		const UnitDef& DefOf(int32_t Index) const { return RulesData.Units[U.Def[Index]]; }
 		Angle TurretWorld(int32_t Index) const { return Angle::FromBam(int32_t(U.Hull[Index].Bam) + U.TurretRel[Index]); }
 		EntityId NearestEnemy(int32_t Self, Fix Radius) const;
@@ -390,7 +428,15 @@ namespace Sim
 		Vec2 ClampToMap(Vec2 P) const;
 		void GiveMove(int32_t Index, Vec2 Point, OrderType Order);
 		/** As vagas de destino de um grupo, uma por membro (na ordem de Members). */
+		/** Desfaz cruzamentos entre os caminhos até as vagas (troca dois de vaga quando a soma das distâncias cai). */
+		void Uncross(const std::vector<int32_t>& Members, std::vector<Vec2>& Slots) const;
 		void GroupSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out);
+		/** Em formação: cada um guarda o lugar que tinha no grupo (o desenho só anda), apertado se o grupo
+		 *  estiver espalhado demais. */
+		void FormationSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out);
+		/** O arraste com direção: uma linha de frente virada pra Facing, a fileira da frente no ponto, as outras atrás;
+		 *  Width = a largura da fileira (zero = a do grupo). */
+		void LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out);
 		/** Região ligada da célula C pra uma folga (0 = não andável, ou folga sem mapa de regiões). */
 		int32_t RegionAt(int32_t Clearance, Cell C) const;
 		/** P se ele já está na região; senão a célula da região mais perto; senão Fallback. */
@@ -445,6 +491,18 @@ namespace Sim
 			TickNumber Until = 0;
 		};
 		std::vector<LingeringLook> Lingering;
+
+		struct WreckState
+		{
+			EntityId Id = NoEntity;
+			uint16_t Def = 0;
+			Vec2 Pos;
+			Angle Hull;
+			/** Travada (o empurrão bateu no penhasco ou no prédio): passos até tentar de novo; travada, o vivo leva o
+			 *  empurrão inteiro. */
+			uint8_t Stuck = 0;
+		};
+		std::vector<WreckState> Wrecks;
 		/** Raio de visão do tipo, em células (teto e quadrado). */
 		void SightCells(uint16_t Def, int32_t& OutRadius, int64_t& OutRadiusSq) const;
 		void LookAt(uint8_t Team, uint16_t Def, int32_t Cell, int32_t Delta);

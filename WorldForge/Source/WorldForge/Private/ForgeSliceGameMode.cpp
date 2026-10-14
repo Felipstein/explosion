@@ -1,6 +1,17 @@
 #include "ForgeSliceGameMode.h"
 
+#include "Dom/JsonObject.h"
+#include "EngineUtils.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "LookDirector.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "LookRecipe.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+
 #include "Engine/World.h"
+#include "Camera/CameraComponent.h"
 #include "ForgeCameraPawn.h"
 #include "ForgePlayerController.h"
 #include "HAL/FileManager.h"
@@ -14,6 +25,9 @@
 #include "ShaderCompiler.h"
 #include "UObject/UObjectIterator.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "LandscapeProxy.h"
 #include "UnrealClient.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBox.h"
@@ -132,6 +146,255 @@ void AForgeSliceGameMode::BeginPlay()
 		}
 	}
 	bNoMotion = FParse::Param(FCommandLine::Get(), TEXT("ForgeNoMotion"));
+	ApplyLook();
+	SpawnVillage();
+	// o A/B de um parâmetro do material do chão na mesma montagem (13/10, o AerBlur do teste do Look):
+	// -ForgeLandscapeParam=Nome=valor, no Landscape inteiro
+	FString LParam;
+	if (FParse::Value(FCommandLine::Get(), TEXT("ForgeLandscapeParam="), LParam, false))
+	{
+		FString PName, PValue;
+		if (LParam.Split(TEXT("="), &PName, &PValue))
+		{
+			for (TActorIterator<ALandscapeProxy> It(GetWorld()); It; ++It)
+			{
+				It->SetLandscapeMaterialScalarParameterValue(FName(*PName), FCString::Atof(*PValue));
+			}
+			UE_LOG(LogTemp, Display, TEXT("FORGE parâmetro do chão: %s = %s"), *PName, *PValue);
+		}
+	}
+}
+
+void AForgeSliceGameMode::SpawnVillage()
+{
+	// a vila do mapa, do mesmo village.json que o jogo lê (Saved/WorldForge/exports/<mapa>): no jogo quem
+	// desenha é o jogo; aqui a "qualidade real" mostra o resultado final inteiro (o Felipe, 13/10: "gera
+	// as imagens da vila na qualidade real pra gente ver com o look real do jogo"). Casas, muros e
+	// miudezas com o giro livre e a laje, postes e os fios em catenária
+	UWorld* World = GetWorld();
+	const FString MapName = UWorld::RemovePIEPrefix(World->GetMapName());
+	const FString Path = FPaths::ProjectSavedDir() / TEXT("WorldForge/exports") / MapName / TEXT("village.json");
+	FString Text;
+	TSharedPtr<FJsonObject> J;
+	if (!FFileHelper::LoadFileToString(Text, *Path) || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), J) || !J.IsValid())
+	{
+		return;
+	}
+	// a etiqueta da montagem (village_hash): o JSON de outra montagem desenharia a vila no lugar errado
+	const FString Hash = J->GetStringField(TEXT("hash"));
+	bool bMarker = false, bMatch = false;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		for (const FName& Tag : It->Tags)
+		{
+			const FString S = Tag.ToString();
+			if (S.StartsWith(TEXT("village_hash:"))) { bMarker = true; bMatch |= S.RightChop(13) == Hash; }
+		}
+	}
+	if (bMarker && !bMatch)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("FORGE vila: o %s é de outra montagem (hash %s): não desenho"), *Path, *Hash);
+		return;
+	}
+	AActor* Holder = World->SpawnActor<AActor>();
+	USceneComponent* Root = NewObject<USceneComponent>(Holder, TEXT("VillageRoot"));
+	Holder->SetRootComponent(Root);
+	Root->RegisterComponent();
+	TMap<FString, UHierarchicalInstancedStaticMeshComponent*> Comps;
+	auto Make = [&](UStaticMesh* Mesh, bool bShadow) -> UHierarchicalInstancedStaticMeshComponent*
+	{
+		UHierarchicalInstancedStaticMeshComponent* C = NewObject<UHierarchicalInstancedStaticMeshComponent>(Holder);
+		C->SetStaticMesh(Mesh);
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCastShadow(bShadow);
+		C->SetupAttachment(Root);
+		C->RegisterComponent();
+		return C;
+	};
+	auto CompOf = [&](const FString& Mesh) -> UHierarchicalInstancedStaticMeshComponent*
+	{
+		if (UHierarchicalInstancedStaticMeshComponent** F = Comps.Find(Mesh)) return *F;
+		UStaticMesh* SM = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("/Game/Village/%s/StaticMeshes/%s.%s"), *Mesh, *Mesh, *Mesh), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		UHierarchicalInstancedStaticMeshComponent* C = SM ? Make(SM, true) : nullptr;
+		Comps.Add(Mesh, C);
+		return C;
+	};
+	int32 Drawn = 0, Missing = 0;
+	const TArray<TSharedPtr<FJsonValue>>* Pieces = nullptr;
+	if (J->TryGetArrayField(TEXT("pieces"), Pieces))
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Pieces)
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			double Yaw, Z;
+			if (!O->TryGetNumberField(TEXT("yaw_deg"), Yaw)) Yaw = 90.0 * O->GetNumberField(TEXT("rot"));
+			if (!O->TryGetNumberField(TEXT("z"), Z)) Z = O->GetNumberField(TEXT("floor_cm")) / 100.0;
+			const FVector Loc(O->GetNumberField(TEXT("x")) * 100.0, O->GetNumberField(TEXT("y")) * 100.0, Z * 100.0);
+			if (UHierarchicalInstancedStaticMeshComponent* C = CompOf(O->GetStringField(TEXT("mesh"))))
+			{
+				C->AddInstance(FTransform(FRotator(0.0, Yaw, 0.0), Loc), true);
+				++Drawn;
+			}
+			else
+			{
+				++Missing;
+			}
+		}
+	}
+	// os fios: o isolador (local da malha do poste → mundo) e a parábola da flecha, em 10 pedaços de 4,5 cm,
+	// escuros e sem sombra (a 80 m o pixel tem ~4 cm: o fio de 2 cm de verdade pisca)
+	TArray<FVector> PoleP;
+	TArray<double> PoleYaw;
+	TArray<TArray<FVector>> PoleSockets;
+	const TArray<TSharedPtr<FJsonValue>>* Poles = nullptr;
+	if (J->TryGetArrayField(TEXT("poles"), Poles))
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Poles)
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			PoleP.Add(FVector(O->GetNumberField(TEXT("x")), O->GetNumberField(TEXT("y")), O->GetNumberField(TEXT("z"))));
+			PoleYaw.Add(O->GetNumberField(TEXT("yaw_deg")));
+			TArray<FVector>& S = PoleSockets.AddDefaulted_GetRef();
+			const TArray<TSharedPtr<FJsonValue>>* L = nullptr;
+			if (O->TryGetArrayField(TEXT("sockets_local"), L))
+			{
+				for (const TSharedPtr<FJsonValue>& Sv : *L)
+				{
+					const TArray<TSharedPtr<FJsonValue>>& A = Sv->AsArray();
+					if (A.Num() == 3) S.Add(FVector(A[0]->AsNumber(), A[1]->AsNumber(), A[2]->AsNumber()));
+				}
+			}
+		}
+	}
+	auto Socket = [&](int32 Pole, int32 I) -> FVector
+	{
+		if (!PoleP.IsValidIndex(Pole) || !PoleSockets[Pole].IsValidIndex(I)) return FVector::ZeroVector;
+		return PoleP[Pole] + FRotator(0.0, PoleYaw[Pole], 0.0).RotateVector(PoleSockets[Pole][I]);
+	};
+	TArray<FTransform> Segs;
+	const TArray<TSharedPtr<FJsonValue>>* Wires = nullptr;
+	if (J->TryGetArrayField(TEXT("wires"), Wires))
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Wires)
+		{
+			const TSharedPtr<FJsonObject> O = V->AsObject();
+			const TArray<TSharedPtr<FJsonValue>>& Aa = O->GetArrayField(TEXT("a"));
+			const FVector A = Socket(int32(Aa[0]->AsNumber()), int32(Aa[1]->AsNumber()));
+			FVector B;
+			const TArray<TSharedPtr<FJsonValue>>* Bb = nullptr;
+			if (O->TryGetArrayField(TEXT("b"), Bb) && Bb->Num() == 2) B = Socket(int32((*Bb)[0]->AsNumber()), int32((*Bb)[1]->AsNumber()));
+			else if (O->TryGetArrayField(TEXT("b_wall"), Bb) && Bb->Num() == 3) B = FVector((*Bb)[0]->AsNumber(), (*Bb)[1]->AsNumber(), (*Bb)[2]->AsNumber());
+			else continue;
+			const double Sag = O->GetNumberField(TEXT("sag_m"));
+			FVector Prev = A;
+			for (int32 K = 1; K <= 10; ++K)
+			{
+				const double T = K / 10.0;
+				const FVector Q = FMath::Lerp(A, B, T) - FVector(0.0, 0.0, 4.0 * Sag * T * (1.0 - T));
+				const FVector D = Q - Prev;
+				Segs.Add(FTransform(D.Rotation(), 50.0 * (Prev + Q), FVector(D.Size(), 0.045, 0.045)));
+				Prev = Q;
+			}
+		}
+	}
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (Cube && Segs.Num())
+	{
+		UHierarchicalInstancedStaticMeshComponent* C = Make(Cube, false);
+		if (UMaterialInterface* Dark = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Structures/Materials/MI_CivChar.MI_CivChar"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			C->SetMaterial(0, Dark);
+		}
+		C->AddInstances(Segs, false, true, false);
+	}
+	UE_LOG(LogTemp, Display, TEXT("FORGE vila na qualidade real: %d peças (%d sem malha), %d postes, %d pedaços de fio (%s, hash %s)"),
+		Drawn, Missing, PoleP.Num(), Segs.Num(), *MapName, *Hash);
+}
+
+void AForgeSliceGameMode::ApplyLook()
+{
+	// o vento do mapa (as etiquetas wind_yaw: e wind_speed: que o build_slice.py grava) na coleção do vento do
+	// jogo (/Game/Materials/MPC_Wind, a cópia do arquivo dela: Wind = (x, y pra onde sopra, m/s, rajada))
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		float Yaw = 1e9f, Speed = 5.0f;
+		for (const FName& Tag : It->Tags)
+		{
+			const FString T = Tag.ToString();
+			if (T.StartsWith(TEXT("wind_yaw:"))) Yaw = FCString::Atof(*T.Mid(9));
+			if (T.StartsWith(TEXT("wind_speed:"))) Speed = FCString::Atof(*T.Mid(11));
+		}
+		if (Yaw > 1e8f) continue;
+		if (UMaterialParameterCollection* Wind = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/Materials/MPC_Wind.MPC_Wind"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			const float R = FMath::DegreesToRadians(Yaw);
+			UKismetMaterialLibrary::SetVectorParameterValue(this, Wind, TEXT("Wind"), FLinearColor(FMath::Cos(R), FMath::Sin(R), Speed, 0.3f));
+			UE_LOG(LogTemp, Display, TEXT("FORGE vento do mapa: %.1f°, %.1f m/s"), Yaw, Speed);
+		}
+	}
+	// a versão final usa a luz do jogo: a receita do Look do ambiente (Plugins/RTSLook, o ALookDirector
+	// do jogo). O painel de montar continua com a luz leve dele (regra do Felipe, pelo Look, 12/10).
+	// -ForgeLook=<receita> troca, -ForgeLook=none desliga (A/B)
+	FString Recipe;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("ForgeLook="), Recipe))
+	{
+		// o bioma: o mapa de exemplo diz no nome; a prévia do "Ver em qualidade real", no JSON que o app gravou
+		const FString MapName = GetWorld()->GetOutermost()->GetName();
+		int32 Biome = MapName.Contains(TEXT("Desert")) ? 1 : (MapName.Contains(TEXT("Snow")) ? 2 : (MapName.Contains(TEXT("Forest")) ? 0 : -1));
+		FString Text;
+		if (Biome < 0 && FFileHelper::LoadFileToString(Text, *(FPaths::ProjectSavedDir() / TEXT("WorldForge/world_settings.json"))))
+		{
+			TSharedPtr<FJsonObject> J;
+			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), J) && J.IsValid()
+				&& J->GetStringField(TEXT("map")) == MapName && J->HasField(TEXT("biome")))
+			{
+				Biome = int32(J->GetNumberField(TEXT("biome")));
+			}
+		}
+		// só o deserto tem receita por enquanto. A bancada do Look (desert_golden_hour), não a
+		// v2_aprovada: a areia nova só aparece com ela (a v2 tem o sol a 30° e a exposição da areia
+		// antiga, e a nova estourava: meio-tom 0,48–0,52 contra 0,30–0,40 das favoritas; regra do
+		// Look, 13/10)
+		Recipe = Biome == 1 ? TEXT("desert_golden_hour") : TEXT("none");
+	}
+	if (Recipe == TEXT("none"))
+	{
+		UE_LOG(LogTemp, Display, TEXT("FORGE look: sem receita (a luz do mapa)"));
+		return;
+	}
+	const FString Path = FString::Printf(TEXT("/RTSLook/Recipes/DA_Look_%s.DA_Look_%s"), *Recipe, *Recipe);
+	ULookRecipe* R = LoadObject<ULookRecipe>(nullptr, *Path);
+	if (!R)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("FORGE look: receita %s não achada"), *Path);
+		return;
+	}
+	FActorSpawnParameters P;
+	P.Name = TEXT("LookDirector");
+	P.bDeferConstruction = true;
+	ALookDirector* D = GetWorld()->SpawnActor<ALookDirector>(ALookDirector::StaticClass(), FTransform::Identity, P);
+	if (D)
+	{
+		D->Recipe = R;
+		D->FinishSpawning(FTransform::Identity);
+		UE_LOG(LogTemp, Display, TEXT("FORGE look: receita %s"), *Recipe);
+	}
+	// o que a câmera do jogo põe por cima (ARTSCameraPawn::SetFogExposureFix, sempre na partida):
+	// a exposição local sem a luminância borrada (0 contra o 0,6 da Unreal). Sem isso a versão
+	// final saía mais clara e lavada que o jogo no mesmo mapa e na mesma receita (12/10).
+	// -ForgeLEBlend=0.6 volta o padrão (A/B)
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (AForgeCameraPawn* Pawn = PC->GetPawn<AForgeCameraPawn>())
+		{
+			float Blend = 0.0f;
+			FParse::Value(FCommandLine::Get(), TEXT("ForgeLEBlend="), Blend);
+			FPostProcessSettings& PP = Pawn->Camera->PostProcessSettings;
+			PP.bOverride_LocalExposureBlurredLuminanceBlend = true;
+			PP.LocalExposureBlurredLuminanceBlend = Blend;
+			Pawn->Camera->PostProcessBlendWeight = 1.0f;
+		}
+	}
 }
 
 void AForgeSliceGameMode::EndPlay(const EEndPlayReason::Type Reason)
@@ -230,6 +493,8 @@ void AForgeSliceGameMode::CaptureStep()
 				}
 			}
 			Wait = 1.5;
+			// -ForgeShotWait=s: mais tempo antes da foto (as texturas de perto terminam de carregar)
+			FParse::Value(FCommandLine::Get(), TEXT("ForgeShotWait="), Wait);
 		}
 		else
 		{

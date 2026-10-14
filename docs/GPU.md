@@ -5,10 +5,6 @@ caiu (DXGI_ERROR_DEVICE_HUNG). Várias sessões do Claude usam a placa (BlastLab
 WorldForge, o jogo RTSGame, renders no Blender). O Felipe não fica no meio liberando ("pode
 abrir agora", "espera"): a trava abaixo resolve sozinha, sem mensagem entre as sessões.
 
-**O painel (13/10):** o Felipe vê as duas filas, quem está com a placa e o EmberGen, e o que cada sessão está
-fazendo em `Hub/` (`powershell -File Hub\hub.ps1 open`). O painel só lê os tickets: nada aqui muda. O que cada
-sessão escreve é o status dela (`hub.ps1 set "<nome>" "<tarefa>"`, regra no `CLAUDE.md`).
-
 ## A fila (preferida, desde 08/10)
 
 `C:\Users\luisf\.gpu_queue\gpu_queue.ps1` (fora do repositório, comum a todas as sessões; o cabeçalho explica):
@@ -40,6 +36,30 @@ placa (Blender com GPU):
    os outros acham que é trava velha.
 6. Não segurar a placa à toa: entre um teste e outro, fechar e soltar, pra os outros intercalarem.
    Editor parado aberto também ocupa a placa.
+
+**O EmberGen tem a fila dele** (decisão do Felipe, 13/10): o EmberGen **não entra na fila da placa**, mas também
+**não é de todo mundo ao mesmo tempo**. A regravação levava 20 a 40 min segurando a fila da placa e os testes rápidos
+de todas as sessões esperavam; e mais de uma sessão quer o EmberGen. Por isso ele tem uma fila separada:
+
+```powershell
+powershell -NoProfile -File C:\Users\luisf\.ember_queue\ember_queue.ps1 enter -Owner "<sessão> | <tarefa>"   # 0 = é seu; 1 = chame de novo em até 2 min
+powershell -NoProfile -File C:\Users\luisf\.ember_queue\ember_queue.ps1 touch -Owner "..."   # a cada ~5-10 min
+powershell -NoProfile -File C:\Users\luisf\.ember_queue\ember_queue.ps1 leave -Owner "..."   # SEMPRE ao fechar o EmberGen
+powershell -NoProfile -File C:\Users\luisf\.ember_queue\ember_queue.ps1 status
+```
+
+- Quem chegou primeiro usa primeiro. Ninguém abre o EmberGen sem estar na frente dessa fila.
+- Ela **não** escreve o `captures/.gpu_lock` nem olha a Unreal: a fila da placa segue livre pros testes.
+- A Unreal que abrir por cima do EmberGen (o BlastLab pra importar, os outros testes) segue a fila da placa normal.
+- `-Mine`: o EmberGen que já está aberto é seu (aberto antes da fila existir); entra sem esperar por ele.
+- Fechar o EmberGen sempre pelo PID que você abriu, e dar o `leave`.
+
+Os cuidados:
+- **Memória da placa:** 6 GB. EmberGen + uma Unreal pesada podem estourar. Quem cair por isso
+  repete; se repetir, avisa a sessão do EmberGen.
+- **Medida de custo:** o teste que mede milissegundos (A/B de custo) não vale com o EmberGen aberto.
+  Antes de medir, conferir o processo (`Get-Process EmberGen`): esperar ou marcar a medida como suja e
+  repetir. Foto e funcionamento podem rodar junto.
 
 Fora da trava, mas que também conta:
 - O Felipe abriu um app pra testar: a placa é dele. Nada automático por cima

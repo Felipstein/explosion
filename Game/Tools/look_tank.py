@@ -598,6 +598,16 @@ def dozer():
 import random as _random
 
 
+CLUTTER_BEVEL = 0.05       # (13/10, o estudo das miudezas: chanfro de 4–8 cm pega 1–2 px de brilho a 67–118 m; o Blender
+                            #  limita sozinho nas peças finas)
+
+
+def _clutter_finish(p):
+    for m in p.bevel:
+        p.bevel[m] = max(p.bevel[m], CLUTTER_BEVEL if m not in ('Dark',) else 0.02)
+    return p.finish()
+
+
 def clutter():
     """O entulho das favoritas: monte de escombros de adobe, cerca de chapa, caixa d'água, ar-condicionado, antena
     parabólica, pneus, sucata, muro quebrado, toldo, varal. Cada peça com variações (semente fixa)."""
@@ -620,7 +630,7 @@ def clutter():
                    yaw=r.uniform(0, 180), pitch=r.uniform(-30, 30), roll=r.uniform(-20, 20), bevel=0.015)
             p.cyl('Rust', (r.uniform(-0.6, 0.6), r.uniform(-0.6, 0.6), 0.5), (r.uniform(-1, 1), r.uniform(-1, 1), r.uniform(0.3, 1.0)),
                   0.012, r.uniform(0.6, 1.4), seg=6, bevel=0.0)
-        out.append(p.finish())
+        out.append(_clutter_finish(p))
     for v in range(2):                                   # a cerca de chapa corrugada (4 m), enferrujada, uma placa torta
         r = _random.Random(200 + v)
         p = Part(f'SM_LL_Prop_Fence{v}')
@@ -633,7 +643,7 @@ def clutter():
                 p.obox('Dark', (x - 0.35 + k * 0.14, 0.018, 1.0), (0.02, 0.01, 1.8), roll=tilt, bevel=0.0)
         for x in (-2.0, 0.0, 2.0):
             p.cyl('Wood', (x, -0.04, 1.05), 'z', 0.05, 2.1, seg=8, bevel=0.0)
-        out.append(p.finish())
+        out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_WaterTank')                     # a caixa d'água de telhado no suporte
     for x in (-0.45, 0.45):
         for y in (-0.45, 0.45):
@@ -641,19 +651,19 @@ def clutter():
     p.box('Metal', -0.55, 0.55, -0.55, 0.55, 0.78, 0.84, bevel=0.0)
     p.cyl('Plaster', (0.0, 0.0, 1.35), 'z', 0.55, 1.0, seg=20, bevel=0.02)
     p.cyl('Dark', (0.0, 0.0, 1.87), 'z', 0.18, 0.06, seg=12, bevel=0.0)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_AC')                            # o ar-condicionado com a grelha
     p.box('Metal', -0.45, 0.45, -0.3, 0.3, 0.0, 0.55, bevel=0.02)
     p.cyl('Dark', (0.0, 0.31, 0.28), 'y', 0.2, 0.02, seg=16, bevel=0.0)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_Dish')                          # a antena parabólica no pé
     p.cyl('Metal', (0.0, 0.0, 0.4), 'z', 0.03, 0.8, seg=8, bevel=0.0)
     p.cyl('Plaster', (0.12, 0.0, 0.85), (0.6, 0.0, 0.5), 0.45, 0.05, seg=20, r2=0.42, bevel=0.0)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_Tires')                         # pneus empilhados e um solto
     for i, (x, y, z) in enumerate(((0, 0, 0.11), (0.05, 0.02, 0.33), (0.0, -0.03, 0.55), (0.9, 0.3, 0.11))):
         p.cyl('Dark', (x, y, z), 'z', 0.38, 0.22, seg=18, bevel=0.03)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     for v in range(2):                                   # a sucata: chapas, canos, uma porta de carro
         r = _random.Random(300 + v)
         p = Part(f'SM_LL_Prop_Scrap{v}')
@@ -662,7 +672,7 @@ def clutter():
                    (r.uniform(0.4, 1.3), r.uniform(0.3, 0.9), 0.025), yaw=r.uniform(0, 180), pitch=r.uniform(-15, 15), bevel=0.0)
         for i in range(3):
             p.cyl('Rust', (r.uniform(-1, 1), r.uniform(-0.8, 0.8), 0.06), 'x', 0.05, r.uniform(0.8, 1.8), seg=8, bevel=0.0)
-        out.append(p.finish())
+        out.append(_clutter_finish(p))
     for v in range(2):                                   # o muro quebrado (4 m) com o entulho caído do lado
         r = _random.Random(400 + v)
         p = Part(f'SM_LL_Prop_BrokenWall{v}')
@@ -676,12 +686,12 @@ def clutter():
             sz = r.uniform(0.15, 0.45)
             p.obox('Plaster', (r.uniform(-1.8, 1.8), r.uniform(0.3, 1.4) * r.choice((1, -1)), sz * 0.3), (sz, sz * 0.8, sz * 0.5),
                    yaw=r.uniform(0, 180), pitch=r.uniform(-20, 20), bevel=0.02)
-        out.append(p.finish())
+        out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_Awning')                        # o toldo de lona nas varas (3 m)
     p.obox('Cloth', (0.0, 0.8, 2.25), (3.0, 1.7, 0.03), roll=-12, bevel=0.0)
     for x in (-1.45, 1.45):
         p.cyl('Wood', (x, 1.6, 1.05), 'z', 0.04, 2.1, seg=8, bevel=0.0)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     p = Part('SM_LL_Prop_Laundry')                       # o varal de telhado
     for x in (-1.2, 1.2):
         p.cyl('Metal', (x, 0.0, 0.7), 'z', 0.025, 1.4, seg=6, bevel=0.0)
@@ -690,7 +700,7 @@ def clutter():
     for i in range(5):
         x = -0.9 + i * 0.45
         p.box(r.choice(('Cloth', 'Plaster', 'Rust')), x - 0.16, x + 0.16, -0.01, 0.01, 0.75 + r.uniform(0, 0.2), 1.37, bevel=0.0)
-    out.append(p.finish())
+    out.append(_clutter_finish(p))
     return out
 
 

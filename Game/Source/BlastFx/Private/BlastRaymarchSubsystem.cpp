@@ -11,10 +11,21 @@
 #include "ExplosionVolume.h"
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
+#include "BlastFxGround.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "SceneViewExtension.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// o custo no perfil (-csvGpuStats -csvCaptureFrames=N): BlastFxRaymarch/Tick (a lista, os quadros, a névoa e a sombra)
+CSV_DEFINE_CATEGORY(BlastFxRaymarch, true);
 #if WITH_EDITOR
 #include "TextureCompiler.h"
 #endif
@@ -157,6 +168,7 @@ void UBlastRaymarchSubsystem::Deinitialize()
 
 void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 {
+	CSV_SCOPED_TIMING_STAT(BlastFxRaymarch, Tick);
 	using namespace BlastRaymarch;
 	if (!Extension || !Noise)
 	{
@@ -318,5 +330,122 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	bWasEmpty = List.IsEmpty();
+	SubmitFog();
+	SubmitShadow(!List.IsEmpty());
 	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes, MaxBricks);
+}
+
+void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
+{
+	// A sombra da explosão no chão (13/10), nos mapas sem o ambiente do BlastLab (lá o sol já tem a sombra da fumaça de
+	// campo, BattleSmokeSubsystem): a mesma light function (M_SmokeShadowLF) num mapa de sombra próprio. Só entra num sol
+	// sem light function. -RmShadow=0 desliga.
+	constexpr int32 Res = 256;
+	constexpr float TexelM = 0.75f;
+	static const int32 ShadowCfg = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("RmShadow="), V); return V; }();
+	if (!bShadowSetup)
+	{
+		bShadowSetup = true;
+		bool bLabEnv = false;
+		for (TActorIterator<AActor> It(GetWorld()); It && !bLabEnv; ++It)
+		{
+			bLabEnv = It->GetClass()->GetName() == TEXT("BlastLabEnvironment");
+		}
+		UMaterialInterface* Function = ShadowCfg && !bLabEnv ? LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_SmokeShadowLF.M_SmokeShadowLF")) : nullptr;
+		UDirectionalLightComponent* Best = nullptr;
+		for (TActorIterator<ADirectionalLight> It(GetWorld()); It && Function; ++It)
+		{
+			UDirectionalLightComponent* C = Cast<UDirectionalLightComponent>(It->GetLightComponent());
+			if (C && C->IsVisible() && (!Best || (C->bAtmosphereSunLight && C->AtmosphereSunLightIndex == 0) || C->Intensity > Best->Intensity))
+			{
+				Best = C;
+			}
+		}
+		if (Function && Best && !Best->LightFunctionMaterial)
+		{
+			ShadowTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("BlastRaymarchShadow"));
+			ShadowTarget->bCanCreateUAV = true;
+			ShadowTarget->ClearColor = FLinearColor::Black;
+			ShadowTarget->InitCustomFormat(Res, Res, PF_R32_FLOAT, true);
+			ShadowTarget->UpdateResourceImmediate(true);
+			ShadowFunction = UMaterialInstanceDynamic::Create(Function, this);
+			ShadowFunction->SetTextureParameterValue(TEXT("Shadow"), ShadowTarget);
+			ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(0.0f, 0.0f, 1.0f, 0.0f));
+			Best->SetLightFunctionMaterial(ShadowFunction);
+			// sem isto o sol cai à metade além de 1 km da câmera (DisabledBrightness 0,5 e FadeDistance 1000 m, os
+			// padrões da Unreal pra light function; pesquisa de 13/10, LightComponent.cpp)
+			Best->DisabledBrightness = 1.0f;
+			Best->LightFunctionFadeDistance = 1.0e7f;
+			Best->MarkRenderStateDirty();
+			ShadowSun = Best;
+			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: a sombra das explosões no sol %s"), *Best->GetOwner()->GetName());
+		}
+	}
+	if (!ShadowFunction || !ShadowSun.IsValid())
+	{
+		return;
+	}
+	// a janela em volta do ponto do chão pra onde a câmera olha, presa à grade dos texels
+	FVector Center = FVector::ZeroVector;
+	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
+	{
+		const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector Fwd = PC->PlayerCameraManager->GetCameraRotation().Vector();
+		if (!BlastFxGround::Ray(GetWorld(), Eye, Fwd, 1.0e6, Center))
+		{
+			Center = Eye + FVector(Fwd.X, Fwd.Y, 0.0).GetSafeNormal() * 10000.0;
+			Center.Z = 0.0;
+		}
+	}
+	const FVector ToSun = -ShadowSun->GetDirection();
+	const bool bOn = bAny && ToSun.Z > 0.05;
+	const float HalfM = 0.5f * Res * TexelM;
+	FBlastRaymarchExtension::FShadow S;
+	S.Res = Res;
+	S.TexelM = TexelM;
+	S.GroundZM = float(Center.Z / 100.0);
+	S.OriginM = FVector2D(FMath::GridSnap(Center.X / 100.0, double(TexelM)) - HalfM, FMath::GridSnap(Center.Y / 100.0, double(TexelM)) - HalfM);
+	S.ToSun = FVector3f(ToSun);
+	S.Out = bOn ? ShadowTarget->GameThread_GetRenderTargetResource() : nullptr;
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowMap"), FLinearColor(float(S.OriginM.X), float(S.OriginM.Y), 1.0f / (Res * TexelM), S.GroundZM));
+	ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(ToSun.X, ToSun.Y, ToSun.Z, bOn ? 1.0f : 0.0f));
+	Extension->SetShadow_GameThread(S);
+}
+
+void UBlastRaymarchSubsystem::SubmitFog()
+{
+	// A névoa do mapa na explosão (13/10): nos mapas do look (sem o ambiente do BlastLab, que tem a névoa do WebGL
+	// calibrada à parte). -RmFog=0|1 força.
+	static const int32 FogCfg = [] { int32 V = -1; FParse::Value(FCommandLine::Get(), TEXT("RmFog="), V); return V; }();
+	if (!FogComp.IsValid() && !bFogSearched)
+	{
+		bFogSearched = true;
+		bool bLabEnv = false;
+		for (TActorIterator<AActor> It(GetWorld()); It && !bLabEnv; ++It)
+		{
+			bLabEnv = It->GetClass()->GetName() == TEXT("BlastLabEnvironment");
+		}
+		if (FogCfg == 1 || (FogCfg != 0 && !bLabEnv))
+		{
+			for (TActorIterator<AExponentialHeightFog> It(GetWorld()); It; ++It)
+			{
+				FogComp = It->GetComponent();
+				break;
+			}
+		}
+	}
+	FBlastRaymarchExtension::FFog F;
+	if (const UExponentialHeightFogComponent* C = FogComp.Get())
+	{
+		const bool bVol = C->bEnableVolumetricFog;
+		F.bOn = true;
+		F.DensityPerM = C->FogDensity / 1000.0f * 100.0f * (bVol ? C->VolumetricFogExtinctionScale : 1.0f);
+		F.FalloffPerM = C->FogHeightFalloff / 1000.0f * 100.0f;
+		F.HeightCm = float(C->GetComponentLocation().Z);
+		F.StartM = (bVol ? C->VolumetricFogStartDistance : C->StartDistance) * 0.01f;
+		const FLinearColor Alb = bVol ? FLinearColor(C->VolumetricFogAlbedo) : C->FogInscatteringLuminance;
+		F.Albedo = FVector3f(Alb.R, Alb.G, Alb.B);
+		F.G = bVol ? C->VolumetricFogScatteringDistribution : 0.0f;
+	}
+	Extension->SetFog_GameThread(F);
 }

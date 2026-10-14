@@ -1,0 +1,140 @@
+// O relevo da memória do chão (12/10, divisão com a sessão do Look: o jogo faz onde e quando, o Look faz
+// como fica). Lê o caderno do perfil (a esteira desenhada na ordem do tempo, a mais nova por cima) e escreve
+// o caderno de relevo que a função de material do Look (MF_LookGroundMemory) lê dentro do chão:
+//   R = altura com sinal (0,5 = zero; h_cm = (R - 0,5) * 2 * RangeCm): o sulco negativo, a bordinha positiva;
+//   G = idade (0 fresca, 1 velha); B = visibilidade do sol (1 sol, 0 sombra); A = revolvido (a máscara de mistura).
+// O perfil é a versão C do Look (13/10, a escolha do Felipe; Game/Tools/look_materials/sand_desert_v2.json,
+// track_profile; a conta é a do track_relief em Game/Tools/look_ground.py):
+//   - o sulco de 2,2 cm × 0,75 na faixa (a garra, +45% no miolo, fica no R do caderno da esteira a 4,7 cm,
+//     que o Look lê direto: a 9,4 cm por texel ela serrilharia);
+//   - a bordinha de 2 cm em 0,31 m + 0,6 × a largura dela (9 cm, ×(1 + 1,2 × idade));
+//   - a idade: sulco × (1 − 0,45·idade), bordinha × (1 − 0,3·idade); a trilha velha ainda se lê;
+//   - a marca nunca é uniforme: × (0,65 + 0,7 × um ruído de 1,6 por metro);
+//   - o cruzamento: a mais nova cobre a velha pela máscara dela (isso já vem no caderno do perfil).
+// Duas passadas, só no retângulo que mudou (estudo em docs/CHAO_DEFORMAVEL.md):
+//   1. HeightCS: a altura, a idade e o revolvido, do perfil;
+//   2. SunCS: a sombra do sol em meio texel com interpolação e penumbra curta, a média de 5 pontos (o passo
+//      inteiro com a borda dura desenhava a sombra pontilhada, o defeito que o Felipe achou na maquete). A
+//      altura é a da esteira somada à da cratera (a GroundCrater, R16F); dentro da bacia a marcha vai até a
+//      profundidade ÷ tan(sol): a parede faz a sombra que vende o "buraco escuro" do alvo.
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D ProfileTex;   // R = faixa, G = bordinha (fresca), B = frescor (1 agora → 0); já misturados pela cobertura
+Texture2D CraterTex;    // a altura das crateras da mesma janela (R16F, cm; 13/10)
+Texture2D InTex;
+SamplerState LinearSampler;
+RWTexture2D<float4> OutTex;
+
+int2 Origin;
+int2 Size;
+float2 Texel;           // 1 / resolução do caderno de relevo (o mesmo UV do caderno do perfil)
+float TexelCm;          // tamanho do texel de relevo no chão
+float RangeCm;
+float GrooveCm;         // o sulco fresco
+float BermCm;           // a bordinha fresca
+float BermWidthCm;      // a largura da bordinha fresca (cresce com a idade)
+float2 WorldMinCm;      // o canto do caderno no mundo (o ruído fica preso no chão quando o caderno anda)
+float2 SunDir;          // pra onde fica o sol, no chão (unitário)
+float SunTan;           // tangente da elevação do sol
+float PenumbraCm;       // a borda da sombra (o sol não é um ponto)
+
+float HashN(float2 P)
+{
+	P = frac(P * float2(0.1031, 0.1030));
+	P += dot(P, P.yx + 33.33);
+	return frac((P.x + P.y) * P.x);
+}
+
+float ValueNoise(float2 X)
+{
+	const float2 I = floor(X);
+	float2 F = frac(X);
+	F = F * F * (3.0 - 2.0 * F);
+	const float A = lerp(HashN(I), HashN(I + float2(1, 0)), F.x);
+	const float B = lerp(HashN(I + float2(0, 1)), HashN(I + float2(1, 1)), F.x);
+	return lerp(A, B, F.y);
+}
+
+[numthreads(8, 8, 1)]
+void HeightCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(Id.xy >= uint2(Size)))
+	{
+		return;
+	}
+	const int2 P = Origin + int2(Id.xy);
+	const float2 UV = (float2(P) + 0.5) * Texel;
+	const float4 C = ProfileTex.SampleLevel(LinearSampler, UV, 0);
+	const float Band = C.r;
+	const float Age = saturate(1.0 - C.b);
+	// a bordinha alarga com a idade (9 cm → 20 cm): o carimbo é o da fresca, então ela cresce por uma
+	// dilatação de 1,2 × idade × a largura, sem perder a altura do pico
+	const float R = Age * 1.2 * BermWidthCm / TexelCm;
+	float Wide = 0.0;
+	[unroll] for (int K = 0; K < 4; ++K)
+	{
+		const float2 D = float2(K == 0 ? 1 : (K == 1 ? -1 : 0), K == 2 ? 1 : (K == 3 ? -1 : 0));
+		Wide = max(Wide, ProfileTex.SampleLevel(LinearSampler, UV + D * Texel * R, 0).g);
+	}
+	const float Berm = max(C.g, 0.85 * Wide);
+	// a marca nunca é uniforme (areia mais firme ou mais solta): 2 oitavas a 1,6 por metro, presas no mundo
+	const float2 W = (WorldMinCm + (float2(P) + 0.5) * TexelCm) * 0.016;
+	const float N = (ValueNoise(W) * 0.667 + ValueNoise(W * 2.03 + 17.1) * 0.333);
+	const float H = (-GrooveCm * (1.0 - 0.45 * Age) * 0.75 * Band + BermCm * (1.0 - 0.3 * Age) * Berm) * (0.65 + 0.7 * N);
+	const float Churn = saturate(max(Band, 0.6 * Berm));
+	OutTex[P] = float4(saturate(0.5 + H / (2.0 * RangeCm)), Churn > 0.01 ? Age : 1.0, 1.0, Churn);
+}
+
+float CraterAt(float2 UV)
+{
+	return CraterTex.SampleLevel(LinearSampler, UV, 0).r;
+}
+
+float SunAt(float2 UV)
+{
+	const float C0 = CraterAt(UV);
+	const float H0 = (InTex.SampleLevel(LinearSampler, UV, 0).r - 0.5) * 2.0 * RangeCm + C0;
+	// o horizonte rumo ao sol, em meio texel com a altura interpolada, até 3,5 texels (~33 cm)
+	float Occ = 0.0;
+	[unroll] for (int K = 1; K <= 7; ++K)
+	{
+		const float S = K * 0.5;
+		const float2 UVk = UV + SunDir * Texel * S;
+		const float Hk = (InTex.SampleLevel(LinearSampler, UVk, 0).r - 0.5) * 2.0 * RangeCm + CraterAt(UVk);
+		Occ = max(Occ, (Hk - H0 - SunTan * TexelCm * S) / PenumbraCm);
+	}
+	// dentro da bacia: a parede rumo ao sol faz sombra longa (60 cm de fundo a 20° de sol = 1,6 m); só a
+	// altura da cratera conta tão longe, com a penumbra mais larga (a sombra da parede é macia)
+	if (C0 < -1.0)
+	{
+		const float Reach = min(-C0 / max(SunTan, 0.05) / TexelCm + 1.0, 40.0);
+		for (int K = 8; K <= 80; ++K)
+		{
+			const float S = K * 0.5;
+			if (S > Reach)
+			{
+				break;
+			}
+			const float Hk = CraterAt(UV + SunDir * Texel * S);
+			Occ = max(Occ, (Hk - C0 - SunTan * TexelCm * S) / max(PenumbraCm, 2.0));
+		}
+	}
+	return 1.0 - saturate(Occ);
+}
+
+[numthreads(8, 8, 1)]
+void SunCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(Id.xy >= uint2(Size)))
+	{
+		return;
+	}
+	const int2 P = Origin + int2(Id.xy);
+	const float2 UV = (float2(P) + 0.5) * Texel;
+	const float4 C = InTex.SampleLevel(LinearSampler, UV, 0);
+	// a média de 5 pontos a meio texel: a sombra macia, sem degrau de texel (o Look borra duas vezes)
+	const float2 E = Texel * 0.5;
+	const float Sun = (SunAt(UV) * 2.0 + SunAt(UV + float2(E.x, 0)) + SunAt(UV - float2(E.x, 0)) + SunAt(UV + float2(0, E.y)) + SunAt(UV - float2(0, E.y))) / 6.0;
+	OutTex[P] = float4(C.r, C.g, Sun, C.a);
+}

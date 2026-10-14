@@ -28,6 +28,17 @@
 				]
 			],
 			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestSalt2.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestSalt2.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestSalt2.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestSalt2.map.json",
+			"look_recipe": "desert_golden_dust",
 			"skirmish_gap_m": 520,
 			"obstacle_meshes": [
 				"boulder",

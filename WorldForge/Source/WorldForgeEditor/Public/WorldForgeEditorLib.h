@@ -7,8 +7,10 @@ class ALandscape;
 class ULandscapeLayerInfoObject;
 class UMaterial;
 class UMaterialInterface;
+class UMaterialExpression;
 class USkeletalMesh;
 class UStaticMesh;
+class UTexture2D;
 
 /** Uma categoria de espalhamento na fatia (rochas grandes, seixos, tufos...). */
 USTRUCT(BlueprintType)
@@ -91,9 +93,61 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceRoadDistance(FVector2D PointCm);
 
+	/** A meia largura (cm) da estrada de asfalto mais perto de um ponto do nível (cm): a rua da vila alarga
+	 *  a principal (13/10), a pintura da borda acompanha. 0 sem estrada. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceRoadHalf(FVector2D PointCm);
+
+	/** Liga uma expressão no pino Displacement do material (o MP_Displacement é escondido no Python): o
+	 *  deslocamento Nanite da cratera do jogo (13/10, o Look e o jogo). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool ConnectMaterialDisplacement(UMaterialExpression* From, const FString& FromOutputName);
+
+	/** A grade do tipo de chão pro jogo (13/10, pedido do jogo: no empacotado a camada do Landscape some; a poeira
+	 *  não levanta areia do asfalto e a esteira não cava a rua): PNG RGBA de 8 bits, R = asfalto, G = terra batida
+	 *  (trilha, chão pisado da vila), B = rocha, A = 255; o mapa inteiro a CellM por pixel, a linha 0 no −Y. Devolve
+	 *  o JSON do lado (min_m, size_m, cell_m, res, canais); vazio se não deu. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString MakeSurfacePng(const FString& PngPath, float CellM);
+
+	/** A água por corpo (13/10, docs/WORLDFORGE.md §12.3, a P0): na pasta OutDir, a grade da simulação
+	 *  (grid.png a 4 m, R = seco/margem/vau/fundo/gelo, G = o id do corpo, e grid.json com os corpos e o
+	 *  hash FNV-1a 64) e o campo do material (water.exr a 1 m, RGBA16F: R = a distância com sinal até a
+	 *  margem, G = a profundidade, BA = a correnteza); e a textura T_Water em TextureAssetPath. Devolve um
+	 *  resumo pro log; vazio se não deu. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString MakeWaterExports(const FString& OutDir, const FString& TextureAssetPath, const FString& MapName);
+
+	/** A água só onde existe água (13/10, docs/WORLDFORGE.md §12.3, a P1): uma malha estática por corpo
+	 *  (AssetDir/SM_Water_<mapa>_<id>, grade de 2 m; o mar a 4 m e com a saia até o horizonte), na cota do
+	 *  corpo, com o material e o Custom Primitive Data do Look (0 = cota em m, 1 = tipo, 2 = turbidez,
+	 *  3 = escala da espuma). Devolve os caminhos das malhas (pro Python salvar); vazio se não há corpo. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static TArray<FString> SpawnWaterBodies(UMaterialInterface* Material, const FString& AssetDir, const FString& MapName);
+
 	/** Metros até a ponta mais perto do asfalto (onde ele se desfaz), num ponto perto dele (cm). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceRoadEndDistance(FVector2D PointCm);
+
+	/** A vila do mapa montado (o JSON que o jogo lê: uma linha por peça; vazio sem vila). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString SliceVillageJson(const FString& MapName);
+
+	/** A impressão digital da vila (hex; vazio sem vila): a etiqueta do ator WorldForgeVillage no mapa. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString SliceVillageHash();
+
+	/** O vento do mapa montado (graus, pra onde sopra): a etiqueta wind_yaw: e o map.json da exportação. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceWindYaw();
+
+	/** Os monólitos do kit de malhas no mapa montado: o nome da malha e o lugar (cm, girado, na escala). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static void SliceMonoliths(TArray<FString>& OutMeshes, TArray<FTransform>& OutTransforms);
+
+	/** A velocidade do vento do mapa montado (m/s). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static float SliceWindSpeed();
 
 	/** Pontos das estradas de terra no recorte (cm, no chão), pra marcas de pneu; (0,0,−1e9) separa os trechos. */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
@@ -153,13 +207,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static bool AddOcclusionFadeToMaterial(UMaterial* Material, class UMaterialParameterCollection* Collection);
 
+	/** O mesmo recorte num material comum sem máscara (as palmeiras): liga a máscara de opacidade e o modo "masked". */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool AddOcclusionFadeToOpacityMask(UMaterial* Material, class UMaterialParameterCollection* Collection);
+
 	/** Dá nome à camada de um LandscapeLayerInfoObject (a propriedade é só leitura no Python). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static void SetLayerInfoName(ULandscapeLayerInfoObject* LayerInfo, FName LayerName);
 
-	/** Liga o Nanite numa malha importada e reconstrói (o subsistema de malha do editor não existe no commandlet). */
+	/** Liga o Nanite numa malha importada e reconstrói (o subsistema de malha do editor não existe no commandlet).
+	 *  bFoliage: preservar a área (a técnica de folhagem do Nanite): sem ela, folha
+	 *  fina em fita some ao simplificar de longe (as palmeiras viravam palito na
+	 *  vista do app, 07/10). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
-	static bool EnableNanite(UStaticMesh* Mesh);
+	static bool EnableNanite(UStaticMesh* Mesh, bool bFoliage = false);
 
 	/** Altura do chão no recorte (cm) num ponto do nível (cm). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
@@ -176,4 +237,47 @@ public:
 	/** Cota d'água do mapa gerado (cm, no nível); muito negativa se o mapa não tem água. */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static float SliceWaterLevel();
+
+	/** O mapa gerado tem borda de mar (costa ou ilha): a água segue até o horizonte. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool SliceHasSea();
+
+	/**
+	 * Textura da água do recorte (RGBA8 sem compressão, 1 texel = 2 m, cobrindo
+	 * SizeM metros centrados no recorte): R = distância com sinal até a linha
+	 * d'água (0,5 + d/64; d > 0 na água, < 0 na terra, ±32 m), G = profundidade
+	 * (m/50). A espuma da água e a areia molhada do chão leem dela. Fora do mapa
+	 * gerado conta como mar fundo se o mapa tem borda de mar, terra se não.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static UTexture2D* MakeWaterInfoTexture(const FString& AssetPath, float SizeM);
+
+	/** A direção da pista de asfalto (o asfalto do Look: as faixas de pneu ao longo dela), na grade da
+	 *  textura de informação (FWorldDetail::RoadDirPixels). Sem mapa, 16×16 de θ = 0. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static UTexture2D* MakeRoadDirTexture(const FString& AssetPath, float SizeM);
+
+	/** Esquece o mapa gerado do recorte anterior (antes de montar outro). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static void ResetSliceMap();
+
+	/** Depuração: gera o mapa dos controles carregados (LoadWorldSettings), sem
+	 *  montar nada, e grava em Folder imagens de 1 m por pixel do mapa inteiro:
+	 *  relevo sombreado, bacias, leitos secos, pesos das camadas do chão. Pra
+	 *  saber o que é cada coisa vista nas fotos. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static bool DebugSliceMaps(const FString& Folder);
+
+	/** Depuração: os pontos sorteados (m) de um tipo do espalhamento no mapa em
+	 *  curso (depois de DebugSliceMaps), já sem os apagados à mão. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static TArray<FVector2D> SliceCandidates(FName Kind, float SpacingM);
+
+	/** Liga o Nanite do Landscape e monta a malha (chamar depois do material final). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static void BuildLandscapeNanite(ALandscape* Landscape);
+
+	/** Troca o material do Landscape (a instância com a textura da água deste mapa). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static void SetLandscapeMaterial(ALandscape* Landscape, UMaterialInterface* Material);
 };

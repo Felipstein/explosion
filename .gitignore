@@ -1,5 +1,7 @@
 # capturas de inspeção (prints de teste, regeneráveis)
 captures/
+# Backup privado dos históricos do Claude; manter somente neste computador.
+resgate-claude-*/
 .DS_Store
 __pycache__/
 reference/webgl/tools/.purkinje-data/
@@ -43,6 +45,16 @@ WorldForge/Content/Maps/Slice_*.umap
 WorldForge/Content/Maps/World_*.umap
 WorldForge/Content/Maps/Worlds/
 
+# FXLab (Unreal): o laboratório de explosões. Tudo do Content/ é refeito por
+# FXLab/Tools/fxlab.ps1 setup (cozimento de captures/, tanque e areia de fora do git)
+FXLab/Binaries/
+FXLab/Intermediate/
+FXLab/Saved/
+FXLab/DerivedDataCache/
+FXLab/Content/
+FXLab/.vs/
+FXLab/*.sln
+
 # Game (Unreal): o jogo. O que a engine regenera, e o que vem por link físico do
 # WorldForge (mapa do deserto e fatias) e do BlastLab (tanque) — refeitos por
 # Game/Tools/game.ps1 worlds. Os testes da simulação compilam em Intermediate/SimTests.
@@ -59,18 +71,23 @@ Game/Content/Units/
 Game/Content/Explosions/
 Game/Content/Materials/M_FireGlare.uasset
 Game/Content/Materials/M_FlashStar.uasset
+# os destroços da morte de tanque (chapas, cometas, rastros) e a sombra da explosão: links físicos do BlastLab, 14/10
+Game/Content/Materials/M_Base.uasset
+Game/Content/Materials/M_DebrisGlow.uasset
+Game/Content/Materials/M_TrailSmoke.uasset
+Game/Content/Materials/M_SmokeShadowLF.uasset
+# Os modelos provisórios da base (prédios, Dozer, caminhão): refeitos por Game/Tools/game.ps1 models
+Game/Content/Structures/
 # A maquete do look (sessão de gráficos): tudo refeito por Game/Tools/look.ps1 build
 Game/Content/LookLab/
 # Os plugins do jogo: o que a engine regenera
 Game/Plugins/*/Binaries/
 Game/Plugins/*/Intermediate/
-
-# FXLab (Unreal): o laboratório de explosões. Tudo do Content/ é refeito por
-# FXLab/Tools/fxlab.ps1 setup (cozimento de captures/, tanque e areia de fora do git)
-FXLab/Binaries/
-FXLab/Intermediate/
-FXLab/Saved/
-FXLab/DerivedDataCache/
-FXLab/Content/
-FXLab/.vs/
-FXLab/*.sln
+# Os plugins do FXLab: o que a engine regenera (14/10)
+FXLab/Plugins/*/Binaries/
+FXLab/Plugins/*/Intermediate/
+# A ordem de arquivos do cozimento (refeita a cada game.ps1 package)
+Game/Build/Windows/FileOpenOrder/
+# O fogo da carcaça em volume esparso (312 MB): passa do limite de 100 MB do GitHub; refeito pelo BlastLab a partir
+# da simulação do EmberGen (14/10). Se precisar guardar, vai por Git LFS.
+BlastLab/Content/Explosions/SVT_WreckFireLoop.uasset

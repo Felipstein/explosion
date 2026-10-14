@@ -99,14 +99,43 @@ bool FFXBakeMeta::Load(const FString& Path)
 	Frames = J->GetIntegerField(TEXT("frames"));
 	FireEnd = J->GetIntegerField(TEXT("fire_end"));
 	SideM = J->GetNumberField(TEXT("side_m"));
-	const TArray<TSharedPtr<FJsonValue>>& Times = J->GetArrayField(TEXT("times_s"));
-	LastTime = Times.Num() ? Times.Last()->AsNumber() : 1.0;
+	const TArray<TSharedPtr<FJsonValue>>& TimesJ = J->GetArrayField(TEXT("times_s"));
+	LastTime = TimesJ.Num() ? TimesJ.Last()->AsNumber() : 1.0;
+	Times.Reset();
+	for (const TSharedPtr<FJsonValue>& V : TimesJ)
+	{
+		Times.Add(V->AsNumber());
+	}
 	const TArray<TSharedPtr<FJsonValue>>& Pv = J->GetArrayField(TEXT("pivot"));
 	Pivot = FVector2D(Pv[0]->AsNumber(), Pv[1]->AsNumber());
 	BallBottom.Reset();
 	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("ball_bottom")))
 	{
 		BallBottom.Add(V->AsNumber());
+	}
+	BBox.Reset();
+	const TArray<TSharedPtr<FJsonValue>>* Bb = nullptr;
+	if (J->TryGetArrayField(TEXT("bbox"), Bb) && Bb)
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Bb)
+		{
+			const TArray<TSharedPtr<FJsonValue>>& Q = V->AsArray();
+			BBox.Add(Q.Num() == 4 ? FVector4(Q[0]->AsNumber(), Q[1]->AsNumber(), Q[2]->AsNumber(), Q[3]->AsNumber()) : FVector4(0, 0, 1, 1));
+		}
+	}
+	Cut8.Reset();
+	const TArray<TSharedPtr<FJsonValue>>* Ct = nullptr;
+	if (J->TryGetArrayField(TEXT("cut8"), Ct) && Ct)
+	{
+		for (const TSharedPtr<FJsonValue>& V : *Ct)
+		{
+			const TArray<TSharedPtr<FJsonValue>>& Q = V->AsArray();
+			TArray<FVector2D>& Poly = Cut8.AddDefaulted_GetRef();
+			for (int32 I = 0; I + 1 < Q.Num(); I += 2)
+			{
+				Poly.Add(FVector2D(Q[I]->AsNumber(), Q[I + 1]->AsNumber()));
+			}
+		}
 	}
 	SimFrames.Reset();
 	for (const TSharedPtr<FJsonValue>& V : J->GetArrayField(TEXT("sim_frames")))

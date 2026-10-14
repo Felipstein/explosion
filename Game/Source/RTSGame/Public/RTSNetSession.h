@@ -7,8 +7,9 @@
 //   pacote de cada passo (com os ainda não confirmados, contra a perda), com a impressão
 //   digital do estado: uma dessincronia aparece na hora.
 // - Vive o jogo inteiro (UGameInstanceSubsystem): a sala no menu e a partida no mapa.
-// Primeira versão (10/10): até 8 vagas na sala, testada em 1 × 1; sem pausa em rede,
-// reconexão nem observador (Partes 4–5 do plano).
+// Primeira versão (10/10): até 8 vagas na sala, testada em 1 × 1. Em 13/10 (N5 do plano): a pausa, render-se e a
+// queda de quem some (o ZH: aviso aos 5 s, cai aos 60 s ou quando todos os outros votam). Sem reconexão nem
+// observador ainda (N6 e N7).
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
@@ -172,6 +173,35 @@ public:
 	/** A partida acabou: a sala continua até sair. */
 	void SetEnded() { Phase = ERTSNetPhase::Ended; }
 
+	// ---------------------------------------------------------------- a pausa e a queda (N5, 13/10)
+	/** A pausa da partida em rede: o anfitrião decide e todos vêem o mesmo. Parado, ninguém passa do mesmo passo,
+	 *  porque o anfitrião (o relógio) não fecha passo novo. */
+	struct FPauseState
+	{
+		bool bPaused = false;
+		/** Quem pausou (255 = a espera por quem sumiu). */
+		uint8 BySlot = 255;
+		/** A contagem pra voltar (s; < 0 = sem contagem). */
+		float ResumeIn = -1.0f;
+		/** A vaga sem notícia há 5 s ou mais (255 = ninguém) e quanto falta pra ela cair (s). */
+		uint8 WaitingFor = 255;
+		float WaitLeft = 0.0f;
+		/** Os votos pra derrubar quem sumiu (um bit por vaga) e quantos precisa (todos os outros). */
+		uint8 Votes = 0;
+		uint8 VotesNeeded = 0;
+		/** As vagas que caíram (um bit por vaga). */
+		uint8 Dropped = 0;
+	};
+	const FPauseState& GetPause() const { return Pause; }
+	bool IsNetPaused() const { return Pause.bPaused; }
+	/** Cliente: o anfitrião sem notícia há 5 s ou mais (o jogo dele engasgou ou caiu): a partida espera até 60 s. */
+	float HostSilentSeconds() const;
+	/** Qualquer jogador pausa; qualquer um retoma (uma contagem de 3 s); na LAN, sem limite de pausas. */
+	void RequestPause();
+	void RequestResume();
+	/** O voto pra derrubar quem sumiu (a vaga que a partida espera). */
+	void VoteDrop(uint8 Slot);
+
 private:
 	struct FPeer
 	{
@@ -190,6 +220,8 @@ private:
 		uint8 Color = 0;
 		uint8 Team = 0;
 		bool bInLobby = true;
+		/** Caiu da partida (sumiu 60 s, votado, ou saiu): o anfitrião mandou o render-se por ele. */
+		bool bDropped = false;
 	};
 
 	void Pump();
@@ -205,6 +237,11 @@ private:
 	void ResetMatchData();
 	uint8 FirstFreeColor(uint8 From, uint8 Except) const;
 	void CompareHash(int64 T, uint64 Remote);
+	/** Anfitrião: um pedido de pausa (1), volta (2) ou voto (3, Arg = a vaga) da vaga Slot. */
+	void HostControl(uint8 Slot, uint8 Kind, uint8 Arg);
+	void UpdatePauseHost(float DeltaTime);
+	void DropPeer(FPeer& P, const TCHAR* Why);
+	void SendPause();
 	FPeer* FindPeer(const FInternetAddr& From);
 	uint64 VersionHash() const;
 	void CloseSockets();
@@ -271,4 +308,9 @@ private:
 	uint64 LastLocalHash = 0;
 	int64 DesyncTick = -1;
 	int64 Matched = 0;
+
+	FPauseState Pause;
+	bool bPauseDirty = false;
+	double LastPauseSend = 0.0;
+	double WaitStart = 0.0;
 };

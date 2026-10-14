@@ -11,6 +11,10 @@
 	],
 	"Plugins": [
 		{ "Name": "PythonScriptPlugin", "Enabled": true },
-		{ "Name": "EditorScriptingUtilities", "Enabled": true }
+		{ "Name": "EditorScriptingUtilities", "Enabled": true },
+		{ "Name": "MovieRenderPipeline", "Enabled": true },
+		{ "Name": "RTSLook", "Enabled": true },
+		{ "Name": "RTSHud", "Enabled": true },
+		{ "Name": "RTSTreadDust", "Enabled": true }
 	]
 }

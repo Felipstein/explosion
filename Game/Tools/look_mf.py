@@ -47,16 +47,24 @@ float wMc = inM * (1.0 - wD);
 float wc = wD + wMc;
 if (wc <= 0.001) { Nout = nT; Rout = rough; return bc; }
 float wn = max(w, 1e-4);
-float tD = Texel, tM = Texel;
+// (13/10 à noite, as lagartas que viravam "arame": 2ª opinião) os cadernos não têm mip: o passo da diferença finita é
+// max(1 texel, o pixel no chão) e o B, a tinta e a máscara são a média de 4 amostras na área do pixel (o que o mip fazia
+// na maquete). Sem isso a bordinha de 9 cm vira um degrau de 1–2 px preto (o "fio").
+float tD = max(Texel, fw / max(DB.z, 1.0)), tM = max(Texel, fw / max(MB.z, 1.0));
 float cmD = DB.z * Texel, cmM = MB.z * Texel;                    // cm por texel
-float4 Rd = Relief.Sample(ReliefSampler, uvD);
-float4 Rm = ReliefMid.Sample(ReliefMidSampler, uvM);
+float aD = 0.35 * tD, aM = 0.35 * tM;
+float4 Rd = 0.25 * (Relief.Sample(ReliefSampler, uvD + float2(aD, aD)) + Relief.Sample(ReliefSampler, uvD + float2(-aD, aD))
+                  + Relief.Sample(ReliefSampler, uvD + float2(aD, -aD)) + Relief.Sample(ReliefSampler, uvD + float2(-aD, -aD)));
+float4 Rm = 0.25 * (ReliefMid.Sample(ReliefMidSampler, uvM + float2(aM, aM)) + ReliefMid.Sample(ReliefMidSampler, uvM + float2(-aM, aM))
+                  + ReliefMid.Sample(ReliefMidSampler, uvM + float2(aM, -aM)) + ReliefMid.Sample(ReliefMidSampler, uvM + float2(-aM, -aM)));
 float4 Rr = (Rd * wD + Rm * wMc) / wc;
+float h = (Rr.r - 0.5) * 2.0 * Range;                            // a altura média no pixel, cm (o sulco < 0, a bordinha > 0)
+float band = saturate(-h / 1.2);                                 // o miolo da faixa (o sulco), sem a bordinha
 // a normal da altura (diferença finita no caderno de cada nível)
-float hxD = (Relief.Sample(ReliefSampler, uvD + float2(tD, 0)).r - Relief.Sample(ReliefSampler, uvD - float2(tD, 0)).r) * 2.0 * Range / (2.0 * cmD);
-float hyD = (Relief.Sample(ReliefSampler, uvD + float2(0, tD)).r - Relief.Sample(ReliefSampler, uvD - float2(0, tD)).r) * 2.0 * Range / (2.0 * cmD);
-float hxM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(tM, 0)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(tM, 0)).r) * 2.0 * Range / (2.0 * cmM);
-float hyM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(0, tM)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(0, tM)).r) * 2.0 * Range / (2.0 * cmM);
+float hxD = (Relief.Sample(ReliefSampler, uvD + float2(tD, 0)).r - Relief.Sample(ReliefSampler, uvD - float2(tD, 0)).r) * 2.0 * Range / (2.0 * tD * DB.z);
+float hyD = (Relief.Sample(ReliefSampler, uvD + float2(0, tD)).r - Relief.Sample(ReliefSampler, uvD - float2(0, tD)).r) * 2.0 * Range / (2.0 * tD * DB.z);
+float hxM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(tM, 0)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(tM, 0)).r) * 2.0 * Range / (2.0 * tM * MB.z);
+float hyM = (ReliefMid.Sample(ReliefMidSampler, uvM + float2(0, tM)).r - ReliefMid.Sample(ReliefMidSampler, uvM - float2(0, tM)).r) * 2.0 * Range / (2.0 * tM * MB.z);
 float2 g = (float2(hxD, hyD) * wD + float2(hxM, hyM) * wM) / wn;
 // a garra fina da esteira (o caderno de 4,7 cm, R = a fita com as garras): ~0,5 cm de relevo, só no detalhe
 float tT = Texel * 0.5;
@@ -65,19 +73,25 @@ float gy = (Track.Sample(TrackSampler, uvD + float2(0, tT)).r - Track.Sample(Tra
 // (13/10, combinado com o jogo) o relevo do caderno leva só a base do sulco; a garra é daqui: +45% do sulco de 2,2 cm
 // a partir do R do GroundTrack (4,7 cm, a garra só no miolo da fita), sumindo com a idade
 float grouserCm = 2.2 * 0.45 * (1.0 - 0.8 * Rr.g);
-g += float2(gx, gy) * (-grouserCm) / (2.0 * cmD * 0.5) * wD;
+float fadeG = 1.0 - smoothstep(5.7, 8.5, fw);                  // a listra da garra até a Nyquist; depois some (média)
+g += float2(gx, gy) * (-grouserCm) / (2.0 * cmD * 0.5) * wD * saturate((-h - 0.6) / 1.0) * fadeG;
 // a cratera e o queimado (13/10, o alvo street_battle_usa_china_gemini; o formato final do jogo): a altura numa textura
 // própria em cm (GroundCrater/GroundCraterMid, R16F), e o GroundTrack G = o escuro (o halo revirado, a fuligem, o
 // combustível), B = o calor (a brasa), A = o claro (os torrões, a borda, os raios de areia)
-float hc = 0.0, ej = 0.0, dark = 0.0, heat = 0.0;
+float hc = 0.0, ej = 0.0, dark = 0.0, heat = 0.0, hideW = 0.0;
 if (UseCrater > 0.5) {
     float hcD = Crater.Sample(CraterSampler, uvD).r, hcM = CraterMid.Sample(CraterMidSampler, uvM).r;
     hc = (hcD * wD + hcM * wMc) / wc;
-    float cxD = (Crater.Sample(CraterSampler, uvD + float2(tD, 0)).r - Crater.Sample(CraterSampler, uvD - float2(tD, 0)).r) / (2.0 * cmD);
-    float cyD = (Crater.Sample(CraterSampler, uvD + float2(0, tD)).r - Crater.Sample(CraterSampler, uvD - float2(0, tD)).r) / (2.0 * cmD);
-    float cxM = (CraterMid.Sample(CraterMidSampler, uvM + float2(tM, 0)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(tM, 0)).r) / (2.0 * cmM);
-    float cyM = (CraterMid.Sample(CraterMidSampler, uvM + float2(0, tM)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(0, tM)).r) / (2.0 * cmM);
-    g += (float2(cxD, cyD) * wD + float2(cxM, cyM) * wM) / wn;
+    float cxD = (Crater.Sample(CraterSampler, uvD + float2(tD, 0)).r - Crater.Sample(CraterSampler, uvD - float2(tD, 0)).r) / (2.0 * tD * DB.z);
+    float cyD = (Crater.Sample(CraterSampler, uvD + float2(0, tD)).r - Crater.Sample(CraterSampler, uvD - float2(0, tD)).r) / (2.0 * tD * DB.z);
+    float cxM = (CraterMid.Sample(CraterMidSampler, uvM + float2(tM, 0)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(tM, 0)).r) / (2.0 * tM * MB.z);
+    float cyM = (CraterMid.Sample(CraterMidSampler, uvM + float2(0, tM)).r - CraterMid.Sample(CraterMidSampler, uvM - float2(0, tM)).r) / (2.0 * tM * MB.z);
+    float2 gC = (float2(cxD, cyD) * wD + float2(cxM, cyM) * wM) / wn;
+    // (14/10) sem relevo de verdade, a parede de dentro virada pro sol (a de perto da câmera) aparecia inteira e acesa: numa
+    // cratera real a borda a esconde da câmera baixa. Onde a normal da cratera foge da câmera, achata e vira fundo da bacia
+    float facing = dot(normalize(float3(-gC.x, -gC.y, 1.0)), Parameters.CameraVector);
+    hideW = 1.0 - smoothstep(0.05, 0.2, facing);
+    g += gC * (1.0 - hideW);
     // o escuro, o calor e o claro: o caderno de detalhe perto e o do meio (GroundTrackMid, 19 cm) na câmera do jogo
     float4 Tk = (Track.Sample(TrackSampler, uvD) * wD + TrackMid.Sample(TrackMidSampler, uvM) * wMc) / wc;
     // (13/10, a cratera v2, combinado com o jogo) MarkRamps = 1: o G e o A vêm em rampa de distância (< 0,5 fora; dentro,
@@ -87,7 +101,7 @@ if (UseCrater > 0.5) {
         float covG = saturate((Tk.g - 0.5) / max(fwidth(Tk.g), 1e-4) + 0.5);
         float covA = saturate((Tk.a - 0.5) / max(fwidth(Tk.a), 1e-4) + 0.5);
         dark = covG * saturate((Tk.g - 0.5) * 2.0) * wc;
-        ej = covA * saturate((Tk.a - 0.5) * 2.0) * wc;
+        ej = covA * smoothstep(0.6, 0.8, saturate((Tk.a - 0.5) * 2.0)) * wc;   // (14/10) só os torrões: o claro largo virava mancha branca
     } else {
         dark = Tk.g * wc; ej = Tk.a * wc;
     }
@@ -97,11 +111,13 @@ float k = w;                                                     // some no long
 nT = normalize(nT + float3(-g.x, -g.y, 0.0) * k);
 // a luz e a areia mexida
 float age = Rr.g, stir = Rr.a, vis = Rr.b;
-bc *= lerp(1.0, vis, 0.85 * k);
+float wall = smoothstep(0.08, 0.2, length(g));                  // a parede do sulco/bordinha: o N·L já escurece
+bc *= lerp(1.0, vis, 0.85 * k * (1.0 - wall));
 if (UseCrater > 0.5) {
     // cada chão quebra de um jeito (13/10, a cratera v2; Surf = o peso da camada de asfalto do WorldForge, 0 = areia/terra):
     // a areia escorre e o claro é areia; o asfalto quebra em placas pretas e o fundo mostra a base de terra e brita
     float surf = saturate(Surf);
+    float3 bc0 = bc;                                                              // a areia antes da bacia e do escuro
     // o fundo da bacia (medido na street_battle: o miolo ~0,09 de brilho na tela contra ~0,46 do chão; o mf15 dava 0,23):
     // na areia, terra revirada e úmida bem mais escura; no asfalto, a base de terra e brita à mostra
     float bowl = saturate(-hc / 25.0);
@@ -111,18 +127,29 @@ if (UseCrater > 0.5) {
     // o escuro: na areia, terra revirada e fuligem, marrom-carvão e nunca preto chapado (medido 13/10: ~0,15–0,2× em albedo);
     // no asfalto, o asfalto quebrado e queimado, quase preto
     float3 darkC = lerp(lerp(bc, lum.xxx, 0.5) * 0.14, float3(0.03, 0.028, 0.026), surf);
-    bc = lerp(bc, darkC, dark * 0.95);
+    // (14/10) o manto mosqueado no mundo (o do atlas não chega à câmera do jogo: lá só vale o caderno do meio, 19 cm)
+    float2 q1 = p / 60.0, q2 = p / 120.0 + 17.3;
+    float2 i1 = floor(q1), f1 = frac(q1); f1 = f1 * f1 * (3.0 - 2.0 * f1);
+    float2 i2 = floor(q2), f2 = frac(q2); f2 = f2 * f2 * (3.0 - 2.0 * f2);
+    float n1 = lerp(lerp(frac(sin(dot(i1, float2(127.1, 311.7))) * 43758.5453), frac(sin(dot(i1 + float2(1, 0), float2(127.1, 311.7))) * 43758.5453), f1.x),
+                    lerp(frac(sin(dot(i1 + float2(0, 1), float2(127.1, 311.7))) * 43758.5453), frac(sin(dot(i1 + float2(1, 1), float2(127.1, 311.7))) * 43758.5453), f1.x), f1.y);
+    float n2 = lerp(lerp(frac(sin(dot(i2, float2(127.1, 311.7))) * 43758.5453), frac(sin(dot(i2 + float2(1, 0), float2(127.1, 311.7))) * 43758.5453), f2.x),
+                    lerp(frac(sin(dot(i2 + float2(0, 1), float2(127.1, 311.7))) * 43758.5453), frac(sin(dot(i2 + float2(1, 1), float2(127.1, 311.7))) * 43758.5453), f2.x), f2.y);
+    float mott = 0.6 * n1 + 0.4 * n2;
+    bc = lerp(bc, darkC, dark * 0.95 * (0.55 + 0.45 * mott));
+    // a parede escondida vira o fundo da bacia
+    bc = lerp(bc, lerp(bc0 * float3(0.5, 0.45, 0.4), float3(0.17, 0.15, 0.12), surf), hideW * saturate(-hc / 8.0));
     // o claro: os torrões e a areia jogada por cima (o +13% de antes lia dois tons, não três): um albedo-alvo, areia clara
     // de baixo na areia e cascalho cinza no asfalto
-    float3 lightC = lerp(min(max(bc * 1.35, float3(0.55, 0.46, 0.33)), 0.8), float3(0.40, 0.38, 0.35), surf);
+    // (14/10) o claro = a areia de entrada ×1,15 (o piso fixo 0,55/0,46/0,33 tinha B/R 0,6 contra 0,2 da areia: saía cinza-branco)
+    float3 lightC = lerp(bc0 * 1.15, float3(0.40, 0.38, 0.35), surf);
     bc = lerp(bc, lightC, ej * 0.9);
     rough = lerp(rough, 0.95, ej * 0.5);
     Emi = float3(1.0, 0.35, 0.08) * heat * heat * HeatNits;                        // a brasa (some em ~30 s, quem apaga é o jogo)
 }
-float fresh = stir * (1.0 - age) * wc;
+float fresh = band * (1.0 - age) * wc;
 bc *= lerp(float3(1.0, 1.0, 1.0), float3(0.84, 0.8, 0.76), fresh * 0.8);   // revolvida fresca: mais escura e quente; seca com a idade
-float h = (Rr.r - 0.5) * 2.0 * Range;
-rough = lerp(rough, rough * 0.85, saturate(-h / 2.0) * k);                   // o fundo do sulco compactado, mais liso
+rough = lerp(rough, rough * 0.85, saturate(-h / 2.0) * wD);                  // o fundo compactado mais liso, só de perto
 Mask = saturate(fresh + saturate(-hc / 3.0) + ej + dark * 0.5);                            // a ondulação some na esteira fresca e na cratera
 Nout = nT; Rout = rough;
 return bc;

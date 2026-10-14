@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GameFramework/Pawn.h"
+#include "LookCamera.h"
 #include "ForgeCameraPawn.generated.h"
 
 class UCameraComponent;
@@ -9,7 +10,7 @@ class AWorldForgeTerrain;
 /**
  * Câmera de RTS: olha um ponto do chão de cima, num ângulo fixo, e anda por
  * cima do terreno.
- *   WASD / setas / mouse na borda da tela: anda
+ *   WASD / setas: anda (a borda da tela não desliza: pedido do Felipe, 12/10)
  *   botão direito arrastando: rola o mapa como no C&C Generals (anda na
  *   direção do mouse, mais rápido quanto mais longe do ponto onde apertou)
  *   botão do meio arrastando, Q / E: gira e inclina (até a horizontal)
@@ -17,12 +18,17 @@ class AWorldForgeTerrain;
  *   Home: volta pra vista do mapa inteiro
  */
 UCLASS()
-class WORLDFORGE_API AForgeCameraPawn : public APawn
+class WORLDFORGE_API AForgeCameraPawn : public APawn, public ILookCamera
 {
 	GENERATED_BODY()
 
 public:
 	AForgeCameraPawn();
+
+	// a câmera que a luz do Look lê na versão final (névoa pela distância do foco, o sol pelo giro)
+	virtual FVector GetLookFocusPoint() const override { return FVector(Focus.X * 100.0, Focus.Y * 100.0, FocusZ * 100.0); }
+	virtual float GetLookFocusDistance() const override { return Distance * 100.0f; }
+	virtual float GetLookYaw() const override { return Yaw; }
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -35,6 +41,7 @@ public:
 	/** As árvores perto do cursor trocadas pela cópia sem voxels (ForgeTreeFade.h). */
 	UPROPERTY(Transient)
 	TObjectPtr<class UForgeTreeFade> TreeFade;
+	int32 SeenSceneVersion = -1;
 
 	/** Enquadra o mapa inteiro (chamado a cada mapa novo). */
 	void FrameWholeMap(bool bInstant);
@@ -68,7 +75,9 @@ public:
 	/** O painel diz se o mouse está em cima dele (aí o zoom e os cliques são dele). */
 	TFunction<bool()> IsOverUI;
 	/** Andar com o mouse na borda da tela (o teste automático desliga). */
-	bool EdgePan = true;
+	// (desligado: o Felipe, 12/10: a câmera anda só pelo botão do mouse e pelo teclado; a borda da tela
+	// deslizava o mapa sem querer ao ir pro painel)
+	bool EdgePan = false;
 	/** Câmera presa: ignora mouse e teclado (as fotos automáticas, com alguém usando o PC). */
 	bool bLocked = false;
 

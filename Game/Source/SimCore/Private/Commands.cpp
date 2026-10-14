@@ -20,6 +20,7 @@ namespace Sim
 		case CommandType::AttackMove:
 			W.I64(C.Point.X.Raw);
 			W.I64(C.Point.Y.Raw);
+			W.U32(uint32_t(C.Value));
 			break;
 		case CommandType::Attack:
 			W.U32(C.Target);
@@ -50,6 +51,15 @@ namespace Sim
 			break;
 		case CommandType::Gather:
 			W.U32(uint32_t(C.Value));
+			break;
+		case CommandType::AttackGround:
+			W.I64(C.Point.X.Raw);
+			W.I64(C.Point.Y.Raw);
+			break;
+		case CommandType::ForceAttack:
+			W.U32(C.Target);
+			break;
+		case CommandType::Resign:
 			break;
 		}
 	}
@@ -88,10 +98,19 @@ namespace Sim
 		}
 		case CommandType::Move:
 		case CommandType::AttackMove:
-			return R.I64(Out.Point.X.Raw) && R.I64(Out.Point.Y.Raw);
+		{
+			uint32_t V = 0;
+			if (!R.I64(Out.Point.X.Raw) || !R.I64(Out.Point.Y.Raw) || !R.U32(V) || (V & 0xFF00u) != 0)
+			{
+				return false;   // os bits 8..15 são reservados
+			}
+			Out.Value = int32_t(V);
+			return true;
+		}
 		case CommandType::Attack:
 			return R.U32(Out.Target);
 		case CommandType::Stop:
+		case CommandType::Resign:
 			return true;
 		case CommandType::SetFog:
 		{
@@ -138,6 +157,10 @@ namespace Sim
 			Out.Value = int32_t(V);
 			return true;
 		}
+		case CommandType::AttackGround:
+			return R.I64(Out.Point.X.Raw) && R.I64(Out.Point.Y.Raw);
+		case CommandType::ForceAttack:
+			return R.U32(Out.Target);
 		}
 		return false;   // tipo desconhecido
 	}

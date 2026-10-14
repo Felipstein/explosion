@@ -10,7 +10,7 @@
           --blue: #4d8fe0; --red: #e0443a; --amber: #f0a020; --green: #39c45a; --gold: #d9a93a; }
   html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
   body { font-family: 'Segoe UI', sans-serif; color: var(--txt); position: relative; }
-  #world { position: absolute; inset: 0; background: url(../../scenes/desert_golden_hour/best/day_game_cam.webp) center/cover; }
+  #world { position: absolute; inset: 0; background: url(../../scenes/desert_golden_hour/best/town_battle_top_gemini.webp) center/cover; }
   .p { position: absolute; box-sizing: border-box; background: var(--panel); border: 2px solid var(--line); border-radius: 6px; }
   .c { font-family: Bahnschrift, 'Segoe UI', sans-serif; }
   .k { position: absolute; left: 4px; top: 2px; font: 700 15px Bahnschrift, sans-serif; color: #ffd76a; z-index: 2; }
@@ -195,6 +195,8 @@ tag('', 92, pwY + 42, 'sumindo como no C&C + o tempo; pronto = READY');
 name(92, pwY + 10, 'Coluna de poderes', 'PowersColumn');
 
 // ---------- embaixo, esquerda: minimapa em losango + botões ----------
+// o pod do minimapa: o minimapa e os botões ficam num painel escuro sólido, encostado no painel central (nunca "voando")
+P(10, 758, 368, 314, '', 'background:rgba(20,26,34,.96)');
 el(`<div style="position:absolute;left:61px;top:810px;width:216px;height:216px;transform:rotate(45deg);box-sizing:border-box;border:3px solid var(--line);background:#000;overflow:hidden;border-radius:6px">
   <div style="position:absolute;left:0;top:0;width:150px;height:216px;background:#3c3a36"></div>
   <div style="position:absolute;left:20px;top:60px;width:100px;height:110px;background:#9c7a52"></div>

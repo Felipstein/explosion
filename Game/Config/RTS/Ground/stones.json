@@ -1,0 +1,7 @@
+{
+  "_about": "A cor das pedras das crateras (sessão do Look, 14/10). São os valores da prova da cratera v2 aprovada pelo Felipe (look_layout_crater.py: SCATTER_TINT namaqualand_stones_01 = 0,7/0,6/0,5, desat 0,4; docs/aprovados/look/2026-10-13_cratera_v2.jpg). Os de 13/10 (0,45/0,38/0,30, desat 0,45) faziam a pedra virar pontinho preto na contraluz. min_cm 9: menor que isso cintila a 67 m e fica no material.",
+  "tint": [0.7, 0.6, 0.5],
+  "desat": 0.4,
+  "roughness": 0.7,
+  "min_cm": 9
+}

@@ -35,6 +35,10 @@ public:
 
 private:
 	void CaptureStep();
+	/** A luz da versão final: o ALookDirector do Look com a receita do bioma. */
+	void ApplyLook();
+	/** A vila do mapa na "qualidade real", do mesmo village.json que o jogo lê (13/10). */
+	void SpawnVillage();
 
 	FString CaptureFolder;
 	FString ResumeOptions = TEXT("resume");   // a volta pro gerador (com o preset que ele tinha)

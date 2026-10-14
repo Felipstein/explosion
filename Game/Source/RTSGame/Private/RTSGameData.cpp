@@ -319,6 +319,22 @@ bool FRTSGameData::Load(FString& OutError)
 		V.HullMeshes = Strings(*Visual, TEXT("hull"));
 		V.TurretMeshes = Strings(*Visual, TEXT("turret"));
 		(*Visual)->TryGetNumberField(TEXT("muzzle_height_m"), V.MuzzleHeightM);
+		const TArray<TSharedPtr<FJsonValue>>* Pivot = nullptr;
+		if ((*Visual)->TryGetArrayField(TEXT("turret_pivot_m"), Pivot) && Pivot->Num() >= 2)
+		{
+			V.TurretPivotM = FVector2D((*Pivot)[0]->AsNumber(), (*Pivot)[1]->AsNumber());
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Tracks = nullptr;
+		if ((*Visual)->TryGetArrayField(TEXT("tracks_m"), Tracks) && Tracks->Num() >= 2)
+		{
+			V.TracksM = FVector2D((*Tracks)[0]->AsNumber(), (*Tracks)[1]->AsNumber());
+		}
+		FString Crater;
+		if ((*Visual)->TryGetStringField(TEXT("impact_crater"), Crater) && Crater.Len() == 1)
+		{
+			V.ImpactCrater = FMath::Clamp(int32(FChar::ToUpper(Crater[0]) - TEXT('A')), 0, 2);
+		}
+		(*Visual)->TryGetNumberField(TEXT("near_miss"), V.NearMissShare);
 		V.RadiusM = float(U->GetNumberField(TEXT("radius_m")));
 		ReadStructureVisual(*Visual, V);
 		Visuals.Add(V);
@@ -358,6 +374,25 @@ bool FRTSGameData::Load(FString& OutError)
 		M->TryGetNumberField(TEXT("max_slope"), Info.MaxSlope);
 		M->TryGetNumberField(TEXT("water_below_m"), Info.WaterBelowM);
 		Info.ObstacleMeshes = Strings(M, TEXT("obstacle_meshes"));
+		M->TryGetStringField(TEXT("village"), Info.VillageFile);
+		M->TryGetStringField(TEXT("surface"), Info.SurfaceFile);
+		M->TryGetStringField(TEXT("grid"), Info.GridFile);
+		M->TryGetNumberField(TEXT("wind_yaw"), Info.WindYawDeg);
+		M->TryGetNumberField(TEXT("wind_speed"), Info.WindSpeedMs);
+		// o vento do WorldForge (o map.json do export, copiado pelo game.ps1 worlds) passa por cima: a areia v2 é
+		// assada com ele
+		FString WorldInfo;
+		if (M->TryGetStringField(TEXT("world_info"), WorldInfo))
+		{
+			FString Text;
+			TSharedPtr<FJsonObject> W;
+			if (FFileHelper::LoadFileToString(Text, *FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), WorldInfo))
+				&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), W) && W.IsValid())
+			{
+				W->TryGetNumberField(TEXT("wind_yaw"), Info.WindYawDeg);
+				W->TryGetNumberField(TEXT("wind_speed"), Info.WindSpeedMs);
+			}
+		}
 		auto ReadPoints = [&M](const TCHAR* Field, TArray<FVector2D>& Out)
 		{
 			const TArray<TSharedPtr<FJsonValue>>* Points = nullptr;
@@ -382,6 +417,7 @@ bool FRTSGameData::Load(FString& OutError)
 		}
 		M->TryGetNumberField(TEXT("dock_boxes"), Info.DockBoxes);
 		M->TryGetNumberField(TEXT("skirmish_gap_m"), Info.SkirmishGapM);
+		M->TryGetStringField(TEXT("look_recipe"), Info.LookRecipe);
 		const TSharedPtr<FJsonObject>* Skirmish = nullptr;
 		const TArray<TSharedPtr<FJsonValue>>* PerPlayer = nullptr;
 		if (M->TryGetObjectField(TEXT("skirmish"), Skirmish))
@@ -402,6 +438,104 @@ bool FRTSGameData::Load(FString& OutError)
 		Maps.Add(Info);
 	}
 	return true;
+}
+
+bool FRTSGameData::LoadScenario(const FString& Name, FRTSScenario& Out, FString& OutError)
+{
+	TSharedPtr<FJsonObject> Root;
+	if (!ReadJson(TEXT("Scenarios.json"), Root, OutError))
+	{
+		return false;
+	}
+	const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+	if (!Root->TryGetArrayField(TEXT("scenarios"), List))
+	{
+		OutError = TEXT("Scenarios.json sem a lista \"scenarios\"");
+		return false;
+	}
+	const auto Point = [](const TSharedPtr<FJsonValue>& V)
+	{
+		const TArray<TSharedPtr<FJsonValue>>& A = V->AsArray();
+		return A.Num() >= 2 ? FVector2D(A[0]->AsNumber(), A[1]->AsNumber()) : FVector2D::ZeroVector;
+	};
+	for (const TSharedPtr<FJsonValue>& Value : *List)
+	{
+		const TSharedPtr<FJsonObject> S = Value->AsObject();
+		if (!S.IsValid() || S->GetStringField(TEXT("name")) != Name)
+		{
+			continue;
+		}
+		Out = FRTSScenario();
+		Out.Name = Name;
+		S->TryGetStringField(TEXT("map"), Out.Map);
+		S->TryGetNumberField(TEXT("seed"), Out.Seed);
+		S->TryGetStringField(TEXT("fog"), Out.Fog);
+		S->TryGetNumberField(TEXT("end_s"), Out.EndS);
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (S->TryGetArrayField(TEXT("starts_m"), Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr) { Out.StartsM.Add(Point(V)); }
+		}
+		if (S->TryGetArrayField(TEXT("units_per_player"), Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				const TArray<TSharedPtr<FJsonValue>>& Pair = V->AsArray();
+				if (Pair.Num() == 2) { Out.UnitsPerPlayer.Emplace(Pair[0]->AsString(), int32(Pair[1]->AsNumber())); }
+			}
+		}
+		if (S->TryGetArrayField(TEXT("orders"), Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				const TSharedPtr<FJsonObject> O = V->AsObject();
+				FRTSScenarioOrder Order;
+				O->TryGetNumberField(TEXT("t_s"), Order.AtS);
+				O->TryGetNumberField(TEXT("player"), Order.Player);
+				O->TryGetStringField(TEXT("type"), Order.Type);
+				O->TryGetNumberField(TEXT("facing_deg"), Order.FacingDeg);
+				O->TryGetNumberField(TEXT("width_m"), Order.WidthM);
+				FString Size;
+				if (O->TryGetStringField(TEXT("size"), Size) && Size.Len() == 1)
+				{
+					Order.MarkSize = FMath::Clamp(int32(FChar::ToUpper(Size[0]) - TEXT('A')), 0, 2);
+				}
+				O->TryGetBoolField(TEXT("formation"), Order.bFormation);
+				const TArray<TSharedPtr<FJsonValue>>* To = nullptr;
+				if (O->TryGetArrayField(TEXT("to_m"), To) && To->Num() >= 2)
+				{
+					Order.ToM = FVector2D((*To)[0]->AsNumber(), (*To)[1]->AsNumber());
+				}
+				Out.Orders.Add(Order);
+			}
+			Out.Orders.StableSort([](const FRTSScenarioOrder& A, const FRTSScenarioOrder& B) { return A.AtS < B.AtS; });
+		}
+		const TSharedPtr<FJsonObject>* Camera = nullptr;
+		if (S->TryGetObjectField(TEXT("camera"), Camera))
+		{
+			const TArray<TSharedPtr<FJsonValue>>* Focus = nullptr;
+			if ((*Camera)->TryGetArrayField(TEXT("focus_m"), Focus) && Focus->Num() >= 2)
+			{
+				Out.CameraFocusM = FVector2D((*Focus)[0]->AsNumber(), (*Focus)[1]->AsNumber());
+			}
+			(*Camera)->TryGetNumberField(TEXT("distance_m"), Out.CameraDistanceM);
+			(*Camera)->TryGetNumberField(TEXT("yaw_deg"), Out.CameraYawDeg);
+			(*Camera)->TryGetNumberField(TEXT("pitch_deg"), Out.CameraPitchDeg);
+			const TArray<TSharedPtr<FJsonValue>>* Pan = nullptr;
+			if ((*Camera)->TryGetArrayField(TEXT("pan_m_s"), Pan) && Pan->Num() >= 2)
+			{
+				Out.CameraPanMS = FVector2D((*Pan)[0]->AsNumber(), (*Pan)[1]->AsNumber());
+			}
+		}
+		S->TryGetBoolField(TEXT("hud"), Out.bHud);
+		if (S->TryGetArrayField(TEXT("shots_s"), Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr) { Out.ShotsS.Add(float(V->AsNumber())); }
+		}
+		return true;
+	}
+	OutError = FString::Printf(TEXT("o cenário %s não está no Scenarios.json"), *Name);
+	return false;
 }
 
 const FRTSMapInfo* FRTSGameData::FindMap(const FString& Name) const

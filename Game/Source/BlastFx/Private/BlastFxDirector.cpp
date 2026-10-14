@@ -1,5 +1,8 @@
 ﻿#include "BlastFxDirector.h"
 
+#include "BlastDebris.h"
+#include "Components/SceneComponent.h"
+#include "EngineUtils.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/HeterogeneousVolumeComponent.h"
 #include "Engine/GameViewportClient.h"
@@ -11,6 +14,10 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "ShaderCompiler.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// as mortes no perfil (-csvGpuStats -csvCaptureFrames=N): um evento por morte de tanque, pra achar o quadro
+CSV_DEFINE_CATEGORY(BlastFxDirector, true);
 
 namespace
 {
@@ -38,6 +45,34 @@ namespace
 	const FVector4f TankSoot(1.0f, 0.97f, 0.94f, 0.30f), TankDust(0.90f, 0.72f, 0.50f, 0.80f);
 	constexpr float TankSunFull = 1.0f, TankSkyGain = 6.28f;
 	const FVector4f TankGround(0.50f, 0.38f, 0.26f, 1.0f);
+	// os destroços da v2 (BlastDebris, 14/10: "rastro de fumaça também, é tudo que a gente homologou"): chapas, cometas
+	// com rastro da cor da fuligem e faíscas do alto do casco (~1,8 m), como no vídeo aprovado (-DebrisGlow=0.15: as
+	// cabeças e faíscas laranja de dia, não brancas), e o rastro escuro da torre arremessada (BlastLabSimulation.cpp)
+	constexpr float DebrisHeightCm = 180.0f, DebrisGlow = 0.15f;
+	// a torre do jogo: o componente que o RTSUnitActor arremessa, na unidade que morreu (o centro dela a menos de 1,5 m
+	// do ponto da morte); o nome é o do RTSUnitActor
+	USceneComponent* FindTurret(const UWorld* World, const FVector& Ground)
+	{
+		USceneComponent* Best = nullptr;
+		double BestD = 150.0 * 150.0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			const double D = FVector::DistSquared2D(It->GetActorLocation(), Ground);
+			if (D < BestD)
+			{
+				for (UActorComponent* C : It->GetComponents())
+				{
+					if (C->GetFName() == TEXT("TurretPivot"))
+					{
+						Best = Cast<USceneComponent>(C);
+						BestD = D;
+						break;
+					}
+				}
+			}
+		}
+		return Best;
+	}
 	bool NewTankBlast()
 	{
 		static const bool bOn = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("TankBlast="), V); return V != 0; }();
@@ -110,15 +145,18 @@ AExplosionVolume* UBlastFxDirector::Spawn(const FVector& Ground, UExplosionBake*
 	return E;
 }
 
-AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Variant)
+AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Variant, bool bClassic)
 {
+	CSV_EVENT(BlastFxDirector, TEXT("TankDeath"));
+	CSV_SCOPED_TIMING_STAT(BlastFxDirector, TankDeath);
 	if (!LoadAssets())
 	{
 		return nullptr;
 	}
 	UExplosionBake* Bake = Bakes[Variant % uint32(Bakes.Num())];
 	const float Jitter = 1.0f + (VariantFraction(Variant, 0x51ED) - 0.5f) * SizeJitter;
-	if (NewTankBlast())
+	// bClassic: a explosão do prédio fica a clássica (o Felipe, 13/10: "a nova é só pra tanque"; o jogo chama com true)
+	if (NewTankBlast() && !bClassic)
 	{
 		// a nova: a gravação própria no raymarch (a variante da Carga Pesada só segura o ator e o volume de reserva)
 		AExplosionVolume* N = Spawn(Ground, Bake, TankBlastScale * Jitter, VariantFraction(Variant, 0xA11CE));
@@ -135,6 +173,15 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 		N->RaymarchSkyGain = TankSkyGain;
 		N->RaymarchGround = TankGround;
 		Alive.Add(N);
+		if (ABlastDebris* Debris = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+		{
+			Debris->BallScale = TankBlastScale;
+			Debris->TrailTint = FLinearColor(TankSoot.X, TankSoot.Y, TankSoot.Z, 1.0f);
+			Debris->GlowScale = DebrisGlow;
+			Debris->Start(Ground + FVector(0.0, 0.0, DebrisHeightCm), int32(Variant * 2654435761u >> 1));
+			// a torre solta fuligem (albedo ~0,07): rastro de ~0,7 m que engorda 0,7 m/s e se desfaz em 2,5 s
+			Debris->FollowComponent(FindTurret(GetWorld(), Ground), 0.7f, 0.7f, 2.5f, 0.07f, 0.0f, 0.7f);
+		}
 		return N;
 	}
 	AExplosionVolume* E = Spawn(Ground, Bake, TankBallScale * Jitter, VariantFraction(Variant, 0xA11CE));
@@ -169,6 +216,19 @@ void UBlastFxDirector::Prewarm(const FVector& At)
 			E->bSelfAdvance = false;
 			E->bLights = false;
 			Warmups.Add(E);
+		}
+	}
+	// os destroços também (os materiais deles estreavam no 1º quadro da morte e a Unreal montava o PSO ali: quadro de
+	// 140 ms no BlastLab, 07/10): mil vezes menores em volta de um ponto 10 m acima, somem em 30 s
+	if (NewTankBlast())
+	{
+		const FVector DebrisAt = At + FVector(0.0, 0.0, 1000.0);
+		if (ABlastDebris* Debris = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(),
+			FTransform(FQuat::Identity, DebrisAt * (1.0 - 0.001), FVector(0.001))))
+		{
+			Debris->GlowScale = DebrisGlow;
+			Debris->Start(DebrisAt, 1);
+			Debris->SetLifeSpan(30.0f);
 		}
 	}
 	WarmClock = 0.0f;

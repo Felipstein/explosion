@@ -6,9 +6,13 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInterface.h"
 #include "EngineUtils.h"
 #include "FXImpact.h"
 #include "FXSceneLight.h"
+#include "FXTread.h"
+#include "LookDirector.h"
+#include "LookRecipe.h"
 #include "FXWreckFire.h"
 #include "GenericPlatform/GenericPlatformMisc.h"
 #include "HAL/PlatformTime.h"
@@ -94,6 +98,28 @@ void AFXLabController::BeginPlay()
 	{
 		Impacts.Insert(*It, It->ActorHasTag(TEXT("Load1")) ? 0 : Impacts.Num());
 	}
+	// a luz do jogo: a receita do Look do mapa (Game/Config/RTS/Maps.json, look_recipe), como o RTSGameModes.cpp faz
+	FString RecipeName;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-LookRecipe="), RecipeName))
+	{
+		const FString Path = FString::Printf(TEXT("/RTSLook/Recipes/DA_Look_%s.DA_Look_%s"), *RecipeName, *RecipeName);
+		if (ULookRecipe* Recipe = LoadObject<ULookRecipe>(nullptr, *Path))
+		{
+			FActorSpawnParameters Lp;
+			Lp.bDeferConstruction = true;
+			if (ALookDirector* Director = GetWorld()->SpawnActor<ALookDirector>(ALookDirector::StaticClass(), FTransform::Identity, Lp))
+			{
+				Director->Recipe = Recipe;
+				Director->InitialCameraYaw = 45.0f;
+				Director->FinishSpawning(FTransform::Identity);
+				UE_LOG(LogTemp, Display, TEXT("FXLab: luz do jogo, receita %s"), *RecipeName);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("FXLab: a receita %s não existe"), *Path);
+		}
+	}
 	bGame = FFXSceneLight::Find(GetWorld()).bGame;
 	if (bGame && Fires.Num() && Impacts.Num())
 	{
@@ -110,6 +136,27 @@ void AFXLabController::BeginPlay()
 	FString Cam = bGame ? TEXT("game") : TEXT("rts");
 	FParse::Value(FCommandLine::Get(), TEXT("-Cam="), Cam);
 	SetCam(Cam);
+
+	// a poeira do andar (-Fx=tread): o tanque do mapa dá voltas levantando poeira e a câmera segue; o fogo e o
+	// tiro ficam escondidos (o fogo continua andando: é ele que põe o sol do preset.json na cena)
+	FString Fx;
+	FParse::Value(FCommandLine::Get(), TEXT("-Fx="), Fx);
+	if (Fx == TEXT("tread"))
+	{
+		for (AFXWreckFire* F : Fires)
+		{
+			F->SetActorHiddenInGame(true);
+		}
+		for (AFXImpact* I : Impacts)
+		{
+			I->SetActorHiddenInGame(true);
+			I->SetActorTickEnabled(false);
+		}
+		AFXTreadDust* Tread = GetWorld()->SpawnActorDeferred<AFXTreadDust>(AFXTreadDust::StaticClass(), FTransform::Identity);
+		Tread->CardMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/FX/M_FXSixWay.M_FXSixWay"));
+		Tread->bLabDrive = true;
+		Tread->FinishSpawning(FTransform::Identity);
+	}
 
 	if (!bGame)
 	{

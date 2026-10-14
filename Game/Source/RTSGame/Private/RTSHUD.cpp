@@ -1,4 +1,6 @@
 #include "RTSHUD.h"
+#include "Misc/App.h"
+#include "RTSHudPainter.h"
 
 #include "RTSNetSession.h"
 
@@ -20,6 +22,8 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 // O jogo é em inglês por padrão (decisão do Felipe, 09/10). Todo texto da tela passa por
 // LOCTEXT, pra que o português e outras línguas entrem depois como tradução.
@@ -131,6 +135,16 @@ bool ARTSHUD::FindButton(FName Id, FBox2D& OutBox) const
 		}
 	}
 	return false;
+}
+
+FString ARTSHUD::ButtonIdsForTest() const
+{
+	TArray<FString> Ids;
+	for (const FButton& B : Buttons)
+	{
+		Ids.Add(B.Id.ToString());
+	}
+	return FString::Join(Ids, TEXT(" "));
 }
 
 void ARTSHUD::DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color)
@@ -265,7 +279,9 @@ void ARTSHUD::DrawMenu(ARTSPlayerController* PC)
 	const ERTSFogMode Fog = Session ? Session->FogMode : ERTSFogMode::Explored;
 	DrawButton(TEXT("fogsetting"), FogModeText(Fog), X, Y, PanelW - X * 2.0f, 44.0f);
 	DrawLabel(FogModeHint(Fog), X + 2.0f, Y + 52.0f, 10, DimText);
-	Y += 96.0f;
+	Y += 80.0f;
+	DrawQualityRow(PC, X, Y, BW);
+	Y += 80.0f;
 	DrawButton(TEXT("quit"), LOCTEXT("Quit", "QUIT").ToString(), X, Y, PanelW - X * 2.0f, 58.0f);
 }
 
@@ -311,7 +327,17 @@ void ARTSHUD::DrawLanMenu(ARTSPlayerController* PC, const URTSNetSession& Net, f
 			}
 			Y += 56.0f;
 		}
-		Y += 20.0f;
+		// a sala não aparece (firewall, rede virtual no anfitrião): entra direto pelo IP dele
+		Y += 10.0f;
+		DrawLabel(LOCTEXT("JoinByIpTitle", "Not in the list? Type the host's IP").ToString(), X + 2.0f, Y, 12, DimText);
+		Y += 24.0f;
+		const bool bTyping = PC->IsTypingIp();
+		const bool bCaret = bTyping && FMath::Fmod(float(FPlatformTime::Seconds()), 1.0f) < 0.5f;
+		const FString IpText = PC->GetIpEntry().IsEmpty() && !bTyping ? LOCTEXT("IpHint", "192.168.1.___").ToString() : PC->GetIpEntry() + (bCaret ? TEXT("|") : TEXT(" "));
+		DrawSmallButton(TEXT("lan_ip"), FString(), X, Y, BW - 96.0f, 40.0f);
+		DrawLabel(IpText, X + 14.0f, Y + 10.0f, 15, bTyping || !PC->GetIpEntry().IsEmpty() ? TextColor : DimText, false, true);
+		DrawSmallButton(TEXT("lan_ip_join"), LOCTEXT("JoinIp", "JOIN").ToString(), X + BW - 88.0f, Y, 88.0f, 40.0f);
+		Y += 62.0f;
 		DrawButton(TEXT("lan_back"), LOCTEXT("Back", "BACK").ToString(), X, Y, BW, 50.0f);
 		return;
 	}
@@ -427,6 +453,46 @@ void ARTSHUD::DrawNetStatus(URTSMatchSubsystem* Match)
 		DrawPanel(W * 0.5f - 240.0f, H * 0.16f, 480.0f, 46.0f, FLinearColor(0.25f, 0.12f, 0.02f, 0.9f));
 		DrawLabel(LOCTEXT("PeerLost", "Connection lost").ToString(), W * 0.5f, H * 0.16f + 13.0f, 15, TextColor, true);
 	}
+	else if (Net->HostSilentSeconds() > 0.0f)
+	{
+		// o anfitrião é o relógio: sem notícia dele, a partida espera (até 60 s, depois "Connection lost")
+		DrawPanel(W * 0.5f - 280.0f, H * 0.26f, 560.0f, 92.0f, FLinearColor(0.02f, 0.03f, 0.05f, 0.88f));
+		DrawLabel(LOCTEXT("NetWaitingHost", "Waiting for the host").ToString(), W * 0.5f, H * 0.26f + 14.0f, 24, TextColor, true, true);
+		DrawLabel(FText::Format(LOCTEXT("NetWaitingHostLine", "not responding for {0} s"), FText::AsNumber(FMath::FloorToInt(Net->HostSilentSeconds()))).ToString(),
+			W * 0.5f, H * 0.26f + 56.0f, 12, DimText, true);
+	}
+	else if (Net->IsNetPaused())
+	{
+		// a pausa em rede (13/10): quem pausou e o botão de voltar; ou a espera por quem sumiu, com o voto
+		const URTSNetSession::FPauseState& P = Net->GetPause();
+		const float PW = 560.0f;
+		const float PX = W * 0.5f - PW * 0.5f;
+		const float PY = H * 0.26f;
+		DrawPanel(PX, PY, PW, 150.0f, FLinearColor(0.02f, 0.03f, 0.05f, 0.88f));
+		if (P.WaitingFor != 255)
+		{
+			const FText Who = URTSMatchSubsystem::PlayerColorName(P.WaitingFor);
+			DrawLabel(FText::Format(LOCTEXT("NetWaiting", "Waiting for {0}"), Who).ToString(), W * 0.5f, PY + 16.0f, 24, TextColor, true, true);
+			DrawLabel(FText::Format(LOCTEXT("NetWaitingLine", "not responding  ·  dropped in {0} s  ·  votes {1}/{2}"),
+				FText::AsNumber(FMath::CeilToInt(P.WaitLeft)), FText::AsNumber(FMath::CountBits(P.Votes)), FText::AsNumber(P.VotesNeeded)).ToString(),
+				W * 0.5f, PY + 56.0f, 12, DimText, true);
+			if (Net->LocalSlot() != P.WaitingFor && !(P.Votes & (1u << Net->LocalSlot())))
+			{
+				DrawButton(TEXT("net_vote"), FText::Format(LOCTEXT("NetVote", "DROP {0}"), Who).ToString(), W * 0.5f - 150.0f, PY + 86.0f, 300.0f, 46.0f);
+			}
+		}
+		else if (P.ResumeIn >= 0.0f)
+		{
+			DrawLabel(FText::Format(LOCTEXT("NetResuming", "Resuming in {0}"), FText::AsNumber(FMath::CeilToInt(P.ResumeIn))).ToString(), W * 0.5f, PY + 52.0f, 28, TextColor, true, true);
+		}
+		else
+		{
+			const FText Who = P.BySlot == Net->LocalSlot() ? LOCTEXT("NetYou", "you") : URTSMatchSubsystem::PlayerColorName(P.BySlot);
+			DrawLabel(FText::Format(LOCTEXT("NetPausedBy", "PAUSED by {0}"), Who).ToString(), W * 0.5f, PY + 16.0f, 24, TextColor, true, true);
+			DrawLabel(LOCTEXT("NetPausedLine", "the game is stopped for everyone").ToString(), W * 0.5f, PY + 56.0f, 12, DimText, true);
+			DrawButton(TEXT("net_resume"), LOCTEXT("NetResume", "RESUME").ToString(), W * 0.5f - 150.0f, PY + 86.0f, 300.0f, 46.0f);
+		}
+	}
 	else if (Match->IsWaitingForPlayers())
 	{
 		DrawPanel(W * 0.5f - 240.0f, H * 0.16f, 480.0f, 46.0f, FLinearColor(0.02f, 0.03f, 0.05f, 0.85f));
@@ -453,6 +519,11 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		DrawLabel(FString::ChrN(Dots, TEXT('.')), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f + 12.0f, 20, FLinearColor(0.92f, 0.93f, 0.95f, 0.7f), true);
 		return;
 	}
+	if (!bNewHudChecked)
+	{
+		bNewHud = !FParse::Param(FCommandLine::Get(), TEXT("OldHud"));   // (14/10: o novo é o padrão; F4 troca)
+		bNewHudChecked = true;
+	}
 	DrawUnits(PC, Match);
 	DrawMarkers(PC);
 
@@ -468,6 +539,23 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		DrawLine(Hi.X, Hi.Y, Lo.X, Hi.Y, MoveGreen, 1.0f);
 		DrawLine(Lo.X, Hi.Y, Lo.X, Lo.Y, MoveGreen, 1.0f);
 	}
+	if (PC->IsFacingDragging(A, B))
+	{
+		const FLinearColor Color = PC->IsAttackMoveArmed() ? AttackRed : MoveGreen;
+		const FVector2D D = (B - A).GetSafeNormal();
+		const FVector2D Side(-D.Y, D.X);
+		const float Len = float((B - A).Size());
+		// a barra: a linha de frente no ponto apertado, da largura do arraste (arraste curto: uma barra curta)
+		const float HalfBar = FMath::Max(Len * 0.5f, 18.0f);
+		DrawLine(A.X - Side.X * HalfBar, A.Y - Side.Y * HalfBar, A.X + Side.X * HalfBar, A.Y + Side.Y * HalfBar, Color, 3.0f);
+		// a seta: pra onde ela olha
+		DrawLine(A.X, A.Y, B.X, B.Y, WithAlpha(Color, 0.8f), 2.0f);
+		const FVector2D Tip = B;
+		const FVector2D L = Tip - D * 14.0f + Side * 8.0f;
+		const FVector2D R = Tip - D * 14.0f - Side * 8.0f;
+		DrawLine(Tip.X, Tip.Y, L.X, L.Y, Color, 2.0f);
+		DrawLine(Tip.X, Tip.Y, R.X, R.Y, Color, 2.0f);
+	}
 	if (PC->IsAttackMoveArmed())
 	{
 		const FVector2D M = MousePos();
@@ -481,28 +569,43 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		DrawPlacementGhost(PC, Match);
 		DrawDockHover(PC, Match);
 		DrawMoneyPopups(Match, GetWorld()->GetDeltaSeconds());
-		DrawEconomyTopBar(Match);
-		if (Match->IsLocalDefeated())
+	}
+	if (bNewHud)
+	{
+		// o HUD novo do HUDLab (RTSHUDNew.cpp): o topo, o comandante, o minimapa, os grupos, o painel e o cartão
+		DrawNewHud(PC, Match);
+		if (bEconomy && Match->IsLocalDefeated())
 		{
 			DrawObserverPanel(Match);
-		}
-		else
-		{
-			DrawCommandPanel(PC, Match);
 		}
 	}
 	else
 	{
-		DrawTopBar(Match);
+		if (bEconomy)
+		{
+			DrawEconomyTopBar(Match);
+			if (Match->IsLocalDefeated())
+			{
+				DrawObserverPanel(Match);
+			}
+			else
+			{
+				DrawCommandPanel(PC, Match);
+			}
+		}
+		else
+		{
+			DrawTopBar(Match);
+		}
+		DrawMinimap(PC, Match);
 	}
-	DrawMinimap(PC, Match);
 	DrawDefeats(Match);
 	const bool bPlaying = Match->Result() == ERTSMatchResult::Playing;
-	if (bPlaying && Match->SecondsSinceStart() < ObjectiveSeconds)
+	if (bPlaying && Match->SecondsSinceStart() < ObjectiveSeconds && !Match->GetScenario())
 	{
-		DrawObjective(Match);
+		DrawObjective(Match);   // no teste rápido (cenário) não há objetivo: a cena é só pra olhar
 	}
-	if (bPlaying && Match->MatchSeconds() < HelpSeconds && PC->OrdersGiven() < 2)
+	if (bPlaying && Match->MatchSeconds() < HelpSeconds && PC->OrdersGiven() < 2 && !bNewHud)   // (no HUD novo a linha caía em cima das abas dos grupos)
 	{
 		DrawLabel(LOCTEXT("HelpLine", "Left: select and order   ·   Right: deselect / drag to scroll   ·   A: attack move   ·   S: stop   ·   Ctrl+number: group   ·   Esc: pause").ToString(),
 			Canvas->SizeX * 0.5f, Canvas->SizeY - 34.0f, 10, WithAlpha(DimText, 0.85f), true);
@@ -513,6 +616,14 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	}
 
 	DrawNetStatus(Match);
+	{
+		// o FPS no canto de baixo à direita, pequeno (o desenvolvimento; o quadro real, suavizado em ~0,5 s)
+		const float Ms = float(FApp::GetDeltaTime() * 1000.0);
+		FrameMsSmooth += (Ms - FrameMsSmooth) * FMath::Clamp(Ms / 500.0f, 0.02f, 1.0f);
+		const float Fps = 1000.0f / FMath::Max(FrameMsSmooth, 0.1f);
+		const FLinearColor C = Fps >= 55.0f ? FLinearColor(0.55f, 0.85f, 0.55f, 0.75f) : (Fps >= 30.0f ? FLinearColor(0.9f, 0.8f, 0.45f, 0.75f) : FLinearColor(0.95f, 0.45f, 0.4f, 0.8f));
+		DrawLabel(FString::Printf(TEXT("%.0f fps  %.1f ms"), Fps, FrameMsSmooth), Canvas->SizeX - 112.0f, Canvas->SizeY - 18.0f, 9, C);
+	}
 	if (!bPlaying && Match->SecondsSinceEnd() > ResultDelaySeconds)
 	{
 		DrawResult(Match);
@@ -648,11 +759,50 @@ void ARTSHUD::DrawPause()
 	const float H = Canvas->SizeY;
 	DrawPanel(0, 0, W, H, FLinearColor(0, 0, 0, 0.55f));
 	DrawLabel(LOCTEXT("Paused", "PAUSED").ToString(), W * 0.5f, H * 0.32f, 36, TextColor, true, true);
-	DrawButton(TEXT("resume"), LOCTEXT("Resume", "RESUME").ToString(), W * 0.5f - 170.0f, H * 0.45f, 340.0f, 54.0f);
-	DrawButton(TEXT("menu"), LOCTEXT("QuitToMenu", "QUIT TO MENU").ToString(), W * 0.5f - 170.0f, H * 0.45f + 70.0f, 340.0f, 54.0f);
 	const URTSMatchSubsystem* Match = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
+	const ARTSPlayerController* PC = Cast<ARTSPlayerController>(GetOwningPlayerController());
+	float Y = H * 0.42f;
+	DrawButton(TEXT("resume"), LOCTEXT("Resume", "RESUME").ToString(), W * 0.5f - 170.0f, Y, 340.0f, 54.0f);
+	Y += 70.0f;
+	if (Match && Match->IsNetMatch() && !Match->IsNetPaused())
+	{
+		// na rede o menu não para a partida: a pausa é pra todos (13/10)
+		DrawButton(TEXT("net_pause"), LOCTEXT("NetPauseGame", "PAUSE GAME (everyone)").ToString(), W * 0.5f - 170.0f, Y, 340.0f, 54.0f);
+		Y += 70.0f;
+	}
+	if (Match && Match->Result() == ERTSMatchResult::Playing && !Match->IsLocalDefeated())
+	{
+		const bool bArmed = PC && PC->IsSurrenderArmed();
+		DrawButton(TEXT("surrender"), bArmed ? LOCTEXT("SurrenderConfirm", "CLICK AGAIN TO SURRENDER").ToString() : LOCTEXT("Surrender", "SURRENDER").ToString(),
+			W * 0.5f - 170.0f, Y, 340.0f, 54.0f);
+		Y += 70.0f;
+	}
+	DrawButton(TEXT("menu"), LOCTEXT("QuitToMenu", "QUIT TO MENU").ToString(), W * 0.5f - 170.0f, Y, 340.0f, 54.0f);
+	Y += 70.0f;
 	const bool bFog = Match && Match->IsFogOn();
-	DrawButton(TEXT("fog"), bFog ? LOCTEXT("FogOn", "FOG: ON  (F9)").ToString() : LOCTEXT("FogOff", "FOG: OFF  (F9)").ToString(), W * 0.5f - 170.0f, H * 0.45f + 140.0f, 340.0f, 44.0f);
+	DrawButton(TEXT("fog"), bFog ? LOCTEXT("FogOn", "FOG: ON  (F9)").ToString() : LOCTEXT("FogOff", "FOG: OFF  (F9)").ToString(), W * 0.5f - 170.0f, Y, 340.0f, 44.0f);
+	Y += 64.0f;
+	DrawQualityRow(PC, W * 0.5f - 170.0f, Y, 340.0f);
+}
+
+void ARTSHUD::DrawQualityRow(const ARTSPlayerController* PC, float X, float Y, float W)
+{
+	// os 4 presets lado a lado, o de agora aceso (14/10, o Felipe: "configurar por botão também, além do F5")
+	DrawLabel(LOCTEXT("QualityTitle", "QUALITY   (F5 - F8)").ToString(), X + 2.0f, Y, 10, DimText);
+	const FText Names[4] = { LOCTEXT("QualityLow", "LOW"), LOCTEXT("QualityMedium", "MEDIUM"), LOCTEXT("QualityHigh", "HIGH"), LOCTEXT("QualityUltra", "ULTRA") };
+	const int32 Current = PC ? PC->GetQualityPreset() : -1;
+	const float Gap = 6.0f;
+	const float BW = (W - Gap * 3.0f) / 4.0f;
+	for (int32 Q = 0; Q < 4; ++Q)
+	{
+		const float BX = X + Q * (BW + Gap);
+		DrawSmallButton(FName(*FString::Printf(TEXT("quality_%d"), Q)), Names[Q].ToString(), BX, Y + 18.0f, BW, 36.0f);
+		if (Q == Current)
+		{
+			DrawRect(Accent, BX, Y + 18.0f, BW, 2.0f);
+			DrawRect(Accent, BX, Y + 18.0f + 36.0f - 3.0f, BW, 3.0f);
+		}
+	}
 }
 
 void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)
@@ -770,12 +920,27 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		bMinimapDrawn = false;
 		return;
 	}
-	const float F = FMath::RoundToFloat(Canvas->SizeY * MinimapFrameFraction);
-	const float X0 = MinimapMarginPx;
-	const float Y0 = Canvas->SizeY - MinimapMarginPx - F;
+	float F = FMath::RoundToFloat(Canvas->SizeY * MinimapFrameFraction);
+	float X0 = MinimapMarginPx;
+	float Y0 = Canvas->SizeY - MinimapMarginPx - F;
 	MinimapFrame = FBox2D(FVector2D(X0, Y0), FVector2D(X0 + F, Y0 + F));
 	MinimapCenter = FVector2D(X0 + F * 0.5f, Y0 + F * 0.5f);
 	MinimapSide = F / UE_SQRT_2 * 0.97f;
+	if (bNewMinimapGeometry)
+	{
+		// o losango da peça nova: o centro do buraco e a meia diagonal, pela conta do próprio plugin (13/10: a escala
+		// é min(altura/1080, largura/1920) e, mais largo que 16:9, o HUD fica numa faixa no meio; a conta antiga saía
+		// fora do buraco em 16:10 e no ultrawide); o clique só no losango (a coluna dos botões é dos botões)
+		FVector2D HoleCenter;
+		float Half = 0.0f;
+		FRTSHudPainter::MinimapHole(Canvas->ClipX, Canvas->ClipY, HoleCenter, Half);
+		MinimapCenter = HoleCenter;
+		MinimapSide = Half * UE_SQRT_2;
+		MinimapFrame = FBox2D(MinimapCenter - FVector2D(Half, Half), MinimapCenter + FVector2D(Half, Half));
+		F = Half * 2.0f;
+		X0 = MinimapCenter.X - Half;
+		Y0 = MinimapCenter.Y - Half;
+	}
 	const ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(PC->GetPawn());
 	const float YawRad = FMath::DegreesToRadians(Cam ? Cam->DefaultYawDeg : 45.0f);
 	MinimapCos = FMath::Cos(YawRad);
@@ -785,7 +950,10 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	bMinimapDrawn = true;
 
 	// moldura e o mapa (dois triângulos com os cantos girados: o mesmo cálculo dos pontos)
-	DrawPanel(X0, Y0, F, F, FLinearColor(0.012f, 0.014f, 0.017f, 0.82f));
+	if (!bNewMinimapGeometry)
+	{
+		DrawPanel(X0, Y0, F, F, FLinearColor(0.012f, 0.014f, 0.017f, 0.82f));
+	}
 	const FVector2D C00 = MinimapUVToScreen(FVector2D(0, 0));
 	const FVector2D C10 = MinimapUVToScreen(FVector2D(1, 0));
 	const FVector2D C11 = MinimapUVToScreen(FVector2D(1, 1));
@@ -913,7 +1081,7 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 			DrawClippedLine(V[K], V[(K + 1) % 3], C, 2.0f);
 		}
 	}
-	if (PC->AttackMessageAlpha() > 0.0f)
+	if (PC->AttackMessageAlpha() > 0.0f && !bNewMinimapGeometry)
 	{
 		DrawLabel(LOCTEXT("UnderAttack", "Unit under attack  (Space to go there)").ToString(), X0 + 2.0f, Y0 - 22.0f, 11, WithAlpha(AttackRed, PC->AttackMessageAlpha()), false, true);
 	}

@@ -60,6 +60,16 @@ http://localhost:8129.
 | `1`–`4` | qualidade baixa/média/alta/ultra · `H` esconde o painel · espaço detona no centro |
 | `A` `M` `D` `B` | passa avião (A-10), míssil, disparo ou o bombardeiro B-2 pela última explosão |
 
+O painel tem os **campos** de teste: o de caixas (o layout do WebGL) e os de
+chão de verdade, feitos das fatias do WorldForge: deserto com estrada, neve e
+floresta com grama. Eles são montados com `blast.ps1 worlds`, que copia as
+fatias do WorldForge (fora do git, como lá). A troca leva a hora do dia junto.
+
+As camadas em volta de cada explosão (clarão, anel de poeira, destroços,
+torrões, faíscas, marca queimada) seguem a receita da arma em
+`BlastLab/Config/BlastRecipes.json`: edite, salve e detone de novo (o
+simulador relê o arquivo sozinho). Plano das explosões em `docs/EXPLOSOES.md`.
+
 Na primeira abertura o painel mostra "preparando": a Unreal está compilando os
 shaders das explosões (das próximas vezes é rápido).
 
@@ -71,11 +81,13 @@ shaders das explosões (das próximas vezes é rápido).
 | `blast.ps1 compile` | compila os módulos C++ |
 | `blast.ps1 build-scene` | monta o campo de teste (cenário, sol, céu, exposição, tonemap) |
 | `blast.ps1 build-explosion` | converte a explosão gravada e põe no campo, com sequência e luzes; a fumaça do campo e os materiais do avião/míssil/disparo (`build_movers.py`) |
-| `blast.ps1 view [baixa\|media\|alta\|ultra]` | abre o simulador; `-Folder x` faz o teste automático (telas + qps); `-GameArgs '-AutoPass=plane:4.5 -benchmark -fps=60'` passa avião/míssil/disparo em passo fixo |
+| `blast.ps1 worlds` | traz as fatias do WorldForge e monta os campos com chão de verdade (`Range_Desert`, `Range_Snow`, `Range_Forest`; `build_worlds.py`) |
+| `blast.ps1 view [baixa\|media\|alta\|ultra]` | abre o simulador; `-Map Range_Desert` abre outro campo; `-Folder x` faz o teste automático (telas + qps); `-GameArgs '-AutoPass=plane:4.5 -benchmark -fps=60'` passa avião/míssil/disparo em passo fixo |
 | `blast.ps1 render <Seq>` | renderiza uma sequência em `captures/ue/`; `-Folder`, `-Cvars` pra A/B; `-ProfileGpu` mede a GPU |
 | `convert_bake.py` | explosão gravada no WebGL → quadros pro volume da Unreal |
 | `make_ground.py`, `make_noise.py` | texturas do chão e do ruído de detalhe |
 | `compare.py` | folha WebGL × Unreal nos mesmos instantes |
+| `concept_sheet.py` | folha lado a lado com a arte conceitual (todo visual novo passa por ela) |
 | `sheet.py` | folha de quadros de um render |
 | `gpu_profile.py` | tempos de GPU por passe do último `-ProfileGpu` |
 

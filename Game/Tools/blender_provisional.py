@@ -2,6 +2,7 @@
 Centro de Suprimentos, depósito, Dozer, caminhão e a caixa de suprimento.
 
 Uso: blender -b --factory-startup -P Game/Tools/blender_provisional.py -- <saida_dir>
+(PROV_BUILD=debris: só os destroços)
 (o game.ps1 models chama isto e depois importa na Unreal).
 
 Regras (docs/ECONOMIA.md, o estudo de arte de 10/10 e a memória "modelar"):
@@ -844,7 +845,68 @@ def supply_truck():
     export_parts('supply_truck/supply_truck_wheels.glb', wheels)
 
 
+def tilted_box(p, cx, cy, cz, sx, sy, sz, mat, yaw=0.0, pitch=0.0, roll=0.0, bevel=0.03):
+    """Caixa girada (as lascas e as chapas tortas dos destroços): o giro vai na malha, não no objeto."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=Vector((sx, sy, sz)), verts=bm.verts)
+    rot = Matrix.Rotation(math.radians(yaw), 4, 'Z') @ Matrix.Rotation(math.radians(pitch), 4, 'Y') @ Matrix.Rotation(math.radians(roll), 4, 'X')
+    bmesh.ops.transform(bm, matrix=rot, verts=bm.verts)
+    bmesh.ops.translate(bm, vec=Vector((cx, cy, cz)), verts=bm.verts)
+    return p._object(bm, mat, min(bevel, min(sx, sy, sz) / 3.0))
+
+
+def debris():
+    """Os destroços que ficam no chão em volta da carcaça (13/10, a revisão da cratera: "4–8 peças por morte").
+    Baixos e chapados (nada em pé: de cima não podem ler como infantaria), queimados (Dark) com um pouco da
+    tinta e da borracha; a origem no chão, no meio da peça. Uma malha por peça: o jogo espalha em instâncias."""
+    parts = []
+    # a roda arrancada, deitada (0,84 m, a do tanque)
+    w = Part('SM_Debris_Wheel')
+    w.cyl(0.0, 0.0, 0.0, 0.42, 0.24, 'Rubber', 24, 0.05)
+    w.cyl(0.0, 0.0, 0.24, 0.30, 0.03, 'Dark', 20, 0.01)
+    w.cyl(0.0, 0.0, 0.27, 0.12, 0.05, 'Trim', 12, 0.01)
+    parts.append(w)
+    # o pedaço de lagarta solto: as sapatas de 17 cm com a garra, dobrado no meio
+    t = Part('SM_Debris_Track')
+    for k in range(10):
+        x = -0.8 + k * 0.17
+        bend = 9.0 if x > 0.1 else 0.0
+        z = 0.03 + (max(0.0, x - 0.1) * math.sin(math.radians(bend)))
+        tilted_box(t, x, 0.0, z, 0.15, 0.64, 0.05, 'Dark', pitch=-bend)
+        tilted_box(t, x, 0.0, z + 0.04, 0.04, 0.58, 0.04, 'Trim', pitch=-bend, bevel=0.01)
+    parts.append(t)
+    # a chapa da blindagem, torta em duas dobras, com um resto da tinta
+    pl = Part('SM_Debris_Plate')
+    tilted_box(pl, -0.35, 0.0, 0.05, 0.75, 0.95, 0.06, 'Body', roll=3.0)
+    tilted_box(pl, 0.38, 0.05, 0.13, 0.75, 0.9, 0.06, 'Dark', yaw=6.0, pitch=-14.0)
+    parts.append(pl)
+    # a tampa da escotilha e um pedaço de caixa lateral
+    h = Part('SM_Debris_Hatch')
+    h.cyl(0.0, 0.0, 0.0, 0.36, 0.07, 'Body', 20, 0.02)
+    tilted_box(h, 0.0, 0.0, 0.09, 0.28, 0.08, 0.05, 'Dark', bevel=0.01)
+    parts.append(h)
+    b = Part('SM_Debris_Box')
+    tilted_box(b, 0.0, 0.0, 0.16, 0.9, 0.45, 0.3, 'Dark', roll=8.0)
+    tilted_box(b, 0.1, 0.02, 0.33, 0.6, 0.35, 0.04, 'Body', yaw=4.0, roll=8.0, bevel=0.01)
+    parts.append(b)
+    # as lascas: blocos irregulares (cada um, três caixas giradas)
+    for n, (sz, seed) in enumerate(((0.28, 3), (0.40, 7), (0.22, 11))):
+        c = Part(f'SM_Debris_Chunk{n + 1}')
+        r = [((seed * 37 + k * 71) % 97) / 97.0 for k in range(12)]
+        tilted_box(c, 0.0, 0.0, sz * 0.25, sz, sz * 0.7, sz * 0.5, 'Dark', yaw=r[0] * 90, pitch=(r[1] - 0.5) * 30, roll=(r[2] - 0.5) * 30)
+        tilted_box(c, sz * 0.25, sz * 0.1, sz * 0.2, sz * 0.6, sz * 0.5, sz * 0.4, 'Dark', yaw=r[3] * 90, pitch=(r[4] - 0.5) * 40)
+        tilted_box(c, -sz * 0.2, -sz * 0.15, sz * 0.15, sz * 0.5, sz * 0.4, sz * 0.3, 'Trim', yaw=r[5] * 90, roll=(r[6] - 0.5) * 40)
+        parts.append(c)
+    export_parts('debris/SM_Debris.glb', parts)
+
+
 bpy.ops.wm.read_factory_settings(use_empty=True)
-for build in (war_factory, command_center, power_plant, supply_center, supply_dock, dozer, supply_truck):
-    build()
+BUILDS = {'war_factory': war_factory, 'command_center': command_center, 'power_plant': power_plant, 'supply_center': supply_center,
+          'supply_dock': supply_dock, 'dozer': dozer, 'supply_truck': supply_truck, 'debris': debris}
+# PROV_BUILD=debris (game.ps1 debris): só os da lista, sem refazer o resto
+only = [k for k in os.environ.get('PROV_BUILD', '').split(',') if k]
+for name, build in BUILDS.items():
+    if not only or name in only:
+        build()
 print('PROV fim')

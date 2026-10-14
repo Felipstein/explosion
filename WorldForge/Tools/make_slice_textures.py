@@ -12,8 +12,10 @@ no mesmo formato dos assets do Poly Haven (o build_slice.py importa igual):
                   trincas longitudinais e transversais; R da "diff" = rachadura
   snow            neve: ondulações de vento (sastrugi baixas), grão fino,
                   rugosidade com pontos mais lisos (o brilho dos cristais)
-  ice             gelo de lago: escuro, liso, bolhas e rachaduras finas, neve
-                  soprada nas bordas das placas
+  ice             gelo de lago: azul-claro com trechos escuros limpos pelo vento,
+                  rachaduras finas com geada dos lados, neve soprada em manchas
+  salt            crosta de salina: placas poligonais de ~1,6 m com as bordas
+                  levantadas em cristas brancas, manchas úmidas, branco-creme
 Tudo periódico (ladrilha sem emenda): ruído filtrado no espaço de Fourier e
 Voronoi com distância envolvente.
 """
@@ -125,21 +127,65 @@ def snow():
 
 
 def ice():
-    # placas com rachaduras finas, bolhas escuras, neve soprada nas bordas
-    f1, f2 = worley(9, 51)
-    plate_edge = np.clip(1 - (f2 - f1) / 0.03, 0, 1)
+    # gelo de lago visto de cima: azul-claro (gelo branco e neve compactada por
+    # cima do gelo transparente), trechos mais escuros onde o vento limpou o gelo,
+    # rachaduras finas escuras com geada branca dos dois lados e neve soprada em
+    # manchas. Os dois alvos de neve leem o lago congelado como turquesa-claro com
+    # rachaduras; o gelo preto de antes (0,04) virava buraco azul-escuro no mapa
+    # (revisão de 07/10)
+    f1, f2 = worley(9, 51)                         # placas de ~2,7 m no ladrilho de 24 m
+    keep = (band(3, 10, 57) > -0.4).astype(np.float32)   # só parte das bordas racha
+    crack = np.clip(1 - (f2 - f1) / 0.012, 0, 1) * keep
+    rim = np.clip(1 - (f2 - f1) / 0.06, 0, 1) * keep
     fine_f1, fine_f2 = worley(40, 52)
     fine = np.clip(1 - (fine_f2 - fine_f1) / 0.02, 0, 1) * (band(2, 8, 53) > 0.2)
     bubbles = np.clip(band(60, 200, 54, slope=0.0) - 2.2, 0, 1)
-    frost = np.clip(band(3, 20, 55) * 0.5 + plate_edge * 0.8, 0, 1)
-    dark = np.array([0.035, 0.06, 0.08], np.float32)
-    white = np.array([0.75, 0.8, 0.85], np.float32)
-    t = np.clip(frost * 0.7 + fine * 0.35 + bubbles * 0.2, 0, 1)[..., None]
-    diff = dark * (1 - t) + white * t
-    h = 0.004 * frost - 0.002 * plate_edge - 0.001 * fine
+    dust = np.clip(band(2, 8, 55) * 0.45 + 0.3, 0, 1)          # neve soprada
+    clear = np.clip(band(1, 4, 56) * 0.5 + 0.6, 0, 1)           # 1 = claro, 0 = limpo pelo vento
+    deep = np.array([0.14, 0.30, 0.40], np.float32)
+    cyan = np.array([0.42, 0.64, 0.72], np.float32)
+    white = np.array([0.80, 0.85, 0.90], np.float32)
+    base = deep * (1 - clear[..., None]) + cyan * clear[..., None]
+    t = np.clip(dust * 0.6 + rim * 0.45 + fine * 0.2 + bubbles * 0.15, 0, 1)[..., None]
+    diff = base * (1 - t) + white * t
+    diff = diff * (1 - 0.5 * crack[..., None])
+    h = 0.004 * dust + 0.002 * rim - 0.003 * crack - 0.001 * fine
     n = normals(h, 6.0, 1.0)
-    rough = 0.08 + 0.5 * frost + 0.2 * fine
-    save('ice', diff, n, np.ones_like(rough), np.clip(rough, 0, 1), h)
+    rough = 0.1 + 0.55 * dust + 0.2 * rim + 0.1 * fine
+    save('ice', np.clip(diff, 0, 1), n, np.ones_like(rough), np.clip(rough, 0, 1), h)
+
+
+def salt():
+    # crosta de salina (Salar de Uyuni, chotts): placas poligonais de ~1–2 m
+    # com as bordas levantadas em cristas brancas (o sal cristaliza na borda
+    # das rachaduras), centro levemente mais escuro e áspero, manchas úmidas
+    # cinza-bege e grãos de areia soprada. Branco-creme, não branco puro (o
+    # branco puro apagaria a facção clara na leitura de cima)
+    # ladrilho de 16 m: placas de 1,3–3 m em duas grades misturadas por ruído (a
+    # grade única de 5×5 repetia em losangos vista de cima, 07/10); crista mais
+    # suave (de 150 m a placa é uma textura fina, não um desenho)
+    fa1, fa2 = worley(12, 61)
+    fb1, fb2 = worley(7, 66)
+    pick = band(1, 3, 67) > 0.0
+    f1, f2 = np.where(pick, fa1, fb1), np.where(pick, fa2, fb2)
+    rim = np.clip(1 - (f2 - f1) / 0.09, 0, 1) ** 1.5 * 0.6
+    fine_f1, fine_f2 = worley(34, 62)             # rachaduras finas dentro das placas
+    fine = np.clip(1 - (fine_f2 - fine_f1) / 0.035, 0, 1) * (band(2, 6, 63) > -0.2)
+    # (sem manchas úmidas largas na textura: repetiam em grade a cada ladrilho; a
+    # umidade em escala de mundo vem do tom do chão, o A da textura da água)
+    damp = np.clip(band(6, 16, 64) * 0.4, 0, 1) * 0.5   # só manchinhas de ~1–3 m
+    grain = band(200, 700, 65, slope=0.0)
+    cream = np.array([0.80, 0.76, 0.66], np.float32)
+    crust = np.array([0.90, 0.87, 0.79], np.float32)
+    wet = np.array([0.55, 0.51, 0.44], np.float32)
+    t_rim = np.clip(rim * 0.9 + 0.05 * grain, 0, 1)[..., None]
+    diff = cream * (1 - t_rim) + crust * t_rim
+    diff = diff * (1 - 0.18 * fine[..., None])
+    diff = diff * (1 - damp[..., None] * 0.5) + wet * damp[..., None] * 0.5
+    h = 0.012 * rim - 0.002 * fine + 0.0015 * grain - 0.003 * damp
+    n = normals(h, 8.0, 1.0)
+    rough = 0.8 - 0.25 * damp + 0.05 * grain
+    save('salt', np.clip(diff, 0, 1), n, 1 - 0.25 * fine, np.clip(rough, 0.2, 1), h)
 
 
 def blur(a, r):
@@ -274,6 +320,6 @@ def moss():
 
 if __name__ == '__main__':
     import sys
-    want = sys.argv[1:] or ['asphalt_cracks', 'snow', 'ice', 'forest_floor', 'moss']
+    want = sys.argv[1:] or ['asphalt_cracks', 'snow', 'ice', 'forest_floor', 'moss', 'salt']
     for name in want:
         globals()[name]()

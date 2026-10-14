@@ -5,6 +5,7 @@
 #include "Engine/PostProcessVolume.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Misc/CommandLine.h"
 
 FFXSceneLight FFXSceneLight::Find(UWorld* World)
 {
@@ -21,6 +22,19 @@ FFXSceneLight FFXSceneLight::Find(UWorld* World)
 			// a luz anda ao longo do X dela; pro sol é o contrário
 			S.SunDir = -It->GetLightComponent()->GetComponentTransform().GetUnitAxis(EAxis::X);
 			break;
+		}
+	}
+	// o mapa do jogo (World_TestSalt2): o sol dele não tem a marca; com -GameLight vale o primeiro que houver
+	if (!S.bGame && FParse::Param(FCommandLine::Get(), TEXT("GameLight")))
+	{
+		for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+		{
+			if (It->GetLightComponent())
+			{
+				S.bGame = true;
+				S.SunDir = -It->GetLightComponent()->GetComponentTransform().GetUnitAxis(EAxis::X);
+				break;
+			}
 		}
 	}
 	if (!S.bGame)

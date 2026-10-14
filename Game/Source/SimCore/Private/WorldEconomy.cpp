@@ -510,11 +510,126 @@ namespace Sim
 		U.AutoGather[I] = bTruck ? 1 : 0;
 		if (!bTruck || bHasRally)
 		{
-			// o caminhão sem ponto de encontro vai direto trabalhar (ZH SupplyCenterProductionExitUpdate)
-			GiveMove(I, ClampToMap(RallyPoint), OrderType::Move);
+			// o caminhão sem ponto de encontro vai direto trabalhar (ZH SupplyCenterProductionExitUpdate);
+			// cada um vai pra uma vaga da área de reunião e chega virado pra longe da fábrica
+			Angle Facing;
+			int32_t LateralHalf = 0;
+			const Vec2 Slot = StagingSlot(IndexOf(StructureId), I, ClampToMap(RallyPoint), Facing, &LateralHalf);
+			GiveMove(I, Slot, OrderType::Move);
+			U.ArriveFacing[I] = Facing;
+			U.HasArriveFacing[I] = 1;
+			if (DefOf(I).HasWeapon())
+			{
+				// o leque da área de reunião: as pontas da fileira olham pra fora (meio passo = 1/4 do leque)
+				U.IdleTurret[I] = std::clamp(LateralHalf, -4, 4) * (Angle::FullTurn * 25 / 360) / 4;
+			}
 		}
 		Events.push_back({ EventType::UnitProduced, StructureId, Id, Pos, Owner });
 		return Id;
+	}
+
+	bool World::SpotFree(int32_t Unit, Vec2 Q) const
+	{
+		// o passo das vagas do grupo (2,34 raios: as 32 unidades do ZH pro Crusader de 30), com folga
+		// de 15% pro tremido das vagas; conta quem já está parado ali e quem está indo pra lá (o
+		// destino dele, como as células de objetivo do ZH)
+		const UnitDef& D = DefOf(Unit);
+		const Cell C = MapData.CellOf(Q);
+		if (!MapData.IsWalkable(C.X, C.Y, MapData.ClearanceFor(D.PathRadius)))
+		{
+			return false;
+		}
+		const int64_t MinSq = RadiusSqRaw(D.Radius * Fix::FromMilli(2000));
+		for (int32_t J = 0; J < UnitCount(); ++J)
+		{
+			if (J == Unit || U.Owner[J] != U.Owner[Unit] || U.Hp[J] <= 0 || DefOf(J).IsStructure())
+			{
+				continue;
+			}
+			const Vec2 Claim = U.Order[J] == OrderType::Move ? U.OrderPoint[J] : U.Pos[J];
+			if (DistSqRaw(Claim, Q) < MinSq)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	Vec2 World::StagingSlot(int32_t Structure, int32_t Unit, Vec2 Rally, Angle& OutFacing, int32_t* OutLateralHalf) const
+	{
+		// a frente: da fábrica pro ponto; as fileiras de 4 enchem do ponto pra trás (o que chega
+		// depois não precisa passar pelo meio dos que já estão lá), a de trás meio passo de lado
+		const UnitDef& D = DefOf(Unit);
+		const Vec2 FromFactory = Rally - U.Pos[Structure];
+		const Angle Front = DistSqRaw(Rally, U.Pos[Structure]) > RadiusSqRaw(MapData.CellSize)
+			? FromFactory.Heading() : Angle::FromBam(DirOf(Structure) * Angle::QuarterTurn);
+		const Vec2 F = Vec2::FromAngle(Front);
+		const Vec2 R = Vec2::Make(-F.Y, F.X);
+		const Fix Step = D.Radius * Fix::FromMilli(2340);
+		static const int32_t Lateral[4] = { -1, 1, -3, 3 };   // em meios passos: o meio primeiro, depois as pontas
+		const uint32_t Seed = uint32_t(U.Id[Structure]) * 2654435761u;
+		for (int32_t K = 0; K < 24; ++K)
+		{
+			const int32_t Row = K / 4;
+			const int32_t Half = Lateral[K % 4] + (Row & 1);
+			Vec2 P = Rally + R * (Step * Fix::FromRatio(Half, 2)) - F * (Step * Fix::FromInt(Row));
+			// o tremido fixo da vaga (hash da fábrica e da vaga, sem estado de sorteio): ±0,3 m e ±4°
+			// (com mais, duas vagas vizinhas chegavam a menos de 2 raios e uma era pulada)
+			uint32_t H = Seed ^ (uint32_t(K + 1) * 40503u);
+			H ^= H >> 15; H *= 2246822519u; H ^= H >> 13;
+			P = P + F * Fix::FromMilli(int64_t(H % 601u) - 300) + R * Fix::FromMilli(int64_t((H >> 10) % 601u) - 300);
+			P = ClampToMap(P);
+			if (SpotFree(Unit, P))
+			{
+				OutFacing = Angle::FromBam(int32_t(Front.Bam) + int32_t((H >> 20) % 1457u) - 728);
+				if (OutLateralHalf)
+				{
+					*OutLateralHalf = Half;
+				}
+				return P;
+			}
+		}
+		OutFacing = Front;
+		return FreeSpotNear(Unit, Rally);
+	}
+
+	Vec2 World::FreeSpotNear(int32_t Unit, Vec2 P) const
+	{
+		const auto IsFree = [&](Vec2 Q) { return SpotFree(Unit, Q); };
+		if (IsFree(P))
+		{
+			return P;
+		}
+		// a espiral do ZH (direita, cima, esquerda, baixo; o lado cresce a cada duas voltas), em células
+		const Cell Center = MapData.CellOf(P);
+		int32_t X = Center.X;
+		int32_t Y = Center.Y;
+		int32_t Segment = 1;
+		const int32_t Dirs[4][2] = { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } };
+		for (int32_t Steps = 0; Steps < 24 * 24;)
+		{
+			for (int32_t K = 0; K < 4; ++K)
+			{
+				for (int32_t N = 0; N < Segment; ++N, ++Steps)
+				{
+					X += Dirs[K][0];
+					Y += Dirs[K][1];
+					if (MapData.InBounds(X, Y))
+					{
+						const Vec2 Q = MapData.CellCenter(Cell{ X, Y });
+						if (IsFree(Q))
+						{
+							return Q;
+						}
+					}
+				}
+				if (K & 1)
+				{
+					++Segment;
+				}
+			}
+		}
+		return P;
 	}
 
 	void World::CompleteStructure(int32_t Index)

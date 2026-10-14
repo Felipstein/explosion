@@ -8,6 +8,14 @@
 #include "HAL/PlatformTime.h"
 #include "LandscapeProxy.h"
 #include "RTSGameData.h"
+#include "Dom/JsonObject.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Misc/FileHelper.h"
+#include "Modules/ModuleManager.h"
+#include "Misc/Paths.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 
 namespace
 {
@@ -47,6 +55,184 @@ float FRTSBakedMap::GroundZCm(const FVector2D& Cm) const
 	const float Top = FMath::Lerp(H(X, Y), H(X + 1, Y), FX);
 	const float Bottom = FMath::Lerp(H(X, Y + 1), H(X + 1, Y + 1), FX);
 	return FMath::Lerp(Top, Bottom, FY) * 100.0f;
+}
+
+FVector4f FRTSBakedMap::SurfaceAt(const FVector2D& Cm) const
+{
+	if (SurfaceRes <= 1 || Surface.Num() != SurfaceRes * SurfaceRes)
+	{
+		return FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+	}
+	// o centro do pixel (i, j) em min + (i + 0,5, j + 0,5)·cell
+	const double GX = FMath::Clamp((Cm.X / 100.0 - SurfaceMinM.X) / SurfaceCellM - 0.5, 0.0, double(SurfaceRes - 1) - 1e-3);
+	const double GY = FMath::Clamp((Cm.Y / 100.0 - SurfaceMinM.Y) / SurfaceCellM - 0.5, 0.0, double(SurfaceRes - 1) - 1e-3);
+	const int32 X = int32(GX);
+	const int32 Y = int32(GY);
+	const float FX = float(GX - X);
+	const float FY = float(GY - Y);
+	auto C = [this](int32 I, int32 J)
+	{
+		const FColor& P = Surface[J * SurfaceRes + I];
+		return FVector4f(P.R, P.G, P.B, bSurfaceWet ? P.A : 0) / 255.0f;
+	};
+	const FVector4f Top = FMath::Lerp(C(X, Y), C(X + 1, Y), FX);
+	const FVector4f Bottom = FMath::Lerp(C(X, Y + 1), C(X + 1, Y + 1), FX);
+	return FMath::Lerp(Top, Bottom, FY);
+}
+
+namespace
+{
+	// o surface.png do WorldForge e o .json ao lado (min_m, cell_m, res; a linha 0 no −Y)
+	void LoadSurface(const FRTSMapInfo& Info, FRTSBakedMap& Out)
+	{
+		if (Info.SurfaceFile.IsEmpty())
+		{
+			return;
+		}
+		const FString Png = FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), Info.SurfaceFile);
+		TArray<uint8> Bytes;
+		FString Text;
+		TSharedPtr<FJsonObject> Meta;
+		if (!FFileHelper::LoadFileToArray(Bytes, *Png) || !FFileHelper::LoadFileToString(Text, *FPaths::ChangeExtension(Png, TEXT("json")))
+			|| !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Meta) || !Meta.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS chão: não li o tipo de chão %s (e o .json; game.ps1 worlds copia do WorldForge): tudo vira areia"), *Png);
+			return;
+		}
+		IImageWrapperModule& Images = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		TSharedPtr<IImageWrapper> Image = Images.CreateImageWrapper(EImageFormat::PNG);
+		TArray<uint8> Raw;
+		if (!Image.IsValid() || !Image->SetCompressed(Bytes.GetData(), Bytes.Num()) || !Image->GetRaw(ERGBFormat::RGBA, 8, Raw)
+			|| Image->GetWidth() != Image->GetHeight() || Raw.Num() != Image->GetWidth() * Image->GetHeight() * 4)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS chão: o tipo de chão %s não é um PNG RGBA quadrado: tudo vira areia"), *Png);
+			return;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Min = nullptr;
+		double Cell = 1.0;
+		FString Row0;
+		Meta->TryGetNumberField(TEXT("cell_m"), Cell);
+		Meta->TryGetStringField(TEXT("row0"), Row0);
+		if (!Meta->TryGetArrayField(TEXT("min_m"), Min) || Min->Num() < 2 || Cell <= 0.0 || (!Row0.IsEmpty() && Row0 != TEXT("min_y")))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS chão: o %s não tem min_m/cell_m (ou a linha 0 não é o −Y): tudo vira areia"), *FPaths::GetCleanFilename(FPaths::ChangeExtension(Png, TEXT("json"))));
+			return;
+		}
+		const TSharedPtr<FJsonObject>* Channels = nullptr;
+		Out.bSurfaceWet = Meta->TryGetObjectField(TEXT("channels"), Channels) && (*Channels)->HasField(TEXT("a"));
+		Out.SurfaceRes = int32(Image->GetWidth());
+		Out.SurfaceCellM = float(Cell);
+		Out.SurfaceMinM = FVector2D((*Min)[0]->AsNumber(), (*Min)[1]->AsNumber());
+		Out.Surface.SetNumUninitialized(Out.SurfaceRes * Out.SurfaceRes);
+		int32 Paved = 0;
+		for (int32 I = 0; I < Out.Surface.Num(); ++I)
+		{
+			Out.Surface[I] = FColor(Raw[I * 4], Raw[I * 4 + 1], Raw[I * 4 + 2], Raw[I * 4 + 3]);
+			Paved += Raw[I * 4] >= 128 ? 1 : 0;
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS chão: tipo de chão %s, %d×%d de %.1f m, %.1f%% asfalto"), *Info.SurfaceFile, Out.SurfaceRes, Out.SurfaceRes, Cell,
+			100.0 * Paved / FMath::Max(Out.Surface.Num(), 1));
+	}
+}
+
+namespace
+{
+	// a grade da simulação do WorldForge (grid.png e grid.json, 13/10): a água por célula e os corpos, com o hash dele
+	// conferido (FNV-1a 64 dos pixels RGBA, linha 0 primeiro, e uma linha "id,kind,level_mm,flow_x,flow_y\n" por corpo)
+	bool LoadWaterGrid(const FRTSMapInfo& Info, int32 Cells, const FVector2D& OriginM, Sim::SimMap& M)
+	{
+		if (Info.GridFile.IsEmpty())
+		{
+			return false;
+		}
+		const FString Png = FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), Info.GridFile);
+		TArray<uint8> Bytes;
+		FString Text;
+		TSharedPtr<FJsonObject> Meta;
+		if (!FFileHelper::LoadFileToArray(Bytes, *Png) || !FFileHelper::LoadFileToString(Text, *FPaths::ChangeExtension(Png, TEXT("json")))
+			|| !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Meta) || !Meta.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS água: não li a grade %s (e o .json; game.ps1 worlds copia do WorldForge): a água vem da altura"), *Png);
+			return false;
+		}
+		IImageWrapperModule& Images = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		TSharedPtr<IImageWrapper> Image = Images.CreateImageWrapper(EImageFormat::PNG);
+		TArray<uint8> Raw;
+		if (!Image.IsValid() || !Image->SetCompressed(Bytes.GetData(), Bytes.Num()) || !Image->GetRaw(ERGBFormat::RGBA, 8, Raw)
+			|| Image->GetWidth() != Cells || Image->GetHeight() != Cells || Raw.Num() != Cells * Cells * 4)
+		{
+			UE_LOG(LogTemp, Error, TEXT("RTS água: a grade %s não é um PNG RGBA de %d×%d (as células do mapa): a água vem da altura"), *Png, Cells, Cells);
+			return false;
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Min = nullptr;
+		double Cell = 0.0;
+		FString Row0;
+		FString Want;
+		Meta->TryGetNumberField(TEXT("cell_m"), Cell);
+		Meta->TryGetStringField(TEXT("row0"), Row0);
+		Meta->TryGetStringField(TEXT("hash"), Want);
+		if (!Meta->TryGetArrayField(TEXT("min_m"), Min) || Min->Num() < 2 || !FMath::IsNearlyEqual(Cell, double(Info.CellM)) || Row0 != TEXT("min_y")
+			|| !FMath::IsNearlyEqual((*Min)[0]->AsNumber(), OriginM.X) || !FMath::IsNearlyEqual((*Min)[1]->AsNumber(), OriginM.Y))
+		{
+			UE_LOG(LogTemp, Error, TEXT("RTS água: a grade %s não bate com a do mapa (canto, célula ou linha 0): a água vem da altura"), *Png);
+			return false;
+		}
+		// o hash do WorldForge, pela mesma conta
+		uint64 Fnv = 0xcbf29ce484222325ull;
+		auto Eat = [&Fnv](uint8 B) { Fnv = (Fnv ^ B) * 0x100000001b3ull; };
+		for (const uint8 B : Raw)
+		{
+			Eat(B);
+		}
+		TArray<Sim::WaterBody> Bodies;
+		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+		if (Meta->TryGetArrayField(TEXT("bodies"), List))
+		{
+			static const TCHAR* Kinds[] = { TEXT("lake"), TEXT("oasis"), TEXT("river"), TEXT("sea"), TEXT("ice") };
+			for (const TSharedPtr<FJsonValue>& V : *List)
+			{
+				const TSharedPtr<FJsonObject> O = V->AsObject();
+				FString Kind;
+				int32 Id = 0, Level = 0, FlowX = 0, FlowY = 0;
+				O->TryGetNumberField(TEXT("id"), Id);
+				O->TryGetStringField(TEXT("kind"), Kind);
+				O->TryGetNumberField(TEXT("level_mm"), Level);
+				O->TryGetNumberField(TEXT("flow_x_mm_s"), FlowX);
+				O->TryGetNumberField(TEXT("flow_y_mm_s"), FlowY);
+				const FString Line = FString::Printf(TEXT("%d,%s,%d,%d,%d\n"), Id, *Kind, Level, FlowX, FlowY);
+				for (const TCHAR C : Line)
+				{
+					Eat(uint8(C));
+				}
+				Sim::WaterBody B;
+				B.Id = uint8(FMath::Clamp(Id, 0, 255));
+				for (uint8 K = 0; K < UE_ARRAY_COUNT(Kinds); ++K)
+				{
+					B.Kind = Kind == Kinds[K] ? K : B.Kind;
+				}
+				B.LevelMm = Level;
+				B.FlowXMmS = FlowX;
+				B.FlowYMmS = FlowY;
+				Bodies.Add(B);
+			}
+		}
+		const FString Got = FString::Printf(TEXT("%016llx"), (unsigned long long)Fnv);
+		if (Got != Want.ToLower())
+		{
+			UE_LOG(LogTemp, Error, TEXT("RTS água: o hash da grade %s não confere (%s no arquivo, %s na conta): a água vem da altura"), *Png, *Want, *Got);
+			return false;
+		}
+		M.Water.resize(size_t(Cells) * size_t(Cells));
+		M.WaterBodyId.resize(M.Water.size());
+		for (int32 I = 0; I < Cells * Cells; ++I)
+		{
+			M.Water[size_t(I)] = Raw[I * 4] <= uint8(Sim::WaterState::Ice) ? Raw[I * 4] : uint8(Sim::WaterState::Dry);
+			M.WaterBodyId[size_t(I)] = Raw[I * 4 + 1];
+		}
+		M.WaterBodies.assign(Bodies.GetData(), Bodies.GetData() + Bodies.Num());
+		UE_LOG(LogTemp, Log, TEXT("RTS água: a grade %s (hash %s), %d corpos"), *Info.GridFile, *Got, Bodies.Num());
+		return true;
+	}
 }
 
 FVector FRTSBakedMap::GroundNormal(const FVector2D& Cm) const
@@ -117,6 +303,12 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 		const float GY = (H(I, J + 1) - H(I, J - 1)) / (2.0f * Info.SampleM);
 		return GX * GX + GY * GY > Info.MaxSlope * Info.MaxSlope || H(I, J) == NoGround;
 	};
+	// a água do WorldForge, quando ele exporta a grade (a água pela altura fica de reserva)
+	Out.bWaterGrid = LoadWaterGrid(Info, CellsPerSide, Out.OriginM, M);
+	int32 GridShore = 0;
+	int32 GridFord = 0;
+	int32 GridIce = 0;
+	Out.CellReason.Init(0, M.Width * M.Height);
 	// a menor e a maior altura de cada célula, em decímetros: a regra de construir no plano (ZH)
 	M.MinDm.assign(M.Pass.size(), 0);
 	M.MaxDm.assign(M.Pass.size(), 0);
@@ -144,15 +336,22 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 			M.MaxDm[size_t(M.Index(CX, CY))] = int16(FMath::Clamp(FMath::CeilToInt(Hi * 10.0f), -32000, 32000));
 			const float Center = H(CX * Step + Step / 2, CY * Step + Step / 2);
 			uint8 Pass = uint8(Sim::CellPass::Open);
-			if (Center < Info.WaterBelowM)
+			const Sim::WaterState W = M.WaterAt(CX, CY);
+			GridShore += W == Sim::WaterState::Shore ? 1 : 0;
+			GridFord += W == Sim::WaterState::Ford ? 1 : 0;
+			GridIce += W == Sim::WaterState::Ice ? 1 : 0;
+			// com a grade: só o fundo é água (a margem, o vau e o gelo passam, mesmo abaixo da altura da água)
+			if (Out.bWaterGrid ? W == Sim::WaterState::Deep : Center < Info.WaterBelowM)
 			{
 				Pass = uint8(Sim::CellPass::Water);
 				++Out.WaterCells;
+				Out.CellReason[M.Index(CX, CY)] = 1;
 			}
 			else if (Cliffs * 2 >= Count)
 			{
 				Pass = uint8(Sim::CellPass::Blocked);
 				++Out.CliffCells;
+				Out.CellReason[M.Index(CX, CY)] = 2;
 			}
 			M.Pass[M.Index(CX, CY)] = Pass;
 		}
@@ -181,6 +380,7 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 				{
 					M.Pass[M.Index(X, Y)] = uint8(Sim::CellPass::Blocked);
 					++Out.ObstacleCells;
+					Out.CellReason[M.Index(X, Y)] = 3;
 				}
 			}
 		}
@@ -213,7 +413,89 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 		}
 	}
 
+	// 4. a vila do WorldForge: a pegada de cada peça que bloqueia, já na grade de 4 m dele (o mesmo canto
+	// [-512, -512] da nossa); o quintal murado vira ilha fechada (os muros bloqueiam, o meio não)
+	if (!Info.VillageFile.IsEmpty())
+	{
+		FString Text;
+		TSharedPtr<FJsonObject> Village;
+		const FString Path = FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), Info.VillageFile);
+		if (!FFileHelper::LoadFileToString(Text, *Path) || !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Village) || !Village.IsValid())
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS vila: não li %s (game.ps1 worlds copia do WorldForge): o mapa fica sem as casas na grade"), *Path);
+		}
+		else
+		{
+			Village->TryGetStringField(TEXT("hash"), Out.VillageHash);
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				if (It->ActorHasTag(TEXT("WorldForgeVillage")))
+				{
+					for (const FName& Tag : It->Tags)
+					{
+						const FString T = Tag.ToString();
+						if (T.StartsWith(TEXT("village_hash:")))
+						{
+							Out.VillageHashInMap = T.RightChop(13);
+						}
+					}
+				}
+			}
+			if (Out.VillageHash != Out.VillageHashInMap)
+			{
+				// o JSON e o mapa montado são de montagens diferentes: as casas desenhadas e as da grade não batem
+				UE_LOG(LogTemp, Error, TEXT("RTS vila: o JSON (%s) não é o do mapa montado (%s): rode o game.ps1 worlds depois de remontar"),
+					*Out.VillageHash, Out.VillageHashInMap.IsEmpty() ? TEXT("sem etiqueta") : *Out.VillageHashInMap);
+			}
+			const TArray<TSharedPtr<FJsonValue>>* Origin = nullptr;
+			const bool bSameGrid = Village->TryGetArrayField(TEXT("origin_m"), Origin) && Origin->Num() >= 2
+				&& FMath::IsNearlyEqual((*Origin)[0]->AsNumber(), double(Out.OriginM.X)) && FMath::IsNearlyEqual((*Origin)[1]->AsNumber(), double(Out.OriginM.Y));
+			const TArray<TSharedPtr<FJsonValue>>* Pieces = nullptr;
+			if (!bSameGrid)
+			{
+				UE_LOG(LogTemp, Error, TEXT("RTS vila: a grade do JSON não começa no canto do mapa (%.0f, %.0f): fica sem as casas"), Out.OriginM.X, Out.OriginM.Y);
+			}
+			else if (Village->TryGetArrayField(TEXT("pieces"), Pieces))
+			{
+				int32 Blocking = 0;
+				for (const TSharedPtr<FJsonValue>& V : *Pieces)
+				{
+					const TSharedPtr<FJsonObject> P = V->AsObject();
+					bool bBlocks = false;
+					const TArray<TSharedPtr<FJsonValue>>* CellAt = nullptr;
+					const TArray<TSharedPtr<FJsonValue>>* CellsWH = nullptr;
+					if (!P.IsValid() || !P->TryGetBoolField(TEXT("blocks"), bBlocks) || !bBlocks
+						|| !P->TryGetArrayField(TEXT("cell"), CellAt) || CellAt->Num() < 2 || !P->TryGetArrayField(TEXT("cells"), CellsWH) || CellsWH->Num() < 2)
+					{
+						continue;
+					}
+					++Blocking;
+					const int32 I0 = int32((*CellAt)[0]->AsNumber()), J0 = int32((*CellAt)[1]->AsNumber());
+					const int32 W = int32((*CellsWH)[0]->AsNumber()), Hh = int32((*CellsWH)[1]->AsNumber());
+					for (int32 Y = FMath::Max(J0, 0); Y < FMath::Min(J0 + Hh, M.Height); ++Y)
+					{
+						for (int32 X = FMath::Max(I0, 0); X < FMath::Min(I0 + W, M.Width); ++X)
+						{
+							if (M.Pass[M.Index(X, Y)] == uint8(Sim::CellPass::Open))
+							{
+								M.Pass[M.Index(X, Y)] = uint8(Sim::CellPass::Blocked);
+								++Out.VillageCells;
+								Out.CellReason[M.Index(X, Y)] = 4;
+							}
+						}
+					}
+				}
+				UE_LOG(LogTemp, Log, TEXT("RTS vila: %d peças, %d bloqueiam, %d células fechadas (hash %s)"), Pieces->Num(), Blocking, Out.VillageCells, *Out.VillageHash);
+			}
+		}
+	}
+
+	if (Out.bWaterGrid)
+	{
+		UE_LOG(LogTemp, Log, TEXT("RTS água: %d células de fundo, %d de margem, %d de vau, %d de gelo"), Out.WaterCells, GridShore, GridFord, GridIce);
+	}
 	M.ComputeClearance();
+	LoadSurface(Info, Out);
 	Out.BakeSeconds = FPlatformTime::Seconds() - Start;
 	UE_LOG(LogTemp, Log, TEXT("RTS mapa %s: %d×%d células de %.0f m; penhasco %d, água %d, pedras %d, sem chão %d amostras; %.2f s; hash %016llx"),
 		*Info.Name, M.Width, M.Height, Info.CellM, Out.CliffCells, Out.WaterCells, Out.ObstacleCells, Missing, Out.BakeSeconds,

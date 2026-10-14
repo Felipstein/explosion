@@ -120,7 +120,10 @@ def build(R):
 
 
 def main():
+    only = [n for n in os.environ.get('LOOK_RECIPES', '').split(',') if n]   # só estas (o A/B no jogo, 13/10)
     for path in sorted(glob.glob(os.path.join(HERE, 'look_recipes', '*.json'))):
+        if only and os.path.splitext(os.path.basename(path))[0] not in only:
+            continue
         name = os.path.splitext(os.path.basename(path))[0]
         R = json.load(open(path, encoding='utf-8'))
         for sect, over in R.get('game', {}).items():      # o que muda só no jogo (relevo, água) vai por cima

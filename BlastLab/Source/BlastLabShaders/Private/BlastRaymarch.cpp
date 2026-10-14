@@ -22,6 +22,12 @@
 
 // tempos de GPU (blast.ps1 view -ProfileGpu → Tools/gpu_profile.py --live)
 DECLARE_GPU_STAT_NAMED(BlastRaymarch, TEXT("BlastRaymarch"));
+// cada passe no perfil (-csvGpuStats: GPU/BlastRmLight, ...), pra saber onde está o custo com muitas explosões (14/10)
+DECLARE_GPU_STAT_NAMED(BlastRmLight, TEXT("BlastRmLight"));
+DECLARE_GPU_STAT_NAMED(BlastRmShadow, TEXT("BlastRmShadow"));
+DECLARE_GPU_STAT_NAMED(BlastRmMarch, TEXT("BlastRmMarch"));
+DECLARE_GPU_STAT_NAMED(BlastRmTemporal, TEXT("BlastRmTemporal"));
+DECLARE_GPU_STAT_NAMED(BlastRmComposite, TEXT("BlastRmComposite"));
 
 using namespace BlastRaymarch;
 
@@ -962,6 +968,8 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	};
 
 	// 1) cache de luz das maiores na tela
+	{
+	RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmLight, "BlastRmLight");
 	if (NumLC == 0)
 	{
 		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(LC), FVector4f(1.0f, 1.0f, 1.0f, 1.0f));
@@ -977,11 +985,13 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch LightCache"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
 			Shader, P, FComputeShaderUtils::GetGroupCount(FIntVector(LCRes), FIntVector(4)));
 	}
+	}
 
 	// 1b) a sombra no chão: a espessura óptica entre o plano do chão e o sol, vista de cima (a light function do sol lê
 	// no quadro seguinte). Sem dono no jogo (mapas do BlastLab, que têm a sombra da fumaça de campo), não roda.
 	if (Shadow.Out && Shadow.Out->GetRenderTargetTexture())
 	{
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmShadow, "BlastRmShadow");
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		FRDGTextureRef ShadowTex = External(GraphBuilder, Shadow.Out->GetRenderTargetTexture(), TEXT("BlastRaymarch.Shadow"));
@@ -1003,6 +1013,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	FRDGTextureRef VolNear = HalfTex(TEXT("BlastRaymarch.VolumeNear"));
 	FRDGTextureRef VolDepth = HalfTex(TEXT("BlastRaymarch.VolumeDepth"), PF_A32B32G32R32F);
 	{
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmMarch, "BlastRmMarch");
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		P->PoolLC = LC;
@@ -1021,6 +1032,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	FRDGTextureRef Resolved = HalfTex(TEXT("BlastRaymarch.Resolved"));
 	FRDGTextureRef ResolvedNear = HalfTex(TEXT("BlastRaymarch.ResolvedNear"));
 	{
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmTemporal, "BlastRmTemporal");
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		P->VolIn = Vol;
@@ -1056,6 +1068,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		OutTex = GraphBuilder.CreateTexture(Desc, TEXT("BlastRaymarch.SceneColor"));
 	}
 	{
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmComposite, "BlastRmComposite");
 		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
 		Common(P);
 		P->SceneColorIn = SceneColor.Texture;

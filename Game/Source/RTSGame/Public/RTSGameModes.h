@@ -15,6 +15,7 @@ class RTSGAME_API ARTSMenuGameMode : public AGameModeBase
 
 public:
 	ARTSMenuGameMode();
+	virtual void StartPlay() override;
 };
 
 UCLASS()

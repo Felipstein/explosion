@@ -72,6 +72,7 @@ namespace WorldForgeExport
 		Set->SetNumberField(TEXT("erosion"), St.Erosion);
 		Set->SetNumberField(TEXT("forests"), St.Forests);
 		Set->SetNumberField(TEXT("resources"), St.Resources);
+		Set->SetNumberField(TEXT("frame"), int32(M.Frame));   // a borda sorteada (EWorldFrame)
 		Root->SetObjectField(TEXT("settings"), Set);
 		Root->SetNumberField(TEXT("grid"), M.N);
 		Root->SetNumberField(TEXT("cellMeters"), M.Cell);

@@ -88,3 +88,104 @@ só anda depois dos shaders compilarem) e `measure -Map World_Desert` (sem efeit
 mediana e p95 do quadro, da placa, do jogo e do render em `captures/fxlab/measure_<nome>.txt`).
 
 Trava da placa entre as sessões: a fila de `docs/GPU.md` (o `fxlab.ps1 shot` e o `measure` entram nela).
+
+## Poeira do andar (13/10/2026, a arte, com o Felipe fora)
+
+O rastro de poeira atrás das lagartas, item do `docs/BASE_JOGAVEL.md` (§2). O jogo definiu que é da arte com o FXLab.
+
+**Como os jogos fazem (estudo):**
+- **Zero Hour** (`W3DTankDraw.cpp`, o código liberado pela EA):
+  - um emissor por lagarta (`TreadDebrisLeft/Right`, os sistemas `TrackDebrisDirtLeft/Right`), preso no tanque;
+  - liga só com o tanque andando (velocidade² > 0,00001) e fora da névoa;
+  - a velocidade escala a quantidade (velocidade + 0,1, até 1) e a velocidade das partículas (0,5 × velocidade + 0,1, até 1);
+  - prioridade baixa: é o primeiro efeito a sair quando falta orçamento.
+- **Jogos de hoje** (o WARNO, `TrailSpawner`, e o Niagara, `SpawnPerUnit`; o CoH3 não tem fonte pública sobre isso):
+  - partícula por distância andada, e não por tempo, pra o rastro sair igual em qualquer quadro;
+  - a cor pelo tipo de chão;
+  - cartão de fumaça gravado com luz 6-way.
+
+**O alvo:** as cenas aprovadas (`steppe_gpt`, `town_battle_top`, `road_battle`, a neve em `captures/concept/fx_refs/snow_walk/`).
+- O rastro é baixo, nasce no pé da metade de trás da lagarta e fica abaixo do casco perto do tanque.
+- É claro e quente (contraluz), ralo, junta as duas lagartas e tem 1 a 2 tanques de comprimento andando rápido.
+- Na neve: branco, grosso e curto.
+
+**Como está feito** (`FXLab/web/fxtread.js` é a especificação; `FXTread.cpp` repete linha a linha, mesma semente):
+- cartões da Dust Impact (`dust_impact4`, JangaFX CC0), quadros 16 a 50 (a nuvem já aberta, que se desfaz sozinha);
+- 1 cartão a cada 0,4 m andados por lagarta, num ponto sorteado da metade de trás dela;
+- jogado pra trás (1,5 m/s × a regra do ZH) e pros lados (1,8 m/s), com arrasto, vento e um pouco de queda;
+- cresce de ~2,9 m a ~9 m em 2,6 s; denso junto da lagarta e ralo na cauda;
+- por chão (areia, neve, lama, asfalto): o tom, a claridade, a densidade, a vida, a quantidade, a opacidade e o tamanho.
+
+**Pro jogo:**
+- um ator só (`AFXTreadDust`) pra todas as unidades;
+- a ponte chama `SetSources()` a cada quadro com os veículos que andam (id, posição, frente, velocidade, chão);
+- ele desenha uma malha por tipo de chão, com o mesmo material `M_FXSixWay` e o cozimento `dust_impact4` (o mesmo do tiro no chão).
+
+**Laboratório:**
+- navegador: `?fx=tread[&ground=snow|mud|asphalt]` (o tanque dá voltas, a câmera segue);
+- Unreal: `fxlab.ps1 shot -Extra "-Fx=tread -SunElev=22 [-Ground=snow]"`.
+- O chão do navegador é a areia procedural `captures/fxlab/sand_lab.jpg` (a foto do WorldForge saiu do Intermediate).
+
+**Vídeos:** `captures/fxlab/tread_sand_v1.mp4` e `tread_sand_v2.mp4` (6 s). Navegador e Unreal dão a mesma história (`captures/fxlab/shots*/tread_*`).
+
+**Decisão do Felipe (13/10):**
+- A poeira das 3 gameplays em vídeo (`captures/concept/33_video/`; recortes em `captures/concept/fx_refs/tread_dust_video/`) é melhor que a feita à mão. Ela é densa, granulada e rola em bolos baixos.
+- **Gerar no EmberGen** um efeito bem parecido. A versão feita à mão **fica guardada como plano B**.
+- O Felipe não quer a sessão do BlastLab nisso ("deixa o cara focar na explosão"): a arte operou o EmberGen sozinha.
+
+**A versão EmberGen (13/10, a ativa):**
+- **O projeto:** `captures/embergen/tread/tread_puff_v1.ember`, a `poeira_chao_v4` do BlastLab com:
+  - o emissor em toro de 0,9 m a 0,35 m do chão;
+  - voxel de 5 cm (192³, domínio de 9,6 m);
+  - pressão 150 %/s.
+- **A simulação:** VDB em `captures/vdb/tread_dust/puff_v3` (90 quadros, 30 qps, só densidade e temperatura).
+- **Os cartões:** gravados com `bake_sixway.py` (`captures/fxlab/bake/tread_puff_v3`, 32 quadros de 256 px, lado 7,9 m). O pivô foi medido no 1º quadro.
+- **O ajuste:** `FXLab/tread.json`. O plano B é o `FXLab/tread_handmade.json` (`?treadProfile=` no navegador, `-TreadProfile=` na Unreal).
+- **Como operar o EmberGen por script**, sem mexer no mouse:
+  - o `desk.py` e o `eg.py` do BlastLab, em `C:\Users\luisf\explosion-lab\tools\desk\`, com o mapa em `EMBERGEN_MAPA.md`;
+  - o `art/tools/eg_set.py` (muda campos e exporta, rolando o painel pro topo antes);
+  - o `art/tools/eg_back.py` (manda a janela pra trás);
+  - regras: nunca com outro EmberGen aberto; fechar pelo PID.
+- **Vídeos no navegador:** `captures/fxlab/tread_embergen_v1.mp4` (a nova) e `tread_sand_v2.mp4` (o plano B). A folha é `captures/fxlab/tread_compare.jpg`.
+- **Na Unreal, no deserto do jogo** (o Felipe: "no webgl não vou saber, precisa ser no Unreal, com textura nossa"):
+  - o mapa é o `World_Desert` (a fatia do WorldForge, com a luz, a exposição e a câmera do jogo);
+  - o tanque do grupo 1 dá voltas de 14 m seguindo o chão (um raio de cima pra baixo), e a câmera segue.
+  - Comando: `fxlab.ps1 shot -Map World_Desert -Cam game -Extra "-Fx=tread -Load=0 [-TreadProfile=tread_handmade.json]"`.
+  - Vídeos: `captures/fxlab/tread_game_eg.mp4` (EmberGen) e `tread_game_hand.mp4` (plano B); a folha é `tread_game_compare.jpg`.
+  - O cozimento entra na Unreal com `fxlab.ps1 import -Name tread_puff_v3`.
+
+**No mapa do jogo de hoje (13/10, o Felipe: "pega o tanque que estamos usando hoje e a luz e as texturas"):**
+- **Cópia do que o jogo usa**, só leitura do Game/:
+  - o mapa `World_TestSalt2` e o conteúdo dele (Slice, Village, Structures, Materials, Textures);
+  - o tanque `Units/USA_MBT_LL` (o da maquete do Look, o mesmo do `Units.json`);
+  - o plugin `RTSLook` (`FXLab/Plugins/RTSLook`, cópia; o dono é o Look).
+- **A luz:** a receita do mapa (`desert_golden_hour_v2_aprovada`) pelo `ALookDirector`, como o `RTSGameModes.cpp` faz.
+- **O asfalto:** a camada "Asphalt" do Landscape, lida das texturas de peso no editor (`BuildAsphaltGrid`).
+  - Em cima do asfalto a areia não levanta poeira (o Felipe: "poeira de areia não surja no asfalto").
+  - No jogo, o tipo de chão tem de vir da simulação: a grade do mapa ainda não tem isso.
+- **Comando:** `fxlab.ps1 shot -Map World_TestSalt2 -Cam game -Extra "-Fx=tread -Load=0 -GameLight -GameTank -LookRecipe=desert_golden_hour_v2_aprovada [-TreadProfile=tread_handmade.json]"`.
+  - A volta é de 14 m no cruzamento do centro.
+- **Os dois pontos que separavam do vídeo:**
+  - a cor: a poeira saía com claridade 0,81 contra 0,60 da areia; agora o tom é o da areia (tint 1,0/0,64/0,38, albedo 2,6);
+  - a altura: o cartão achatado na vertical (`squashUp` 0,65) e menor ao nascer.
+  - Valem nos dois perfis.
+- **Vídeos:** `captures/fxlab/tread_gamemap_lado_a_lado.mp4` (EmberGen × plano B); a folha é `tread_gamemap_compare.jpg`.
+
+**O estudo de 13/10 à tarde e o plano novo** (o Felipe: "estudar como é de verdade, se inspirar, entender, planejar e discutir"):
+- O plano está em `docs/POEIRA_DAS_LAGARTAS.md`; o estudo inteiro, em `captures/fxlab/tread_study/` (fora do git).
+- O alvo principal é a `r1_raid_slabs` (escolha do Felipe, 13/10). O vídeo v2 de perto é a referência de onde a poeira nasce.
+- As duas versões de antes estão guardadas em `FXLab/tread_versions/v1_13-10/`.
+
+**A poeira em camadas (13/10 à noite, o plano `docs/POEIRA_DAS_LAGARTAS.md`):**
+- **O código** (`FXTread.cpp`): um perfil com `layers` liga a poeira nova; sem `layers` é a de 13/10, igual (as duas guardadas em `FXLab/tread_versions/v1_13-10/`).
+  - Camadas K1 (o jato atrás da roda motriz), K2 (a nuvem, com máscara de comprimento em cascos e a esteira), C (a cortina ao longo da lagarta); cada uma nasce na caixa dela, no referencial do tanque, com pivô no fundo da poeira (`ball_bottom`), o quadro pela idade (`times_s`), deslocada pra câmera (`camOffset`) e a curva de opacidade do WARNO.
+  - O chão é lido no pé de trás de cada lagarta, com peso contínuo (o asfalto bilinear); a areia presa de cada lagarta esvazia com τ = 0,27 s (`loadTau`) e só o jato segue ela.
+  - A sombra do tanque na poeira: cada canto do cartão vê se o casco ou a torre tapam o sol (UV3.y, o canal que o material já usa).
+  - A sombra da nuvem no chão (`shadow` na camada): `M_FXDustShadow` (Modulate), um cartão deitado esticado pra longe do sol (`FXLab/Tools/make_dust_shadow.py` cria o material).
+- **A câmera dos alvos** (`-Cam=r1`, `-Cam=v2`, `-Cam=v2close`): presa ao tanque numa reta só de areia (`FindPathLine`, longe de árvore, pedra e casa), com o sol na mesma relação do alvo; a distância sai do tamanho do casco na tela.
+- **O jato novo do EmberGen:** `captures/embergen/tread/tread_kick_v1.ember` (caixa arredondada de 0,36 × 0,64 × 0,6 m no chão, pressão 35 %/s, ruído de 1,5 m com 2 oitavas, empuxo 300 % com 600 K, peso 100 %).
+  - Medido no VDB, antes de cozinhar (`FXLab/Tools/vdb_measure.py` no Blender + `tread_vdb_sheet.py`): 1,0 × 1,3 m e 1,0 m de altura aos 0,2 s; um monte de 2,0 × 2,3 m com 1,1-1,2 m até os 2 s.
+  - O cozimento `tread_kick_v1` (33°, lado 4,2 m, 48 quadros mais densos no começo: o argumento novo de potência do tempo no `bake_sixway.py`).
+- **Os perfis:** `tread_v2_ember.json`, `tread_v2_ember_s.json` (com a sombra no chão), `tread_v2_handmade.json`.
+- **A gravação de perto:** `FXLab/Tools/tread_baseline.ps1 -Profiles ... -Tag ...` (r1 e v2close, pela fila, vira mp4 em `captures/fxlab/tread_base/`); o alvo de perto do v2 é `FXLab/Tools/tread_v2crop.py` (o T1 seguido).
+

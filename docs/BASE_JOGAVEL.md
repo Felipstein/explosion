@@ -83,7 +83,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - a batalha escondida muda, que vem com o som;
   - o custo da passada da névoa, a medir com a placa livre.
 - [ ] **Minimapa também na sala de espera:** mapa com as bases e a escolha da largada.
-- [~] **Multiplayer de verdade** (jogo, 10/10: LAN pronta, sem o teste do Felipe). Feito: menu MULTIPLAYER (LAN), sala com até 8, cor por jogador, névoa do anfitrião, a montagem do anfitrião pra todos, lockstep com a impressão digital, volta de todos pra sala, mapa com 4 bases (`docs/MULTIPLAYER.md` Parte 7). Em 11/10: times na sala (aliados lado a lado, vitória do time), IA nas vagas, espectador de quem cai, névoa em 3 tipos (explorada, preta, desligada), a seta "enemy base" fora. Falta: pausa, queda com espera, reconexão, barras de carregamento, sinal no mapa, dar dinheiro, o online (último do jogo). Ver a seção 1.
+- [~] **Multiplayer de verdade** (jogo, 10/10: LAN pronta, sem o teste do Felipe). Feito: menu MULTIPLAYER (LAN), sala com até 8, cor por jogador, névoa do anfitrião, a montagem do anfitrião pra todos, lockstep com a impressão digital, volta de todos pra sala, mapa com 4 bases (`docs/MULTIPLAYER.md` Parte 7). Em 11/10: times na sala (aliados lado a lado, vitória do time), IA nas vagas, espectador de quem cai, névoa em 3 tipos (explorada, preta, desligada), a seta "enemy base" fora. Em 13/10 (N5, sem o teste do Felipe): a pausa pra todos, render-se e a queda com espera de 60 s e votação, como no ZH (`docs/MULTIPLAYER.md` Parte 7). Falta: reconexão, barras de carregamento, sinal no mapa, dar dinheiro, o online (último do jogo). Ver a seção 1.
 - [~] **War Factory funcionando, com a mecânica original do ZH** (jogo, 10/10, sem o teste do Felipe): Command Center + Dozer, energia, construção, depósitos e caminhão, a fila da fábrica, a carga que cai, vitória por base, modelos provisórios. O que está feito: `docs/ECONOMIA.md` Parte 5. Ver a seção 1.
 
 ---
@@ -106,7 +106,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **O resto do revisor do juiz:** faixas no `ReadSetup`, script que recusa float/double/FMath no SimCore, clang-cl no simtest; com o 2º PC, o mesmo hash em Intel e AMD.
 - [ ] **Como o 2º PC recebe o conteúdo:** o mapa (262 MB), as fatias e os assets por link estão fora do git (o `Game/Content` tem 2,3 GB e só 2 arquivos versionados), e o GitHub recusa arquivo acima de 100 MB: pacote cozido ou Git LFS.
 - [ ] **Câmera em rede:** o Alt+meio desce até 12° (cinematográfico); travar na faixa de jogo no multiplayer?
-- [ ] **Pausar, retomar, render-se e sair viram comandos da rede**, com regra. Hoje o Esc pausa só o PC local, e no lockstep isso trava o outro.
+- [~] **Pausar, retomar, render-se e sair viram comandos da rede** (13/10, sem o teste do Felipe): a pausa é o anfitrião parar de fechar passo, então todos param no mesmo; render-se é o comando `Resign`; quem sai ou cai é rendido pelo anfitrião.
 - [ ] **HUD pra N jogadores.** Hoje é "Seus tanques / Inimigo", com a cor do jogador 1 fixa.
 - [ ] **Grade igual nos dois PCs:**
   - conferir o hash da grade na sala de espera;
@@ -128,13 +128,38 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [~] **Fábrica destruída** (feito 10/10): para de produzir e **devolve o dinheiro da fila** (ZH `ProductionUpdate.cpp:1130`; a nota antiga "perde a fila" estava errada, revisão de 10/10).
 - [~] **Vitória com base** (feito 10/10, a regra do ZH: perde quem fica sem prédio). Com fábrica produzindo sem economia, a partida pode não acabar.
 - [ ] **IA com fábrica:** usa a fila e o ponto de encontro. No multiplayer, roda no anfitrião mandando comandos como um jogador. Decidir se a base tem vagas de IA.
-- [ ] **Carcaça e passagem.** Decidido em 06/10: a carcaça **fica no mapa como cobertura** nos testes e no jogo vira opção da sala. Falta: ela virar obstáculo na simulação (hoje os tanques atravessam, porque ela só existe no desenho) e a opção na sala de espera.
+- [~] **Carcaça com física** (o Felipe, 13/10: "a carcaça não tem que ter opção, tem que ter física"; feito no mesmo dia, sem o teste dele). Ela fica no mapa e não tem opção na sala:
+  - **Na simulação** (versão 12, igual em todo PC): o veículo morto vira carcaça no lugar.
+    - O vivo que encosta empurra; ela pesa o mesmo que o vivo, então quem empurra anda à metade da velocidade.
+    - A batida nunca é reta (±9°), então ela gira e escorrega pro lado. No teste, andou 5,7 m e girou 18°, e o tanque passou.
+    - Contra penhasco ou prédio ela trava, e aí segura o tanque.
+    - O casco é dois círculos no eixo, e cabem até 256 carcaças no mapa.
+  - **No desenho:** o modelo, o fogo e as brasas vão junto, e a carcaça arrastada risca o chão.
+  - **Os testes:** `simtest` (`[carcaca]`) e o cenário `carcaca_empurra`.
 - [ ] **Vegetação baixa** amassa ou dobra quando o tanque passa (jogo + WorldForge, dono do material da vegetação).
 - [ ] **Visão pelo relevo.** Se o morro tapar a visão, a simulação precisa da altura por célula, e isso entra no pedido da grade ao WorldForge. Se a visão for um círculo como no ZH, não precisa.
 - [ ] **Direção do tiro** pros efeitos na blindagem: o desenho tira da posição do atirador, sem mexer na simulação.
 - [ ] **Separar o impacto:** "acertou tanque vivo" contra "caiu no chão", e o efeito pelo tipo de chão (areia, rocha, asfalto; água dá respingo). Hoje os dois são a mesma esfera.
 - [ ] **Ligar no jogo o que os efeitos novos pedem:** o plugin Niagara, o ProceduralMeshComponent e o Json (fogo do FXLab, destroços do BlastLab) e um módulo de shader global carregado cedo (raymarch).
 - [ ] **Evento único, como o FXList do ZH:** efeito, pulso de luz, tremor, som e marca saem do mesmo evento; clarão em t = 0, som e tremor em d/343 s do ponto de mira.
+- [~] **Ctrl força o tiro, como no C&C clássico** (pedido do Felipe, 13/10 de manhã; feito na mesma manhã, sem o teste dele): segurando Ctrl, o clique manda atirar em qualquer coisa:
+  - no chão, que cava a cratera da arma onde o tiro cai;
+  - na própria unidade, no aliado ou na casa civil.
+  - Serve também pra ele ver a explosão e a cratera.
+  - É comando da simulação, em ponto fixo e igual nos dois PCs (o ataque ao chão é um alvo-ponto). O cursor de mira muda com o Ctrl.
+  - **Feito:**
+    - os comandos `AttackGround` (o ponto) e `ForceAttack` (qualquer dono), na simulação versão 9;
+    - no simtest, o colega leva tiro em 4 passos, e o tiro no chão chega 8 vezes no ponto sem ferir ninguém, com o mesmo hash nas 3 compilações;
+    - no jogo, Ctrl + clique esquerdo: na unidade ou no prédio, de qualquer dono, ataca; no chão, atira no ponto até mandarem outra coisa. O tiro no chão cava a cratera da arma;
+    - o cenário de teste é o `tiro_chao`.
+- [ ] **v3: o tanque derruba poste e árvore** (pedido do Felipe, 13/10 de manhã: "depois que acabar tudo"; fora da v2, a decisão dele à noite):
+  - o tanque empurra e derruba os postes e as árvores (as palmeiras);
+  - o WorldForge vai criar os fios com física, então o poste que cai puxa o fio, que balança e arrebenta;
+  - "física bonita e efeito de choquinho bem bonito": as faíscas e o arco no fio que arrebenta. O efeito de energia, realista, pode vir do EmberGen ou ser pedido à sessão do Look.
+  - **A divisão:** os fios e as peças são do WorldForge; o empurrão, a queda e o evento na batalha são do jogo.
+  - **O cuidado:**
+    - a queda é desenho (Chaos), igual em todo PC pelo evento;
+    - o "derrubado" que muda o caminho (o tanque passa por cima, como o esmagar do ZH) é da simulação, em ponto fixo, senão a partida diverge na LAN.
 - [x] Simulação determinística, skirmish, colunas do grupo e nascer fora de platô isolado (commit `e7de5ce`).
 - [x] **Tela de carregar que espera a cena pronta** (t7: 4,1 s) e a correção do teste do resultado (commit `e927a02`).
 
@@ -148,41 +173,91 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - só no selecionado e sob o mouse; inimigo sem anel (só sob o mouse ou quando vira alvo);
   - barra pequena, de tamanho fixo na tela;
   - o tanque selecionado pisca na cor, como no ZH.
-- [ ] **Traçante:**
+- [~] **Traçante** (jogo, 13/10, sem aprovação: curto, fino constante na tela, laranja, nasce 1,5 m à frente da boca; clarão da boca pequeno e laranja, sem as bolas brancas da luz nova. Ainda fraco: o traçante quase some e o clarão é um disco macio, não um estouro):
   - curto e laranja, com espessura constante na tela;
   - nasce um pouco à frente da boca, some no impacto e é aditivo;
   - o ZH tem o efeito Tracer com Speed, Length e Width.
-- [ ] **Marcas de esteira de verdade:**
-  - uma tira que segue o relevo e some em ~5 min (ZH: 100 arestas, 25 opacas, 300 s), com limite por preset;
-  - areia marca forte, rocha não marca e estrada marca de leve;
-  - a versão final pinta na "memória do chão" do WorldForge (seção 4).
+- [~] **Marcas de esteira de verdade** (jogo, 11/10, `RTSGroundMemory`; o Felipe gostou em 12/10, "salva esse modelo": `captures/game/esteira_v1_salva/`; o chão que afunda é do Look, `docs/CHAO_DEFORMAVEL.md`):
+  - **Feito:** uma fita por lagarta, com as garras de 17 cm em fase, que some em ~5 min. Ela é riscada num caderno do mapa (50 cm por pixel) e num de detalhe em volta da câmera (4,7 cm por pixel), e um decal só pinta tudo: o custo não cresce com as marcas.
+  - **12/10:** aparecem no jogo (cenário rápido "vila"), duas por tanque, com as garras e a curva da manobra. Custam +0,2 ms na mediana e +0,9 no p95, mais ~80 MB de memória de vídeo.
+  - **Falta:** a borda de areia levantada; areia marca forte, rocha não marca e estrada marca de leve (precisa do tipo de chão do WorldForge); riscar no escuro e mostrar quando a área for revista; ver em vídeo.
+  - **13/10 à noite, o Felipe:** no jogo a lagarta "não modela" (risco chapado ou nada). O alvo é a folha `captures/look/areia_C_final.jpg` (a trilha fresca + a velha cruzando, meio coberta pelo vento). **Dono do visual: o Look** (a MF `look_mf.py` lendo os cadernos do relevo). Prova: no jogo, ao lado da folha. Estado em `docs/CHAO_DEFORMAVEL.md` (o topo). **14/10, madrugada: o Felipe tirou da v2** ("pra v2 não vai ter mais nenhum ajuste, isso aí tudo vai ser pra v3"). Lagarta e cratera no chão vão pra v3 com o plano de relevo por pixel (`docs/CHAO_DEFORMAVEL.md`, a decisão no topo).
 - [ ] **Esteira andando:** textura correndo pela velocidade (as rodas já giram).
-- [ ] **Chão que guarda a batalha:** cratera, queimado e destroço como marcas no chão que ficam, com limite (ZH: 500) e saída da mais velha. A aparência vem da arte e do FXLab.
-- [ ] **Árvore transparente perto do cursor:** copiar o `ForgeTreeFade` do WorldForge (aprovado). Hoje as palmeiras tapam os tanques.
-- [ ] **Silhueta da unidade** atrás da fábrica e dentro da fumaça (profundidade e estêncil próprios, como no SC2).
-- [ ] **Contato com o chão:** sombra de contato e uma mancha escura macia sob cada tanque. A 140 px, a fresta escura embaixo do casco é o que diz "pesado".
-- [ ] **Tremor de câmera** só nas explosões grandes perto do centro. O clique usa a câmera sem tremor, e explosão escondida não treme.
-- [ ] **Estados de dano:** marcas no material conforme a vida cai. Fumaça fina abaixo de 50% e escura com chama abaixo de 15%; as fumaças vêm do FXLab.
+- [~] **Chão que guarda a batalha** (jogo, 11–13/10, a mesma memória do chão; estudo, revisão e números em `docs/CHAO_DEFORMAVEL.md`):
+  - **13/10, depois do estudo e de duas críticas (o revisor e o Look):**
+    - a morte do tanque deixa o **avental** em volta do casco (terra queimada e combustível, brasa nos primeiros ~30 s, areia espirrada e torrões);
+    - as explosões sem carcaça em cima deixam a **cratera** (bacia de ~2,6 m com sombra dentro, halo escuro, borda quebrada, raios e torrões).
+  - **Como é feito:** os atlas assados por `Game/Tools/bake_craters.py` (6 variantes de cada), carimbados por um compute no caderno.
+  - **13/10, o Felipe: "deixe as 3, cada uma pra uma coisa":**
+    - a A (0,75×) é o tiro de tanque: 20% dos tiros passam raspando e cavam 6–12 m além do alvo (`impact_crater` e `near_miss` no visual do Units.json), e todo tiro no chão (Ctrl) cava;
+    - a B (1×) são as explosões do prédio que cai;
+    - a C (1,3×) é o tanque explodindo (o avental C) e, quando existir, o míssil pesado.
+    - A cena `vila` mostra as três lado a lado antes da luta.
+  - **A altura:** vai numa folha R16F própria, com a sombra do sol dentro da bacia.
+  - **Os destroços:** 5–8 peças por morte (`game.ps1 debris`).
+  - **A cor final:** é da MF do Look, embutida no material do chão do World_TestSalt2 desde 13/10 (o WorldForge monta com o CODE do `look_mf.py`).
+    - O jogo liga as instâncias dinâmicas do Landscape, inclusive na malha Nanite: sem elas, os parâmetros não chegavam.
+    - O jogo manda os cadernos de detalhe e do meio (`GroundTrackMid`, pra o queimado ficar visível na câmera do RTS) e a brasa a 3000 nits.
+    - O decal de piso sai sozinho quando o chão lê o caderno do meio.
+  - **Na névoa:** a morte que acontece fora da vista guarda o avental e os destroços, que aparecem quando a área é vista, junto da carcaça.
+- ~~**Árvore transparente perto do cursor**~~: **saiu em 13/10** (o Felipe nunca aprovou pro jogo; vai ter tanque escondido nas árvores, `docs/IDEIAS_JOGABILIDADE.md` ideia 6). A árvore nunca entrega unidade escondida.
+- [~] **Silhueta da unidade** (jogo, 13/10, sem a foto aprovada; **só as suas e as dos aliados**: o Felipe, 13/10 à noite, "nenhum tanque inimigo pode ser exibido atrás das coisas", senão a mecânica de se esconder atrás da árvore vai pro lixo): atrás de prédio, casa ou palmeira, a unidade aparece na cor do time, meio transparente e com a borda mais forte, como no SC2 (custom depth com o dono no stencil + o pós-processo `M_UnitSilhouette`; `-RTSNoSilhouette` desliga). Dentro da fumaça ainda não: a fumaça não grava profundidade.
+- [~] **Contato com o chão** (jogo, 12/10: mancha macia de cantos redondos sob cada tanque, `M_UnitContact`; ainda fraca): sombra de contato e uma mancha escura macia sob cada tanque. A 140 px, a fresta escura embaixo do casco é o que diz "pesado".
+- [~] **Tremor de câmera** (jogo, 13/10, sem teste do Felipe): só nas mortes vistas até 70 m do foco, caindo com o quadrado da distância; ruído de ~25 Hz apagando em ~0,35 s, 18 cm no tanque e 35 cm no prédio (2–4 px na câmera do jogo, então o clique quase não sente).
+- [~] **Estados de dano** (jogo, 13/10, sem a foto aprovada; **14/10: fora dos veículos**. O Felipe viu a camuflagem pintada por cima e disse "um negócio porco"; volta quando for bem feito, e o prédio segue com as marcas): as marcas no material (o M_Structure) crescem a partir dos 70% de vida, como o modelo danificado do ZH: placas de tinta queimada e lascada, e a fuligem abaixo de 50%. A carcaça ganhou a receita do Look medida na street_battle: a tinta queimada, a fuligem embaixo e no anel da torre, a ferrugem de calor nas quinas, a cinza no teto, e a brasa no buraco da torre apagando em 30 s. A luz do fogo saiu do teto do casco (o "ponto de lâmpada"). As fumaças finas e escuras vêm do FXLab. **13/10 de madrugada:** nada disso aparecia no jogo. O ruído das manchas era a foto da praia, que no verde linear só vai de 0,22 a 0,25 e nunca passava dos limiares; o asfalto do miolo virava a média na distância da câmera.
+  - Agora o ruído é procedural, no shader (`FRTSNoise` no `import_provisional.py`).
+  - A carcaça é mosqueada, em rampas largas: a 1ª versão em recortes virou camuflagem urbana. Preview fora da placa na mediana 0,33 do alvo.
+  - O dano vem em lascas de ~0,35 m: ~5% aos 70% da vida, ~25% perto da morte.
+  - Cena de teste: `game.ps1 view -Scenario carcaca`.
 - [~] **Fábrica viva no desenho** (10/10, provisório: ventiladores girando, luzes que acendem e apagam com a energia, a obra subindo com andaime e solda; falta portão, ponte rolante e braço ligados à produção): um ator do prédio anima portão, ponte rolante, braço e ventiladores e acende as luzes, ligado aos eventos de produção; mais a entrada do prédio no `import_units.py` e o link de Buildings no `game.ps1`.
 - [ ] **Paleta das cores dos jogadores** (8, como no ZH): testada no deserto e no zoom mais afastado; as mesmas no tanque, na fábrica, no minimapa e no HUD; cor única por vaga na sala (dois USA sairiam azuis).
 - [ ] **Lado legível sem o anel no inimigo:** no USA contra USA sobra só a cor em detalhes pequenos. Testar no zoom máximo (81,6 m); se não der, o inimigo ganha uma marca mínima na cor.
 - [ ] **Sujeira acumulada:** o tanque que andou e lutou fica empoeirado (CoH3).
+- [~] **A maquete do Look vira o jogo** (ideia do Felipe, 11/10, "surreal e fenomenal"; "não só o tanque: a casa, a rua, o look atmosférico, tudo"; ainda pensando, provável centro da v2, porque os modelos finais à mão podem não chegar nela). Do lado do jogo:
+  - **Tanque:** escala de 7,9 m, pivô no chão, torre separada (gira e recua), cor do jogador (hoje os dois lados saem iguais), carcaça queimada.
+  - **Casas e rua no mapa jogável:** a casa vira obstáculo na grade da simulação (o caminho desvia, não se constrói em cima). A grade tem que sair igual em todos os PCs (o hash da grade da LAN).
+  - **Look (luz, céu, névoa, pós):** a passada da névoa de guerra, a foto do minimapa e a leitura das unidades na câmera de RTS continuam valendo.
+  - **Custo:** medir em tempo real na 1660 com 50 tanques (o da maquete é render de cinema, com aquecimento).
+  - Combinar com a sessão do Look: ela faz o visual, e o jogo leva pro mapa jogável.
+  - **Feito em 11/10 (sem a aprovação do Felipe):**
+    - **O tanque do Look é o USA_MBT do jogo** (`game.ps1 looktank`). Usa os GLBs dela em `captures/look/tank_glb`, o material provisório dos prédios e o slot Team com a cor do jogador; a torre gira em x 0,10 m. Teste base com 0 falhas e o custo igual (23,0 ms).
+    - **Ainda fraco:** lê quase branco e a cor do time sai pequena. Espera o M_UnitDust e a receita do plugin RTSLook.
+    - **O plugin RTSLook:** o desenho dela está revisado (`docs/GRAFICOS.md` §8). A cor do time vai no CPD 0..3 e o queimado no CPD 6.
+    - **Casas e rua:** o formato do WorldForge (JSON com a pegada na grade de 4 m) foi combinado.
+    - **A vila subiu na frente** (decisão do Felipe em 11/10: "o mapa do Look foi sensacional, é eles mesmo que eu quero"). Peças: o kit civil aprovado (1 andar 8×8, 2 andares 8×8, varanda 8×12, comprida 16×8, muro com portão), a rua e as miudezas do Look.
+      - O WorldForge põe a vila no World_TestSalt2 e exporta o JSON, sem tapar as 4 largadas (~88 m de raio), os 6 depósitos e o caminho entre as bases.
+      - O Look faz as malhas e o material.
+      - O jogo monta a simulação e o desenho a partir do JSON.
 - [ ] **Perspectiva aérea na câmera do jogo:** o terço de cima da tela clareia e esquenta com a distância, como no alvo; igual em todos os presets e sem tapar unidade (com o WorldForge).
 - [ ] **Céu na câmera deitada** (Alt+meio): pôr do sol com nuvens como no alvo v3; nuvem nunca entre a câmera e as unidades.
 - [ ] **Telas de resultado e 3-2-1 pra N jogadores:** anéis e barras do mundo somem quando o painel abre (hoje uma barra atravessa o "VITÓRIA"), letra nítida.
 - [ ] **Menu e opções:** botões Multiplayer e Opções; preset, resolução, limite de quadros, volumes e teclas; preset **Auto** que mede a nossa cena (o detector da Unreal joga a 1660 no máximo, e a meta de 60 qps depende dele).
+  - [x] 14/10 (sessão do jogo): a linha **QUALITY** (Low/Medium/High/Ultra) no Esc e no menu principal, além do F5–F8; fica guardada no `GameUserSettings.ini` e a 1ª vez num PC abre na Medium (a que rodou no notebook de 2014 na v1). Falta o resto da tela de opções e o Auto.
 - [ ] **Áudio do lado do código:** ouvinte no ponto de mira a ~12 m, limite de cópias por som, mixagem que abaixa o resto, batalha escondida muda.
 - [ ] **Legibilidade medida como critério:** quanto fumaça, explosão e névoa cobrem de uma unidade; o tanque contra cada chão (ΔE ≥ 20 ou contraste 3:1). A salina clara apaga a USA cinza-clara.
 - [~] **HUD final** (o foco do jogo desde 09/10; o plano, com as fontes, está em `docs/HUD.md`: a barra do ZH modernizada, em Slate). Já feito: o texto nítido e a saída dos anéis do chão.
+  - **13/10, o HUD novo do HUDLab no jogo** (pra o Felipe testar jogando): o plugin `RTSHud` da arte em `Game/Plugins`, ligado por `RTSHUDNew.cpp`.
+    - Liga com `-NewHud`; na partida, **F4 troca** entre o novo e o de hoje.
+    - O minimapa continua o do jogo (orientação, névoa, clique), desenhado no buraco da peça nova.
+    - Os botões de sempre seguem pelos mesmos ids. Os grupos, a fila, Stop, Attack Move e as teclas das casas (QWERTYU / ZXCVBNM; o R posicionando prédio segue girando) funcionam; poderes e patente ainda não existem na partida.
   - painel da fábrica (fila, botão do tanque), sala de espera e tela de conexão;
   - cursor próprio e fonte final (a licença vai no `CREDITOS.md`);
   - tela de carregar com arte.
   - A arte de referência vem da sessão de arte.
-- [ ] **Vento único:** um parâmetro global que fumaça, vapor das chaminés, poeira, bandeiras e palmeiras leem. Fumaça pra um lado e bandeira pro outro é defeito.
+- [~] **Vento único** (jogo, 13/10): `/Game/Materials/MPC_Wind`, vetor `Wind` = (x, y, m/s, rajada), com x, y a direção pra onde sopra; o jogo preenche no começo da partida pelo Maps.json (`wind_yaw`, `wind_speed`). A memória do chão já usa. Falta cada sessão ler: a fumaça (explosões), a areia (Look), as palmeiras (WorldForge) e as bandeiras. O contrato já foi mandado pra elas.
 - [ ] **Efeitos sem colisão com o clique:** destroço, cartão de fumaça, carcaça e cratera não podem roubar o clique de mover nem dar tranco na câmera.
 - [ ] **Antisserrilhado com efeito translúcido e linha fina:** cartões de fumaça borram quando a câmera anda, e traçante e anel cintilam. Ajustar o TSR.
 - [ ] **Justiça entre presets:** o que esconde unidade (fumaça, poeira) tem de ser igual em todos os presets, senão quem joga no baixo vê mais.
-- [ ] **Desfile:** os tanques da IA de teste ainda andam em fila pela praia (t7). As colunas do grupo já existem; a IA fica pra depois (o Felipe), então isto espera.
+- [~] **A vila do WorldForge no jogo** (12/10): o jogo lê o village.json (cópia pelo game.ps1 worlds, hash conferido com a etiqueta do mapa). As peças que bloqueiam fecham as células da pegada na grade (242 peças, 279 células). O jogo desenha cada peça com o kit civil do Look (/Game/Village, game.ps1 village; caixa provisória do tamanho certo quando faltar a malha). Teste "vila_rua": a coluna atravessa a vila pela rua desviando das casas. Falta: conferir o lado dos portões e a folga das picapes na beira da rua (com o WorldForge), as casas tomáveis e destruíveis (ZH) e o pacote novo da família.
+- [~] **Desfile** (11/10, estudo de SC2, AoE4, BAR, SupCom, 0 A.D. e OpenRA, pelo código):
+  - **Feito:** a área de reunião da fábrica. Os tanques param em fileiras escalonadas de 4 viradas pra longe da fábrica, com um tremido fixo de ±0,3 m e ±4°. O grupo chega virado pra direção da marcha (simulação versão 7, teste "ponto de encontro").
+  - **Falta:**
+    - as vagas do grupo sem cruzamento (húngaro até ~24, por N e nunca por tempo; acima disso, troca dos pares que se cruzam);
+    - o mais forte na frente quando houver mais tipos;
+    - [x] **a formação segurando F** (simulação versão 8, teste "formação com F"): o grupo vai no passo do mais lento, mantendo a forma, como o Felipe decidiu em 11/10 ("segurando uma tecla, como no C&C; sem segurar, cada um na sua velocidade"). Grupo espalhado demais é apertado até um bloco. Falta testar no jogo;
+    - [x] **as torres em leque** (simulação versão 8): as da ponta olham até 25° pra fora e as do meio pra frente; em fila indiana, alternam esquerda e direita. Vale andando e parado, e na área de reunião também (testes "ponto de encontro" e "formação com F"). Falta ver no jogo;
+    - [x] **o arraste com direção** (decisão do Felipe, 12/10: o clique rápido do esquerdo continua mandando andar). Com tropa selecionada, arrastar o esquerdo põe a linha de frente no ponto apertado, virada pra direção do arraste; o comprimento do arraste é a largura da linha (abaixo de 12 m, só a direção). Shift + arrastar, ou começar em cima de uma unidade nossa, faz a caixa de seleção. Funciona com o F e com o ataque andando. Teste "arraste com direção" na simulação (versão 8). Limite conhecido: com a linha virada de lado em relação à marcha, os tanques entram no mesmo corredor e alguns param antes da vaga (o certo é marchar em formação e só abrir perto). Falta testar no jogo.
+  - A fila da IA pela praia (t7) é a mesma coisa, no caminho.
 
 ### Desempenho e estabilidade
 - [ ] **Aquecer todos os efeitos antes da partida:** tiro, impacto, carcaça, poeira, marcas no chão e fábrica. No lockstep, a travada de um PC segura todos. Cache de PSO no jogo empacotado.
@@ -221,6 +296,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Fatia vertical do deserto** (proposta da arte, aceita pelo Felipe em 12/10). Entra **quando as frentes atuais das outras sessões terminarem**, sem atropelar ninguém.
   - **O que é:** um canto do mapa do deserto, na câmera do jogo, **lado a lado com `docs/concept/scenes/desert_golden_hour/best/town_battle_top_gemini.webp`**. É a prova de que o jogo chega nos game shots.
   - **Os modelos:** provisórios **caprichados e fiéis às fichas aprovadas** (War Factory, tanque, Dozer e Chinook da USA, mais o tanque e a picape do GLA). Quina dura, a proporção e a silhueta da ficha, material com desgaste, o pó subindo de baixo pra cima e a cor do time. Os finais do Felipe substituem depois, sem mudar o lugar.
+    - **Dozer (13/10, sessão Modelos 3D):** refeito por script pela arte aprovada (`Game/Tools/model_usa_dozer.py`, medido contra o tanque), aprovado pelo Felipe e no jogo (`game.ps1 dozer`, `Units.json`, sirene amarela que gira e acende só na obra). Mapa dos provisórios: `docs/MODELOS_PROVISORIOS.md`.
     - **Por que provisório serve:** na câmera de 61 m o tanque tem ~120 px. No teste do Dozer, o rebite virou granulado e o que leu foi a silhueta, a proporção, o material e a luz (`captures/concept/43_usa_base/dozer_game_scale_test.jpg`).
   - **Quem faz cada peça:**
     - os provisórios: quem já faz (o jogo, com `Game/Tools/blender_provisional.py`; o look, com o tanque);
@@ -239,7 +315,15 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Clarão de boca do canhão** (dono: sessões de explosão; o arsenal foi tirado da arte): chama curta, luz no casco e no chão, fumaça saindo do cano e poeira levantada no chão à frente (o ZH empilha 5–6 camadas).
 - [ ] **Faíscas quando o tiro acerta o tanque** (alvo 4.2; dono: sessões de explosão): leque de riscos quentes, clarão no metal, chapinhas e uma baforada cinza. **É o efeito que mais aparece no jogo**, porque o tiro quase sempre acerta.
 - [ ] **Tiro na areia** (alvo 4.1): **pausado pelo Felipe** na arte (~14:56 de 08/10); fica com as sessões de explosão e não se retoma no FXLab sem ele pedir.
-- [ ] **Poeira do andar** atrás das lagartas: cor pelo tipo de chão, baixa, some em 3–6 s e é a primeira a sair no preset baixo.
+- [~] **Poeira do andar** atrás das lagartas: cor pelo tipo de chão, baixa, some em 3–6 s e é a primeira a sair no preset baixo.
+  - **No jogo desde 14/10, de madrugada, sem o teste do Felipe:** o plugin RTSTreadDust da arte (a v12 do FXLab), em `Game/Plugins/RTSTreadDust`, com o passo a passo no `INTEGRACAO.md` dele.
+    - O jogo manda a cada quadro os veículos de lagarta perto da câmera: a posição desenhada, a velocidade com sinal, o giro, a areia pelo `surface.png` do WorldForge (para no asfalto) e a névoa.
+    - O preset vai pelo F5–F8; `-RTSNoDust` desliga.
+    - O custo: na `chao` (12 tanques, alta), a mediana subiu de ~25 pra 31 ms.
+  - 13/10, a arte: feita no FXLab (navegador e Unreal, mesma lógica) contra as cenas aprovadas; o estudo e o como estão em `docs/FXLAB.md`;
+  - pro jogo: o ator `AFXTreadDust` (um só pra todas as unidades, `SetSources()` por quadro);
+  - 13/10 à noite, a arte: a v12 (o caminho escolhido, rastro longo) empacotada no plugin `FXLab/Plugins/RTSTreadDust` (`ARTSTreadDust`, presets 0–3), com o passo a passo pro jogo em `FXLab/Plugins/RTSTreadDust/INTEGRACAO.md`; falta a sessão do jogo ligar (fontes de `SurfaceAt`, névoa, preset);
+  - 13/10, o Felipe: a poeira tem de ser como a das gameplays em vídeo, gravada no EmberGen; a feita à mão fica de plano B. A arte simulou no EmberGen (`docs/FXLAB.md`): a versão EmberGen é a ativa (`FXLab/tread.json`); falta o Felipe ver o vídeo e a ponte do jogo.
 - [ ] **Chaminés da fábrica:** vapor branco na USA (fumaça preta é a da Oficina GLA), acima do nível das unidades, lendo o vento único.
 - [ ] **Cratera e queimado** com textura de verdade (escaneada, não ruído); destroços que ficam.
 - [ ] **Fumaça de dano** pro tanque ferido, a mesma da carcaça, menor.
@@ -291,6 +375,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 
 - [ ] **Mapa oficial congelado,** com nome e versão: o jogo copia em vez de linkar.
 - [ ] **Grade de passagem canônica:** `pass.png`, obstáculos, versão e hash, tirada da altura final.
+- [ ] **A estrada com volume** (v3; 14/10 o Felipe procurou na vila do jogo e não achou, ficou só na maquete): a laje de 12 cm com a borda quebrada, nos 3 tipos (intacta com areia na beira, gasta, destruída) escolhidos por trecho no WorldForge. Protótipo e imagem: `docs/RECEITAS_DO_LOOK.md` §6 e `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`. Donos: Look (o kit: perfil, borda, material), WorldForge (o traçado e o leito rebaixado), jogo (a altura na simulação). A faixa pintada nova (§7, "em teste") também não foi pro jogo.
 - [ ] **Lote plano da War Factory em cada base,** sem seixo nem marola, com a estrada chegando na porta e a saída marcada.
 - [ ] **Tipo de chão por camada** (areia, cascalho, terra, rocha, salina, asfalto): dá a cor da poeira e dos torrões.
 - [ ] **"Memória do chão"** no material do terreno, pros rastros de esteira, o queimado e a cratera.

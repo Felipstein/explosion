@@ -216,3 +216,29 @@ gente pode pensar na jogabilidade pra deixar o negócio mais gostosinho".
 - **Ele monta a base avançada:** um posto de obra longe da base, que estende o alcance de construção enquanto ele estiver lá (casa com a estrada como alcance da base, ideia 2).
 - **Ele custa e exige:** precisa da patente (ideia 4), sai da War Factory, e é blindado o bastante pra trabalhar perto da luta.
 - **O Dozer comum continua** o construtor barato do começo, como no ZH.
+
+---
+
+## 6. Tanque escondido nas árvores (13/10/2026)
+
+**A ideia, nas palavras dele:** "teremos mecânica de tanque escondido nas árvores e ninguém ver,
+nem mesmo as unidades sentirem essa unidade inimiga e não atacar, pra serem surpreendidas".
+
+**Por isso a árvore nunca fica transparente no jogo.** A palmeira que some perto do cursor (o
+`ForgeTreeFade` do WorldForge) foi copiada pro jogo em 12/10 e **saiu em 13/10**: o Felipe nunca a
+aprovou pro jogo, e ela entregaria o tanque escondido. Ela continua só no editor do WorldForge.
+
+**Como funcionaria:**
+- **A mata é uma área do mapa,** marcada na grade de 4 m. Unidade parada dentro dela fica invisível
+  pro inimigo e não é alvo da mira automática.
+- **Quem está escondido se revela** ao atirar, e talvez ao andar. O inimigo que chega bem perto
+  também enxerga.
+- **O inimigo é surpreendido:** sem ver, ele não ataca. O primeiro tiro sai da mata.
+
+**Notas pra quando for fazer:**
+- **É a névoa da simulação,** igual nos dois PCs (`Vision.h`): o escondido simplesmente não entra
+  na visão do outro time. Nunca um efeito só do desenho.
+- **O desenho não pode entregar:** nem a copa transparente, nem anel, barra ou sombra que vaze da
+  mata. Do lado do dono, o tanque aparece de um jeito que mostra que está escondido.
+- **Referências de gênero:** o camuflado do GLA no ZH, o "camouflage" do Company of Heroes e a
+  floresta do Men of War.

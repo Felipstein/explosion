@@ -14,7 +14,12 @@ CAM = {'x': -31.53 * K, 'y': 26.66 * K, 'z': 21.0 * K, 'yaw': -45.33, 'pitch': -
 ART = 'docs/concept/scenes/desert_golden_hour/best/day_game_cam.webp'
 # as variantes (mapa -> receita): o jogo de hoje, a receita do dourado e, só pra comparar de perto, o mesmo
 # dourado com o sol da arte close_game_cam_gpt (a câmera vem na receita)
-VARIANTS = {'Before': 'game_today', 'Golden': 'desert_golden_hour', 'Close': 'desert_golden_close'}
+VARIANTS = {'Before': 'game_today', 'Golden': 'desert_golden_hour', 'Close': 'desert_golden_close',
+            # a medida da água (13/10, WORLDFORGE.md §12.3): a mesma vila com uma lagoa, Single Layer Water × translúcida
+            'WaterSLW': 'desert_water_slw', 'WaterTrans': 'desert_water_trans',
+            'LookTest': 'desert_looktest',   # a vaga de teste da receita (13/10)
+            # a hora dourada (13/10, o Felipe: 'sumiu o encanto dos game shots'): o sol a 8/12/18/24° de trás pela direita
+            'GH08': 'desert_gh08', 'GH12': 'desert_gh12', 'GH18': 'desert_gh18', 'GH24': 'desert_gh24'}
 # o que a arte tem e a maquete não (a explosão e a poeira dela): fora das contas do look_match
 EXCLUDE = [(200, 40, 660, 330)]
 # o chão em relevo: a região (x0, y0, lado) em metros
@@ -22,7 +27,13 @@ GROUND_REGION = (-75.0, -170.0, 230.0)
 # o asfalto cinza velho, mais escuro que a areia (crítica da sessão de arte, 11/10: lia como concreto claro)
 # a areia (estudo de 12/10): o albedo em linear, bege-amarelado, luminância 0,37 (a areia de deserto da tabela PBR
 # da Epic); a textura só dá o desenho. A cor da arte já vem acesa pelo sol laranja: não se copia pro albedo.
-SAND_ALBEDO = (0.49, 0.4, 0.27)    # (0,44/0,36/0,24 da tabela saiu 20% escura contra a arte de perto)
+# 13/10 volta 33 (o alvo novo, a r1_raid_slabs Gemini): a areia de duna com óxido de ferro (o tipo vermelho do interior do
+# Namibe, White et al. 2007; o ferro absorve o azul e o verde). Medido: a areia ao sol da r1_raid_slabs sai (218,165,110),
+# matiz 30, saturação 0,50, brilho 0,68; a nossa saía (222,192,151), matiz 35, saturação 0,31, brilho 0,77 (amarela e no
+# ombro da curva). Neutro sob a nossa luz já sai matiz 27 como no alvo: é a cor da areia, não a luz. O valor novo é o
+# inverso da curva de tom (k por canal medido no r31), média de 3 recortes de areia ao sol.
+SAND_ALBEDO = (0.45, 0.26, 0.15)
+# (antes, 12/10: (0.49, 0.4, 0.27), a areia genérica da tabela (physicallybased.info 0,44/0,386/0,231) +20% de brilho)
 SAND_RIPPLE_TEX = 1.0   # as ondulações simuladas (look_ripples.py), em manchas e embaralhadas
 WIND_YAW = -158.3       # pra onde o vento sopra (graus): o sol fica do lado de onde vem o vento (155°), as cristas riscam
 SAND_RIPPLES = 0.0      # (a ondulação de seno do shader: desligada)

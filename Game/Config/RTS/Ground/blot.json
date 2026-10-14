@@ -1,0 +1,17 @@
+{
+ "kind": "blot",
+ "option": "",
+ "variants": 4,
+ "size": 160,
+ "span_m": 2.0,
+ "range_m": 0.8,
+ "channels": "R altura com sinal (0,5 = zero), G escuro, B calor, A claro",
+ "params": {},
+ "encoding": "ramp",
+ "clods": [
+  [],
+  [],
+  [],
+  []
+ ]
+}

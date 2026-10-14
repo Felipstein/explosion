@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS HUD",
+	"Description": "O HUD do jogo: desenha um FRTSHudState (dados puros) no Canvas. O jogo preenche o estado com a simulação; o HUDLab preenche com estados de teste.",
+	"Category": "RTS",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "RTSHud",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

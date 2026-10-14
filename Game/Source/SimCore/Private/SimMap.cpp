@@ -14,6 +14,9 @@ namespace Sim
 		Clearance.assign(Pass.size(), 0);
 		MinDm.clear();
 		MaxDm.clear();
+		Water.clear();
+		WaterBodyId.clear();
+		WaterBodies.clear();
 	}
 
 	void SimMap::ComputeClearance()
@@ -91,6 +94,21 @@ namespace Sim
 		for (size_t I = 0; I < MinDm.size() && I < MaxDm.size(); ++I)
 		{
 			H.Add(uint64_t(uint16_t(MinDm[I])) | (uint64_t(uint16_t(MaxDm[I])) << 16));
+		}
+		// a água do WorldForge (só quando existe: o hash dos mapas sem a grade fica o mesmo)
+		if (!Water.empty())
+		{
+			H.AddBytes(Water.data(), Water.size());
+			H.AddBytes(WaterBodyId.data(), WaterBodyId.size());
+			H.Add(uint64_t(WaterBodies.size()));
+			for (const WaterBody& B : WaterBodies)
+			{
+				H.Add(B.Id);
+				H.Add(B.Kind);
+				H.Add(B.LevelMm);
+				H.Add(B.FlowXMmS);
+				H.Add(B.FlowYMmS);
+			}
 		}
 		return H.Value();
 	}

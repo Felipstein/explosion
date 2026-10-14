@@ -10,6 +10,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "RTSHudTypes.h"
 #include "RTSHUD.generated.h"
 
 class ARTSPlayerController;
@@ -29,6 +30,8 @@ public:
 	FName ButtonAt(const FVector2D& Screen) const;
 	/** Onde está o botão no último quadro (pro teste automático clicar nele). */
 	bool FindButton(FName Id, FBox2D& OutBox) const;
+	/** Os botões do último quadro, pro log do teste quando um clique não acha o seu. */
+	FString ButtonIdsForTest() const;
 
 	// --- minimapa (o losango no canto de baixo à esquerda), na geometria do último quadro
 	/** O ponto da tela está sobre a moldura do minimapa (o clique é dele, não do mundo). */
@@ -37,6 +40,11 @@ public:
 	bool MinimapToWorld(const FVector2D& Screen, FVector2D& OutCm, bool bClamp = false) const;
 	/** Onde um lugar do mundo aparece no minimapa (pro teste clicar). */
 	bool WorldToMinimapScreen(const FVector2D& Cm, FVector2D& OutScreen) const;
+	/** O HUD novo do HUDLab (13/10, o teste do Felipe jogando): -NewHud liga; F4 troca na partida. */
+	bool IsNewHud() const { return bNewHud; }
+	void ToggleNewHud() { bNewHud = !bNewHud; bNewHudChecked = true; }
+	/** As teclas das casas do HUD novo (a letra → o id do botão), do último quadro. */
+	const TMap<TCHAR, FName>& GetHotkeys() const { return NewHotkeys; }
 
 private:
 	struct FButton
@@ -52,6 +60,8 @@ private:
 	void DrawTopBar(URTSMatchSubsystem* Match);
 	void DrawObjective(URTSMatchSubsystem* Match);
 	void DrawPause();
+	/** A linha QUALITY (baixa … ultra) do Esc e do menu. */
+	void DrawQualityRow(const class ARTSPlayerController* PC, float X, float Y, float W);
 	void DrawResult(URTSMatchSubsystem* Match);
 	void DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	FVector2D MinimapUVToScreen(const FVector2D& UV) const;
@@ -83,6 +93,8 @@ private:
 	void DrawPanelButton(FName Id, const FString& Label, const FString& Sub, float X, float Y, float W, float H, bool bEnabled);
 	/** A partida tem base (economia): o topo e o painel mudam. */
 	bool HasEconomy(URTSMatchSubsystem* Match) const;
+	/** O jogador tem algum prédio: sem base não há o que produzir, e a energia 0/0 não é aviso (13/10). */
+	bool OwnsStructure(URTSMatchSubsystem* Match, uint8 Player) const;
 	void DrawLanMenu(ARTSPlayerController* PC, const class URTSNetSession& Net, float X, float Y, float BW);
 	static FString FogModeText(ERTSFogMode Mode);
 	static FString FogModeHint(ERTSFogMode Mode);
@@ -106,7 +118,22 @@ private:
 	FVector2D MousePos() const;
 
 	TArray<FButton> Buttons;
-
+	// o HUD novo (RTSHUDNew.cpp; o plugin RTSHud)
+	void DrawNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	void FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FRTSHudState& S);
+	TSharedPtr<class FRTSHudKit> NewKit;
+	TSharedPtr<class FRTSHudPainter> NewPainter;
+	TArray<FRTSHudButton> NewButtons;
+	TMap<TCHAR, FName> NewHotkeys;
+	/** A subida do painel (PanelIn) e a idade do aviso de energia, no HUD novo. */
+	double NewSelectionShownAt = -1.0;
+	double NewLowPowerSince = -1.0;
+	bool bNewHud = false;
+	bool bNewHudChecked = false;
+	/** O quadro (ms) suavizado, pro contador de FPS no canto (14/10, o Felipe: "durante o desenvolvimento"). */
+	float FrameMsSmooth = 16.7f;
+	/** O minimapa na geometria do losango da peça nova (sem a moldura velha). */
+	bool bNewMinimapGeometry = false;
 	bool bMinimapDrawn = false;
 	FBox2D MinimapFrame = FBox2D(ForceInit);
 	FVector2D MinimapCenter = FVector2D::ZeroVector;

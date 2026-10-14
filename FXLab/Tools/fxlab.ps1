@@ -1,4 +1,4 @@
-# FXLab: o laboratório de explosões na Unreal (separado do BlastLab).
+﻿# FXLab: o laboratório de explosões na Unreal (separado do BlastLab).
 #
 #   fxlab.ps1 compile                 # compila o C++ (FXWreckFire, câmera e painel)
 #   fxlab.ps1 setup                   # importa o cozimento do preset.json, o tanque e a areia; monta materiais e mapa
@@ -6,6 +6,7 @@
 #   fxlab.ps1 shot -Name x -At 2,4,6 [-Cam low]
 #                                     # fotos em captures\fxlab\shots_ue\ com passo fixo de 1/30 s:
 #                                     # a mesma história do laboratório no navegador (?shot=x&at=2,4,6&cam=low)
+#   fxlab.ps1 import -Name <cozimento>  # importa só um cozimento em /Game/FX/<cozimento> (a poeira do andar, por exemplo)
 #   fxlab.ps1 worlds                  # copia a fatia do deserto do WorldForge (só lê de lá) e põe os efeitos nela,
 #                                     # com a luz do jogo: /Game/Maps/World_Desert (setup_world.py)
 #   fxlab.ps1 view -Map World_Desert  # o deserto na câmera do jogo
@@ -72,6 +73,12 @@ switch ($Command) {
     & $Cmd $Project -run=pythonscript "-script=$(Join-Path $Root 'Tools\setup_fxlab.py')" -nullrhi -unattended -nosplash -stdout -FullStdOutLogOutput |
       Where-Object { $_ -match 'FXLAB|Error|Traceback|LogPython: Error' } | ForEach-Object { $_ }
   }
+  'import' {
+    # só um cozimento (captures\fxlab\bake\<Name>) em /Game/FX/<Name>, sem remontar o mapa
+    $env:FXLAB_IMPORT_BAKE = $Name
+    & $Cmd $Project -run=pythonscript "-script=$(Join-Path $Root 'Tools\import_bake.py')" -nullrhi -unattended -nosplash -stdout -FullStdOutLogOutput |
+      Where-Object { $_ -match 'FXLAB|Error|Traceback|LogPython: Error' } | ForEach-Object { $_ }
+  }
   'worlds' {
     # a fatia como está no WorldForge (terreno, rochas, plantas, estrada e a LUZ dela), copiada: lá não se mexe
     $from = Join-Path (Split-Path $Root) 'WorldForge\Content'
@@ -99,7 +106,7 @@ switch ($Command) {
       $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" /Game/Maps/$Map -game -windowed -ResX=1920 -ResY=1080 -nosplash -unattended -Measure=$Name $Extra"
       $p.WaitForExit()
     } finally { ReleaseGpu }
-    Get-Content (Join-Path (Split-Path $Root) "capturesxlab\measure_$Name.txt") -ErrorAction SilentlyContinue
+    Get-Content (Join-Path (Split-Path $Root) "captures\fxlab\measure_$Name.txt") -ErrorAction SilentlyContinue
   }
   'shot' {
     $w, $h = $Size -split 'x'

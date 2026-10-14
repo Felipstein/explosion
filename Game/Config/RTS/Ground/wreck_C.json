@@ -1,0 +1,40 @@
+{
+ "kind": "wreck",
+ "option": "C",
+ "variants": 6,
+ "size": 850,
+ "span_m": 20.0,
+ "range_m": 0.8,
+ "channels": "R altura com sinal (0,5 = zero), G escuro, B calor, A claro",
+ "params": {
+  "ra": 1.5,
+  "depth": 0.55,
+  "rim": 0.14,
+  "halo": 1.8,
+  "rays": [
+   9,
+   15
+  ],
+  "ray_len": [
+   2.4,
+   3.2
+  ],
+  "clusters": 24,
+  "singles": 50,
+  "apron": [
+   1.8,
+   3.2
+  ],
+  "spray": 3.5,
+  "note": "maior e mais revirada: mais torrão e raio"
+ },
+ "encoding": "ramp",
+ "clods": [
+  [],
+  [],
+  [],
+  [],
+  [],
+  []
+ ]
+}

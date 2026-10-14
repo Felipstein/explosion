@@ -5,11 +5,15 @@
 #   game.ps1 worlds           # traz o mapa do deserto (WorldForge) e o tanque (BlastLab) por link físico
 #   game.ps1 content          # monta os materiais do jogo (Tools/build_content.py)
 #   game.ps1 models           # os modelos provisórios da base: Blender (blender_provisional.py) + Unreal (import_provisional.py)
+#   game.ps1 village          # o kit civil da vila (GLBs do Look em captures/look/civil_glb) pra /Game/Village
+#   game.ps1 debris           # os destroços que ficam em volta da carcaça (Blender + Unreal, só eles)
 #   game.ps1 view [baixa|media|alta|ultra]   # abre o jogo no menu (padrão: alta), em tela cheia sem borda
 #   game.ps1 editor           # abre o editor no projeto
 #   game.ps1 simtest          # testes da simulação, sem a Unreal (Tools/simtest.ps1)
 #
 # Teste automático (sem clicar: abre, joga sozinho, tira fotos e fecha):
+#   game.ps1 looktank                 (o tanque da maquete do Look no jogo, com a cor do jogador)
+#   game.ps1 dozer                    (o Dozer provisório por script, Modelos 3D 13/10, pra /Game/Units/USA_Dozer)
 #   game.ps1 package                  (o jogo empacotado pro Windows em captures/dist/Windows; o Linux roda pelo Proton)
 #   game.ps1 view -Folder teste1 [-Script base|skirmish|lanhost|lanclient] [-Players 4] [-NoFog]
 #       base = a partida com base do ZH (o padrão); lanhost = a LAN: este jogo cria a sala, fica
@@ -29,7 +33,10 @@ param(
   [switch]$Packaged,
   [switch]$Record,
   [string]$Res = '1600x900',
-  [string]$Extra = ''
+  [string]$Extra = '',
+  # o teste da LAN: argumentos a mais pra cada robô, na ordem (ex.: -BotExtra '-RTSNetBotQuitAt=600','-RTSNetTestVote')
+  [string[]]$BotExtra = @(),
+  [string]$Scenario = ''
 )
 $ErrorActionPreference = 'Stop'
 $UE = 'C:\Program Files\Epic Games\UE_5.8\Engine'
@@ -124,16 +131,58 @@ function Worlds {
   LinkTree (Join-Path $wf 'Slice') (Join-Path $gc 'Slice')
   LinkFile (Join-Path $wf 'Textures\T_WaterN.uasset') (Join-Path $gc 'Textures\T_WaterN.uasset')
   LinkFile (Join-Path $wf 'Maps\World_TestSalt2.umap') (Join-Path $gc 'Maps\World_TestSalt2.umap')
+  # a vila (o WorldForge regrava o JSON a cada montagem: cópia, não link; o jogo confere o hash com o mapa)
+  $village = Join-Path $Repo 'WorldForge\Saved\WorldForge\exports\World_TestSalt2\village.json'
+  if (Test-Path $village) {
+    $to = Join-Path $Root 'Config\RTS\Villages\World_TestSalt2.json'
+    New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+    Copy-Item $village $to -Force
+    Write-Host "  $village -> $to (cópia)"
+  }
+  # o tipo de chão do WorldForge (13/10: R asfalto, G terra batida, B rocha, a 1 m; a poeira e o sulco leem)
+  # a grade da simulação do WorldForge (13/10: a água por célula de 4 m e os corpos, com o hash dele)
+  foreach ($ext in 'png', 'json') {
+    $grid = Join-Path $Repo "WorldForge\Saved\WorldForge\exports\World_TestSalt2\grid.$ext"
+    if (Test-Path $grid) {
+      $to = Join-Path $Root "Config\RTS\Grid\World_TestSalt2.$ext"
+      New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+      Copy-Item $grid $to -Force
+      Write-Host "  $grid -> $to (cópia)"
+    }
+  }
+  foreach ($ext in 'png', 'json') {
+    $surf = Join-Path $Repo "WorldForge\Saved\WorldForge\exports\World_TestSalt2\surface.$ext"
+    if (Test-Path $surf) {
+      $to = Join-Path $Root "Config\RTS\Surface\World_TestSalt2.$ext"
+      New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+      Copy-Item $surf $to -Force
+      Write-Host "  $surf -> $to (cópia)"
+    }
+  }
+  # o map.json do WorldForge (o vento único do mapa: a areia v2 é assada com ele; o Maps.json aponta pra cá)
+  $info = Join-Path $Repo 'WorldForge\Saved\WorldForge\exports\World_TestSalt2\map.json'
+  if (Test-Path $info) {
+    $to = Join-Path $Root 'Config\RTS\Villages\World_TestSalt2.map.json'
+    Copy-Item $info $to -Force
+    Write-Host "  $info -> $to (cópia)"
+  }
   Write-Host 'tanque USA (BlastLab):'
   LinkTree (Join-Path $bl 'Units') (Join-Path $gc 'Units')
   Write-Host 'explosões (BlastLab: gravações, material do volume, clarão e ofuscamento):'
   LinkTree (Join-Path $bl 'Explosions') (Join-Path $gc 'Explosions')
   LinkFile (Join-Path $bl 'Materials\M_FireGlare.uasset') (Join-Path $gc 'Materials\M_FireGlare.uasset')
   LinkFile (Join-Path $bl 'Materials\M_FlashStar.uasset') (Join-Path $gc 'Materials\M_FlashStar.uasset')
+  # a morte de tanque da v2 (13–14/10, o BlastLab): os destroços com rastro de fumaça e a sombra da explosão no chão
+  LinkFile (Join-Path $bl 'Materials\M_Base.uasset') (Join-Path $gc 'Materials\M_Base.uasset')
+  LinkFile (Join-Path $bl 'Materials\M_DebrisGlow.uasset') (Join-Path $gc 'Materials\M_DebrisGlow.uasset')
+  LinkFile (Join-Path $bl 'Materials\M_TrailSmoke.uasset') (Join-Path $gc 'Materials\M_TrailSmoke.uasset')
+  LinkFile (Join-Path $bl 'Materials\M_SmokeShadowLF.uasset') (Join-Path $gc 'Materials\M_SmokeShadowLF.uasset')
   Write-Host 'gravações da Carga Pesada pro raymarch (BlastLab Intermediate/Raymarch; só as r96, as outras são comparação):'
   foreach ($v in 0..2) {
     LinkFile (Join-Path $Repo "BlastLab\Intermediate\Raymarch\r96_v$v.brm2") (Join-Path $Root "Intermediate\Raymarch\r96_v$v.brm2")
   }
+  # a morte de tanque da v2 (13/10, o vídeo aprovado do BlastLab): a gravação nova, que vai no pacote junto das r96
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\eg_tq_v2.brm2') (Join-Path $Root 'Intermediate\Raymarch\eg_tq_v2.brm2')
 }
 
 switch ($Command) {
@@ -150,6 +199,43 @@ switch ($Command) {
       Where-Object { $_ -match '^PROV|Error|Traceback' } | ForEach-Object { $_ }
     if ($LASTEXITCODE -ne 0) { Write-Error 'Blender falhou'; exit 1 }
     RunUnrealPython 'Tools\import_provisional.py'
+  }
+  'debris' {
+    # os destroços que ficam no chão em volta da carcaça (13/10): só eles, sem refazer os prédios
+    $blender = 'C:\Program Files\Blender Foundation\Blender 5.2\blender.exe'
+    $out = Join-Path $Captures 'prov'
+    $env:PROV_BUILD = 'debris'
+    $env:PROV_FOLDER = 'debris'
+    try {
+      & $blender -b --factory-startup -P (Join-Path $PSScriptRoot 'blender_provisional.py') -- $out |
+        Where-Object { $_ -match '^PROV|Error|Traceback' } | ForEach-Object { $_ }
+      if ($LASTEXITCODE -ne 0) { Write-Error 'Blender falhou'; exit 1 }
+      RunUnrealPython 'Tools\import_provisional.py'
+    } finally { Remove-Item Env:PROV_BUILD, Env:PROV_FOLDER -ErrorAction SilentlyContinue }
+  }
+  'looktank' {
+    # o tanque da maquete do Look no lugar do borrado (pedido do Felipe, 11/10): importa só os GLBs
+    # dela (captures/look/tank_glb, que o look.ps1 tank gera) com os nossos materiais, sem refazer os prédios
+    $env:PROV_TANK_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_TANK_ONLY -ErrorAction SilentlyContinue }
+  }
+  'dozer' {
+    # o Dozer provisório por script (Modelos 3D, 13/10, aprovado): importa só os GLBs de captures/game/models/usa_dozer
+    # pra /Game/Units/USA_Dozer com os nossos materiais (sem a placa: -nullrhi)
+    $env:PROV_DOZER_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_DOZER_ONLY -ErrorAction SilentlyContinue }
+  }
+  'truck' {
+    # o caminhão de suprimento provisório por script (Modelos 3D, 14/10, aprovado): só os GLBs de
+    # captures/game/models/usa_supply_truck pra /Game/Units/USA_SupplyTruck, com os nossos materiais (sem a placa)
+    $env:PROV_TRUCK_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_TRUCK_ONLY -ErrorAction SilentlyContinue }
+  }
+  'village' {
+    # o kit civil da vila (12/10): os GLBs da sessão do Look (captures/look/civil_glb) com os nossos
+    # materiais, pra /Game/Village; o jogo põe cada peça pelo village.json do WorldForge
+    $env:PROV_CIVIL_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_CIVIL_ONLY -ErrorAction SilentlyContinue }
   }
   'py' { RunUnrealPython $Target }
   'simtest' { & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'simtest.ps1') }
@@ -169,6 +255,14 @@ switch ($Command) {
     Select-String -Path $log -Pattern 'BUILD SUCCESSFUL|BUILD FAILED|Error:|error C|AutomationTool exiting' | Select-Object -Last 15 | ForEach-Object { $_.Line }
     if ($code -ne 0) { Write-Error "o pacote falhou (código $code): $log"; exit 1 }
     $win = Join-Path $dist 'Windows'
+    # o HUD novo (-NewHud / F4) lê as imagens e as fontes do disco, ao lado do projeto (ProjectDir/..):
+    # vão junto do pacote, no mesmo lugar relativo, pra rodar em outro PC (~10 MB)
+    foreach ($rel in 'docs\concept\hud\kit', 'HUDLab\LabAssets', 'HUDLab\Fonts') {
+      $to = Join-Path $win $rel
+      if (Test-Path $to) { Remove-Item $to -Recurse -Force }
+      New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+      Copy-Item (Join-Path $Repo $rel) $to -Recurse
+    }
     "pacote: $win ({0:N1} GB)" -f ((Get-ChildItem $win -Recurse -File | Measure-Object Length -Sum).Sum / 1GB)
   }
   'view' {
@@ -192,6 +286,8 @@ switch ($Command) {
       New-Item -ItemType Directory -Force $dest | Out-Null
       $log = Join-Path $Captures "$Folder.log"
       $a += "-RTSAutoTest=$Script", "-RTSCapture=$dest", "-abslog=$log", '-unattended'
+      # o teste rápido (12/10): a partida pronta do Config/RTS/Scenarios.json, fotos em segundos fixos
+      if ($Scenario) { $a += "-RTSScenario=$Scenario" }
       # gravação: passo fixo de 1/30 s (cada quadro = um passo da simulação), uma foto por quadro do combate
       if ($Record) { $a += '-RTSRecord', '-benchmark', '-fps=30' }
       # o teste da LAN com uma placa só: os outros jogadores sem placa (-nullrhi), com o robô jogando
@@ -218,6 +314,7 @@ switch ($Command) {
         for ($k = 0; $k -lt $botArgs.Count; $k++) {
           $botLog = Join-Path $Captures "$Folder.bot$k.log"
           $args1 = @("`"$Project`"", '-game', '-nullrhi', '-nosound', '-RTSNetBot', "-abslog=$botLog", '-unattended') + $botArgs[$k]
+          if ($k -lt $BotExtra.Count -and $BotExtra[$k]) { $args1 += $BotExtra[$k] -split ' ' }
           $p = Start-Process -FilePath (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $args1 -PassThru -WindowStyle Minimized
           $bots += [pscustomobject]@{ Proc = $p; Log = $botLog; Name = "bot $k" }
           Write-Host "bot $k sem placa ($($botArgs[$k] -join ' ')): pid $($p.Id), log $botLog"

@@ -1,0 +1,1230 @@
+{
+  "_about": "Cenários de teste rápido (12/10, pedido do Felipe: 'os testes estão longos; uma partida rápida com foco no que precisa testar'). Cada cenário abre a partida já pronta, com semente fixa, câmera parada no foco e as ordens em segundos de simulação (entram na fila no passo exato): a mesma rodada repete a mesma história, e o A/B compara a mesma cena. Rodar: game.ps1 view -Scenario <nome> -Folder <pasta>. As fotos saem nos segundos de 'shots_s'; o teste acaba em 'end_s'.",
+  "scenarios": [
+    {
+      "name": "carcaca_empurra",
+      "about": "A carcaça com física (13/10, o Felipe: 'o tanque empurra a carcaça porque ela é mais leve, e o fogo acompanha, mas ela segura o tanque'). Dois tanques lado a lado ao sul da vila: um mata o outro com o tiro forçado, e depois passa por cima da carcaça, que gira e escorrega pro lado.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          250
+        ],
+        [
+          300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          2
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            250
+          ],
+          "facing_deg": 90,
+          "width_m": 14
+        },
+        {
+          "t_s": 4.0,
+          "player": 0,
+          "type": "force_attack",
+          "to_m": [
+            -23,
+            250
+          ]
+        },
+        {
+          "t_s": 32.0,
+          "player": 0,
+          "type": "move",
+          "to_m": [
+            -8,
+            251
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -20,
+          250
+        ],
+        "distance_m": 70,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        3,
+        30,
+        34,
+        36,
+        38,
+        41
+      ],
+      "end_s": 42
+    },
+    {
+      "name": "vila_foto",
+      "about": "A foto da vila pro lado a lado com a maquete do Look (13/10, pedido do Felipe): o gráfico do jogo como ele é (a luz, a receita e o chão do mapa), 4 tanques parados no cruzamento como régua, sem névoa e sem HUD. A câmera é a padrão do jogo (100,4 m, 37,5°, 50° de campo), girada como a maquete.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          0,
+          0
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          4
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            0,
+            0
+          ],
+          "facing_deg": 45,
+          "width_m": 22
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          0
+        ],
+        "distance_m": 100.4,
+        "yaw_deg": -45.3
+      },
+      "shots_s": [
+        5
+      ],
+      "end_s": 5.5
+    },
+    {
+      "name": "vila_foto_perto",
+      "about": "A mesma foto na near_cam da maquete (31,6 m de altura, 37,5°): uma câmera que o jogador não tem (o zoom mais perto do jogo é 67 m a 28°), só pra comparar na mesma vista.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          0,
+          0
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          4
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            0,
+            0
+          ],
+          "facing_deg": 45,
+          "width_m": 22
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          0
+        ],
+        "distance_m": 51.9,
+        "yaw_deg": -45.3,
+        "pitch_deg": 37.5
+      },
+      "shots_s": [
+        5
+      ],
+      "end_s": 5.5
+    },
+    {
+      "name": "look_inicial",
+      "about": "A foto da luz na câmera INICIAL de verdade do jogo (13/10, sessão do Look): 100,4 m, 37,5°, giro 45° (o DefaultYawDeg do RTSCameraPawn). As fotos vila_foto giram a câmera −45,3° e o sol fixado na câmera inicial sai ~90° deslocado nelas.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          0,
+          0
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          4
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            0,
+            0
+          ],
+          "facing_deg": 45,
+          "width_m": 22
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          0
+        ],
+        "distance_m": 100.4,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        5
+      ],
+      "end_s": 5.5
+    },
+    {
+      "name": "look_zoom",
+      "about": "A mesma foto no zoom mais perto do jogador (67 m a 28°, giro 45°): a câmera mais deitada, onde a poeira contra o sol mais aparece (13/10, sessão do Look).",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          0,
+          0
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          4
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            0,
+            0
+          ],
+          "facing_deg": 45,
+          "width_m": 22
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          0
+        ],
+        "distance_m": 67,
+        "yaw_deg": 45,
+        "pitch_deg": 28
+      },
+      "shots_s": [
+        5
+      ],
+      "end_s": 5.5
+    },
+    {
+      "name": "chao",
+      "about": "A memória do chão e o desfile: 6 contra 6 tanques a leste da vila, sem névoa. Cada lado forma uma linha de frente de 40 m (o arraste com direção), avança atacando e luta: a esteira, o tiro, o queimado e a cratera na mesma cena, com a vila ao fundo.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          95,
+          0
+        ],
+        [
+          225,
+          0
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            130,
+            0
+          ],
+          "facing_deg": 0,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            190,
+            0
+          ],
+          "facing_deg": 180,
+          "width_m": 40
+        },
+        {
+          "t_s": 9.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            225,
+            0
+          ]
+        },
+        {
+          "t_s": 9.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            95,
+            0
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          160,
+          0
+        ],
+        "distance_m": 95,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        1,
+        5,
+        9,
+        13,
+        17,
+        21,
+        25,
+        28
+      ],
+      "end_s": 28.5
+    },
+    {
+      "name": "look_esteira",
+      "about": "As lagartas de perto (13/10, sessão do Look): o mesmo chao, com a câmera a 45 m em cima da trilha, pra julgar a marca contra a folha aprovada (docs/concept/ground/tracks_sand_C_approved.jpg).",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          95,
+          0
+        ],
+        [
+          225,
+          0
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            130,
+            0
+          ],
+          "facing_deg": 0,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            190,
+            0
+          ],
+          "facing_deg": 180,
+          "width_m": 40
+        },
+        {
+          "t_s": 9.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            225,
+            0
+          ]
+        },
+        {
+          "t_s": 9.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            95,
+            0
+          ]
+        }
+      ],
+      "camera": { "focus_m": [150, 0], "distance_m": 45, "yaw_deg": 45, "pitch_deg": 37.5 },
+      "shots_s": [
+        1,
+        5,
+        9,
+        13,
+        17,
+        21,
+        25,
+        28
+      ],
+      "end_s": 28.5
+    },
+    {
+      "name": "vila",
+      "about": "A memória do chão e o desfile ao lado da vila (a grade de 12/10: ao sul dela há areia aberta de x -100 a +20 m e y 120 a 300 m; a leste e a oeste estão os lagos). 6 contra 6 tanques na estrada norte-sul: cada lado forma a linha de frente de 40 m, avança atacando e luta com as casas ao fundo.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          140
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -55,
+            215
+          ],
+          "facing_deg": 0,
+          "width_m": 4.2,
+          "size": "A"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -30,
+            215
+          ],
+          "facing_deg": 90,
+          "width_m": 4.2,
+          "size": "B"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -5,
+            215
+          ],
+          "facing_deg": 225,
+          "width_m": 4.2,
+          "size": "C"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "wreck",
+          "to_m": [
+            -72,
+            232
+          ],
+          "facing_deg": 30
+        },
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            255
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            -30,
+            180
+          ],
+          "facing_deg": 90,
+          "width_m": 40
+        },
+        {
+          "t_s": 8.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            140
+          ]
+        },
+        {
+          "t_s": 8.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            300
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -30,
+          205
+        ],
+        "distance_m": 95,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        1,
+        5,
+        8,
+        12,
+        16,
+        20,
+        24,
+        27
+      ],
+      "end_s": 27.5
+    },
+    {
+      "name": "vila_rua",
+      "about": "A vila na grade (12/10): uma coluna de 6 tanques atravessa a vila do sul pro norte pela rua; o outro lado fica parado longe. Mostra se os tanques desviam das casas, dos muros e dos carros, e as esteiras na rua.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          0,
+          190
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "move",
+          "to_m": [
+            0,
+            -150
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          20
+        ],
+        "distance_m": 110,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        1,
+        8,
+        14,
+        20,
+        26,
+        32,
+        38
+      ],
+      "end_s": 39
+    },
+    {
+      "name": "formacao",
+      "about": "O desfile no jogo (13/10): 8 tanques ao sul da vila. Aos 0,5 s andam em formação (o F segurado: no passo do mais lento, mantendo a forma, com as torres em leque); aos 14 s formam a linha de frente de 40 m (o arraste com direção); aos 24 s andam sem formação (cada um na sua velocidade), pro contraste.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -40,
+          285
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          8
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "move",
+          "to_m": [
+            -40,
+            200
+          ],
+          "formation": true
+        },
+        {
+          "t_s": 14.0,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -40,
+            175
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 24.0,
+          "player": 0,
+          "type": "move",
+          "to_m": [
+            -40,
+            245
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -40,
+          215
+        ],
+        "distance_m": 150,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        13,
+        15,
+        17,
+        19,
+        21,
+        23,
+        25,
+        27,
+        29,
+        31
+      ],
+      "end_s": 32
+    },
+    {
+      "name": "silhueta",
+      "about": "A silhueta atrás de prédio (13/10): 4 tanques parados logo atrás (do ponto de vista da câmera, rumo de 45°) da casa de dois andares em (16, −12) m, de 7 m de altura. Onde a casa tapa o tanque, ele aparece na cor do time, meio transparente, com a borda mais forte.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          22,
+          -6
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          4
+        ]
+      ],
+      "orders": [],
+      "camera": {
+        "focus_m": [
+          16,
+          -12
+        ],
+        "distance_m": 70,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        2,
+        4,
+        6
+      ],
+      "end_s": 6.5
+    },
+    {
+      "name": "vila_tiro",
+      "about": "O traçante e o tiro (12/10): a mesma luta do cenário vila, com a câmera mais perto e uma foto a cada 0,1 s entre 10 e 12 s (as primeiras rajadas: o traçante voa só ~0,4 s).",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          140
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            255
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            -30,
+            180
+          ],
+          "facing_deg": 90,
+          "width_m": 40
+        },
+        {
+          "t_s": 8.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            140
+          ]
+        },
+        {
+          "t_s": 8.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            300
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -30,
+          215
+        ],
+        "distance_m": 75,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        10.0,
+        10.1,
+        10.2,
+        10.3,
+        10.4,
+        10.5,
+        10.6,
+        10.7,
+        10.8,
+        10.9,
+        11.0,
+        11.1,
+        11.2,
+        11.3,
+        11.4,
+        11.5,
+        11.6,
+        11.7,
+        11.8,
+        11.9,
+        12.0
+      ],
+      "end_s": 12.2
+    },
+    {
+      "name": "carcaca",
+      "about": "A carcaça queimada de perto (13/10): a mesma luta do cenário vila, com a câmera a 50 m no meio dela e fotos de 22 a 40 s (as mortes vêm juntas aos ~24 s, quando a partida acaba: a tela de vitória cobre só a faixa de cima; o miolo quente apaga em 30 s). Pra julgar a receita do Look contra a carcaça da street_battle.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          140
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            255
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            -30,
+            180
+          ],
+          "facing_deg": 90,
+          "width_m": 40
+        },
+        {
+          "t_s": 8.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            140
+          ]
+        },
+        {
+          "t_s": 8.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            300
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -30,
+          215
+        ],
+        "distance_m": 50,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        22,
+        25,
+        28,
+        32,
+        40
+      ],
+      "end_s": 40.5
+    },
+    {
+      "name": "cratera_pan",
+      "about": "O cintilado do chão em movimento (13/10): a luta e as crateras de teste do cenário vila, na câmera padrão do jogo (100 m), com a câmera deslizando a 4 m/s pro leste. Gravar com -Record (o vídeo começa no primeiro tiro).",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          140
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -55,
+            215
+          ],
+          "facing_deg": 0,
+          "width_m": 4.2,
+          "size": "A"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -30,
+            215
+          ],
+          "facing_deg": 90,
+          "width_m": 4.2,
+          "size": "B"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -5,
+            215
+          ],
+          "facing_deg": 225,
+          "width_m": 4.2,
+          "size": "C"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "wreck",
+          "to_m": [
+            -72,
+            232
+          ],
+          "facing_deg": 30
+        },
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            255
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 0.5,
+          "player": 1,
+          "type": "line",
+          "to_m": [
+            -30,
+            180
+          ],
+          "facing_deg": 90,
+          "width_m": 40
+        },
+        {
+          "t_s": 8.0,
+          "player": 0,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            140
+          ]
+        },
+        {
+          "t_s": 8.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -30,
+            300
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -80,
+          205
+        ],
+        "distance_m": 100,
+        "yaw_deg": 45,
+        "pan_m_s": [
+          4,
+          0
+        ]
+      },
+      "shots_s": [
+        9,
+        15
+      ],
+      "end_s": 22
+    },
+    {
+      "name": "tiro_chao",
+      "about": "O tiro forçado no chão (Ctrl, 13/10): os 6 tanques de cada lado atiram num ponto de areia aberta à frente deles, sem luta (os lados longe um do outro). Cada tiro de tanque cava a cratera A, a do tiro.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          -200
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          6
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.5,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            -30,
+            255
+          ],
+          "facing_deg": 270,
+          "width_m": 40
+        },
+        {
+          "t_s": 6.0,
+          "player": 0,
+          "type": "attack_ground",
+          "to_m": [
+            -30,
+            222
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -30,
+          230
+        ],
+        "distance_m": 70,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        8,
+        14,
+        20
+      ],
+      "end_s": 20.5
+    },
+    {
+      "name": "cratera_perto",
+      "about": "As três crateras de teste (A, B, C) no zoom mais perto do jogo (67 m), sem batalha, as três num quadro só com a câmera parada, pra folha contra a prova do Look (13/10).",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "starts_m": [
+        [
+          -30,
+          300
+        ],
+        [
+          -30,
+          -200
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_mbt",
+          1
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -44,
+            215
+          ],
+          "facing_deg": 0,
+          "width_m": 4.2,
+          "size": "A"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -30,
+            215
+          ],
+          "facing_deg": 90,
+          "width_m": 4.2,
+          "size": "B"
+        },
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "scar",
+          "to_m": [
+            -14,
+            215
+          ],
+          "facing_deg": 225,
+          "width_m": 4.2,
+          "size": "C"
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -30,
+          214
+        ],
+        "distance_m": 67,
+        "yaw_deg": 45
+      },
+      "shots_s": [
+        6,
+        9
+      ],
+      "end_s": 9.5
+    },
+    {
+      "name": "dozer_foto",
+      "about": "A foto do Dozer novo no jogo (Modelos 3D, 13/10): um Dozer e um tanque parados lado a lado no cruzamento da vila, sem névoa e sem HUD, a câmera no zoom mais perto do jogador, pra conferir tamanho, luz e a sirene.",
+      "map": "World_TestSalt2",
+      "seed": 12,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          0,
+          0
+        ],
+        [
+          -300,
+          -330
+        ]
+      ],
+      "units_per_player": [
+        [
+          "usa_dozer",
+          1
+        ],
+        [
+          "usa_mbt",
+          1
+        ]
+      ],
+      "orders": [
+        {
+          "t_s": 0.2,
+          "player": 0,
+          "type": "line",
+          "to_m": [
+            0,
+            0
+          ],
+          "facing_deg": 45,
+          "width_m": 14
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          0,
+          0
+        ],
+        "distance_m": 67.0,
+        "yaw_deg": -45.3
+      },
+      "shots_s": [
+        4,
+        6
+      ],
+      "end_s": 6.5
+    }
+  ]
+}

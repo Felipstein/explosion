@@ -23,7 +23,8 @@ namespace WorldTrees
 	/** Tipo da árvore pelo bioma e pelo sorteio do gerador (a floresta temperada mistura os dois). */
 	inline EKind KindOf(EWorldBiome Biome, uint8 Variant)
 	{
-		if (Biome == EWorldBiome::Desert) return EKind::Shrub;
+		// deserto: arbusto; Variant ≥ 128 marca a árvore do oásis (copa verde)
+		if (Biome == EWorldBiome::Desert) return Variant >= 128 ? EKind::Broadleaf : EKind::Shrub;
 		if (Biome == EWorldBiome::Winter) return EKind::Conifer;
 		return (Variant & 8) ? EKind::Conifer : EKind::Broadleaf;
 	}

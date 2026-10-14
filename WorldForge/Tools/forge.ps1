@@ -85,7 +85,9 @@ switch ($Command) {
       $log = Join-Path $Captures "$Folder.log"
       $a += "-ForgeCapture=$dest", "-abslog=$log", '-unattended'
       if ($Seeds) { $a += "-ForgeSeeds=$($Seeds -join ',')" }
-      if ($UITest) { $a += '-ForgeUITest' }
+      # o teste da interface abre a janela fora da tela: o mouse de verdade (o Felipe
+      # usando o PC) não passa por cima dos cliques sintéticos, e a janela não aparece pra ele
+      if ($UITest) { $a += '-ForgeUITest', '-WinX=-6000', '-WinY=100' }
       Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $a -Wait
       Select-String -Path $log -Pattern 'FORGE' | ForEach-Object { $_.Line -replace '^\[[^\]]+\]\[\s*\d+\]', '' }
     } else {

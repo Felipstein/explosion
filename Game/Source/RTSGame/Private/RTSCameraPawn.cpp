@@ -1,6 +1,8 @@
 #include "RTSCameraPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Engine/World.h"
@@ -64,6 +66,46 @@ void ARTSCameraPawn::JumpTo(const FVector2D& Cm)
 	Focus = FVector(FMath::Clamp(Cm.X, BoundsCm.Min.X, BoundsCm.Max.X), FMath::Clamp(Cm.Y, BoundsCm.Min.Y, BoundsCm.Max.Y), 0.0);
 	SmoothedGroundZ = GroundZ(FVector2D(Focus.X, Focus.Y));
 	UpdateCamera(0.0f);
+}
+
+void ARTSCameraPawn::AddShake(const FVector2D& AtCm, float StrengthCm)
+{
+	// só as explosões perto do foco (até 70 m), caindo com o quadrado da distância; a mais forte manda
+	const float D = float(FVector2D::Distance(AtCm, FVector2D(Focus.X, Focus.Y))) / 100.0f;
+	if (bMenuMode || D > 70.0f)
+	{
+		return;
+	}
+	const float Amp = StrengthCm * FMath::Square(1.0f - D / 70.0f);
+	if (Amp > ShakeCm * FMath::Exp(-9.0f * ShakeAge))
+	{
+		ShakeCm = Amp;
+		ShakeAge = 0.0f;
+		ShakeSeed = float(int32(AtCm.X + AtCm.Y) % 997);
+	}
+}
+
+void ARTSCameraPawn::SetSilhouetteColors(const TArray<FLinearColor>& Colors)
+{
+	if (FParse::Param(FCommandLine::Get(), TEXT("RTSNoSilhouette")))
+	{
+		return;   // o A/B
+	}
+	UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_UnitSilhouette.M_UnitSilhouette"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!M)
+	{
+		return;   // sem o game.ps1 content: sem silhueta
+	}
+	if (!SilhouetteMID)
+	{
+		SilhouetteMID = UMaterialInstanceDynamic::Create(M, this);
+		Camera->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, SilhouetteMID));
+		Camera->PostProcessBlendWeight = 1.0f;
+	}
+	for (int32 K = 0; K < Colors.Num() && K < 8; ++K)
+	{
+		SilhouetteMID->SetVectorParameterValue(FName(*FString::Printf(TEXT("Color%d"), K + 1)), Colors[K]);
+	}
 }
 
 void ARTSCameraPawn::SetFogExposureFix(bool bOn)
@@ -156,9 +198,33 @@ void ARTSCameraPawn::UpdateCamera(float DeltaSeconds)
 		Eye.Z = Floor;
 	}
 	SetActorLocationAndRotation(Eye, bMenuMode ? View : (Target - Eye).Rotation());
+	// (13/10, a caça ao mergulho da câmera: o BlastLab viu a vista deitada e embaixo do chão por ~0,7 s no fim da cena
+	// carcaca) o log quando a câmera fica baixa ou deitada, com tudo o que entra na conta
+	if (!bMenuMode && (Pitch < 12.0f || Eye.Z - Ground < 1500.0f || !FMath::IsFinite(Eye.Z)))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS câmera baixa: foco (%.0f, %.0f) chão %.0f suave %.0f, inclinação %.1f (livre %.1f), distância %.1f m, olho (%.0f, %.0f, %.0f)"),
+			Focus.X, Focus.Y, Ground, SmoothedGroundZ, Pitch, FreePitchShown, DistanceM, Eye.X, Eye.Y, Eye.Z);
+	}
 	// o campo de visão: mais fechado de longe, mais aberto com a câmera deitada
 	const float Zoom = FMath::Clamp((DistanceM - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
 	const float Low = FMath::Clamp((25.0f - Pitch) / 20.0f, 0.0f, 1.0f);
 	const float Fov = FMath::Lerp(FMath::Lerp(FieldOfViewDeg, FarFieldOfViewDeg, Zoom), LowPitchFieldOfViewDeg, FMath::SmoothStep(0.0f, 1.0f, Low));
 	Camera->SetFieldOfView(bMenuMode ? FieldOfViewDeg : Fov);
+	// o tremor: ruído (não seno), ~25 Hz, apagando em ~0,35 s
+	if (ShakeCm > 0.0f)
+	{
+		ShakeAge += DeltaSeconds;
+		const float Env = FMath::Exp(-9.0f * ShakeAge);
+		if (Env < 0.02f)
+		{
+			ShakeCm = 0.0f;
+			Camera->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+		}
+		else
+		{
+			const float T = ShakeAge * 25.0f + ShakeSeed;
+			const FVector Off(0.0f, FMath::PerlinNoise1D(T) * ShakeCm * Env, FMath::PerlinNoise1D(T + 37.1f) * ShakeCm * Env);
+			Camera->SetRelativeLocationAndRotation(Off, FRotator(0.0f, 0.0f, FMath::PerlinNoise1D(T + 71.3f) * 0.15f * Env));
+		}
+	}
 }
