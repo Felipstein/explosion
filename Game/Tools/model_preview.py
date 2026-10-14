@@ -48,6 +48,18 @@ MODELS = {
         'usa_at': (0, 6.0, 0),
         'game': [('game_cam', 37.5, 35.0, 50.0, 0.8), ('game_cam_close', 37.5, 35.0, 28.0, 0.75)],
     },
+    'usa_supply_truck': {
+        'parts': [('SM_USA_SupplyTruck_Hull', (0, 0, 0)), ('SM_USA_SupplyTruck_Wheels', (0, 0, 0))]
+                 + [('SM_USA_SupplyCrate_Small', (x * 0.72, -y * 0.72, 1.3 * 0.72)) for (x, y) in ((-2.45, -0.68), (-2.45, 0.68), (-0.85, -0.68), (-0.85, 0.68))],
+        'views': [('front', 'ortho', (-1, 0, 0), (0, 0, 1), (900, 900)),
+                  ('back', 'ortho', (1, 0, 0), (0, 0, 1), (900, 900)),
+                  ('left', 'ortho', (0, -1, 0), (0, 0, 1), (1800, 820)),
+                  ('top', 'ortho', (0, 0, -1), (0, -1, 0), (1800, 1000)),
+                  ('three_quarter', 'persp', 27.0, 232.0, (1600, 1000), 30.0, 0.95),
+                  ('three_quarter_right', 'persp', 30.0, 40.0, (1600, 900), 35.0, 0.95)],
+        'usa_at': (0, 6.0, 0),
+        'game': [('game_cam', 37.5, 35.0, 50.0, 0.8), ('game_cam_close', 37.5, 35.0, 28.0, 0.75)],
+    },
     'gla_war_factory': {
         'parts': [('gla_war_factory', (0, 0, 0))],
         'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1500, 1200)),           # a planta: frente embaixo, direita (+Y) à esquerda
@@ -193,8 +205,10 @@ def ground(bg, sun):
 spec = MODELS[MODEL]
 cam, sun, bg = scene_setup()
 objs = []
+REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 for name, at in spec['parts']:
-    objs += load(os.path.join(SRC, name + '.glb'), at)
+    path = os.path.join(REPO, name + '.glb') if '/' in name else os.path.join(SRC, name + '.glb')
+    objs += load(path, at)
 fix_materials()
 bpy.context.view_layer.update()
 lo, hi = bounds(objs)

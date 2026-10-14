@@ -295,3 +295,17 @@ def track_path(circles, pitch):
             t += step
         t -= L
     return out
+
+
+def export_group(objs, out_dir, name):
+    """Várias peças num GLB só, cada uma uma malha com o nome dela (a Unreal cria uma malha por peça: é assim
+    que as rodas viram wheel_001, wheel_002… e o jogo gira cada uma pelo centro da caixa dela)."""
+    select_only(objs[0])
+    for o in objs:
+        o.select_set(True)
+    path = os.path.join(out_dir, name + '.glb')
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_apply=True,
+                              export_yup=True, export_materials='EXPORT', export_normals=True, export_texcoords=False)
+    tris = sum(len(poly.vertices) - 2 for o in objs for poly in o.data.polygons)
+    print('MODEL', name, tris, 'tris', f'({len(objs)} malhas) ->', path)
+    return tris

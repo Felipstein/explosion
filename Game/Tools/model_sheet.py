@@ -24,10 +24,10 @@ try:
 except OSError:
     font = ImageFont.load_default()
 
-src = Image.open(ficha).convert('RGB')
-W, H = src.size
+src = Image.open(ficha).convert('RGB') if spec.get('rows') else None
+W, H = src.size if src else (1, 1)
 rows = []
-for row in spec['rows']:
+for row in spec.get('rows', []):
     x0, y0, x1, y1 = row['crop']
     a = src.crop((int(W * x0), int(H * y0), int(W * x1), int(H * y1)))
     b = Image.open(os.path.join(prev, row['tag'] + '.png')).convert('RGB')
@@ -35,7 +35,7 @@ for row in spec['rows']:
     b = b.resize((int(b.width * ROW_H / b.height), ROW_H), Image.LANCZOS)
     rows.append((row['label'], a, b))
 extra = [(e['label'], os.path.join(prev, e['tag'] + '.png')) for e in spec.get('extra', []) if os.path.exists(os.path.join(prev, e['tag'] + '.png'))]
-width = max(a.width + b.width + 3 * PAD for _, a, b in rows)
+width = max([a.width + b.width + 3 * PAD for _, a, b in rows] + [1600 + 2 * PAD])
 height = sum(ROW_H + 2 * PAD + 30 for _ in rows)
 extra_imgs = []
 for label, pth in extra:

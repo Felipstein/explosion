@@ -1,0 +1,14 @@
+{
+  "ficha": "",
+  "rows": [],
+  "extra": [
+    {"tag": "three_quarter", "label": "3/4 pela frente-esquerda (nao ha arte aprovada: desenho pela raiz da USA, tanque + Dozer)"},
+    {"tag": "three_quarter_right", "label": "3/4 por tras, pela direita (o guindaste)"},
+    {"tag": "left", "label": "lado esquerdo"},
+    {"tag": "top", "label": "cima"},
+    {"tag": "front", "label": "frente"},
+    {"tag": "back", "label": "tras"},
+    {"tag": "game_cam", "label": "a camera do jogo (37,5 graus), tanque USA ao lado"},
+    {"tag": "game_cam_close", "label": "a camera do jogo, mais perto"}
+  ]
+}
