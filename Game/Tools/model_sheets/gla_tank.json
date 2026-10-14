@@ -1,0 +1,15 @@
+{
+  "ficha": "docs/concept/units/gla_mbt_sheet.webp",
+  "rows": [
+    {"tag": "top", "label": "cima", "crop": [0.36, 0.03, 1.0, 0.30]},
+    {"tag": "left", "label": "lado esquerdo", "crop": [0.0, 0.33, 0.68, 0.58]},
+    {"tag": "front", "label": "frente", "crop": [0.0, 0.03, 0.36, 0.30]},
+    {"tag": "back", "label": "tras", "crop": [0.68, 0.33, 1.0, 0.58]},
+    {"tag": "three_quarter", "label": "3/4", "crop": [0.0, 0.58, 1.0, 1.0]}
+  ],
+  "extra": [
+    {"tag": "three_quarter_right", "label": "o outro lado (a ficha nao tem)"},
+    {"tag": "game_cam", "label": "a camera do jogo (37,5 graus), tanque USA ao lado"},
+    {"tag": "game_cam_close", "label": "a camera do jogo, mais perto"}
+  ]
+}

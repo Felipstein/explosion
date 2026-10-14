@@ -49,7 +49,7 @@ Prioridade: **A** = entra no 1º teste (USA × GLA, uma War Factory por lado); *
 | Peça | Nos game shots | Temos | Estado | Prior. |
 |---|---|---|---|---|
 | Tanque USA | todos | Look | **pronto** | — |
-| Dozer | base calma e atacada | Look + prov | pronto | — |
+| Dozer | base calma e atacada | **refeito em 13/10** pela arte aprovada (`usa_dozer.webp`): `Game/Tools/model_usa_dozer.py` → `captures/game/models/usa_dozer/SM_USA_Dozer_{Hull,Blade,Beacon,Wheels,Track_l,Track_r}.glb`, 33 mil triângulos, escala 0,88 aplicada no script (medido contra o tanque: 7,65 m da lâmina ao escarificador × 3,87 m × cabine a 2,6 m; o tanque tem 8,1 m de casco × 3,8 m × torre a 2,5 m, mastro a 4,15). A lâmina tem a origem no pivô (`blade.at_m` = (−0,352; 0; 0,66)); a **sirene amarela** (pedido do Felipe): cúpula no casco (slot `Beacon`, pisca) e a luz que gira é a peça `SM_USA_Dozer_Beacon` (origem no eixo, `beacon.at_m` = (0,396; 0,264; 2,86), ~90 rpm, só enquanto constrói: o jogo precisa ligar isso) | 10 voltas, comparado lado a lado com a arte no mesmo ângulo (`preview/lado_a_lado_v10.jpg`, folha `preview/compare_arte_v10.jpg`); esperando o Felipe julgar | — |
 | Caminhão de suprimento | não aparece (é regra do jogo) | prov | ok | — |
 | Humvee com metralhadora | `r1_raid_slabs` (canto inferior direito), `town_battle_top` | nada | sem ficha | C |
 | Helicóptero de ataque | `road_town_battle`, `town_battle_top` | nada | sem ficha | C |
@@ -62,7 +62,7 @@ Prioridade: **A** = entra no 1º teste (USA × GLA, uma War Factory por lado); *
 | Peça | Nos game shots | Temos | Estado | Prior. |
 |---|---|---|---|---|
 | Tanque GLA (Scorpion) | `r1_raid_*` (verde-oliva com faixa verde, pneu atrás, sacos de areia) | **feito em 13/10** (sessão Modelos 3D): `Game/Tools/model_gla_tank.py` → `captures/game/models/gla_tank/SM_GLA_MBT_{Hull,Turret,Barrel,Wheels,Track_l,Track_r}.glb`, ~48 mil triângulos; folha ficha × nosso em `captures/game/models/gla_tank/preview/compare_ficha_v*.jpg` (`model_preview.py` + `model_sheet.py`) | **aprovado pelo Felipe (13/10)**. Pronto pra importar assim que a facção GLA entrar no jogo: os GLBs têm a origem do tanque (no chão, no centro), a torre gira em (0,35; 0) e o cano recua em +X; a importação precisa de 5 slots novos na tabela do `import_provisional.py` (Bag, Patch, Rust, Rubber, Wood). Falta a carcaça (`_Wreck`) | **A** |
-| Oficina GLA (War Factory) | ficha `gla_war_factory_sheet` (galpão de barro com rede de camuflagem, chaminés, bandeiras) | nada | ficha aprovada | **A** |
+| Oficina GLA (War Factory) | ficha `gla_war_factory_sheet` (galpão de barro com rede de camuflagem, chaminés, bandeiras) | **1ª volta montada em 13/10**: `Game/Tools/model_gla_war_factory.py` → `captures/game/models/gla_war_factory/gla_war_factory{,_scaffold}.glb` (24 × 32 m, frente em +X, 19 mil + 4 mil triângulos); folha `preview/compare_ficha_v1.jpg` ainda não conferida contra a ficha | fora da v2 (decisão do Felipe, 13/10); continua depois do Dozer | B |
 | Picape técnica com bandeira verde | `r1_raid_*` | Look: picape armada | **falta a bandeira verde** (cor do jogador) | **A** |
 | Bandeirinha verde (pano ao vento) | em todo veículo GLA | nada | pano com animação simples | B |
 | Buggy aberto | `town_battle_top` | nada | sem ficha | C |
