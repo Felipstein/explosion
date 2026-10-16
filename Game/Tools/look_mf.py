@@ -156,6 +156,75 @@ return bc;
 """
 
 
+# ---- a v3 (16/10, docs/CHAO_V3_ESTUDO.md §4.3 e §7): a normal de iluminação --------------------------------------------
+# Na partida o sol não anda: a luz do relevo fino (a trilha, a garra, a bordinha, a cratera: o caderno GroundSunLit da
+# sessão do jogo; a ondulação: a RippleLit do Look) chega calculada, linear e com mips (média de luz = média certa). No
+# material, a normal final é girada no plano dela com o sol só o bastante pra que o N·L da Unreal dê exatamente essa luz:
+#   t = clamp(SunLit_total × N·L, −0,05, 1)   N' = t·L + √(1 − t²)·normalize(N − (N·L)·L)   (N'·L = t, exato)
+# Por que assim: a sombra das unidades segue certa (a sombra virtual multiplica o N·L, a marca não escurece em dobro);
+# passa de 1 (a borda acesa); não escurece a cor; vale em todo preset. Por isso, com a v3 ligada, o relevo do caderno
+# NÃO entra na normal (senão o N·L conta duas vezes) e a cor não escurece pela visibilidade velha (3 passos de 9 cm).
+# O CODE de cima segue igual pra quem monta sem a v3. code_v3() devolve o CODE com isto dentro; o WorldForge liga com
+# GROUNDV3=1 e põe as entradas novas: SunLitT, SunLitMidT (as texturas do jogo; o jogo liga UseSunLit=1 com
+# -RTSGroundV3), UseSunLit (escalar, 0), RipLit (a RippleLit da camada de areia, 1 nas outras), Lt (a direção do sol
+# em espaço tangente: SkyAtmosphereLightDirection → TransformVector mundo→tangente); a saída nova AOout (o SkyAO,
+# multiplica o AO da camada).
+V3_SKIP_RELIEF_NORMAL = ("nT = normalize(nT + float3(-g.x, -g.y, 0.0) * k);",
+                         "if (UseSunLit < 0.5 || V3On < 0.5) nT = normalize(nT + float3(-g.x, -g.y, 0.0) * k);")
+# (16/10) com a v3 ligada pelo jogo (UseSunLit = 1, -RTSGroundV3) os cadernos do relevo têm mips: a média à mão de 4 leituras
+# vira 1 leitura com o nível pelo hardware (menos leitura e sem cintilar); sem a chave (sem mips) segue a média à mão
+V3_RELIEF_MIP = ("float4 Rr = (Rd * wD + Rm * wMc) / wc;",
+                 "if (UseSunLit > 0.5) { Rd = Relief.Sample(ReliefSampler, uvD); Rm = ReliefMid.Sample(ReliefMidSampler, uvM); } "
+                 "float4 Rr = (Rd * wD + Rm * wMc) / wc;")
+V3_SKIP_VIS_COLOR = ("bc *= lerp(1.0, vis, 0.85 * k * (1.0 - wall));",
+                     "if (V3On < 0.5) bc *= lerp(1.0, vis, 0.85 * k * (1.0 - wall));")
+V3_LIGHT = r"""
+// ---- a v3: a normal de iluminação (MF, 16/10) ----
+AOout = 1.0;
+if (V3On > 0.5) {
+    // (16/10) a areia revolvida e o halo de 50 cm além da bordinha (o A do relevo, Prose 1985): só tom e rugosidade, e fora
+    // do fundo do sulco (o A tem a faixa inteira: escurecer ali engrossava o fio de novo)
+    float stirOut = saturate(stir) * (1.0 - band) * wc;
+    bc *= lerp(float3(1.0, 1.0, 1.0), float3(0.95, 0.93, 0.90), stirOut * 0.6);
+    rough = saturate(rough + 0.06 * stirOut);
+    float sunlit = RipLit;
+    if (UseSunLit > 0.5 && wc > 0.001) {
+        float2 sl = (SunLitT.Sample(SunLitTSampler, uvD).rg * wD + SunLitMidT.Sample(SunLitMidTSampler, uvM).rg * wMc) / wc;
+        sunlit *= lerp(1.0, sl.r, wc);
+        AOout = lerp(1.0, sl.g, wc);
+    }
+    float3 L = normalize(Lt);
+    float ndl = dot(nT, L);
+    if (ndl > 0.02) {
+        float t = clamp(min(sunlit, 1.15) * ndl, -0.05, 1.0);
+        float3 perp = nT - ndl * L;
+        float lp = length(perp);
+        if (lp > 1e-4) nT = t * L + sqrt(saturate(1.0 - t * t)) * (perp / lp);
+    }
+}
+"""
+
+
+def code_v3():
+    """O CODE com a v3 (a normal de iluminação). As entradas novas: SunLitT, SunLitMidT, UseSunLit, RipLit, Lt, V3On (1); a
+    saída nova: AOout."""
+    c = CODE
+    for old, new in (V3_SKIP_RELIEF_NORMAL, V3_SKIP_VIS_COLOR, V3_RELIEF_MIP):
+        assert c.count(old) == 1, old
+        c = c.replace(old, new)
+    # os retornos de antes (sem caderno) também passam pela v3: o chão fora da janela ainda leva a ondulação assada
+    c = c.replace('if (Range <= 0.0) { Nout = nT; Rout = rough; return bc; }',
+                  'if (Range <= 0.0) { V3_EARLY Nout = nT; Rout = rough; return bc; }')
+    c = c.replace('if (wc <= 0.001) { Nout = nT; Rout = rough; return bc; }',
+                  'if (wc <= 0.001) { V3_EARLY Nout = nT; Rout = rough; return bc; }')
+    early = ('AOout = 1.0; if (V3On > 0.5) { float3 L0 = normalize(Lt); float d0 = dot(nT, L0); if (d0 > 0.02) { '
+             'float t0 = clamp(min(RipLit, 1.15) * d0, -0.05, 1.0); float3 q0 = nT - d0 * L0; float l0 = length(q0); '
+             'if (l0 > 1e-4) nT = t0 * L0 + sqrt(saturate(1.0 - t0 * t0)) * (q0 / l0); } }')
+    c = c.replace('V3_EARLY', early)
+    i = c.rindex('Nout = nT; Rout = rough;')
+    return c[:i] + V3_LIGHT + c[i:]
+
+
 # O deslocamento do chão (13/10, a cratera do jogo igual à prova, proposta da sessão do jogo: a tesselação Nanite do próprio
 # Landscape, sem malha nem buraco). Num Custom separado, ligado ao pino Displacement do material do chão com
 # bEnableTessellation e DisplacementScaling (magnitude 200 cm, centro 0,5): roda no estágio da tesselação, então nada de

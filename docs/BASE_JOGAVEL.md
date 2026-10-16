@@ -90,7 +90,74 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 
 ## 1. O jogo (sessão "RTS game architecture e gráficos")
 
+### A noite de 16/10 (o pedido dele: "quero me arrepiar"; tudo sem commit, esperando a palavra dele)
+- [~] **A água do lago com a sombra filtrada.** Os blocos riscados na água sumiram, sem custo medível. É configuração do projeto (`DefaultEngine.ini`), com a causa achada pelo Look e pelo WorldForge. A/B no jogo: `captures/game/ab_agua_vsm.jpg`.
+- [~] **O casco cede ao tiro:** inclina ~1,5° na mola da suspensão, pro lado de lá do disparo (o BAR faz; a pesquisa do Fluxo). O prédio não.
+- [~] **A Patriot no jogo, provada na cena `patriot_defesa`:**
+  - gira a caixa, solta a rajada e derruba 1 dos 3 tanques antes de cair (3 tanques ganham de 1 Patriot, como no ZH);
+  - o radar foi pro alto do mastro;
+  - fotos em `captures/game/patriot2/`.
+- [~] **A v3 do chão, a parte do jogo** (`docs/CHAO_V3_ESTUDO.md` §7, com a chave `-RTSGroundV3`):
+  - a luz do sol assada no momento em que a esteira passa ou o tiro cai (`GroundSunLit.usf`): a varredura no rumo do sol numa grade fina (2×2 no Alta, 4×4 no Ultra), a oclusão do céu e a fila com cota por quadro;
+  - o perfil novo da trilha: sulco de 4 cm, bordinha de 3 × 20 cm, faixa de altura de ±10 cm;
+  - as cenas `trilha_arcos` e `areia_aberta` (§6.1).
+  - O material que lê isso é do Look e está em andamento. A interface é `GroundSunLit`/`GroundSunLitMid` (RG16F) e `UseSunLit`.
+  - **A 1ª medida deu +1,2 ms** (34,1 × 32,9 ms). A causa: um retângulo que cobria a batalha inteira era refeito a cada quadro, com 7 m de sombra pra todo lado. Agora vai uma caixa por pedaço novo de trilha ou cratera, juntando as vizinhas. A trilha (que muda ~20 cm) estende a sombra só ~1,4 m; o contexto de 7 m do lado do sol continua, pra sombra da cratera vizinha.
+    - **Medido depois (2 pares na cena `chao`, Alta):** +0,2 ms de mediana (33,4 × 33,2 e 33,6 × 33,4 ms), e o p95 não piora (42,8 × 43,2 e 44,3 × 45,5). Dentro da meta de ≤ +0,3 ms.
+  - **Os torrões fora da sombra do sol** (a decisão (b) do Look, 16/10). Um torrão de 5 cm a 8° de sol faz 35 cm de triângulo preto: o "pontinho preto" já reprovado. As pedras ≥ 9 cm já fazem a sombra delas de malha.
+    - A altura que faz sombra sai à parte (`bake_craters.py` grava `crater_*_sun.png`: bacia, borda e halo); o atlas aprovado saiu idêntico, byte a byte.
+    - O caderno de altura das crateras passou a dois canais: R a cheia (a MF, sem mudança), G a do sol.
+    - O sol lê o G; o escurecimento de contato (SkyAO) lê a cheia.
+    - A prova a 8°: `captures/game/v3_chao/sombra_torroes_prova.png`.
+  - **Um defeito antigo nas crateras, achado pela luz assada:** o forno borrava o X com `np.roll`, que dá a volta. As ~8 colunas das bordas de cada variante do atlas traziam a cratera do outro lado: até 15 cm, escuro e claro.
+    - Girado no caderno, virava uma linha fina na borda do carimbo, a ~7 m do centro, desde a v2. Com o sol a 8°, pontilhados de ~2 m em volta das crateras.
+    - Corrigido no carimbo (`GroundCrater.usf`): a borda vai a zero nos últimos 35 cm; a cratera nunca chega lá. O atlas aprovado não mudou.
+    - Antes × depois: `captures/game/v3_chao3/pontilhado_antes_depois.png`.
+  - **A curva da trilha** (§5.2; Liu 2009): pelo raio de cada lagarta, de 30 m (nada) a 6 m ou o pivô (inteira), a fita alarga até ~1 m (×1,55) e o sulco vai a ~7 cm (×1,75). A bordinha de fora da curva dobra e a de dentro some (a terra raspada vai pra fora). De ré, o lado de fora inverte.
+    - A folga no caderno de 10 bits: o perfil grava a faixa ÷ 1,75 e a bordinha ÷ 2, e o relevo multiplica de volta. O caderno é linear (o alvo da Unreal já nasce com `bForceLinearGamma`, medido texel a texel), então a trilha reta sai igual.
+    - A margem do retângulo sujo do relevo cobria só 72 cm do meio da lagarta, e o perfil v3 vai a 85 cm (1,32 m na curva): corrigida.
+    - O Look julgou na câmera do jogo (`captures/game/v3d_trilha/06_cena_239s.png`, World_TestGroundV3Dune): "lê bem", sem degrau visível, com o alisamento de 3 m. A trilha virou sulco, com o lado da sombra e o aceso, como a folha C. Falta o Felipe ver.
+  - **A garra** (o Look pediu, 16/10): assada só na altura do sol, sem normal, sob a faixa; 1 cm de pico a pico, no passo de 19,39 cm (64 m ÷ 330, sem emenda na volta do U), pelo andado da lagarta (um caderno G16 novo, só no detalhe, +8 MB); some com o frescor².
+    - A 8° de sol, a bordinha de 3 cm mais o sulco de 4 cm fazem ~50 cm de sombra, que cobre o fundo do sulco: a garra aparece como dente na borda da sombra, discreta (`captures/game/v3_garra1/garra_contraste.png`).
+    - Ajuste sem compilar: `rts.Ground.ClawCm` (0 desliga). O Look vai olhar parado e em vídeo, por causa da cintilação.
+  - **O halo revirado de 50 cm** (Prose 1985): no A do relevo (o revolvido), de 0,5 a 0 além da faixa e da bordinha; a MF do Look faz o tom e a rugosidade (`captures/game/v3_garra1/halo_antes_depois.png`).
+  - **O custo na cena de trilhas do Look** (`trilha_arcos_groundv3dune`, alta, 9.000 quadros, antes da garra): 27,0 ms com a v3 contra 26,7 ms sem, +0,3 ms. O Look tinha medido +0,6 antes do contexto curto: sem cratera a até 7 m do lado do sol, a varredura da trilha começa só 1,4 m antes. `rts.Ground.SunLitJobs 0` desliga a varredura, pra medir separado do material.
+  - **As mips dos cadernos** (o Look pediu, 16/10): o SunLit e o relevo da v3 nascem com a cadeia de mips, refeita por compute só no que mudou, até a mip 6, uma vez por quadro (`GroundMips.usf`). A MF do Look lê o SunLit com o Sample normal; o relevo ela troca de 4 leituras à mão pra 1 Sample. A cratera fica sem mip por enquanto.
+    - O custo, A/B no mesmo binário (`-Cvars 'rts.Ground.Mips 0'`): com os dois cadernos a cada quadro, +0,4 ms (35,2 × 34,8). Com um caderno por quadro (o detalhe e o meio alternados) e até 4 retângulos, nenhum medível (34,5 × 34,6).
+    - O `game.ps1` ganhou `-Cvars 'nome valor, ...'`, que entra no `-ExecCmds` (pros A/B de qualquer sessão).
+  - **A luz da trilha velha:** o sulco perde até 45% em minutos, mas a luz só era refeita onde havia marca nova. Agora uma volta lenta refaz um ladrilho de 512 a cada 0,5 s, com a fila vazia (o detalhe inteiro em ~32 s, o meio em ~8 s). O sol que muda agora também é conferido com a fila vazia.
+- [~] **As cenas de teste:**
+  - a câmera que anda (`camera.keys`);
+  - a ordem pra uma unidade só (`"unit"`);
+  - o prédio num ponto fixo (`"structures"`);
+  - a câmera da cena mais perto que o zoom do jogador (o Fluxo, pros game shots);
+  - os 24 cenários da poeira da Arte (`poeira_*`);
+  - o `"map"` da cena agora troca o mapa (os mapas de teste do WorldForge: a laje, a areia v2, o chão v3). Antes era lido e ignorado: o skirmish abria sempre o World_TestSalt2 (o Look e o WorldForge acharam, 16/10).
+- [~] **As lajes da estrada do WorldForge com a memória do chão** (`PushToSlabs`), pra esteira e cratera aparecerem na estrada.
+- [x] **Medido e descartado:** o TSR em FP16 (não ganha na 1660).
+- [x] **O viés −0,5 das sombras no Alta, de novo com a água filtrada** (16/10, o Felipe escolheu: "ligue no alta"; em `DefaultScalability.ini` [ShadowQuality@3]): −0,8 ms (32,2 × 33,0 ms). A água ficou quase igual, com as listras da sombra um pouco mais riscadas no ampliado (`captures/game/ab_agua_b05.jpg` e `ab_agua_b05_zoom_a.jpg`). Não liguei: é escolha de gosto do Felipe, um A/B pra ele.
+
 ### Mecânica
+- [~] **A defesa de base da USA (a Patriot)** (14/10 de madrugada, a noite da v3; o Felipe aprovou o modelo: "top, manda pros cara botar no jogo"):
+  - **Os números são do ZH**, de `AmericaPatriotBattery`, `PatriotMissileWeapon` e `PatriotMissileLocomotor`, × 0,2633 m:
+    - custa 1000, leva 25 s e gasta 3 de energia;
+    - tem 1000 de vida e vê a 95 m;
+    - dispara 4 mísseis de 30 (explosão) a cada 250 ms e recarrega em 2 s;
+    - o alcance é 59 m, o míssil voa a 105 m/s e a torre gira a 180°/s;
+    - exige usina pronta e, sem energia, fica parada (o POWERED).
+  - **A simulação 13:** prédio que atira e nunca persegue; a rajada (`clip_size`, `clip_reload_s`); o `needs_power`; prédio fora de ordem de andar.
+    - O simtest prova com e sem energia: 16 tiros matam o tanque e ela não sai do lugar; sem energia, zero tiros.
+    - As 3 compilações dão o mesmo FINAL_HASH, 0a533cde3fa59f62.
+  - **O modelo:** `game.ps1 patriot` importa para `/Game/Structures/USA_Patriot`. A caixa lançadora é a torre e o radar gira, parando sem energia.
+  - **No jogo:** ela está no menu do Dozer, com o botão `usa_missile_defense` do kit da Arte. A cena de teste é `patriot_defesa`.
+  - **A IA:** monta a 1ª defesa depois da fábrica, a 45 m da base rumo ao inimigo, e a 2ª com $3000 sobrando. A defesa não entra mais na onda de ataque, e a onda que cai para 2 tanques volta a juntar, com a próxima 2 tanques maior (até 14).
+  - **O que ficou:** robô contra robô com defesa termina empatado em 15 min, porque os depósitos secam e a IA não vai buscar outro (a do ZH vai). É item da IA pra v3. O tiro antiaéreo entra quando houver avião.
+  - [~] **16/10 (sessão do jogo), a IA expande:** com os depósitos perto da base secos (nenhum com caixa ao alcance de 184 m do caminhão de nenhum centro dela), ela faz um centro novo no depósito com caixa mais perto de casa, até 3.
+    - Enquanto espera o centro, a fábrica para de gastar (com a fila de 2 tanques sempre cheia, o dinheiro nunca chegava no preço).
+    - O caminhão parado sem depósito vai pro com caixa mais perto dele, do lado de casa primeiro.
+    - Ela faz 2 caminhões por centro que ainda tem depósito.
+    - **Simulação 14.** O teste novo (os depósitos da base com 60 caixas, sem guerra, 20 min) dá 3 e 2 centros, a renda de 11.700 a 41.700 e 48 e 34 tanques; as 3 compilações dão o mesmo FINAL_HASH.
+    - O empate de 15 min com a defesa continua: ali os depósitos ainda não secam em 15 min, e o empate vem da guerra (as ondas contra as Patriots), não da economia. É o próximo item da IA.
 - [ ] **Rede:**
   - **Conexão:** transporte UDP (LAN e IP direto primeiro) e sala de espera (vagas, cor, time, mapa).
   - **Mesma partida nos dois PCs:**
@@ -203,7 +270,10 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - ~~**Árvore transparente perto do cursor**~~: **saiu em 13/10** (o Felipe nunca aprovou pro jogo; vai ter tanque escondido nas árvores, `docs/IDEIAS_JOGABILIDADE.md` ideia 6). A árvore nunca entrega unidade escondida.
 - [~] **Silhueta da unidade** (jogo, 13/10, sem a foto aprovada; **só as suas e as dos aliados**: o Felipe, 13/10 à noite, "nenhum tanque inimigo pode ser exibido atrás das coisas", senão a mecânica de se esconder atrás da árvore vai pro lixo): atrás de prédio, casa ou palmeira, a unidade aparece na cor do time, meio transparente e com a borda mais forte, como no SC2 (custom depth com o dono no stencil + o pós-processo `M_UnitSilhouette`; `-RTSNoSilhouette` desliga). Dentro da fumaça ainda não: a fumaça não grava profundidade.
 - [~] **Contato com o chão** (jogo, 12/10: mancha macia de cantos redondos sob cada tanque, `M_UnitContact`; ainda fraca): sombra de contato e uma mancha escura macia sob cada tanque. A 140 px, a fresta escura embaixo do casco é o que diz "pesado".
+- [~] **A sala só com IA não começava** (14/10, o Felipe sozinho com 3 IAs: "Waiting for the other players"): o começo exigia ao menos um PC de fora. Corrigido no `RTSNetSession` e compilado (03:14), **fora do pacote que ele mandou pro pai** (o zip das 03:1x). Entra no próximo pacote, junto com o Prewarm da 1ª explosão (Fluxo) e as pastas que faltaram no cozimento (a poeira, o material da pedra da cratera), depois do roteiro do `docs/MULTIPLAYER.md`.
+- [x] **Travamento da placa no meio da partida** (14/10, sessão do jogo; caiu 2× no jogo do Felipe com DXGI_ERROR_DEVICE_HUNG no `HeightCS`): o relevo da memória do chão. Quando a esteira ou a marca nova ficava toda fora do caderno, na diagonal (briga longe da câmera), o retângulo saía com largura e altura negativas, a "área" dava positiva e o compute ia com bilhões de grupos. Agora largura e altura são conferidas (`RTSGroundMemory::DirtyRect`, `RTSGroundRelief::Compute/StampMarks`), e os grafos têm nome (`RTSGroundRelief`, `RTSGroundMarks`) nas migalhas de um travamento.
 - [~] **Tremor de câmera** (jogo, 13/10, sem teste do Felipe): só nas mortes vistas até 70 m do foco, caindo com o quadrado da distância; ruído de ~25 Hz apagando em ~0,35 s, 18 cm no tanque e 35 cm no prédio (2–4 px na câmera do jogo, então o clique quase não sente).
+  - **14/10, o "mergulho" (o Felipe: "toda vez que explode um tanque minha câmera fica assim por 1 segundo"):** era o tremor. A câmera é a raiz do ator, e o deslocamento "relativo" dela era a posição no mundo; em toda morte vista, a vista ia pro centro do mapa, no chão e de lado, enquanto durava o tremor. Agora o tremor entra no olho antes de posicionar a câmera. Prova na cena `mergulho` (Scenarios.json), antes e depois no mesmo instante: `captures/game/mergulho_antes_depois.jpg`. O controle loga "RTS vista fora da câmera" se a vista sair da câmera de novo.
 - [~] **Estados de dano** (jogo, 13/10, sem a foto aprovada; **14/10: fora dos veículos**. O Felipe viu a camuflagem pintada por cima e disse "um negócio porco"; volta quando for bem feito, e o prédio segue com as marcas): as marcas no material (o M_Structure) crescem a partir dos 70% de vida, como o modelo danificado do ZH: placas de tinta queimada e lascada, e a fuligem abaixo de 50%. A carcaça ganhou a receita do Look medida na street_battle: a tinta queimada, a fuligem embaixo e no anel da torre, a ferrugem de calor nas quinas, a cinza no teto, e a brasa no buraco da torre apagando em 30 s. A luz do fogo saiu do teto do casco (o "ponto de lâmpada"). As fumaças finas e escuras vêm do FXLab. **13/10 de madrugada:** nada disso aparecia no jogo. O ruído das manchas era a foto da praia, que no verde linear só vai de 0,22 a 0,25 e nunca passava dos limiares; o asfalto do miolo virava a média na distância da câmera.
   - Agora o ruído é procedural, no shader (`FRTSNoise` no `import_provisional.py`).
   - A carcaça é mosqueada, em rampas largas: a 1ª versão em recortes virou camuflagem urbana. Preview fora da placa na mediana 0,33 do alvo.
@@ -230,10 +300,15 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
       - O jogo monta a simulação e o desenho a partir do JSON.
 - [ ] **Perspectiva aérea na câmera do jogo:** o terço de cima da tela clareia e esquenta com a distância, como no alvo; igual em todos os presets e sem tapar unidade (com o WorldForge).
 - [ ] **Céu na câmera deitada** (Alt+meio): pôr do sol com nuvens como no alvo v3; nuvem nunca entre a câmera e as unidades.
-- [ ] **Telas de resultado e 3-2-1 pra N jogadores:** anéis e barras do mundo somem quando o painel abre (hoje uma barra atravessa o "VITÓRIA"), letra nítida.
+- [~] **Telas de resultado e 3-2-1 pra N jogadores:** anéis e barras do mundo somem quando o painel abre (hoje uma barra atravessa o "VITÓRIA"), letra nítida.
+  - 16/10 (sessão do jogo): as barras de vida e os anéis do mundo não são mais desenhados quando o painel do resultado abre (`RTSHUD.cpp`).
+    - No HUD novo, a lista dos jogadores do espectador caía em cima do cartão do comandante: foi pro alto, embaixo do dinheiro, e sai quando o painel do resultado abre.
+    - Visto na cena nova `resultado` (1 tanque contra 1, a derrota em segundos): `captures/game/resultado3/05_cena_018s.png` (o espectador) e `06_cena_022s.png` (o DEFEAT limpo).
+    - Faltam o 3-2-1 e a letra.
 - [ ] **Menu e opções:** botões Multiplayer e Opções; preset, resolução, limite de quadros, volumes e teclas; preset **Auto** que mede a nossa cena (o detector da Unreal joga a 1660 no máximo, e a meta de 60 qps depende dele).
   - [x] 14/10 (sessão do jogo): a linha **QUALITY** (Low/Medium/High/Ultra) no Esc e no menu principal, além do F5–F8; fica guardada no `GameUserSettings.ini` e a 1ª vez num PC abre na Medium (a que rodou no notebook de 2014 na v1). Falta o resto da tela de opções e o Auto.
 - [ ] **Áudio do lado do código:** ouvinte no ponto de mira a ~12 m, limite de cópias por som, mixagem que abaixa o resto, batalha escondida muda.
+  - 16/10 (sessão do jogo): conferido, o projeto não tem nenhum som ainda (nenhum .wav nem SoundWave em Game, FXLab ou BlastLab). Os sons precisam vir de fora, e baixar pede o OK do Felipe. Pergunta pra ele: de onde (biblioteca livre, comprada ou gerada).
 - [ ] **Legibilidade medida como critério:** quanto fumaça, explosão e névoa cobrem de uma unidade; o tanque contra cada chão (ΔE ≥ 20 ou contraste 3:1). A salina clara apaga a USA cinza-clara.
 - [~] **HUD final** (o foco do jogo desde 09/10; o plano, com as fontes, está em `docs/HUD.md`: a barra do ZH modernizada, em Slate). Já feito: o texto nítido e a saída dos anéis do chão.
   - **13/10, o HUD novo do HUDLab no jogo** (pra o Felipe testar jogando): o plugin `RTSHud` da arte em `Game/Plugins`, ligado por `RTSHUDNew.cpp`.
@@ -323,6 +398,15 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - 13/10, a arte: feita no FXLab (navegador e Unreal, mesma lógica) contra as cenas aprovadas; o estudo e o como estão em `docs/FXLAB.md`;
   - pro jogo: o ator `AFXTreadDust` (um só pra todas as unidades, `SetSources()` por quadro);
   - 13/10 à noite, a arte: a v12 (o caminho escolhido, rastro longo) empacotada no plugin `FXLab/Plugins/RTSTreadDust` (`ARTSTreadDust`, presets 0–3), com o passo a passo pro jogo em `FXLab/Plugins/RTSTreadDust/INTEGRACAO.md`; falta a sessão do jogo ligar (fontes de `SurfaceAt`, névoa, preset);
+  - 14/10, o Felipe reprovou a v12 no jogo ("exagerada, jogo de 2012, entra dentro dos tanques"; quer a cor exata do chão e o teste posição por posição);
+  - 16/10 madrugada, a arte: o redesenho medido contra o game shot r1 na mesma pose, imagem sobre imagem (`docs/POEIRA_DAS_LAGARTAS.md`, "16/10"):
+    - a v20b: a cor do chão capturada, a máscara de unidade (bit 128), menor, pálida e macia;
+    - o miolo bate com o alvo (0,90 da areia);
+    - as folhas BC7: 150 → 19 MB;
+    - a sombra do cenário.
+    Pronta pra recopiar no jogo (pedido à sessão do jogo). O comprimento (curto do alvo × longo de 13/10) vai em A/B pra ele;
+    - 16/10 ~06h, a sessão do jogo: copiada pro `Game/Plugins/RTSTreadDust` com a vez da compilação (Source com o Build.cs novo, `Resources/tread.json`, os materiais, as folhas BC7 `tread_kick_v2c_norm8`). A folha HDR e o `tread_v12.json` velho ficaram como estavam; nada foi apagado. A arte prova posição por posição com os `poeira_*`;
+    - 16/10 06:49, a v21 (sem a névoa que lia como discos pálidos; a sombra do cenário calibrada pelo espalhamento do chão Nanite) e o `tread_longo.json` (o rastro longo de 13/10, pro A/B dele: `-TreadDustProfile=<arquivo>`). Na `chao`: 32,7 ms de mediana (a sombra do cenário "encaixava" 80 de 81 pontos, mas com 314 m de espalhamento: a orientação errada, achado do jogo e confirmado pela arte; corrigido às 07:04; às 07:14 a calibração nova da arte acha a orientação certa (+1, −1: mediana 32 cm, espalhamento 181 cm, contra metros nas outras) e liga a sombra com 50 de 81 pontos, mas a folga bate no teto de 400 cm; com a arte) (a v12 dava 33,2–33,4). O custo medido pela arte no FXLab, 40 tanques: alta +4,4 ms na v12 → +1,1 ms na nova;
   - 13/10, o Felipe: a poeira tem de ser como a das gameplays em vídeo, gravada no EmberGen; a feita à mão fica de plano B. A arte simulou no EmberGen (`docs/FXLAB.md`): a versão EmberGen é a ativa (`FXLab/tread.json`); falta o Felipe ver o vídeo e a ponte do jogo.
 - [ ] **Chaminés da fábrica:** vapor branco na USA (fumaça preta é a da Oficina GLA), acima do nível das unidades, lendo o vento único.
 - [ ] **Cratera e queimado** com textura de verdade (escaneada, não ruído); destroços que ficam.
@@ -375,7 +459,55 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 
 - [ ] **Mapa oficial congelado,** com nome e versão: o jogo copia em vez de linkar.
 - [ ] **Grade de passagem canônica:** `pass.png`, obstáculos, versão e hash, tirada da altura final.
+- [~] **O céu e as nuvens da câmera deitada** (v3, Look, noite de 16/10; relatório com as fotos do jogo: https://claude.ai/artifact/UfuypytFapk71Tzzhngk9Y; estudo `docs/CEU_E_NUVENS.md` §11):
+  - o céu preto ao deitar era a névoa de guerra (corrigido pela sessão do jogo);
+  - o "céu destravado" (só com o topo da tela perto do horizonte): a névoa 2,5× mais rasa e a perspectiva aérea ×1,5; a câmera normal idêntica, custo 0 (receita `sky_b1`);
+  - as nuvens do material da Epic, ligadas só ao deitar: a recomendada `sky_e4_douradas` (+3,8 ms deitada, 0 na normal); o nosso material próprio falhou e ficou de lado;
+  - o mapa de sombra das nuvens só quando usado (ganho de 2,9 ms);
+  - **falta:** a escolha do Felipe (estilo das nuvens), o lago branco com a câmera deitada, a receita aprovada ganhar os blocos `sky`/`clouds`.
+- [~] **O chão v3: areia, trilha, garra** (Look + jogo + WorldForge, noite de 16/10; `docs/CHAO_V3_ESTUDO.md` §10; o mesmo relatório):
+  - a areia aprovada nunca esteve no mapa (era a classic); a v2 pura sai lavada; a **v2 com a cor de duna** tem a cor de hoje com a textura nova (`World_TestSandV2Dune`);
+  - a trilha com a luz assada (o sol parado vira textura, a normal de iluminação na MF `code_v3()`), o perfil v3, a curva, o halo e a **garra de 2 cm**: vira sulco em vez de fio; `World_TestGroundV3Dune` com `-RTSGroundV3`; custo ~+0,6 ms com 6 tanques;
+  - **falta:** a escolha do Felipe, a nitidez do sulco e a ondulação visível no zoom do jogo, a cratera com paralaxe, os 1,5 ms do mapa novo.
 - [ ] **A estrada com volume** (v3; 14/10 o Felipe procurou na vila do jogo e não achou, ficou só na maquete): a laje de 12 cm com a borda quebrada, nos 3 tipos (intacta com areia na beira, gasta, destruída) escolhidos por trecho no WorldForge. Protótipo e imagem: `docs/RECEITAS_DO_LOOK.md` §6 e `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`. Donos: Look (o kit: perfil, borda, material), WorldForge (o traçado e o leito rebaixado), jogo (a altura na simulação). A faixa pintada nova (§7, "em teste") também não foi pro jogo.
+  - **14/10, madrugada (v3):** o WorldForge leva a malha da laje pro mapa com o kit do Look (`road_slab`, 13/10 15:23), o leito rebaixado e o material do asfalto v2 com a memória do chão. A prova vai num mapa de teste (A/B a 100 m e a 67 m na luz do jogo, contra a v2 e a folha dos 3 tipos, mais um vídeo pro tremor); o mapa do jogo só muda com o "aprovado" do Felipe.
+  - **16/10, noite (v3, sem commit):** pronta no mapa de teste `World_TestV3`; a prova no jogo espera a compilação que troca o mapa pela cena.
+    - **Feito:**
+      - a laje nos 3 desgastes (a vila inteira, trechos gastos e destruídos);
+      - a areia da beira que cobre a laje (a própria laje sobe e pinta a areia do chão, sem os dentes de 0,5 m da 1ª versão);
+      - as rachaduras do asfalto v2 inteiras (o streaming pedia mip baixo);
+      - a faixa da beira só onde há laje;
+      - o chão debaixo do miolo levantado, pro tanque andar em cima sem mudar o jogo.
+    - **O custo:** o passe do chão cai (6,86 → 5,56 ms numa vista da estrada; 4,44 → 3,13 ms na vila, junto com a pedra com desvio), porque o Landscape deixa de calcular a camada de asfalto. A laje tem 4 milhões de triângulos.
+    - **No jogo:**
+      - a memória do chão nas lajes (`PushToSlabs`, o jogo);
+      - os cenários `laje_{gasta,destr,vila}_{100,67}_{v3,v2}`.
+    - **A prova no jogo (16/10, 05:50):** a folha `docs/aprovados/mundos/2026-10-16_laje_ab_para_escolher.jpg`, v2 × v3 na mesma cena, a 100 e a 67 m, com a folha dos 3 tipos do Look embaixo.
+      - Na 1ª folha a areia da beira cobria meia pista e a estrada perdia a leitura, ao contrário dos alvos 12 e 14. Ficou só na borda: o centro da faixa 1 m pra fora, sand_over 0,4.
+    - **A faixa pintada v2 do Look na laje** (`World_TestV3Paint`):
+      - o `PAINT_V2_CODE` com a posição na pista em 16 bits (`T_RoadFrame`, RGBA16F a 1 m);
+      - a da beira contínua seguindo a curva, o eixo tracejado, gasta em trechos, creme;
+      - sem os decalques;
+      - a folha `docs/aprovados/mundos/2026-10-16_faixa_v2_na_laje_para_escolher.jpg`. A 67 m a diferença é sutil.
+    - **O que ele escolhe:** v2 × v3 (com ou sem a faixa nova) e a quantidade de areia na beira.
+    - **Atenção nas comparações:** as folhas de 16/10 (a laje, a faixa e as dunas) foram fotografadas no Alta com o viés da sombra antigo (−1,5), nos dois lados. Desde 16/10 de manhã o Alta usa −0,5 (escolha dele): A/B novo sempre com os dois lados fotografados de novo.
+- [~] **A pedra do chão com desvio dinâmico** (16/10, `ROCK_BRANCH=1`):
+  - a mesma conta da Unreal, só onde a pedra pode aparecer;
+  - −1,0 ms no passe do chão na vista de cima;
+  - a olho nu, igual à v2 lado a lado. Detalhes no `WORLDFORGE.md` §12.5.
+  - No `World_TestV3`.
+- [~] **A areia encostada nas paredes da vila** (16/10, `WALL_SAND`):
+  - a da maquete (35 cm) sumiu na câmera do jogo; a forte (75 cm, rampa de ~1,8 m) também quase não aparece (folha em `docs/aprovados/mundos/2026-10-16_areia_paredes_ab_para_escolher.jpg`).
+  - **A minha recomendação: não seguir nesse formato.** Os montes do r1_raid_slabs são grandes e com crista nítida, e o Landscape a 0,5 m por vértice não desenha essa crista. O caminho é um carimbo de malha (a duna de parede como peça, com a crista) ou o chão com tesselação; fica pra decisão dele.
+- [~] **Os bolsões de dunas** (16/10, `DUNE_POCKETS=1`, mapa `World_TestV3Dunes`; o estudo com fontes no `WORLDFORGE.md` §12.7):
+  - barcanas baixas (1–2 m), só no deserto aberto e plano, longe de base, estrada e depósito;
+  - a forma pelo vento do mapa, o lugar justo pela simetria;
+  - de cima leem como barcanas de verdade (crescente, chifres, a face em sombra do lado certo); a inclinação medida bate com o estudo (barlavento 9–17°, face 27–32°, 0,05% acima de 34°).
+  - Na câmera do jogo são poucas (16 no mapa, em chão plano) e quase não entram no quadro. A folha: `docs/aprovados/mundos/2026-10-16_dunas_para_escolher.jpg`.
+  - A moldura de dunas de hoje tem o pé a ~23° e o vale em V (sombras de ~67 m): a correção está no estudo, ainda sem código.
+- [~] **Os mapas de teste do WorldForge no jogo** (16/10, com o ok do jogo):
+  - `World_TestV3`, `World_TestSandV2` (a areia v2 pro Look) e `World_TestGroundV3` (o chão v3 do Look);
+  - no `Maps.json`, no laço do `game.ps1 worlds` e nos cenários. O World_TestSalt2 não mudou.
 - [ ] **Lote plano da War Factory em cada base,** sem seixo nem marola, com a estrada chegando na porta e a saída marcada.
 - [ ] **Tipo de chão por camada** (areia, cascalho, terra, rocha, salina, asfalto): dá a cor da poeira e dos torrões.
 - [ ] **"Memória do chão"** no material do terreno, pros rastros de esteira, o queimado e a cratera.
