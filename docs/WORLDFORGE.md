@@ -1728,6 +1728,28 @@ pequenas espalhados com poucas maiores em grupo, moitas secas baixas e esparsas.
 4. os fios arrebentando, com a faísca;
 5. o polimento: o tronco estalando e a copa chicoteando (VAT, 4–8 variantes de direção).
 
+**O que já está feito (16/10 à tarde, combinado com o jogo; o evento e a regra são dele):**
+- **O capim e a moita deitados** (`TRAMPLE=1`; o mapa de teste `World_TestTrample`):
+  - o material da planta lê o `GroundBattle`/`BattleBounds` que o jogo entrega aos componentes com a etiqueta
+    `WorldForgeTrample` (o jogo liga o `UseTrample`);
+  - uma passada de tanque já deita (o R sobe ~1/32 por passada; duas = deitado);
+  - a planta gira pela base ao longo da trilha (a direção pelo gradiente do tráfego, cada tufo pro seu lado, ±25°) e
+    amassa; a pisada desbota e o queimado largo escurece;
+  - o componente vai com a sombra guardada (Rigid): o WPO muda devagar.
+- **O toco e o tronco quebrado das palmeiras** (`Tools/blender_palm_break.py`, `PALM_BREAK=1` por padrão):
+  - `SM_DatePalm_{Mature,Urban,OasisCluster}_Stump` e `_Fallen` na pasta da palmeira (o jogo procura pelo nome);
+  - a quebra a 0,8 m: o miolo de fibra rasgada (um disco denso com as fibras em relevo) e o tufo de fibras finas em
+    volta, no `M_PalmBreak`; o pivô do _Fallen no centro da quebra;
+  - o material da palmeira caída (`PALM_FALL_HLSL`) lê os CustomPrimitiveData do jogo (1 o tombo, 2 a direção, 3 caída,
+    4 o impacto): a copa atrasa na queda, chicoteia e amortece no impacto, e nada passa do chão (a copa achata e abre
+    por cima dele).
+- **O fio solto** (o plugin `RTSWorldProps`, `URTSWireSystem`; a fonte em `WorldForge/Plugins/RTSWorldProps`, o jogo usa
+  em `Game/Plugins`):
+  - o vão vira uma corrente Verlet (~1 ponto a cada 1,2 m, passo de 1/120 s), presa no poste de pé e na cruzeta do que
+    cai;
+  - arrebenta acima de 1,5× o comprimento, deita no chão com atrito e dorme quando assenta;
+  - `OnWireSnap` e `OnWireGround` pro arco e a faísca, que são do jogo e do Fluxo.
+
 **As fontes:**
 - `ToppleUpdate.cpp` (EA, CnC_Generals_Zero_Hour);
 - GDC 2019 (God of War, o vento e a vegetação);
@@ -1837,3 +1859,9 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
    - Apagar ou mover uma duna à mão (a edição grava, como a do apagado e do mover peça).
    - Hoje o gerador escolhe sozinho: as formas da areia simulada (`DuneSim.h`), inteiras, no deserto aberto e plano
      longe de casa, estrada, trilha, depósito, água e base (§12.7).
+7. Pedido do Felipe de 16/10 (futuro, junto da aprovação das dunas): as dunas ainda mais naturais. As palavras dele: "hoje vc
+   ve que foram posicionadas ai aleatoriamente e o resto da areia quase tudo plano".
+   - O campo inteiro como um campo: a areia solta entre as dunas (lençol de areia, marolas grandes, rastros de areia a
+     jusante), em vez de dunas soltas em chão plano.
+   - Campos maiores e com borda (o corredor que adensa e rareia), as dunas da moldura e a transição até elas.
+   - O caminho é a mesma simulação (`DuneSim.h`) indo além das dunas inteiras: o lençol e as marolas que ela já faz.

@@ -2429,7 +2429,8 @@ struct FWorldDetail
 		GWallGrid.Reset();
 		BuildRoads(M, MainRoadHalf, bPaved, 2.2f);
 		BuildOpenness(M);
-		GDunes = !GWinter && !GForest && FPlatformMisc::GetEnvironmentVariable(TEXT("DUNE_POCKETS")) == TEXT("1");
+		// (16/10, o Felipe: "ok ta aprovado") as dunas simuladas são o padrão do deserto; DUNE_POCKETS=0 tira
+		GDunes = !GWinter && !GForest && FPlatformMisc::GetEnvironmentVariable(TEXT("DUNE_POCKETS")) != TEXT("0");
 		BuildDunePockets(M);
 		if (GVillage.Num()) PlaceVillagePoles(M);
 		IndexWallSand();

@@ -1192,7 +1192,7 @@ AActor* UWorldForgeEditorLib::SpawnGroupActor(const FString& Label)
 }
 
 bool UWorldForgeEditorLib::AddInstances(AActor* Actor, UStaticMesh* Mesh, const TArray<FTransform>& Transforms, bool bCastShadow, float CullDistanceM,
-	const TArray<UMaterialInterface*>& Materials)
+	const TArray<UMaterialInterface*>& Materials, FName ComponentTag)
 {
 	if (!Actor || !Mesh)
 	{
@@ -1221,6 +1221,14 @@ bool UWorldForgeEditorLib::AddInstances(AActor* Actor, UStaticMesh* Mesh, const 
 		// Só com SHADOW_RIGID=1 até o A/B na luz do jogo (a v2 congelada não muda)
 		if (FPlatformMisc::GetEnvironmentVariable(TEXT("SHADOW_RIGID")) == TEXT("1"))
 		{
+			C->ShadowCacheInvalidationBehavior = EShadowCacheInvalidationBehavior::Rigid;
+		}
+		if (!ComponentTag.IsNone())
+		{
+			// (16/10) a etiqueta pro jogo achar o componente (o capim e a moita que deitam na trilha: WorldForgeTrample, a
+			// que recebe o GroundBattle como a laje). O WPO da trilha muda devagar: a sombra guardada (Rigid) não
+			// recalcula as páginas todo quadro (o estudo de 16/10, §12.8: o WPO invalida o cache da sombra virtual)
+			C->ComponentTags.Add(ComponentTag);
 			C->ShadowCacheInvalidationBehavior = EShadowCacheInvalidationBehavior::Rigid;
 		}
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);

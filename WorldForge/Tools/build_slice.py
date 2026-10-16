@@ -1399,6 +1399,56 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
     return g.finish(name)
 
 
+# (16/10, o Felipe: "a graminha morta deitada na trilha", "o arbusto amassado"; o estudo em WORLDFORGE.md §12.8) o capim
+# e a moita deitam onde os tanques passam: o material lê as marcas da batalha que o jogo grava no chão (GroundBattle,
+# RGBA8 a 50 cm, o mapa inteiro; R o tráfego, que satura em ~32 passadas, B o queimado largo; BattleBounds = mín. e
+# tamanho em cm), as mesmas que o Landscape e a laje recebem; o jogo liga o UseTrample. A planta gira pela base pro
+# lado da trilha (a direção pelo gradiente do R) e amassa; a pisada desbota e o queimado escurece. TRAMPLE=1 liga na
+# montagem (o mapa de teste; o do jogo só depois da prova e da palavra dele)
+TRAMPLE = os.environ.get('TRAMPLE', '0') == '1'
+TRAMPLE_WPO = r"""
+if (U < 0.5) return float3(0.0, 0.0, 0.0);
+float2 sz = max(B.zw, float2(1.0, 1.0));
+float2 uv = (OP.xy - B.xy) / sz;
+if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return float3(0.0, 0.0, 0.0);
+float r0 = Tex.SampleLevel(TexSampler, uv, 0).r;
+// (uma passada de tanque ja deita o capim, como no real: o R sobe ~1/32 por passada; 2 passadas = deitado)
+float t = smoothstep(0.004, 0.065, r0);
+if (t < 0.001) return float3(0.0, 0.0, 0.0);
+float2 du = float2(100.0, 0.0) / sz, dv = float2(0.0, 100.0) / sz;
+float2 gr = float2(Tex.SampleLevel(TexSampler, uv + du, 0).r - Tex.SampleLevel(TexSampler, uv - du, 0).r,
+                   Tex.SampleLevel(TexSampler, uv + dv, 0).r - Tex.SampleLevel(TexSampler, uv - dv, 0).r);
+float ph = Rnd * 6.2832;
+// ao longo da trilha (de lado ao gradiente do trafego), cada tufo pro seu lado, com ate ~25 graus de acaso
+float2 along = dot(gr, gr) > 1e-8 ? normalize(float2(-gr.y, gr.x)) : float2(cos(ph), sin(ph));
+along *= frac(Rnd * 7.13) < 0.5 ? -1.0 : 1.0;
+float a = (frac(Rnd * 3.71) - 0.5) * 0.9;
+along = float2(along.x * cos(a) - along.y * sin(a), along.x * sin(a) + along.y * cos(a));
+float3 d = WP - OP;
+float h = max(d.z, 0.0);
+float ang = t * 1.35;
+float3 nd;
+nd.xy = d.xy * (1.0 + 0.3 * t) + along * h * sin(ang);
+nd.z = h * cos(ang) * (1.0 - 0.3 * t);
+return nd - float3(d.xy, h);
+"""
+TRAMPLE_COLOR = r"""
+if (U > 0.5)
+{
+    float2 sz = max(B.zw, float2(1.0, 1.0));
+    float2 uv = (OP.xy - B.xy) / sz;
+    if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0)
+    {
+        float4 m = Tex.SampleLevel(TexSampler, uv, 0);
+        float trod = smoothstep(0.004, 0.065, m.r);
+        float burn = smoothstep(0.1, 0.6, m.b);
+        base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)) * float3(1.08, 0.97, 0.78), 0.5 * trod);
+        base *= lerp(1.0, 0.16, burn);
+    }
+}
+"""
+
+
 def prop_material(name, plant, defaults):
     """Mestre dos modelos escaneados: cor, normal, ARM, alfa nas plantas e neve
     no que olha pra cima (parâmetro Snow; a máscara usa a normal já com o
@@ -1426,16 +1476,30 @@ def prop_material(name, plant, defaults):
     # verde-limão no fundo do mar (07/10). Sem água, o padrão desliga o corte
     wl = g.node(unreal.MaterialExpressionPerInstanceCustomData, -800, data_index=0, const_default_value=-1.0e7)
     wz = g.node(unreal.MaterialExpressionWorldPosition, -800)
+    trample = plant and TRAMPLE
+    tr_ins = []
+    if trample:
+        tr_tex = g.node(unreal.MaterialExpressionTextureObjectParameter, -900, parameter_name='GroundBattle',
+                        texture=unreal.load_asset('/Engine/EngineResources/Black'))
+        tr_b = g.node(unreal.MaterialExpressionVectorParameter, -900, parameter_name='BattleBounds', default_value=unreal.LinearColor(0, 0, 0, 0))
+        tr_u = g.node(unreal.MaterialExpressionScalarParameter, -900, parameter_name='UseTrample', default_value=0.0)
+        tr_op = g.node(unreal.MaterialExpressionObjectPositionWS, -900)
+        tr_ins = [('Tex', tr_tex, ''), ('B', tr_b, 'RGBA'), ('U', tr_u, ''), ('OP', tr_op, '')]
     c = g.custom('\n'.join([
         'float3 base = C * T;',
-        'base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)).xxx, Desat);',
+        'base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)).xxx, Desat);'] + ([TRAMPLE_COLOR] if trample else []) + [
         'float up = saturate((VN.z + (Nt.y * 2.0 - 1.0) * 0.25 - 0.45) * 3.5);',
         'float s = Snow * up * saturate((Wp.z - Wl - 30.0) / 70.0);',
         'Rough = lerp(Ar.g, 0.65, s);',
         'return lerp(base, float3(0.82, 0.85, 0.9), s);']),
         [('C', col, 'RGB'), ('T', tint, ''), ('VN', wn, ''), ('Nt', nor, 'RGB'), ('Snow', snow, ''), ('Ar', arm, 'RGB'), ('Desat', desat, ''),
-         ('Wl', wl, ''), ('Wp', wz, '')],
+         ('Wl', wl, ''), ('Wp', wz, '')] + tr_ins,
         F3, -300, extra=[('Rough', F1)])
+    if trample:
+        rnd = g.node(unreal.MaterialExpressionPerInstanceRandom, -900)
+        wpo = g.custom(TRAMPLE_WPO, tr_ins + [('WP', wz, ''), ('Rnd', rnd, '')], F3, -300)
+        g.out(wpo, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+        log('trample', name, 'o capim e a moita deitam na trilha (UseTrample)')
     g.out(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
     if plant:
         # a luz do tufo pelo chão (o jeito dos jogos grandes com capim visto de longe: a normal da folha puxada
@@ -1800,8 +1864,72 @@ def place_monoliths(S):
     log('monoliths placed', len(names))
 
 
-def palm_material(name, foliage, tex=None, fade=False):
-    """fade=True: a versão da cópia _Fade (masked pelo MPC_TreeFade); a original fica opaca."""
+# (16/10, o tanque derruba a palmeira; WORLDFORGE.md §12.8) a palmeira caída é um StaticMeshComponent que o jogo gira
+# pela fórmula do ZH (o pivô na quebra) e marca nos CustomPrimitiveData: 1 o instante do tombo (o relógio do Time), 2 a
+# direção da queda (rad, no espaço da malha), 3 = 1 caída, 4 o instante do impacto (0 = ainda não). O material:
+# - na queda a copa atrasa (o tronco enverga ao contrário da queda, mais no meio do caminho);
+# - no impacto ela chicoteia e amortece (~1 s);
+# - deitada, nada passa do chão: a copa achata e abre por cima dele (o chão fica 0,8 m abaixo do pivô, a altura da
+#   quebra);
+# - o vento some aos poucos conforme deita.
+PALM_FALL_HLSL = r"""
+float fallen = step(0.5, C3);
+float tilt = 1.0 - saturate(Up.z);                      // 0 em pe, 1 deitada
+float h = saturate(L.z / 1300.0);                         // a altura ao longo do tronco (13 m)
+float3 off = Wind * (1.0 - fallen * saturate(tilt * 2.0));
+if (fallen > 0.5)
+{
+    float2 fd2 = dot(Up.xy, Up.xy) > 1e-6 ? normalize(Up.xy) : float2(cos(C2), sin(C2));
+    float3 fd = float3(fd2, 0.0);
+    // a copa atrasa no meio da queda (o tronco enverga pra tras; o pico em tilt 0,5)
+    float lag = 4.0 * tilt * (1.0 - tilt) * (1.0 - step(0.97, tilt));
+    off += -fd * 140.0 * h * h * lag;
+    // o chicote depois do impacto: oscila e amortece em ~1 s
+    if (C4 > 0.0)
+    {
+        float dt = max(T - C4, 0.0);
+        float osc = exp(-3.2 * dt) * sin(13.0 * dt);
+        off += float3(0.0, 0.0, -1.0) * 90.0 * h * h * osc + fd * 40.0 * h * h * osc;
+    }
+    // nada abaixo do chao: o que passaria (a copa) achata numa camada fina e abre pros lados
+    float g = OP.z - 80.0 + 12.0;
+    float z = W.z + off.z;
+    if (z < g)
+    {
+        float under = g - z;
+        off.z += under * 0.85;
+        float2 away = W.xy - OP.xy;
+        away = dot(away, away) > 1.0 ? normalize(away) : fd2;
+        off.xy += away * under * 0.35;
+    }
+}
+return off;
+"""
+
+
+def palm_break_material():
+    """M_PalmBreak: a fibra rasgada da palmeira (a tampa e as lascas do toco e do tronco caído): marrom-clara, fosca,
+    com faixas finas pela posição (a fibra) e manchas mais escuras."""
+    m = shared_material('M_PalmBreak')
+    if m:
+        return m
+    g = Graph('M_PalmBreak')
+    wp = g.node(unreal.MaterialExpressionWorldPosition, -700)
+    c = g.custom('\n'.join([
+        'float3 p = W * 0.01;',
+        'float fib = 0.5 + 0.5 * sin(dot(p.xy, float2(37.0, 11.0)) + 3.0 * sin(p.z * 9.0));',
+        'float blot = 0.5 + 0.5 * sin(p.x * 3.1 + 1.7) * sin(p.y * 2.7 - 0.4);',
+        'return float3(0.42, 0.31, 0.19) * lerp(0.75, 1.15, fib) * lerp(0.8, 1.0, blot);']), [('W', wp, '')], F3, -300)
+    g.out(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.node(unreal.MaterialExpressionConstant, -300, r=0.9), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
+    mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES)
+    return g.finish('palm break material')
+
+
+def palm_material(name, foliage, tex=None, fade=False, fallen=False):
+    """fade=True: a versão da cópia _Fade (masked pelo MPC_TreeFade); a original fica opaca. fallen=True: a da
+    palmeira caída (PALM_FALL_HLSL)."""
     m = shared_material(name)
     if m:
         return m
@@ -1839,6 +1967,18 @@ def palm_material(name, foliage, tex=None, fade=False):
         'return off;']),
         [('L', lp, ''), ('R', rnd, ''), ('T', tm, ''), ('W', wp, ''), ('F', g.node(unreal.MaterialExpressionConstant, -900, r=1.0 if foliage else 0.0), '')],
         F3, -500)
+    if fallen:
+        up = g.node(unreal.MaterialExpressionTransform, -700)
+        up.set_editor_property('transform_source_type', unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_LOCAL)
+        up.set_editor_property('transform_type', unreal.MaterialVectorCoordTransform.TRANSFORM_WORLD)
+        g.link(g.const3((0.0, 0.0, 1.0), -900), '', up, '')
+        upn = g.custom('return normalize(V);', [('V', up, '')], F3, -600)
+        # (na 5.8 o dado do primitivo entra por um parâmetro escalar com "use custom primitive data", não por nó próprio)
+        cpd = [g.node(unreal.MaterialExpressionScalarParameter, -900, parameter_name=nm, default_value=0.0,
+                      use_custom_primitive_data=True, primitive_data_index=i) for nm, i in (('ToppleDir', 2), ('Fallen', 3), ('ImpactTime', 4))]
+        wind = g.custom(PALM_FALL_HLSL, [('Wind', wind, ''), ('Up', upn, ''), ('L', lp, ''), ('T', tm, ''), ('W', wp, ''),
+                                          ('OP', g.node(unreal.MaterialExpressionObjectPositionWS, -900), ''),
+                                          ('C2', cpd[0], ''), ('C3', cpd[1], ''), ('C4', cpd[2], '')], F3, -400)
     g.out(wind, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
@@ -1904,6 +2044,49 @@ def palm_meshes(names):
         mats = [palm_material('M_' + n + '_Foliage', True), palm_material('M_' + n + '_Trunk', False, texs[0] if texs else None)]
         out.append((mesh, mats))
     return out
+
+
+PALM_BREAK_SRC = os.path.join(ASSETS, 'date_palm_break')
+
+
+def palm_break_meshes(names):
+    """O toco e o tronco quebrado (Tools/blender_palm_break.py): <palmeira>_Stump e <palmeira>_Fallen na pasta da
+    palmeira (o jogo procura pelo nome, ao lado da malha dela). Os materiais vão na malha: a folhagem e o tronco da
+    palmeira (no _Fallen, as versões da queda, PALM_FALL_HLSL) e o M_PalmBreak na quebra. Reimporta só se o .glb mudou."""
+    brk = palm_break_material()
+    for n in names:
+        folder = DEST + '/Palms/' + n
+        texs = texs_of(folder)
+        for part in ('Stump', 'Fallen'):
+            src = os.path.join(PALM_BREAK_SRC, '%s_%s.glb' % (n, part))
+            if not os.path.exists(src):
+                continue
+            mesh_path = '%s/%s_%s' % (folder, n, part)
+            pkg = os.path.join(PROJECT, 'Content', folder[len('/Game/'):].replace('/', os.sep), '%s_%s.uasset' % (n, part))
+            if not (eal.does_asset_exist(mesh_path) and os.path.exists(pkg) and os.path.getmtime(pkg) >= os.path.getmtime(src)):
+                tmp = folder + '/_break_import'
+                objs = import_file(src, tmp)
+                mesh = next((o for o in objs if isinstance(o, unreal.StaticMesh)), None)
+                if mesh is None:
+                    log('palm break import failed', src)
+                    continue
+                if eal.does_asset_exist(mesh_path):
+                    eal.delete_asset(mesh_path)
+                eal.rename_asset(mesh.get_path_name().split('.')[0], mesh_path)
+                for a in eal.list_assets(tmp, recursive=True):
+                    eal.delete_asset(a.split('.')[0])
+                eal.delete_directory(tmp)
+                mesh = unreal.load_asset(mesh_path)
+                lib.enable_nanite(mesh, part == 'Fallen')   # (a copa caída: preservar a área, como a palmeira)
+            mesh = unreal.load_asset(mesh_path)
+            fallen = part == 'Fallen'
+            fol = palm_material('M_' + n + '_Foliage' + ('_Fallen' if fallen else ''), True, fallen=fallen)
+            trk = palm_material('M_' + n + '_Trunk' + ('_Fallen' if fallen else ''), False, texs[0] if texs else None, fallen=fallen)
+            for k, sm in enumerate(mesh.get_editor_property('static_materials')):
+                nm = str(sm.material_slot_name).lower() + ' ' + (sm.material_interface.get_name().lower() if sm.material_interface else '')
+                mesh.set_material(k, brk if 'break' in nm else (trk if 'trunk' in nm else fol))
+            eal.save_loaded_asset(mesh)
+            log('palm break', mesh_path)
 
 
 def model(aid, sname, plant=False, nanite=True, tint=(1.0, 1.0, 1.0), snow=0.0, green=False, desat=0.0, normal_up=0.0):
@@ -2405,7 +2588,11 @@ def scatter(cfg, meshes):
                 # o capim não projeta sombra (o jeito dos RTS grandes: a folha fina com o sol baixo deixava um
                 # risco escuro comprido em cada tufo, 13/10); a sombra de contato da luz ainda assenta o pé
                 # (só o capim; as moitas do oásis, mais cheias, seguem com sombra)
-                lib.add_instances(group, mesh, sc.transforms, key not in ('tufts_dry', 'tufts_green'), cull, mats)
+                if TRAMPLE and PLANT_MASTER is not None and any(isinstance(m, unreal.MaterialInstanceConstant) and m.get_editor_property('parent') == PLANT_MASTER for m in mats):
+                    # (16/10) a etiqueta pro jogo entregar as marcas da batalha (o capim e a moita que deitam na trilha)
+                    lib.add_instances(group, mesh, sc.transforms, key not in ('tufts_dry', 'tufts_green'), cull, mats, 'WorldForgeTrample')
+                else:
+                    lib.add_instances(group, mesh, sc.transforms, key not in ('tufts_dry', 'tufts_green'), cull, mats)
                 n += len(sc.transforms)
         log('scatter', kind, n)
     if cfg.get('cliffs'):
@@ -2700,6 +2887,12 @@ def make_meshes(sname, tag, cfg):
         # Intermediate/Assets/date_palm). A ordem conta (SliceScatterMeshes,
         # TreePalm): touceira e madura junto da água, a adulta de 18 m mais longe
         palms = palm_meshes(['SM_DatePalm_OasisCluster', 'SM_DatePalm_Mature', 'SM_DatePalm_Urban'])
+        if palms and os.environ.get('PALM_BREAK', '1') == '1':
+            # (16/10) o toco e o tronco quebrado pra o jogo trocar quando o tanque derruba (só malhas novas: o mapa não muda)
+            try:
+                palm_break_meshes(['SM_DatePalm_OasisCluster', 'SM_DatePalm_Mature', 'SM_DatePalm_Urban'])
+            except Exception as ex:
+                log('palm break FALHOU (a montagem segue)', ex)
         if palms:
             meshes['palms'] = palms
             cfg = dict(cfg)

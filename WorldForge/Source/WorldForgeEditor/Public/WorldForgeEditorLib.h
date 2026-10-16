@@ -174,7 +174,7 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static bool AddInstances(AActor* Actor, UStaticMesh* Mesh, const TArray<FTransform>& Transforms, bool bCastShadow, float CullDistanceM,
-		const TArray<UMaterialInterface*>& Materials);
+		const TArray<UMaterialInterface*>& Materials, FName ComponentTag = NAME_None);
 
 	/**
 	 * Árvore do Procedural Vegetation Editor (malha esquelética Nanite cujos
