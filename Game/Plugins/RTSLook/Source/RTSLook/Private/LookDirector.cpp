@@ -9,6 +9,10 @@
 #include "Components/PostProcessComponent.h"
 #include "Components/SkyAtmosphereComponent.h"
 #include "Components/SkyLightComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/SkyLight.h"
@@ -21,6 +25,10 @@
 #include "Materials/MaterialInstanceDynamic.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRTSLook, Log, All);
+
+// (16/10) teste: as nuvens ligadas sempre (a vista acima das nuvens, com a câmera de teste da sessão do jogo)
+static TAutoConsoleVariable<int32> CVarCloudsAlways(TEXT("rts.Look.CloudsAlways"), 0,
+	TEXT("1 = as nuvens da receita ficam ligadas em qualquer inclinação (teste; o jogo normal liga só com a câmera deitada)."));
 
 ALookDirector::ALookDirector()
 {
@@ -81,7 +89,7 @@ void ALookDirector::AdoptOrSpawn()
 	Sky = FindOrSpawn<ASkyAtmosphere, USkyAtmosphereComponent>(World, TEXT("céu"));
 	SkyLight = FindOrSpawn<ASkyLight, USkyLightComponent>(World, TEXT("luz do céu"));
 	Fog = FindOrSpawn<AExponentialHeightFog, UExponentialHeightFogComponent>(World, TEXT("névoa"));
-	for (USceneComponent* C : TArray<USceneComponent*>{Sun.Get(), SkyLight.Get()})
+	for (USceneComponent* C : TArray<USceneComponent*>{Sun.Get(), SkyLight.Get(), Sky.Get(), Fog.Get()})
 	{
 		if (C && C->Mobility != EComponentMobility::Movable)
 		{
@@ -92,12 +100,22 @@ void ALookDirector::AdoptOrSpawn()
 
 // ---- a receita --------------------------------------------------------------------------------------
 
+// (16/10) o relógio do -RTSLookCycle: a hora do mundo da última aplicação da receita que não veio do próprio ciclo (o teste
+// rápido aplica a receita quando põe a câmera da cena, o zero dos tempos da cena; o relógio do mundo começa antes e a folga
+// variava de 2 a 2,6 s entre rodadas, as trocas caíam fora das fotos)
+static double GLookCycleZero = 0.0;
+static bool GLookCycleApplying = false;
+
 void ALookDirector::ApplyRecipe()
 {
 	if (!Recipe)
 	{
 		UE_LOG(LogRTSLook, Warning, TEXT("diretor do look sem receita"));
 		return;
+	}
+	if (!GLookCycleApplying && GetWorld())
+	{
+		GLookCycleZero = GetWorld()->GetTimeSeconds();
 	}
 	float Dist = 0.0f, Yaw = InitialCameraYaw;
 	if (ReadCamera(Dist, Yaw))
@@ -112,6 +130,12 @@ void ALookDirector::ApplyRecipe()
 	ApplyWater();
 	ApplyPreset(PresetLevel);
 	LastFocusCm = -1.0f;
+	LastAerialScale = -1.0f;
+	LastFalloff = -1.0f;
+	CloudShadowMID = nullptr;
+	CloudAbove = -1;
+	LastTiltT = -1.0f;
+	LastExpT = -1.0f;
 	if (Dist > 0.0f)
 	{
 		UpdateFocus(Dist);
@@ -141,6 +165,14 @@ void ALookDirector::ApplySun(float CameraYaw)
 	Sun->SetLightSourceAngle(S.SourceAngle);
 	Sun->SetSpecularScale(S.SpecularScale);
 	Sun->SetAtmosphereSunLight(true);
+	if (S.ShaftBloom > 0.0f)
+	{
+		Sun->SetEnableLightShaftBloom(true);
+		Sun->SetBloomScale(S.ShaftBloom);
+		Sun->SetBloomThreshold(S.ShaftThreshold);
+		Sun->SetBloomMaxBrightness(S.ShaftMaxBrightness);
+		Sun->SetBloomTint(S.ShaftTint);
+	}
 }
 
 void ALookDirector::ApplyAtmosphere()
@@ -177,7 +209,17 @@ void ALookDirector::ApplySkyLight()
 	SkyLight->SetLightColor(FLinearColor(K.Color));
 	if (!SkyLight->IsRealTimeCaptureEnabled())
 	{
-		SkyLight->RecaptureSky();
+		// (16/10, a 2ª opinião) a captura é um render da cena: com a câmera deitada ela gravaria a névoa rasa e as nuvens
+		// na luz ambiente da partida inteira. Só captura no estado normal; se estiver deitada, espera voltar.
+		if (SkyT > 0.0f)
+		{
+			bRecapturePending = true;
+		}
+		else
+		{
+			SkyLight->RecaptureSky();
+			bRecapturePending = false;
+		}
 	}
 }
 
@@ -194,6 +236,9 @@ void ALookDirector::ApplyFog()
 	Fog->SetVolumetricFogScatteringDistribution(F.VolumetricScatteringDistribution);
 	Fog->SetVolumetricFogExtinctionScale(F.VolumetricExtinctionScale);
 	Fog->SetVolumetricFogDistance(F.VolumetricDistance);
+	// (14/10) o corte: além dele a névoa de altura não entra, e o céu e as nuvens da câmera deitada saem limpos dela;
+	// a câmera normal só vê chão a 60–250 m (docs/CEU_E_NUVENS.md §8.2)
+	Fog->SetFogCutoffDistance(Recipe->Sky.FogCutoffCm);
 }
 
 void ALookDirector::ApplyPost()
@@ -266,6 +311,7 @@ void ALookDirector::ApplyWater()
 	}
 	// a água do WorldForge: qualquer peça com um material cujo pai é o M_Ocean_<bioma> (/Game/Slice/Materials)
 	int32 N = 0;
+	WaterMIDs.Reset();
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		TInlineComponentArray<UPrimitiveComponent*> Comps(*It);
@@ -289,6 +335,7 @@ void ALookDirector::ApplyWater()
 					D->SetVectorParameterValue(TEXT("WaterBodyColor"), Wt.BodyColor);
 					D->SetScalarParameterValue(TEXT("WaterBodyStrength"), Wt.BodyStrength);
 					D->SetScalarParameterValue(TEXT("SkyReflection"), Wt.SkyReflection);
+					WaterMIDs.Add(D);
 					++N;
 				}
 			}
@@ -318,6 +365,227 @@ void ALookDirector::ApplyPreset(int32 Level)
 		Fog->SetVolumetricFog(Recipe->Fog.bVolumetric && Q.bVolumetricFog);
 	}
 	ApplySkyLight();
+	ApplyClouds();
+}
+
+// ---- as nuvens (14/10, docs/CEU_E_NUVENS.md §7): uma camada a quilômetros de altura, só com a câmera deitada --------
+
+void ALookDirector::ApplyClouds()
+{
+	const FLookClouds& C = Recipe->Clouds;
+	FLookPreset Q;
+	if (Recipe->Presets.IsValidIndex(PresetLevel - 1))
+	{
+		Q = Recipe->Presets[PresetLevel - 1];
+	}
+	bCloudsAllowed = C.bEnable && Q.bClouds;
+	CloudShown = -1;          // o Tick decide pela inclinação
+	CloudAbove = -1;          // e o começo do traçado pela altura da câmera
+	if (!bCloudsAllowed)
+	{
+		if (Cloud)
+		{
+			Cloud->SetVisibility(false);
+			CloudShown = 0;
+		}
+		if (Sun && Sun->bCastCloudShadows)
+		{
+			Sun->bCastCloudShadows = false;
+			Sun->MarkRenderStateDirty();
+		}
+		return;
+	}
+	if (!Cloud)
+	{
+		Cloud = FindOrSpawn<AVolumetricCloud, UVolumetricCloudComponent>(GetWorld(), TEXT("nuvens"));
+		if (!Cloud)
+		{
+			return;
+		}
+	}
+	Cloud->SetLayerBottomAltitude(C.BottomKm);
+	Cloud->SetLayerHeight(C.HeightKm);
+	Cloud->SetTracingMaxDistance(C.TracingMaxKm);
+	Cloud->SetTracingStartDistanceFromCamera(C.StartFromCameraKm);
+	Cloud->SetTracingStartMaxDistance(C.StartMaxKm);
+	Cloud->SetViewSampleCountScale(C.ViewSampleScale * Q.CloudSampleScale);
+	Cloud->SetShadowViewSampleCountScale(C.ShadowSampleScale * Q.CloudSampleScale);
+	Cloud->SetShadowTracingDistance(C.ShadowTracingKm);
+	Cloud->SetbUsePerSampleAtmosphericLightTransmittance(C.bPerSampleTransmittance);
+	Cloud->SetGroundAlbedo(C.GroundAlbedo);
+	Cloud->SetSkyLightCloudBottomOcclusion(C.SkyLightBottomOcclusion);
+	const FString& Path = Q.CloudMaterial.IsEmpty() ? C.Material : Q.CloudMaterial;
+	if (!Path.IsEmpty())
+	{
+		UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, *Path);
+		if (M)
+		{
+			CloudMID = UMaterialInstanceDynamic::Create(M, this);
+			for (const TPair<FName, float>& P : C.Scalars)
+			{
+				CloudMID->SetScalarParameterValue(P.Key, P.Value);
+			}
+			for (const TPair<FName, FLinearColor>& P : C.Vectors)
+			{
+				CloudMID->SetVectorParameterValue(P.Key, P.Value);
+			}
+			Cloud->SetMaterial(CloudMID);
+			UpdateCloudSun();
+		}
+		else
+		{
+			UE_LOG(LogRTSLook, Warning, TEXT("as nuvens: o material %s não carregou"), *Path);
+		}
+	}
+	if (Sun)
+	{
+		// a sombra no ar faz os raios pelos buracos; no chão fica 0 com o sol baixo (§7.4). O mapa de sombra só existe
+		// quando alguém usa: com o sol a 8° a Unreal dobra as amostras dele e ele custava ~2,9 ms à toa (16/10)
+		Sun->bCastCloudShadows = C.ShadowOnAtmosphere > 0.0f || C.ShadowOnSurface > 0.0f || Q.bCloudShadowMap;
+		Sun->CloudShadowOnAtmosphereStrength = C.ShadowOnAtmosphere;
+		Sun->CloudShadowOnSurfaceStrength = C.ShadowOnSurface;
+		Sun->CloudScatteredLuminanceScale = C.ScatteredLuminanceScale;
+		Sun->MarkRenderStateDirty();
+	}
+	UE_LOG(LogRTSLook, Log, TEXT("as nuvens: camada %.1f–%.1f km, material %s"), C.BottomKm, C.BottomKm + C.HeightKm, Path.IsEmpty() ? TEXT("(o da Unreal)") : *Path);
+}
+
+void ALookDirector::UpdateTilt(float TopElevationDeg)
+{
+	const FLookSky& K = Recipe->Sky;
+	const float Span = FMath::Max(K.TiltFullTopDeg - K.TiltStartTopDeg, 0.1f);
+	SkyT = FMath::SmoothStep(0.0f, 1.0f, FMath::Clamp((TopElevationDeg - K.TiltStartTopDeg) / Span, 0.0f, 1.0f));
+	if (Sky && K.TiltAerialDistanceScale > 0.0f)
+	{
+		// a perspectiva aérea do RTS (×40) desce pra a do céu; a mistura é no logaritmo (40 → 1,5 é uma razão)
+		const float Base = FMath::Max(Recipe->Atmosphere.AerialDistanceScale, 0.01f);
+		const float Scale = FMath::Exp(FMath::Lerp(FMath::Loge(Base), FMath::Loge(K.TiltAerialDistanceScale), SkyT));
+		if (LastAerialScale < 0.0f || FMath::Abs(Scale - LastAerialScale) > 0.005f * Scale)
+		{
+			LastAerialScale = Scale;
+			Sky->SetAerialPespectiveViewDistanceScale(Scale);
+		}
+	}
+	if (Fog && K.TiltFogFalloffScale > 0.0f)
+	{
+		// a camada de poeira mais rasa: o céu baixo e as nuvens saem da névoa, o chão longe continua enevoado (sem degrau)
+		const float Falloff = Recipe->Fog.Falloff * FMath::Exp(FMath::Lerp(0.0f, FMath::Loge(K.TiltFogFalloffScale), SkyT));
+		if (LastFalloff < 0.0f || FMath::Abs(Falloff - LastFalloff) > 0.01f * Falloff)
+		{
+			LastFalloff = Falloff;
+			Fog->SetFogHeightFalloff(Falloff);
+		}
+	}
+	// (16/10) a câmera deitada: a exposição desce e o reflexo do céu no lago diminui (o teste do sol na tela estourava)
+	// (16/10) a câmera (exposição, luzes, bloom, cor) anda pela própria janela: só com o céu claro entrando no quadro
+	const float ExpSpan = FMath::Max(K.TiltExposureFullTopDeg - K.TiltExposureStartTopDeg, 0.1f);
+	const float ExpT = FMath::SmoothStep(0.0f, 1.0f, FMath::Clamp((TopElevationDeg - K.TiltExposureStartTopDeg) / ExpSpan, 0.0f, 1.0f));
+	if (FMath::Abs(SkyT - LastTiltT) > 0.01f || LastTiltT < 0.0f || FMath::Abs(ExpT - LastExpT) > 0.01f || LastExpT < 0.0f)
+	{
+		LastTiltT = SkyT;
+		LastExpT = ExpT;
+		if (Post && K.TiltExposureBias != 0.0f)
+		{
+			Post->Settings.bOverride_AutoExposureBias = true;
+			Post->Settings.AutoExposureBias = Recipe->Post.Bias + ExpT * K.TiltExposureBias;
+		}
+		if (Post && K.TiltLocalExposureHighlight > 0.0f)
+		{
+			Post->Settings.bOverride_LocalExposureHighlightContrastScale = true;
+			Post->Settings.LocalExposureHighlightContrastScale = FMath::Lerp(Recipe->Post.LocalExposureHighlight, K.TiltLocalExposureHighlight, ExpT);
+		}
+		if (Post && K.TiltSaturation > 0.0f)
+		{
+			const float Sat = Recipe->Post.Saturation * FMath::Lerp(1.0f, K.TiltSaturation, ExpT);
+			Post->Settings.bOverride_ColorSaturation = true;
+			Post->Settings.ColorSaturation = FVector4(Sat, Sat, Sat, 1.0);
+		}
+		if (Post && K.TiltWhiteTemp > 0.0f)
+		{
+			const float Base = Recipe->Post.WhiteTemp > 0.0f ? Recipe->Post.WhiteTemp : 6500.0f;
+			Post->Settings.bOverride_WhiteTemp = true;
+			Post->Settings.WhiteTemp = FMath::Lerp(Base, K.TiltWhiteTemp, ExpT);
+		}
+		if (Post && K.TiltBloom > 0.0f)
+		{
+			Post->Settings.bOverride_BloomIntensity = true;
+			Post->Settings.BloomIntensity = FMath::Lerp(Recipe->Post.Bloom, K.TiltBloom, ExpT);
+		}
+		if (Recipe->Water.bOverride && K.TiltWaterReflection != 1.0f)
+		{
+			const float R = Recipe->Water.SkyReflection * FMath::Lerp(1.0f, K.TiltWaterReflection, SkyT);
+			for (const TWeakObjectPtr<UMaterialInstanceDynamic>& W : WaterMIDs)
+			{
+				if (UMaterialInstanceDynamic* D = W.Get())
+				{
+					D->SetScalarParameterValue(TEXT("SkyReflection"), R);
+				}
+			}
+		}
+	}
+	if (bRecapturePending && SkyT <= 0.0f && SkyLight)
+	{
+		SkyLight->RecaptureSky();
+		bRecapturePending = false;
+	}
+	if (Cloud && bCloudsAllowed)
+	{
+		// liga antes do horizonte entrar e desliga 2° abaixo (a folga contra o liga-desliga)
+		const float Limit = Recipe->Clouds.EnableTopDeg - (CloudShown == 1 ? 2.0f : 0.0f);
+		const int8 Want = (TopElevationDeg > Limit || CVarCloudsAlways.GetValueOnGameThread() != 0) ? 1 : 0;
+		// a câmera acima da base da camada (a vista de teste): o traçado começa na câmera
+		const APlayerController* PCc = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		const double CamKm = (PCc && PCc->PlayerCameraManager) ? PCc->PlayerCameraManager->GetCameraLocation().Z * 1.0e-5 : 0.0;
+		const int8 Above = CamKm > Recipe->Clouds.BottomKm * 0.5 ? 1 : 0;
+		if (Above != CloudAbove)
+		{
+			CloudAbove = Above;
+			Cloud->SetTracingStartDistanceFromCamera(Above ? 0.0f : Recipe->Clouds.StartFromCameraKm);
+		}
+		if (Want != CloudShown)
+		{
+			CloudShown = Want;
+			Cloud->SetVisibility(Want == 1);
+			UE_LOG(LogRTSLook, Log, TEXT("as nuvens %s (topo da tela a %.1f°)"), Want ? TEXT("ligadas") : TEXT("desligadas"), TopElevationDeg);
+		}
+	}
+}
+
+void ALookDirector::UpdateCloudShadow()
+{
+	// (16/10) a sombra das nuvens é um termo da função de luz do sol (a M_SmokeShadowLF, que o BlastFx põe no sol depois do
+	// começo da partida): quando ela aparece, os parâmetros da receita vão pra ela uma vez; com Strength 0 ela fica igual
+	if (!Sun || Recipe->CloudShadow.Strength <= 0.0f)
+	{
+		return;
+	}
+	UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(Sun->LightFunctionMaterial);
+	if (!MID || CloudShadowMID.Get() == MID)
+	{
+		return;
+	}
+	CloudShadowMID = MID;
+	const FLookCloudShadow& S = Recipe->CloudShadow;
+	MID->SetScalarParameterValue(TEXT("CloudShadowStrength"), S.Strength);
+	MID->SetScalarParameterValue(TEXT("CloudShadowScaleM"), S.ScaleM);
+	MID->SetScalarParameterValue(TEXT("CloudShadowCover"), S.Cover);
+	MID->SetScalarParameterValue(TEXT("CloudShadowSoft"), S.Soft);
+	MID->SetVectorParameterValue(TEXT("CloudShadowWindMS"), S.WindMS);
+	const FVector ToSun = -Sun->GetComponentRotation().Vector();
+	MID->SetVectorParameterValue(TEXT("CloudSunDir"), FLinearColor(ToSun.X, ToSun.Y, ToSun.Z, 0.0f));
+	UE_LOG(LogRTSLook, Log, TEXT("a sombra das nuvens na função de luz do sol: força %.2f, manchas de %.0f m"), S.Strength, S.ScaleM);
+}
+
+void ALookDirector::UpdateCloudSun()
+{
+	// o corredor sem torres na direção do sol (±15–20°): o sol é escolhido em jogo pela câmera inicial, então vai pro
+	// material aqui (a 2ª opinião: torre no azimute do sol tapa o disco, sombreia o ar da batalha e estoura o clarão)
+	if (CloudMID && Sun)
+	{
+		const FVector ToSun = -Sun->GetComponentRotation().Vector();
+		const FVector2D D = FVector2D(ToSun.X, ToSun.Y).GetSafeNormal();
+		CloudMID->SetVectorParameterValue(TEXT("SunDir"), FLinearColor(D.X, D.Y, 0.0f, 0.0f));
+	}
 }
 
 // ---- a câmera do RTS: a névoa começa numa proporção da distância até o foco ------------------------
@@ -388,6 +656,69 @@ void ALookDirector::Tick(float DeltaSeconds)
 		// o sol é escolhido uma vez, pela câmera inicial; depois fica fixo no mundo
 		ApplySun(Yaw);
 		bSunPlaced = true;
+		UpdateCloudSun();
+	}
+	{
+		// (16/10, o céu contra o gameplay_v3) -RTSLookCycle=a,b,c: as receitas em sequência na mesma partida, uma a cada
+		// -RTSLookCycleStepS (3 s) a partir de -RTSLookCycleStartS (1,5 s), pra fotografar várias na mesma pose numa rodada
+		// só da fila. O sol fica onde a câmera inicial pôs (só a altura, a cor e a força mudam) e a luz do céu recaptura na
+		// hora (no jogo ela espera a câmera voltar ao normal): a receita escolhida passa depois por uma rodada sozinha.
+		static TArray<FString> CycleNames;
+		static float CycleStartS = 1.5f, CycleStepS = 3.0f;
+		static int32 CycleIndex = -1;
+		static bool bCycleParsed = false;
+		if (!bCycleParsed)
+		{
+			bCycleParsed = true;
+			FString List;
+			// (sem parar na vírgula: o FParse::Value padrão corta a lista na 1ª)
+			if (FParse::Value(FCommandLine::Get(), TEXT("-RTSLookCycle="), List, false))
+			{
+				List.ParseIntoArray(CycleNames, TEXT(","), true);
+				FParse::Value(FCommandLine::Get(), TEXT("-RTSLookCycleStartS="), CycleStartS);
+				FParse::Value(FCommandLine::Get(), TEXT("-RTSLookCycleStepS="), CycleStepS);
+			}
+		}
+		const float Now = GetWorld() ? float(GetWorld()->GetTimeSeconds() - GLookCycleZero) : 0.0f;     // a hora da cena
+		const int32 Want = (CycleNames.Num() > 0 && Now >= CycleStartS) ? FMath::FloorToInt32((Now - CycleStartS) / FMath::Max(CycleStepS, 0.5f)) : -1;
+		if (Want >= 0 && Want < CycleNames.Num() && Want != CycleIndex && Sun)
+		{
+			CycleIndex = Want;
+			const FString& Name = CycleNames[Want];
+			const FString Path = FString::Printf(TEXT("/RTSLook/Recipes/DA_Look_%s.DA_Look_%s"), *Name, *Name);
+			if (ULookRecipe* Next = LoadObject<ULookRecipe>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				const float SunYaw = Sun->GetComponentRotation().Yaw;
+				Recipe = Next;
+				GLookCycleApplying = true;
+				ApplyRecipe();
+				GLookCycleApplying = false;
+				Sun->SetWorldRotation(FRotator(-Recipe->Sun.Elevation, SunYaw, 0.0f));
+				UpdateCloudSun();
+				if (SkyLight && !SkyLight->IsRealTimeCaptureEnabled())
+				{
+					SkyLight->RecaptureSky();
+					bRecapturePending = false;
+				}
+				UE_LOG(LogRTSLook, Log, TEXT("ciclo: receita %s aos %.1f s"), *Name, Now);
+			}
+			else
+			{
+				UE_LOG(LogRTSLook, Warning, TEXT("ciclo: a receita %s não existe"), *Path);
+			}
+		}
 	}
 	UpdateFocus(Dist);
+	UpdateCloudShadow();
+	const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	if (PC && PC->PlayerCameraManager)
+	{
+		// o topo da tela em relação ao horizonte: a inclinação (negativa olhando pra baixo) mais meio campo vertical
+		int32 W = 16, H = 9;
+		PC->GetViewportSize(W, H);
+		const float Aspect = H > 0 ? float(W) / float(H) : 16.0f / 9.0f;
+		const float HalfH = FMath::DegreesToRadians(PC->PlayerCameraManager->GetFOVAngle() * 0.5f);
+		const float HalfV = FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(HalfH) / FMath::Max(Aspect, 0.1f)));
+		UpdateTilt(static_cast<float>(PC->PlayerCameraManager->GetCameraRotation().Pitch) + HalfV);
+	}
 }

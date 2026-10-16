@@ -20,6 +20,8 @@ class USkyAtmosphereComponent;
 class USkyLightComponent;
 class UExponentialHeightFogComponent;
 class UPostProcessComponent;
+class UVolumetricCloudComponent;
+class UMaterialInstanceDynamic;
 
 UCLASS()
 class RTSLOOK_API ALookDirector : public AActor
@@ -61,7 +63,11 @@ private:
 	void ApplyFog();
 	void ApplyPost();
 	void ApplyWater();
+	void ApplyClouds();
 	void UpdateFocus(float FocusDistanceCm);
+	void UpdateTilt(float TopElevationDeg);
+	void UpdateCloudSun();
+	void UpdateCloudShadow();
 	bool ReadCamera(float& OutDistanceCm, float& OutYaw) const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Look")
@@ -71,8 +77,24 @@ private:
 	UPROPERTY(Transient) TObjectPtr<USkyAtmosphereComponent> Sky;
 	UPROPERTY(Transient) TObjectPtr<USkyLightComponent> SkyLight;
 	UPROPERTY(Transient) TObjectPtr<UExponentialHeightFogComponent> Fog;
+	UPROPERTY(Transient) TObjectPtr<UVolumetricCloudComponent> Cloud;
+	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> CloudMID;
 
 	int32 PresetLevel = 4;
 	float LastFocusCm = -1.0f;
 	bool bSunPlaced = false;
+	bool bCloudsAllowed = false;
+	int8 CloudShown = -1;
+	float LastAerialScale = -1.0f;
+	float LastFalloff = -1.0f;
+	/** 0 = a câmera normal, 1 = deitada (o céu à vista): a mistura do céu. */
+	float SkyT = 0.0f;
+	bool bRecapturePending = false;
+	/** A função de luz do sol em que a sombra das nuvens já foi posta (a do Fluxo nasce depois do começo). */
+	TWeakObjectPtr<UMaterialInstanceDynamic> CloudShadowMID;
+	int8 CloudAbove = -1;
+	/** A água do mapa (os MIDs que a receita pinta) e o último estado da câmera deitada aplicado nela e na exposição. */
+	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> WaterMIDs;
+	float LastTiltT = -1.0f;
+	float LastExpT = -1.0f;
 };

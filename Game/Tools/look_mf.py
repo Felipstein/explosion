@@ -205,9 +205,29 @@ if (V3On > 0.5) {
 """
 
 
+# (16/10) a borracha da esteira no asfalto (o item 4 da BASE_JOGAVEL, o formato combinado com o jogo): na v3 o B do relevo
+# é a borracha da sapata em todo chão (0,3 × a cobertura no reto, até 1 na curva e no pivô, raio ≤ 6 m) e o R fica 0,5 no
+# asfalto (sem sulco: o SunLit, o deslocamento e a normal saem lisos sozinhos). Aqui só a cor e a rugosidade, onde a Surf
+# diz asfalto (a laje passa 1). A física: a sapata do M1 (T158LL) é borracha SBR com negro de fumo e pisa a ~15 psi, como
+# um carro, então não afunda; o asfalto come a sapata e a borracha preta e o raspado ficam nas curvas e no pivô (o
+# desfile de DC 2025: "os pontos de curva são os mais vulneráveis"; o relatório TECOM das sapatas T-142). O depósito:
+# albedo ~0,035 (borracha com negro de fumo) cobrindo até ~60% no pivô; mais liso que o asfalto (rugosidade ~0,6),
+# sumindo com a idade como a trilha. UseRubber (escalar do WorldForge, 0 por padrão; o jogo liga com o B novo no ar):
+# antes dele o B era a sombra do 2º passe e pintaria o asfalto de preto. RUBBER_READY = True só depois que o WorldForge
+# puser a entrada 'UseRubber' no material (senão o shader não compila: o nome não existe).
+RUBBER_READY = True
+V3_RUBBER = r"""
+    if (UseRubber > 0.5) {
+        float rub = saturate(Rr.b) * saturate(Surf) * (1.0 - 0.85 * saturate(age)) * wc;
+        bc = lerp(bc, float3(0.035, 0.033, 0.032), rub * 0.6);
+        rough = lerp(rough, 0.6, rub * 0.6);
+    }
+"""
+
+
 def code_v3():
     """O CODE com a v3 (a normal de iluminação). As entradas novas: SunLitT, SunLitMidT, UseSunLit, RipLit, Lt, V3On (1); a
-    saída nova: AOout."""
+    saída nova: AOout. Com RUBBER_READY, mais a entrada UseRubber."""
     c = CODE
     for old, new in (V3_SKIP_RELIEF_NORMAL, V3_SKIP_VIS_COLOR, V3_RELIEF_MIP):
         assert c.count(old) == 1, old
@@ -221,8 +241,13 @@ def code_v3():
              'float t0 = clamp(min(RipLit, 1.15) * d0, -0.05, 1.0); float3 q0 = nT - d0 * L0; float l0 = length(q0); '
              'if (l0 > 1e-4) nT = t0 * L0 + sqrt(saturate(1.0 - t0 * t0)) * (q0 / l0); } }')
     c = c.replace('V3_EARLY', early)
+    light = V3_LIGHT
+    if RUBBER_READY:
+        anchor = '    float sunlit = RipLit;'
+        assert light.count(anchor) == 1
+        light = light.replace(anchor, V3_RUBBER.rstrip('\n') + '\n' + anchor)
     i = c.rindex('Nout = nT; Rout = rough;')
-    return c[:i] + V3_LIGHT + c[i:]
+    return c[:i] + light + c[i:]
 
 
 # O deslocamento do chão (13/10, a cratera do jogo igual à prova, proposta da sessão do jogo: a tesselação Nanite do próprio

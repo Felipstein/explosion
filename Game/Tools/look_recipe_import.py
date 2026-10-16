@@ -37,9 +37,14 @@ def build(R):
                                        unreal.LookFog(), unreal.LookPost(), unreal.LookWorld())
     S = R.get('sun', {})
     for k, f in (('elevation', 'elevation'), ('from_camera', 'from_camera'), ('lux', 'lux'),
-                 ('source_angle', 'source_angle'), ('specular_scale', 'specular_scale')):
+                 ('source_angle', 'source_angle'), ('specular_scale', 'specular_scale'),
+                 # (16/10, o gameplay_v3) os raios do sol saindo de trás da nuvem (o Light Shaft Bloom da Unreal)
+                 ('shaft_bloom', 'shaft_bloom'), ('shaft_threshold', 'shaft_threshold'),
+                 ('shaft_max_brightness', 'shaft_max_brightness')):
         if k in S:
             put(sun, f, float(S[k]))
+    if S.get('shaft_tint'):
+        put(sun, 'shaft_tint', col8(S['shaft_tint']))
     if S.get('temperature'):
         put(sun, 'temperature', float(S['temperature']))
     if S.get('color'):
@@ -115,8 +120,55 @@ def build(R):
             put(p, 'lumen', bool(q.get('lumen', True)))
             put(p, 'volumetric_fog', bool(q.get('volumetric_fog', True)))
             put(p, 'sky_light_scale_without_lumen', float(q.get('sky_light_scale_without_lumen', 1.0)))
+            if 'clouds' in q:
+                put(p, 'clouds', bool(q['clouds']))
+            if 'cloud_sample_scale' in q:
+                put(p, 'cloud_sample_scale', float(q['cloud_sample_scale']))
+            if 'cloud_material' in q:
+                put(p, 'cloud_material', str(q['cloud_material']))
+            if 'cloud_shadow_map' in q:
+                put(p, 'cloud_shadow_map', bool(q['cloud_shadow_map']))
         presets.append(p)
-    return sun, atm, sky, fog, post, world, presets, water
+    # (o céu deitado e as nuvens entraram no plugin em 14/10: com o binário antigo a receita segue sem eles)
+    skyk = unreal.LookSky() if hasattr(unreal, 'LookSky') else None
+    Sk = R.get('sky')
+    if Sk and skyk is not None:
+        for k in ('fog_cutoff_cm', 'tilt_aerial_distance_scale', 'tilt_fog_falloff_scale', 'tilt_start_top_deg', 'tilt_full_top_deg',
+                  'tilt_exposure_bias', 'tilt_water_reflection', 'tilt_local_exposure_highlight',
+                  'tilt_saturation', 'tilt_white_temp', 'tilt_bloom',
+                  'tilt_exposure_start_top_deg', 'tilt_exposure_full_top_deg'):
+            if k in Sk:
+                put(skyk, k, float(Sk[k]))
+    clouds = unreal.LookClouds() if hasattr(unreal, 'LookClouds') else None
+    Cl = R.get('clouds')
+    if Cl and clouds is not None:
+        put(clouds, 'enable', bool(Cl.get('enable', True)))
+        if 'material' in Cl:
+            put(clouds, 'material', str(Cl['material']))
+        for k in ('bottom_km', 'height_km', 'tracing_max_km', 'view_sample_scale', 'shadow_sample_scale',
+                  'shadow_tracing_km', 'sky_light_bottom_occlusion', 'shadow_on_atmosphere', 'shadow_on_surface',
+                  'enable_top_deg', 'start_from_camera_km', 'start_max_km'):
+            if k in Cl:
+                put(clouds, k, float(Cl[k]))
+        if 'per_sample_transmittance' in Cl:
+            put(clouds, 'per_sample_transmittance', bool(Cl['per_sample_transmittance']))
+        if 'ground_albedo' in Cl:
+            put(clouds, 'ground_albedo', col8(Cl['ground_albedo']))
+        if 'scattered_luminance_scale' in Cl:
+            put(clouds, 'scattered_luminance_scale', lin(Cl['scattered_luminance_scale']))
+        put(clouds, 'scalars', {k: float(v) for k, v in Cl.get('scalars', {}).items()})
+        # (16/10) os controles da Epic usam o 4º canal (Phase_Controls, Noise_Strength...): a cor com A quando vier
+        put(clouds, 'vectors', {k: unreal.LinearColor(float(v[0]), float(v[1]), float(v[2]), float(v[3]) if len(v) > 3 else 1.0)
+                                for k, v in Cl.get('vectors', {}).items()})
+    cshadow = unreal.LookCloudShadow() if hasattr(unreal, 'LookCloudShadow') else None
+    Cs = R.get('cloud_shadow')
+    if Cs and cshadow is not None:
+        for k in ('strength', 'scale_m', 'cover', 'soft'):
+            if k in Cs:
+                put(cshadow, k, float(Cs[k]))
+        if 'wind_ms' in Cs:
+            put(cshadow, 'wind_ms', lin(list(Cs['wind_ms']) + [0.0] * (3 - len(Cs['wind_ms']))))
+    return sun, atm, sky, fog, post, world, presets, water, skyk, clouds, cshadow
 
 
 def main():
@@ -142,9 +194,9 @@ def main():
             fac = unreal.DataAssetFactory()
             fac.set_editor_property('data_asset_class', unreal.LookRecipe)
             da = tools.create_asset(f'DA_Look_{name}', FOLDER, unreal.LookRecipe, fac)
-        sun, atm, sky, fog, post, world, presets, water = build(R)
+        sun, atm, sky, fog, post, world, presets, water, skyk, clouds, cshadow = build(R)
         for k, v in (('sun', sun), ('atmosphere', atm), ('sky_light', sky), ('fog', fog), ('post', post),
-                     ('world', world), ('presets', presets), ('water', water)):
+                     ('world', world), ('presets', presets), ('water', water), ('sky', skyk), ('clouds', clouds), ('cloud_shadow', cshadow)):
             if v is not None:
                 da.set_editor_property(k, v)
         eal.save_loaded_asset(da)
