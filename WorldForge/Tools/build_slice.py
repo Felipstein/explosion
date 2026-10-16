@@ -1907,21 +1907,54 @@ return off;
 """
 
 
+PALM_BREAK_HLSL = r"""
+// (16/10, a 2ª quebra: Tools/blender_palm_break.py) o UV 3 diz o que é: x = a distância ao centro da tampa (o anel marrom e
+// os feixes mais densos na borda), y (o glTF vira o V) = 0..0,4 a tampa (a fresta entre os tufos), 1 a lasca, 2 o tufo
+float rr = U3.x;
+float flag = 1.0 - U3.y;
+float2 p = U0;
+float2 g = p * 180.0;
+float2 i = floor(g);
+float best = 9.0, pick = 0.0;
+for (int dy = -1; dy <= 1; dy++)
+{
+    for (int dx = -1; dx <= 1; dx++)
+    {
+        float2 c = i + float2(dx, dy);
+        float2 h = frac(sin(float2(dot(c, float2(127.1, 311.7)), dot(c, float2(269.5, 183.3)))) * 43758.5453);
+        float d = length(g - c - h);
+        if (d < best) { best = d; pick = h.x; }
+    }
+}
+float dens = 0.35 + 0.55 * smoothstep(0.3, 0.95, rr);
+float dots = (1.0 - smoothstep(0.15, 0.3, best)) * step(pick, dens);
+float mot = 0.5 + 0.25 * sin(p.x * 37.0 + 1.3) * sin(p.y * 29.0 - 0.7) + 0.25 * sin((p.x + p.y) * 61.0);
+float3 straw = lerp(float3(0.30, 0.21, 0.11), float3(0.46, 0.37, 0.22), smoothstep(0.35, 0.65, mot));
+float3 cap = lerp(straw, float3(0.12, 0.08, 0.045), dots * 0.75);
+cap = lerp(cap, float3(0.16, 0.11, 0.06), 0.85 * smoothstep(0.0, 0.4, flag));
+cap = lerp(cap, float3(0.11, 0.065, 0.035), smoothstep(0.84, 0.93, rr));
+float streak = 0.5 + 0.5 * sin(p.x * 565.0 + 3.0 * sin(p.y * 20.0));
+float3 fib = float3(0.42, 0.33, 0.19) * lerp(0.7, 1.05, streak);
+float3 tuft = float3(0.20, 0.12, 0.06) * lerp(0.7, 1.1, streak);
+float3 col = lerp(cap, fib, smoothstep(0.45, 0.6, flag));
+return lerp(col, tuft, smoothstep(1.4, 1.6, flag));
+"""
+
+
 def palm_break_material():
-    """M_PalmBreak: a fibra rasgada da palmeira (a tampa e as lascas do toco e do tronco caído): marrom-clara, fosca,
-    com faixas finas pela posição (a fibra) e manchas mais escuras."""
-    m = shared_material('M_PalmBreak')
+    """M_PalmBreakV2: a fibra rasgada da palmeira (a tampa em tufos, o lado de dentro das lascas e o tufo caído), pela
+    quebra real (o estudo de 16/10): a palha manchada com os pontos escuros dos feixes, mais densos na borda, o anel
+    marrom de fora, as frestas escuras entre os tufos, as fibras ao longo nas lascas e o tufo cor de ferrugem. A 1ª (a
+    M_PalmBreak, pela posição no mundo) foi reprovada junto com a malha em estrela."""
+    m = shared_material('M_PalmBreakV2')
     if m:
         return m
-    g = Graph('M_PalmBreak')
-    wp = g.node(unreal.MaterialExpressionWorldPosition, -700)
-    c = g.custom('\n'.join([
-        'float3 p = W * 0.01;',
-        'float fib = 0.5 + 0.5 * sin(dot(p.xy, float2(37.0, 11.0)) + 3.0 * sin(p.z * 9.0));',
-        'float blot = 0.5 + 0.5 * sin(p.x * 3.1 + 1.7) * sin(p.y * 2.7 - 0.4);',
-        'return float3(0.42, 0.31, 0.19) * lerp(0.75, 1.15, fib) * lerp(0.8, 1.0, blot);']), [('W', wp, '')], F3, -300)
+    g = Graph('M_PalmBreakV2')
+    u0 = g.node(unreal.MaterialExpressionTextureCoordinate, -700, coordinate_index=0)
+    u3 = g.node(unreal.MaterialExpressionTextureCoordinate, -700, coordinate_index=3)
+    c = g.custom(PALM_BREAK_HLSL, [('U0', u0, ''), ('U3', u3, '')], F3, -300)
     g.out(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
-    g.out(g.node(unreal.MaterialExpressionConstant, -300, r=0.9), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.node(unreal.MaterialExpressionConstant, -300, r=0.85), '', unreal.MaterialProperty.MP_ROUGHNESS)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES)
     return g.finish('palm break material')
@@ -2087,6 +2120,72 @@ def palm_break_meshes(names):
                 mesh.set_material(k, brk if 'break' in nm else (trk if 'trunk' in nm else fol))
             eal.save_loaded_asset(mesh)
             log('palm break', mesh_path)
+
+
+ROCK_BREAK_SRC = os.path.join(ASSETS, 'rock_break')
+
+
+def rock_fresh_material():
+    """M_RockFreshV2: a face nova da pedra quebrada pelo tanque (16/10): a pedra por dentro, sem a pátina. A 1ª (0,50/0,41/
+    0,32, áspera 0,8) saiu no jogo clara e brilhante como plástico ao lado da pedra escaneada (escura, avermelhada): a
+    face de quebra de arenito é um tom acima da casca, quente, e fosca; com o grão em manchas pela posição."""
+    m = shared_material('M_RockFreshV2')
+    if m:
+        return m
+    g = Graph('M_RockFreshV2')
+    wp = g.node(unreal.MaterialExpressionWorldPosition, -700)
+    c = g.custom('\n'.join([
+        'float3 p = W * 0.01;',
+        'float n = 0.5 + 0.25 * sin(p.x * 23.0 + 1.1) * sin(p.y * 19.0 - 0.3) + 0.25 * sin(p.z * 31.0 + p.x * 7.0);',
+        'float gr = frac(sin(dot(floor(p * 90.0), float3(12.9898, 78.233, 37.719))) * 43758.5453);',
+        'return float3(0.27, 0.17, 0.11) * lerp(0.82, 1.12, n) * lerp(0.9, 1.08, gr);']), [('W', wp, '')], F3, -300)
+    g.out(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.node(unreal.MaterialExpressionConstant, -300, r=0.95), '', unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.node(unreal.MaterialExpressionConstant, -300, r=0.0), '', unreal.MaterialProperty.MP_SPECULAR)
+    mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
+    mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES)
+    return g.finish('rock fresh material')
+
+
+def rock_break_meshes(aids):
+    """A pedra pequena quebrada (Tools/blender_rock_break.py): <malha>_Broken ao lado da malha da pedra (o jogo procura
+    pelo nome). O material 0 é o da própria malha (o jogo copia o do componente da pedra, com o tom do mapa) e o 1 é o
+    M_RockFresh, a face da quebra. Reimporta só se o .glb mudou."""
+    fresh = rock_fresh_material()
+    for aid in aids:
+        pick = os.path.join(PROJECT, 'Saved', 'WorldForge', 'model_pick_%s.txt' % aid)
+        if not os.path.exists(pick):
+            continue
+        with open(pick, encoding='utf-8') as f:
+            mesh_path = f.read().strip()
+        base = unreal.load_asset(mesh_path)
+        src = os.path.join(ROCK_BREAK_SRC, '%s_Broken.glb' % aid)
+        if base is None or not os.path.exists(src):
+            continue
+        folder = mesh_path.rsplit('/', 1)[0]
+        dst = mesh_path + '_Broken'
+        pkg = os.path.join(PROJECT, 'Content', dst[len('/Game/'):].replace('/', os.sep) + '.uasset')
+        if not (eal.does_asset_exist(dst) and os.path.exists(pkg) and os.path.getmtime(pkg) >= os.path.getmtime(src)):
+            tmp = folder + '/_break_import'
+            objs = import_file(src, tmp)
+            mesh = next((o for o in objs if isinstance(o, unreal.StaticMesh)), None)
+            if mesh is None:
+                log('rock break import failed', src)
+                continue
+            if eal.does_asset_exist(dst):
+                eal.delete_asset(dst)
+            eal.rename_asset(mesh.get_path_name().split('.')[0], dst)
+            for a in eal.list_assets(tmp, recursive=True):
+                eal.delete_asset(a.split('.')[0])
+            eal.delete_directory(tmp)
+            lib.enable_nanite(unreal.load_asset(dst))
+        mesh = unreal.load_asset(dst)
+        rock_mat = base.get_material(0)
+        for k, sm in enumerate(mesh.get_editor_property('static_materials')):
+            nm = (str(sm.material_slot_name) + ' ' + (sm.material_interface.get_name() if sm.material_interface else '')).lower()
+            mesh.set_material(k, fresh if 'fresh' in nm else rock_mat)
+        eal.save_loaded_asset(mesh)
+        log('rock break', dst)
 
 
 def model(aid, sname, plant=False, nanite=True, tint=(1.0, 1.0, 1.0), snow=0.0, green=False, desat=0.0, normal_up=0.0):
@@ -2891,8 +2990,9 @@ def make_meshes(sname, tag, cfg):
             # (16/10) o toco e o tronco quebrado pra o jogo trocar quando o tanque derruba (só malhas novas: o mapa não muda)
             try:
                 palm_break_meshes(['SM_DatePalm_OasisCluster', 'SM_DatePalm_Mature', 'SM_DatePalm_Urban'])
+                rock_break_meshes(['namaqualand_boulder_05', 'namaqualand_boulder_06'])
             except Exception as ex:
-                log('palm break FALHOU (a montagem segue)', ex)
+                log('palm/rock break FALHOU (a montagem segue)', ex)
         if palms:
             meshes['palms'] = palms
             cfg = dict(cfg)

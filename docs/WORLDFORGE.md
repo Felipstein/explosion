@@ -1738,8 +1738,21 @@ pequenas espalhados com poucas maiores em grupo, moitas secas baixas e esparsas.
   - o componente vai com a sombra guardada (Rigid): o WPO muda devagar.
 - **O toco e o tronco quebrado das palmeiras** (`Tools/blender_palm_break.py`, `PALM_BREAK=1` por padrão):
   - `SM_DatePalm_{Mature,Urban,OasisCluster}_Stump` e `_Fallen` na pasta da palmeira (o jogo procura pelo nome);
-  - a quebra a 0,8 m: o miolo de fibra rasgada (um disco denso com as fibras em relevo) e o tufo de fibras finas em
-    volta, no `M_PalmBreak`; o pivô do _Fallen no centro da quebra;
+  - a quebra a 0,8 m; o pivô do _Fallen no centro da quebra;
+  - (16/10, a 2ª) a 1ª (a tampa reta com dezenas de fibras em estrela) foi REPROVADA: "parece só um monte de espinhos
+    esticados sem nenhum embasamento". Refeita pela quebra real (o estudo: Hodel e Wood, a falha do tronco de palmeira;
+    González e Nguyen 2016, os feixes do coqueiro; a FAO; o CryEngine). A palmeira é um feixe de fibras sem lenho e
+    quebra rasgando:
+    - o corte torto: um plano inclinado de 20–35°, alto no lado tracionado, com ondulação larga;
+    - a face em tufos de fibra arrancados em alturas diferentes (um Voronoi de 4 cm, até ~12 cm no lado tracionado, com
+      as frestas escuras) e a borda dura;
+    - 2–4 lascas de casca (7–13 cm de largura, 1,5–3 cm de espessura, a ponta em dentes) num arco de 90–120° do lado
+      tracionado; no tronco caído, 1–2 do lado de baixo;
+    - o tufo de fibra mole caído (16–24 fios);
+    - nada em raio. O toco e o tronco caído são cortados pelo mesmo plano.
+  - o material `M_PalmBreakV2` lê o UV 3 (a palmeira já traz 3: a quebra é o 4º), com x = a distância ao centro e y = o
+    tipo (o glTF vira o V). Ele faz a palha manchada, os pontos dos feixes mais densos na borda, o anel marrom, a fibra
+    ao longo nas lascas e o tufo cor de ferrugem. A conferência de perto: `Tools/blender_preview_break.py` (Cycles na CPU).
   - o material da palmeira caída (`PALM_FALL_HLSL`) lê os CustomPrimitiveData do jogo (1 o tombo, 2 a direção, 3 caída,
     4 o impacto): a copa atrasa na queda, chicoteia e amortece no impacto, e nada passa do chão (a copa achata e abre
     por cima dele).
@@ -1776,6 +1789,10 @@ Felipe pelo Look):
 - v2: a v1 do Look (albedo físico 0,49/0,40/0,27, o desenho da textura a 25%) + as zonas (liso, ondulado,
   pedregoso, revirado; o resto é o pisado) + as ondulações simuladas (`T_LL_Ripples`) só na zona delas.
 - As zonas saem do terreno, não de textura: o fbm de ruído de valor do Look (hash inteiro) com as regras do
+- **A pedra pequena quebrada** (`Tools/blender_rock_break.py`): `<malha>_Broken` das `namaqualand_boulder_05/06` (2–3
+  planos, os pedaços abertos e assentados, o cascalho, a pilha a 65% da altura); o jogo troca a pedra sob o tanque e o
+  Dozer (a compilação 29). A face nova `M_RockFreshV2`: a 1ª (clara, 0,50/0,41/0,32) saiu no jogo como plástico; agora
+  um tom acima da casca, quente e fosca.
   terreno (pedregoso na encosta e na pedra, liso no pisado, ondulado no aberto e longe do pisado: +0,25 a
   partir de ~45 m, pela grade `FWorldDetail::OpenAt`), a borda rasgada (ruído de 0,8 m antes de um limiar de
   0,03) e pouco tom. O material e o C++ (`FWorldDetail::ZonesAt`) fazem a mesma conta.
@@ -1865,3 +1882,52 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
      jusante), em vez de dunas soltas em chão plano.
    - Campos maiores e com borda (o corredor que adensa e rareia), as dunas da moldura e a transição até elas.
    - O caminho é a mesma simulação (`DuneSim.h`) indo além das dunas inteiras: o lençol e as marolas que ela já faz.
+   - (16/10, a 2ª conversa) "tudo reto e do nada essas montanhas assim espalhadas". O diagnóstico: o chão entre as dunas é
+     uma mesa lisa da mesma areia; estão espalhadas ao acaso, sem fileira nem cadeia; nada liga uma à outra (sem rastro
+     das pontas, sem areia atrás das moitas e pedras, sem a borda de areia rala).
+   - **O alvo que ele mandou:** `docs/concept/explosions/type_4.7_precision_strike.webp` ("exemplo de chão [...] a variação
+     dele natural"). O chão inteiro ondulado em ondas largas e baixas (a sombra comprida do sol baixo mostra), cada moita
+     num montinho de areia (nebkha) com a sombra dele, pedrinhas e rastros; nenhuma duna solta numa mesa.
+   - **O estudo (16/10, agente com fontes):**
+     - **O lençol de areia ondula inteiro.** Os zibars (sem face de avalanche, a crista perpendicular ao vento) têm
+       espaçamento de 50–400 m e de dezenas de cm a 6–8 m de altura (o Ténéré: 150–400 m). No lençol de Selima as ondas
+       têm 130–1200 m e só 10–30 cm, e o sol baixo as revela.
+     - **A conta da luz:** com o sol a 10–15°, uma rampa de 3° já muda o brilho em ±20–30%. O chão plano lê como área
+       morta.
+     - **As nebkhas** (o monte da moita) têm topo achatado e flancos íngremes: 0,5–2 m de altura (média de 1,1 m no
+       Thar), altura/diâmetro de 0,3–1, e a cauda a sotavento com a crista no vento (Hesp e Smyth 2017). A pedra tem a
+       mesma sombra de areia, menor.
+     - **Os campos de barcanas se organizam em corredores** (Hersen 2004; Elbelrhiti 2008): o espaçamento é quase
+       constante, os tamanhos são quase lognormais e crescem a jusante. Na borda (White Sands, Ewing e Kocurek 2010) as
+       dunas nascem pequenas e crescem.
+     - **Entre os campos:** corredores de cascalho de outra cor.
+     - **Por que o nosso parece carimbado:**
+       1. uma escala só: falta tudo entre o ruído de 0,7 m e a duna;
+       2. nada liga a duna ao chão (o lençol que engrossa, os rastros, a cor);
+       3. o espalhamento é aleatório uniforme.
+     - **O caminho da computação gráfica:**
+       - Paris et al. 2019: a vegetação entra no Werner reduzindo a erosão e subindo o repouso pra 45°, e as nebkhas
+         saem sozinhas;
+       - DECAL (Nield e Baas 2008): nebkhas e dunas parabólicas;
+       - Gaea: Dunes com Undulation e o detalhe por cima;
+       - Journey: as ripples no material.
+   - **O plano, em duas fases:**
+     - **A fase A** (rápida, a que mais muda a cara do chão):
+       - a ondulação do lençol: ruído de banda alongado na crista perpendicular ao vento, λ 80–250 m, ±0,5–1,5 m
+         (rampas de 1,5–4°), modulada por um mapa de espessura de areia;
+       - os corredores de cascalho onde a areia é rala, com a cor do cascalho;
+       - as nebkhas: um monte por moita na areia (0,4–1,2 m, diâmetro de 3–8 m, cauda a sotavento de 2–4 diâmetros),
+         com a moita no topo; a pedra com a sombra de areia menor.
+     - **A fase B:** o Werner no mapa inteiro (célula de 1–2 m, a areia que cada lugar recebe pelo mapa de espessura, a
+       areia entrando pela borda a montante, a vegetação no modelo), no lugar dos bolsões carimbados.
+   - **As medidas de "natural":**
+     - a fração de areia com inclinação abaixo de 0,5° (a meta inicial é menos de 20%);
+     - o espectro de alturas sem buraco entre o ruído e a duna;
+     - o brilho da areia sob o sol do jogo contra o game shot;
+     - toda moita na areia com monte;
+     - os limites de jogo: lençol ≤ 4°, nebkha ≤ 25°, duna ≤ 33°.
+8. Pedido do Felipe de 16/10 (pro final): **as pedras mal posicionadas** pela geração automática, "posicionadas em direções
+   erradas na maioria das vezes [...] dá pra ver ela por dentro". A foto: `docs/aprovados/mundos/2026-10-16_pedras_viradas_PROBLEMA.jpg`
+   (as lascas finas em volta do pilar de pedra, perto da estrada do World_TestSalt2). Achar qual espalhamento põe essas
+   malhas, qual o lado aberto de cada escaneada, e assentar pela face de cima (a normal do chão, só o giro no eixo
+   vertical e uma inclinação pequena), nunca mostrando o oco.
