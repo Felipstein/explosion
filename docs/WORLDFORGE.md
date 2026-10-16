@@ -1499,10 +1499,243 @@ fique preso a decisões anteriores".
 3. Os da receita, que são do Look e do jogo (o Lumen, a água, a sombra do Ultra): mando os números.
 4. O RVT do chão, com o Look revisando o CODE.
 
+**O RVT do chão: testado e REPROVADO (14/10, madrugada).** "também não, negativo, ficou horrível" (a folha em
+`docs/aprovados/mundos/2026-10-14_chao_rvt_reprovado_vila.jpg`). O ganho era real: o NaniteBasePass caiu de 4,75 pra
+2,30 ms a 1080p, e assar a textura custava ~0,2 ms. Mas a imagem perdeu, e o porquê fica aqui pra ninguém repetir:
+- **A resolução e a compressão:** 3,1 cm por texel com BC1/BC5 borra o asfalto e o grão da areia, que vivem em 1–3 cm.
+- **O AO das camadas saiu do main pass** (o modo de cor, normal e rugosidade não tem canal pra ele): o chão achatou e escureceu por igual.
+- **A projeção é de cima:** a pedra das encostas íngremes esticou em riscos.
+- **Desfeito:** o RVT saiu do `build_slice.py` e o mapa de teste foi pra Lixeira. Só volta com uma proposta que resolva esses três e com a palavra dele.
+
+**No lugar dele: cortar só a amostra que não aparece (14/10, em teste; a v2 não muda).** A regra (com o Look): ganho que muda o aprovado é regressão. O A/B é pixel a pixel contra o mapa da v2, com o piso de ruído de duas rodadas iguais.
+- **A medida das camadas** (`SliceLayerStats`, os pesos da montagem do World_TestSalt2):
+  - 3,94 camadas por componente em média;
+  - a Unreal só tira a camada do componente com peso zero exato (o `Import`, `IsLayerAllZero`): 1/255 já põe a camada inteira no shader daquele pedaço;
+  - a terra entra em 234 dos 256 componentes, mas em 81 deles com no máximo 3/255;
+  - a pedra triplanar (15 amostras) entra em 196 componentes.
+- **A limpeza** (`LAYER_CULL=T` na montagem): a camada com máximo ≤ T/255 no componente sai dele, e o peso vai pra dominante de cada vértice. Com T = 3: de 3,94 pra 3,62 camadas por componente; com T = 8, 3,49.
+- **A pedra com desvio dinâmico** (`ROCK_BRANCH=1`): a conta da WorldAlignedTexture/Normal da 5.8 copiada do HLSL gerado (`MaterialHlsl`), num nó só.
+  - Só calcula onde a pedra pode aparecer: o peso dela > 0, ou nenhuma outra camada ≥ 0,53. Fora disso, a mistura por altura daria à pedra 0,0001 contra ≥ 0,06 da dominante.
+  - Pula as projeções laterais com peso zero (no chão com menos de ~48°, a WorldAlignedTexture amostra as três e mistura duas com zero).
+  - As derivadas saem de fora do desvio (SampleGrad).
+- **O resultado** (14/10, 03:30–03:40; 1080p, golden_dust, World_TestSalt2 × World_TestPerf × World_TestCull, as três medidas seguidas):
+
+  | vista | v2 | pedra com desvio | + limpeza ≤ 3/255 |
+  |---|---|---|---|
+  | vila (100 m) | NaniteBasePass 4,67 ms, GPU 30,9 | 4,47 (−0,2), GPU 30,7 | 4,37, GPU 30,6 |
+  | alto (260 m) | 4,98 ms, GPU 31,5 | **3,96 (−1,0)**, GPU 30,2 | 4,29, GPU 30,9 |
+
+  - **A imagem:** o piso de ruído é alto (duas rodadas iguais do mapa da v2 diferem em 3–10% dos pixels acima de 2 níveis: o Lumen, a água e o vento). A pedra com desvio passa pouco do piso: na vista aberta, 6,6% contra 3,0%, só nos contornos das silhuetas (o TSR). Lado a lado ampliado, é igual a olho nu. Fica (`ROCK_BRANCH=1`), pra v3.
+  - **A limpeza não vale:** o ganho ficou dentro do ruído e ela muda um pouco a cor. Fica desligada (`LAYER_CULL` vazio).
+
 **Alvo novo do chão do deserto** (sessão de arte, 11/10, pedido do Felipe):
 `docs/concept/scenes/desert_golden_hour/best/close_ground_light_gemini.webp` — areia batida
 desbotada sem duna forte, ondulação rasa do vento, marcas de esteira e pneu, seixos e pedras
 pequenas espalhados com poucas maiores em grupo, moitas secas baixas e esparsas.
+
+### 12.6 A v3 do mundo (noite de 14/10/2026; o Felipe dormindo, nada no mapa do jogo)
+
+**O pedido:** o Felipe liberou a v3 pra noite toda ("eu quero me ARREPIAR... olhem os game shots, comparem sempre, frame por frame").
+**A regra:**
+- tudo em mapas de teste (World_TestSlab, World_TestV3);
+- o World_TestSalt2 do jogo e o `captures/dist` não mudam;
+- o mapa do jogo muda só com o "aprovado" dele.
+
+**1. A estrada com volume** (a pendência que ele procurou no jogo e não achou: `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`; o kit do Look, RECEITAS §6):
+- **A laje:** `UWorldForgeEditorLib::BuildRoadSlabs` (`ROAD_SLAB=1`).
+  - É uma malha Nanite por ladrilho de 30,72 m, só nas estradas de asfalto.
+  - O topo fica 12 cm acima do asfalto, com abaulado de 2,5 cm.
+  - A borda sai da mesma conta do asfalto do chão (`PavedEdge`).
+  - **As placas Voronoi de 50 cm:** as que faltam e as que afundam e inclinam, com os números do `EDGE_TYPES` do Look (intact, worn, ruined).
+    - O desgaste muda em trechos de ~150 m (`SlabSample.Wear`), e a vila fica inteira (a folha do Look: "a vila inteira, intacta com areia").
+    - A fresta entre as placas ficou fora da geometria: o Look avisou que, menor que o pixel, ela treme com o TSR.
+  - **A malha:**
+    - o passo de 6 cm só na beira que pode quebrar;
+    - 12 cm na beira limpa;
+    - 48 cm no miolo.
+    - No World_TestSalt2: 54 ladrilhos, 1,31 milhão de triângulos, 21 MB no disco.
+- **O chão (o Landscape):**
+  - a areia em volta 6 cm abaixo do asfalto (a maquete);
+  - os montes de areia encostados na beira, em trechos e esticados no vento: o próprio chão levantado, que cobre a laje onde passa do topo;
+  - debaixo do miolo da laje, o chão levantado até 1,5 cm do topo. O jogo tira a altura das unidades do Landscape a cada 2 m (`RTSMapBaker`), e assim o tanque anda em cima da laje sem mudar nada no jogo.
+  - O chão debaixo da laje e nos buracos dela é areia.
+- **O material:** `M_RoadSlab_<tag>`, o `ground_material(slab=True)`.
+  - O asfalto v2 aprovado sozinho, sem a mistura das camadas.
+  - A face da quebra escura, como no kit.
+  - A areia molhada e a memória do chão por cima, com o CODE do `look_mf.py`: a cratera e a esteira não somem na estrada. O jogo precisa pôr os parâmetros da memória também nas instâncias da laje.
+- **A faixa pintada nova** (o `PAINTV2` do Look, RECEITAS §7) ainda não entrou: ela precisa da posição na pista com precisão de centímetro. O RoadDir é de 8 bits (~8 cm por degrau), e a faixa tem 13 cm. Por enquanto, a faixa de hoje (decalque) projeta na laje.
+
+**2. A pedra com desvio** (§12.5): `ROCK_BRANCH=1`, −1,0 ms no passe do chão na vista de cima.
+
+**3. A areia encostada nas paredes** (`WALL_SAND=1`, `WallSandAt`):
+- A maquete do Look tem (`look_ground.fields`: pile = 0,35·exp(−d/0,9)), e o r1_raid_slabs também: a areia batida contra as paredes, com a crista.
+- No mapa, o chão em volta das casas era plano. Agora o chão levanta em volta das casas e dos muros:
+  - até 35 cm na parede, sumindo em ~1 m;
+  - o muro junta 60% do que a casa junta;
+  - ×1,25 do lado de onde vem o vento e ×0,55 no outro;
+  - em trechos, e pintado de areia.
+### 12.7 As dunas (estudo de 16/10/2026, agente com fontes; plano, sem código ainda)
+
+**Por que:** o r1_raid_slabs tem dunas macias com crista e areia acumulada nos prédios; o nosso deserto aberto tem só as marolas (0,7 m a cada 35 m).
+
+**O que o estudo mostrou:**
+- Com o sol a 8°, quem faz a duna aparecer é a **inclinação**, não a altura. 3° já dão ±35–45% de contraste: as marolas de hoje leem.
+- Duna alta na área jogável estraga a leitura pela **sombra comprida em cima das unidades** (~7× a altura a partir da crista).
+- **Com um vento só** (`M.WindYaw`), o coerente é barcana (pouca areia, chão duro entre elas) e transversal.
+- **O perfil:**
+  - barlavento de 10–12° (côncavo no pé, convexo no topo);
+  - face de deslizamento reta a 30–34°;
+  - barcana com altura ≈ (1/15)·√(largura² − 10²): 20 m de largura dão 1,2 m;
+  - abaixo de ~1 m vira domo, sem face.
+- **A simulação** (Werner 1995; Paris et al. 2019, código MIT) é cara demais pro mapa inteiro (~1,3 bilhão de passos) e sai em degraus. Serve pra carimbos. Pra nós: o perfil analítico alinhado ao vento, com o ruído só pra serpentear a crista (até ~30° do eixo).
+- **A crista sem serrilhar na malha de 0,5 m:**
+  - arredondar a quina (raio de 0,75–1,5 m);
+  - média de 4×4 amostras só perto da crista;
+  - uma passada de avalanche no fim (tg 0,60).
+- **Os jogos:**
+  - no C&C Generals/ZH, a célula só vira penhasco acima de ~35–44°;
+  - no Dune 2000, duna é tipo de terreno: tanque a 70%, veículo a 50%;
+  - a regra pra nós: duna passável, no máximo com perda de velocidade, nunca em base, estrada, recurso ou rampa.
+
+**Os dois defeitos na moldura de hoje** (`DuneProfile`, 14 m):
+- o barlavento `1−(1−t)²` fica mais íngreme no pé (~23°);
+- o comprimento de onda de 6,3× a altura não deixa chão liso entre as dunas: sai um vale em V, com sombras de ~67 m cobrindo metade de cada onda.
+- A correção: meia-senoide (máximo de 12–15°) e espaçamento de 10–15× a altura.
+
+**A proposta** (a medir; A/B com o r1 na câmera do jogo):
+
+| Zona | O quê |
+|---|---|
+| Jogável (bases, estradas, recursos, corredores) | as marolas de 0,4–0,7 m, inclinação ≤ 4° |
+| Bolsões de dunas (flancos, terra de ninguém, ≤ 20% da área jogável) | barcanas e cristas curtas de 0,8–2 m, largura 20–35 m, barlavento 10–12°, face 31°, espaçamento ≥ 12× a altura, chão liso entre elas |
+| Folgas | 40 m das bases, 12 m das estradas, 25 m dos recursos; a duna desce a zero em 40–60 m |
+| A transição pra moldura | 60–120 m, as dunas crescendo de 2 a 6 m |
+| A moldura | transversais de 6–14 m, espaçamento de 10–15× a altura, crista arredondada |
+| Junto dos prédios | o monte do lado do vento até 0,3–0,5 da parede (≤ 1,5 m), face ≤ 30°, com crista; do outro lado, uma cauda de 3–5× a altura (a `WALL_SAND` de hoje é a versão simples disso) |
+
+**A simetria:** o mapa gira 180° ou 90°. Uma duna girada fica com a face pro lado errado do vento. Simetrizar só o lugar, a altura e a perda de velocidade; a forma sai sempre do vento global.
+
+**A 1ª versão (16/10, madrugada; `DUNE_POCKETS=1`, mapa `World_TestV3Dunes`, sem a palavra dele):**
+- `BuildDunePockets` / `DuneAt` (WorldDetail.h):
+  - barcanas numa grade de 70 m, ~60% das células;
+  - largura de 20–35 m e altura pela fórmula do Marrocos (1,1–2,1 m);
+  - o barlavento em meia-senoide (máximo de 14°), a face a 31° e a crista em mínimo suave;
+  - chifres em crescente a favor do vento; a crista serpenteia de leve.
+- **Onde (`DuneAllowed`):**
+  - o deserto aberto (OpenAt), a 40–100 m das bases, a 25–60 m dos depósitos, fora d'água;
+  - só no plano (encosta até ~3° em 8 m: a 1ª montagem pôs uma em cima do maciço);
+  - justa: só nasce se todas as cópias giradas tiverem lugar, com a mesma altura.
+- **O resultado:**
+  - 16 barcanas no World_TestSalt2 (o mapa é acidentado);
+  - de cima, leem como barcanas de verdade, com crescente, chifres e a face em sombra do lado certo;
+  - na câmera do jogo são poucas e espaçadas (quase não entram no quadro).
+  - A borda lateral subia na vertical com (1 − t²)^0,6 e a duna lia colada: virou (1 − t²)².
+- **A medida** (`SliceDuneStats`, a inclinação só da duna a cada 0,5 m, 6.500 pontos), 16/10 05:20:
+  - A 1ª versão passava muito de 34°, com máximo de 70°. Três consertos:
+    1. a face medida na perpendicular da crista (nos chifres ela ficava íngreme de lado);
+    2. sem o corte pelo peso da areia (a duna caía 2 m em meio metro na borda de outra camada): agora a duna pinta o chão de areia;
+    3. o fade de encosta mais largo.
+  - **Agora:** máximo de 36,6°, 0,05% acima de 34°, o barlavento concentrado em 9–17° e a face em 27–32°. Bate com o estudo.- **Falta:**
+  - a decisão dele (o A/B no jogo: `dunas_{67,100}_v3d` × `dunas_67_v3`);
+  - a moldura corrigida (meia-senoide e espaçamento de 10–15×);
+  - a medida de inclinação.
+
+**O campo natural (16/10 à tarde):**
+- O Felipe reprovou a 1ª versão duas vezes: "muito padronizada e única" e "ainda tá muito padronizado, não tem nada natural aí".
+- Antes do passo atrás tentei variar a fórmula com os números da pesquisa:
+  - largura log-normal (mediana 25 m, σ 0,4);
+  - domo abaixo de 15 m;
+  - chifre ≈ 9·H;
+  - razão dos chifres de Sherman 2022;
+  - espaçamento independente do tamanho;
+  - filhotes.
+- Continuou carimbo: o mesmo crescente em outro tamanho.
+- **O passo atrás: a areia simulada** (`Source/WorldForge/Public/Generation/DuneSim.h`; a bancada em `Tools/dunesim`, com `dunesim_bench` e `build.bat`):
+  - o modelo de lajes de Werner 1995, o mesmo do Paris et al. 2019 e do Dune Solver do Houdini: a laje de 10 cm sai de onde há areia fora da sombra, salta a favor do vento, para com 0,6 em areia, 0,4 no chão nu e sempre na sombra de 15°; a avalanche escorre acima de 33°;
+  - a 2ª opinião leu o código do Paris e mediu num porte. As barcanas de lá só nascem porque a laje some depois de 3 saltos; com a perda, na nossa bancada, saíram montes imaturos. O que deu barcana de forma certa foi a areia conservada: salto de 2 m, ±35% no comprimento e ±0,6 m de lado (sem o lado, a areia corre em riscos na grade), média de 20 cm em manchas e 2.000 rodadas;
+  - essas barcanas saem com ~1/7 da largura de altura; as reais têm 1/10–1/15. O acabamento achata a 0,45 (a crista em ~2,5 m), alisa os degraus da laje (gauss de 1 m) e escorre acima de 30°. A face fica em ~17–19° e, com o sol a 8°, inteira na sombra;
+  - a simulação roda com o vento em +x (em ângulo, a grade entortava todas pro mesmo lado), num ladrilho periódico de 1 km. São ~3 min na 1ª montagem e o resultado fica guardado em `Saved/WorldForge/dunes/`;
+  - **no mapa:** o ladrilho vira a biblioteca de formas. Cada duna dele entra inteira num ponto sorteado do bolsão, como nasceu ou espelhada de lado, e uma vez só. Junto vão as vizinhas dela no ladrilho a até 25 m (os filhotes e as que encostam), no mesmo arranjo. Só entram dunas de verdade (crista ≥ 60 cm). Para em ~10% do chão onde pode, com os dois lados com a mesma área (±6%);
+  - **os lados não recebem a mesma duna copiada:** a cópia girada inverteria o vento (o filhote ficaria contra ele). A justiça é a área de duna por lado, e a duna não bloqueia ninguém;
+  - **a pintura e o relevo de base:** a duna pinta o chão de areia pelo pé, que cai de 1 a 8 m fora dela. Debaixo dela, as marolas da areia de base ficam 80% enterradas. Pintar pela altura, de 5 a 30 cm, trocava a camada em meio metro e ligava ~1 m de marola de uma vez: a face passava de 34°, até 49°.
+- **O mapa de teste:** `World_TestDunesSim` (a base nova + `DUNE_POCKETS=1`; o nome é novo porque o umap do `World_TestV3Dunes` fica preso pelos testes do jogo abertos).
+- **A 1ª foto no jogo** (as dunas achatadas a 0,45): a face de ~17° não escurecia com a luz do jogo e a duna sumia.
+- **O conserto, a meia escala:**
+  - a duna inteira encolhe, largura e altura juntas; a simulação não muda (a célula de 0,5 m e a laje de 5 cm têm a mesma razão de 0,1);
+  - a face fica a 30° e a crista em 1–2,5 m (o corte de 2,6 m tira as maiores, pela sombra em cima das unidades);
+  - cada forma entra no máximo duas vezes, a segunda espelhada e a 200 m ou mais da primeira;
+  - o pé de areia cai até 9 m: cortado a 4 m, fazia uma moldura em volta da duna.
+- **Medido no World_TestDunesSim** (`SliceDuneStats`, a cada 0,5 m pela altura final):
+  - 45 dunas;
+  - ~7% do chão onde pode;
+  - lados com 3.327 × 3.245 m²;
+  - máximo de 32,6°, nada acima de 34°.
+- **As fontes da tarde:**
+  - Durán et al. 2009/2011 (a distribuição log-normal);
+  - Elbelrhiti et al. 2008 (Tarfaya: os corredores e os filhotes);
+  - Andreotti et al. 2002 (La Joya: W = 8,8 + 8,6·H, chifre ≈ 9·H);
+  - Sherman et al. 2022 (a assimetria em 2.686 dunas);
+  - Parteli et al. 2014;
+  - o código do Desertscapes-Simulation (`desert-simulation.cpp`; MAX_BOUNCE 3, a sombra de 5–15°, o repouso tg 0,6).
+
+**O que medir:**
+- 99% da área jogável abaixo de 6°;
+- nas dunas, o barlavento a 8–14° e a face a 30–33°, nada acima de 34°;
+- menos de 5% da área jogável em sombra projetada;
+- a crista a 45° da malha, ampliada 4×, sem escada;
+- o tanque na sombra contra o tanque no sol, dentro da razão sombra/sol da receita.
+
+**As fontes:**
+- Werner 1995;
+- Paris et al. 2019 (`github.com/aparis69/Desertscapes-Simulation`);
+- Kroy/Sauermann (barcanas no Marrocos);
+- Gadal 2020 (White Sands);
+- Ewing & Kocurek;
+- o código do Generals (`WorldHeightMap.cpp`);
+- as regras do Dune 2000 no OpenRA.
+### 12.8 O tanque derruba e amassa: o desenho (estudo de 16/10/2026; plano, sem código ainda)
+
+**O pedido** (o Felipe pelo Look, 16/10 de manhã; a regra e o evento são do jogo, em `docs/ESMAGAR_E_DERRUBAR.md`):
+- a árvore e a palmeira caindo, quebrando ou amassando;
+- o arbusto amassado;
+- a pedra pequena quebrando (a grande o tanque sobe);
+- o capim morto deitado na trilha;
+- os postes e os fios com física e o choque.
+
+**O estudo** (agente com fontes):
+- **O ZH** (`ToppleUpdate.cpp`, liberado pela EA):
+  - a queda é uma rotação rígida pela base, na direção do tanque até a árvore, calculada na lógica (igual em todos os PCs);
+  - para a ~88°, com um quique de 30%;
+  - nasce o toco.
+- **Física de verdade só no descartável:**
+  - trocar a instância por um ator com física passa de 1.500 atores a menos de 20 qps;
+  - a pose final da física é aleatória, e não dá pra refazer no replay, ao carregar nem quando a névoa revela a árvore;
+  - o Chaos pré-fraturado em tempo real é caro e trava; serve no máximo pra poucas pedras ao mesmo tempo.
+- **O capim deitado:** o God of War (GDC 2019), o Spintires (física só perto do caminhão) e o NVIDIA Turf (o capim pode ficar deitado de vez). Pra nós: o WPO lendo a memória do chão que o jogo já tem, a esteira com a fita de cada lagarta.
+  - Cuidado: o WPO invalida o cache da sombra virtual. O capim já não tem sombra; o arbusto amassado vai com o Rigid.
+- **O fio:** a catenária fica parada até o poste cair. Só os vãos ligados a ele passam a ser simulados (Verlet, como o Cable Component), e a simulação para quando o fio assenta. O fio arrebenta acima de 1,5× o comprimento; a ponta solta chicoteia e solta faísca (Niagara com colisão e uma luz curta).
+- **Os efeitos:** um sistema só de Niagara pra todos os eventos (Data Channels: folhas, lascas, poeira, faísca), em vez de um por árvore.
+
+**A arquitetura:**
+- o desenho pelo estado da simulação (em pé, caído, quebrado; o tick e a direção);
+- a pose final sai da fórmula (direção + semente = id), não da física: igual em todo PC e no replay;
+- o evento só dispara os efeitos.
+
+**A ordem** (maior impacto por custo):
+1. o capim e o arbusto deitados pela esteira (o WPO na planta; o jogo entrega as texturas da memória do chão às plantas, como já faz com a laje);
+2. a árvore, a palmeira e o poste tombando pela fórmula do ZH, com o toco, as folhas e a poeira;
+3. a pedra pequena trocando por cascalho, com as lascas;
+4. os fios arrebentando, com a faísca;
+5. o polimento: o tronco estalando e a copa chicoteando (VAT, 4–8 variantes de direção).
+
+**As fontes:**
+- `ToppleUpdate.cpp` (EA, CnC_Generals_Zero_Hour);
+- GDC 2019 (God of War, o vento e a vegetação);
+- GDC 2021 (Ghost of Tsushima, o capim);
+- Spintires/MudRunner (gamedeveloper.com);
+- NVIDIA Turf Effects;
+- a documentação do Cable Component, do EShadowCacheInvalidationBehavior e dos Niagara Data Channels;
+- "1500 Archers" (o lockstep do Age of Empires).
 
 ## O chão do deserto, a luz da versão final e os monólitos em malha (12–13/10/2026)
 
@@ -1597,3 +1830,10 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
    ferramenta pra "Olhar"; o teste da interface troca de aba e passou 56/56; (4) 28 mapas da liga
    (GeneralsRankedMaps, release 2024): neve, deserto e rio, floresta, água e ilha, cidade e trilho, 2v2 e
    4v4, em `Saved/WorldForge/imported/` pelo `Tools/zh_import.py` (29 com o Desert Fury).
+6. Pedido do Felipe de 16/10 (**não é prioridade**, ele disse: "bota na lista de fazeres"): as dunas na
+   ferramenta, como as peças da vila (a regra "a ferramenta vê tudo").
+   - Ver as dunas no painel e na vista ao vivo (hoje só aparecem no "Ver em qualidade real").
+   - Ligar ou desligar por mapa e escolher a quantidade (nenhuma, poucas, um campo), em vez da chave `DUNE_POCKETS`.
+   - Apagar ou mover uma duna à mão (a edição grava, como a do apagado e do mover peça).
+   - Hoje o gerador escolhe sozinho: as formas da areia simulada (`DuneSim.h`), inteiras, no deserto aberto e plano
+     longe de casa, estrada, trilha, depósito, água e base (§12.7).

@@ -38,6 +38,8 @@ public:
 	/** Pede um mapa novo com estes controles (descarta o que estiver em andamento). */
 	void Generate(const FWorldGenSettings& NewSettings);
 	const FWorldGenSettings& GetSettings() const { return Settings; }
+	/** A areia do acabamento (FWorldGenSettings::Sand): não gera o mapa de novo, só vale no "Ver em qualidade real". */
+	void SetSand(int32 V) { Settings.Sand = V; }
 	bool IsGenerating() const { return Pending > Shown; }
 	/** Número do último mapa mostrado (cresce a cada mapa novo). */
 	int32 GetShownTicket() const { return Shown; }
@@ -152,6 +154,10 @@ public:
 	void RoadMoveHandle(int32 Handle, FVector2f To);
 	/** Troca o tipo da escolhida (e o da próxima). */
 	void RoadSetPaved(bool bPaved);
+	/** O acabamento do asfalto da escolhida (FWorldEdits::FRoadEdit::Style; 0 na do gerador ainda não mexida). */
+	int32 GetSelectedRoadStyle() const;
+	/** Troca o acabamento da escolhida (vale no "Ver em qualidade real": a laje é de lá). */
+	void RoadSetStyle(int32 Style);
 	void RoadDeleteSelected();
 
 private:

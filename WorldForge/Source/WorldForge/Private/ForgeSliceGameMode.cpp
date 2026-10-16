@@ -563,15 +563,28 @@ void AForgeSliceGameMode::CaptureStep()
 	{
 		// põe a câmera no começo do passeio e espera: o salto da vista anterior
 		// borrava o 1º quadro (desfoque de movimento)
+		// (-ForgeMotion=x0,y0,x1,y1,yaw,pitch,dist troca o passeio: 14/10, o tremor da borda da laje em movimento)
+		FString Mo;
+		if (FParse::Value(FCommandLine::Get(), TEXT("ForgeMotion="), Mo, false))
+		{
+			TArray<FString> Parts;
+			Mo.ParseIntoArray(Parts, TEXT(","));
+			if (Parts.Num() == 7)
+			{
+				MotionA = FVector2f(FCString::Atof(*Parts[0]), FCString::Atof(*Parts[1]));
+				MotionB = FVector2f(FCString::Atof(*Parts[2]), FCString::Atof(*Parts[3]));
+				MotionView = FVector(FCString::Atof(*Parts[4]), FCString::Atof(*Parts[5]), FCString::Atof(*Parts[6]));
+			}
+		}
 		MotionFrame = 0;
-		Pawn->SetView(FVector2f(-30.0f, -20.0f), 15.0f, 50.0f, 75.0f);
+		Pawn->SetView(MotionA, MotionView.X, MotionView.Y, MotionView.Z);
 		Wait = 1.0;
 		return;
 	}
 	if (MotionFrame < MotionFrames)
 	{
 		const float T = float(MotionFrame) / (MotionFrames - 1);
-		Pawn->SetView(FVector2f(-30.0f + 45.0f * T, -20.0f + 10.0f * T), 15.0f, 50.0f, 75.0f);
+		Pawn->SetView(MotionA + (MotionB - MotionA) * T, MotionView.X, MotionView.Y, MotionView.Z);
 		const FString File = FPaths::Combine(CaptureFolder, FString::Printf(TEXT("motion_%03d.png"), MotionFrame));
 		FScreenshotRequest::RequestScreenshot(File, false, false);
 		++MotionFrame;

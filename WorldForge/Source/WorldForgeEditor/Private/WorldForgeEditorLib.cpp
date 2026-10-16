@@ -14,6 +14,9 @@
 #include "Generation/WorldTrees.h"
 #include "Landscape.h"
 #include "LandscapeInfo.h"
+#include "LandscapeComponent.h"
+#include "MaterialShared.h"
+#include "Materials/MaterialInstance.h"
 #include "LandscapeLayerInfoObject.h"
 #include "LandscapeEditTypes.h"
 #include "LandscapeSubsystem.h"
@@ -66,6 +69,142 @@ namespace
 		return FWorldGenerator::Generate(S);
 	}
 	TOptional<FWorldGenSettings> GSettingsOverride;
+
+	/** O asset do caminho: o que já existe (carregado do disco se preciso) ou um novo. Só o FindObject não acha o
+	 *  que está no disco e não foi carregado, e o NewObject por cima dele dava "carga inválida" no bulk data da
+	 *  textura (o ensure do T_RoadDir_World_TestAsph2 e do T_Water_World_TestSalt2, 13/10). */
+	template <typename T>
+	T* LoadOrCreateAsset(const FString& AssetPath)
+	{
+		const FString Name = FPackageName::GetShortName(AssetPath);
+		if (FPackageName::DoesPackageExist(AssetPath))
+		{
+			if (T* Existing = LoadObject<T>(nullptr, *(AssetPath + TEXT(".") + Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				return Existing;
+			}
+		}
+		UPackage* Package = CreatePackage(*AssetPath);
+		T* Obj = FindObject<T>(Package, *Name);
+		if (!Obj)
+		{
+			Obj = NewObject<T>(Package, *Name, RF_Public | RF_Standalone | RF_Transactional);
+			FAssetRegistryModule::AssetCreated(Obj);
+		}
+		return Obj;
+	}
+
+	/** As alturas e os pesos das camadas do Landscape (GD já montado), em 8 bits somando 255 (o resto vai pra
+	 *  camada base). */
+	void SliceHeightsAndWeights(int32 N, float QuadSizeM, int32 NumLayers, TArray<uint16>& Heights, TArray<TArray<uint8>>& Weights)
+	{
+		const FWorldMap& M = *GD.GMap;
+		Heights.SetNumUninitialized(N * N);
+		Weights.SetNum(NumLayers);
+		for (TArray<uint8>& L : Weights) L.SetNumUninitialized(N * N);
+		for (int32 Y = 0; Y < N; ++Y)
+		{
+			for (int32 X = 0; X < N; ++X)
+			{
+				const FVector2f P = GD.GCenter + FVector2f(X * QuadSizeM - GD.GHalf, Y * QuadSizeM - GD.GHalf);
+				const float H = GD.SliceHeight(M, P);
+				float W[6];
+				GD.DesertWeights(M, P, W);
+				if (GD.GSlab && NumLayers == 6 && W[5] > 0.0f)
+				{
+					// a laje (BuildRoadSlabs) é o asfalto; o chão debaixo e nos buracos dela é a areia. A estrada "colada no
+					// chão" (16/10) fica com o asfalto do chão
+					const FWorldDetail::FRoadHit Hr = GD.RoadAt(P);
+					if (Hr.Road == INDEX_NONE || GD.SlabOn(Hr)) W[5] = 0.0f;
+				}
+				// alturas: 32768 = 0 m; com escala Z de 100 cada unidade vale 1/128 m
+				// (LANDSCAPE_ZSCALE): ±256 m com precisão de ~8 mm
+				Heights[Y * N + X] = uint16(FMath::Clamp(FMath::RoundToInt(32768.0f + H * 128.0f), 0, 65535));
+				int32 Acc = 0;
+				for (int32 K = 1; K < NumLayers; ++K)
+				{
+					const int32 V = FMath::RoundToInt(W[K] * 255.0f);
+					Weights[K][Y * N + X] = uint8(V);
+					Acc += V;
+				}
+				Weights[0][Y * N + X] = uint8(FMath::Clamp(255 - Acc, 0, 255));
+			}
+		}
+	}
+
+	/** Por componente (os vértices da borda contam pros dois vizinhos): o peso máximo de cada camada. */
+	void ComponentLayerMax(int32 N, int32 Components, int32 QuadsPerComponent, const TArray<TArray<uint8>>& Weights, TArray<TArray<uint8>>& OutMax)
+	{
+		OutMax.SetNum(Components * Components);
+		for (int32 CY = 0; CY < Components; ++CY)
+		{
+			for (int32 CX = 0; CX < Components; ++CX)
+			{
+				TArray<uint8>& Mx = OutMax[CY * Components + CX];
+				Mx.Init(0, Weights.Num());
+				for (int32 K = 0; K < Weights.Num(); ++K)
+				{
+					for (int32 Y = CY * QuadsPerComponent; Y <= (CY + 1) * QuadsPerComponent; ++Y)
+					{
+						for (int32 X = CX * QuadsPerComponent; X <= (CX + 1) * QuadsPerComponent; ++X)
+						{
+							Mx[K] = FMath::Max(Mx[K], Weights[K][Y * N + X]);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/** A limpeza das camadas por componente (14/10, a otimização do chão: a Unreal só tira a camada do componente
+	 *  quando o peso é zero exato, LandscapeEdit.cpp Import, IsLayerAllZero; 1/255 já põe a camada inteira no
+	 *  shader daquele pedaço). Camada com peso máximo ≤ Cull (de 255) no componente sai dele, e o peso vai pra
+	 *  camada dominante de cada vértice (a soma continua 255). Devolve quantas alocações saíram. */
+	int32 CullComponentLayers(int32 N, int32 Components, int32 QuadsPerComponent, int32 Cull, TArray<TArray<uint8>>& Weights)
+	{
+		if (Cull <= 0)
+		{
+			return 0;
+		}
+		TArray<TArray<uint8>> Mx;
+		ComponentLayerMax(N, Components, QuadsPerComponent, Weights, Mx);
+		int32 Removed = 0;
+		for (int32 CY = 0; CY < Components; ++CY)
+		{
+			for (int32 CX = 0; CX < Components; ++CX)
+			{
+				for (int32 K = 0; K < Weights.Num(); ++K)
+				{
+					const uint8 V = Mx[CY * Components + CX][K];
+					if (V == 0 || V > Cull)
+					{
+						continue;
+					}
+					++Removed;
+					for (int32 Y = CY * QuadsPerComponent; Y <= (CY + 1) * QuadsPerComponent; ++Y)
+					{
+						for (int32 X = CX * QuadsPerComponent; X <= (CX + 1) * QuadsPerComponent; ++X)
+						{
+							const int32 I = Y * N + X;
+							const uint8 W = Weights[K][I];
+							if (W == 0)
+							{
+								continue;
+							}
+							int32 Best = -1;
+							for (int32 J = 0; J < Weights.Num(); ++J)
+							{
+								if (J != K && (Best < 0 || Weights[J][I] > Weights[Best][I])) Best = J;
+							}
+							Weights[K][I] = 0;
+							Weights[Best][I] = uint8(FMath::Min(255, Weights[Best][I] + W));
+						}
+					}
+				}
+			}
+		}
+		return Removed;
+	}
 }
 
 ALandscape* UWorldForgeEditorLib::BuildSliceLandscape(int32 Seed, int32 Players, int32 Biome, float MapSize, FVector2D CenterM,
@@ -106,34 +245,15 @@ ALandscape* UWorldForgeEditorLib::BuildSliceLandscape(int32 Seed, int32 Players,
 	GD.Edits = GEditsOverride;   // as edições à mão do app (apagados, pintura, altura); a altura entra no Setup
 	GD.Setup(MapOf(S), FVector2f(CenterM.X, CenterM.Y), 0.5f * (N - 1) * QuadSizeM, bPaved ? 0.5f * RoadWidthM : 3.0f, bPaved);
 	GD.BuildWeightCache(1.0f);   // o espalhamento sorteia pela grade de 1 m, como a vista ao vivo
-	const FWorldMap& M = *GD.GMap;
 
-	// alturas: 32768 = 0 m; com escala Z de 100 cada unidade vale 1/128 m
-	// (LANDSCAPE_ZSCALE): ±256 m com precisão de ~8 mm
 	TArray<uint16> Heights;
-	Heights.SetNumUninitialized(N * N);
 	TArray<TArray<uint8>> Weights;
-	Weights.SetNum(NumLayers);
-	for (TArray<uint8>& L : Weights) L.SetNumUninitialized(N * N);
-	for (int32 Y = 0; Y < N; ++Y)
+	SliceHeightsAndWeights(N, QuadSizeM, NumLayers, Heights, Weights);
+	const int32 Cull = FCString::Atoi(*FPlatformMisc::GetEnvironmentVariable(TEXT("LAYER_CULL")));
+	if (Cull > 0)
 	{
-		for (int32 X = 0; X < N; ++X)
-		{
-			const FVector2f P = GD.GCenter + FVector2f(X * QuadSizeM - GD.GHalf, Y * QuadSizeM - GD.GHalf);
-			const float H = GD.SliceHeight(M, P);
-			float W[6];
-			GD.DesertWeights(M, P, W);
-			Heights[Y * N + X] = uint16(FMath::Clamp(FMath::RoundToInt(32768.0f + H * 128.0f), 0, 65535));
-			// pesos em 8 bits somando 255 (o resto vai pra camada base)
-			int32 Acc = 0;
-			for (int32 K = 1; K < NumLayers; ++K)
-			{
-				const int32 V = FMath::RoundToInt(W[K] * 255.0f);
-				Weights[K][Y * N + X] = uint8(V);
-				Acc += V;
-			}
-			Weights[0][Y * N + X] = uint8(FMath::Clamp(255 - Acc, 0, 255));
-		}
+		const int32 Removed = CullComponentLayers(N, Components, QuadsPerComponent, Cull, Weights);
+		UE_LOG(LogTemp, Display, TEXT("FORGE layer cull <= %d/255: %d alocacoes fora"), Cull, Removed);
 	}
 
 	// o mesmo caminho do "New Landscape" do editor (LandscapeEditorDetailCustomization_NewLandscape.cpp)
@@ -462,6 +582,474 @@ void UWorldForgeEditorLib::SetLandscapeMaterial(ALandscape* Landscape, UMaterial
 	}
 }
 
+FString UWorldForgeEditorLib::SliceLayerStats(int32 Seed, int32 Players, int32 Biome, float MapSize, FVector2D CenterM,
+	int32 Components, int32 QuadsPerComponent, float QuadSizeM, int32 NumLayers, float RoadWidthM)
+{
+	FWorldGenSettings S;
+	S.Seed = Seed;
+	S.Players = Players;
+	S.Biome = EWorldBiome(FMath::Clamp(Biome, 0, 2));
+	S.MapSize = MapSize;
+	if (GSettingsOverride.IsSet())
+	{
+		S = GSettingsOverride.GetValue();
+	}
+	const int32 N = Components * QuadsPerComponent + 1;
+	const bool bPaved = NumLayers == 6 && RoadWidthM > 0.0f;
+	GD.Edits = GEditsOverride;
+	GD.Setup(MapOf(S), FVector2f(CenterM.X, CenterM.Y), 0.5f * (N - 1) * QuadSizeM, bPaved ? 0.5f * RoadWidthM : 3.0f, bPaved);
+	GD.BuildWeightCache(1.0f);
+	TArray<uint16> Heights;
+	TArray<TArray<uint8>> Weights;
+	SliceHeightsAndWeights(N, QuadSizeM, NumLayers, Heights, Weights);
+	TArray<TArray<uint8>> Mx;
+	ComponentLayerMax(N, Components, QuadsPerComponent, Weights, Mx);
+	const int32 NC = Components * Components;
+	FString Out = FString::Printf(TEXT("%d componentes, %d camadas"), NC, NumLayers);
+	// por camada: em quantos componentes entra (peso > 0) e quantos desses têm o máximo ≤ 1, 3, 8, 16 (de 255)
+	for (int32 K = 0; K < NumLayers; ++K)
+	{
+		int32 In = 0, T1 = 0, T3 = 0, T8 = 0, T16 = 0;
+		for (int32 C = 0; C < NC; ++C)
+		{
+			const uint8 V = Mx[C][K];
+			In += V > 0;
+			T1 += V > 0 && V <= 1;
+			T3 += V > 0 && V <= 3;
+			T8 += V > 0 && V <= 8;
+			T16 += V > 0 && V <= 16;
+		}
+		Out += FString::Printf(TEXT("\n  camada %d: em %d; max<=1 em %d, <=3 em %d, <=8 em %d, <=16 em %d"), K, In, T1, T3, T8, T16);
+	}
+	// camadas por componente com cada limite
+	for (int32 T : { 0, 1, 3, 8, 16 })
+	{
+		TArray<int32> Hist;
+		Hist.Init(0, NumLayers + 1);
+		int32 Total = 0;
+		for (int32 C = 0; C < NC; ++C)
+		{
+			int32 Cnt = 0;
+			for (int32 K = 0; K < NumLayers; ++K) Cnt += Mx[C][K] > T;
+			Hist[Cnt]++;
+			Total += Cnt;
+		}
+		Out += FString::Printf(TEXT("\n  limite %2d: media %.2f camadas por componente;"), T, float(Total) / NC);
+		for (int32 I = 1; I <= NumLayers; ++I) Out += FString::Printf(TEXT(" %d->%d"), I, Hist[I]);
+	}
+	return Out;
+}
+
+FString UWorldForgeEditorLib::MaterialHlsl(UMaterialInterface* Material)
+{
+	if (!Material)
+	{
+		return TEXT("sem material");
+	}
+	// (no commandlet sem placa o material não tem recurso: um recurso novo só pra tradução, sem compilar shader)
+	UMaterial* Base = Material->GetMaterial();
+	TUniquePtr<FMaterialResource> R = MakeUnique<FMaterialResource>();
+	R->SetMaterial(Base, Cast<UMaterialInstance>(Material), SP_PCD3D_SM6, EMaterialQualityLevel::High);
+	FString Out;
+	if (!R->GetMaterialExpressionSource(Out))
+	{
+		return TEXT("sem tradução");
+	}
+	return Out;
+}
+
+namespace
+{
+	// o _hash2 do look_ground (o sorteio por placa do Voronoi)
+	float SlabHash(FVector2f C, float K)
+	{
+		const float V = FMath::Sin(C.X * 127.1f + C.Y * 311.7f + K * 74.7f) * 43758.5453f;
+		return V - FMath::FloorToFloat(V);
+	}
+
+	/** O Voronoi das placas da borda (look_ground.voronoi): F1, F2, a célula e o centro dela. */
+	void SlabVoronoi(FVector2f P, float Size, float& F1, float& F2, FVector2f& Cell, FVector2f& O)
+	{
+		const FVector2f G = P / Size;
+		const FVector2f I(FMath::FloorToFloat(G.X), FMath::FloorToFloat(G.Y));
+		F1 = F2 = 9e9f;
+		for (int32 Dj = -1; Dj <= 1; ++Dj)
+		{
+			for (int32 Di = -1; Di <= 1; ++Di)
+			{
+				const FVector2f C = I + FVector2f(float(Di), float(Dj));
+				const FVector2f Q((C.X + SlabHash(C, 11.0f)) * Size, (C.Y + SlabHash(C, 12.0f)) * Size);
+				const float D = FVector2f::Distance(P, Q);
+				if (D < F1)
+				{
+					F2 = F1;
+					F1 = D;
+					Cell = C;
+					O = Q;
+				}
+				else
+				{
+					F2 = FMath::Min(F2, D);
+				}
+			}
+		}
+	}
+}
+
+FVector UWorldForgeEditorLib::SliceSlabAt(FVector2D PointCm)
+{
+	if (!GD.GMap.IsValid())
+	{
+		return FVector(-1.0, 0.0, 0.0);
+	}
+	const FVector2f P = GD.ToMap(PointCm);
+	const FWorldDetail::FSlabSample S = GD.SlabSample(*GD.GMap, P, GD.RoadAt(P));
+	return S.bPaved ? FVector(S.Wear, S.In, S.Drift) : FVector(-1.0, 0.0, 0.0);
+}
+
+FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const FString& AssetDir, const FString& MapName)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World || !GD.GMap.IsValid() || !GD.GSlab)
+	{
+		return TEXT("sem laje (ROAD_SLAB=1 e o deserto com asfalto)");
+	}
+	const FWorldMap& M = *GD.GMap;
+	// a grade: o passo fino de 6 cm (o kit do Look: 4–6 cm) só na faixa da beira onde há placa quebrada; 12 cm na beira
+	// limpa (só o contorno); o miolo em células de 48 cm (o Look, 14/10: "no miolo 25–50 cm basta, a coroa de 2,5 cm não
+	// aparece"). Ladrilhos de 64 células grossas (30,72 m)
+	constexpr float Fine = 0.06f;
+	constexpr int32 Sub = 8;                      // passos finos por célula grossa
+	constexpr float Coarse = Fine * Sub;          // 0,48 m
+	constexpr int32 TileCells = 64;
+	constexpr float TileM = Coarse * TileCells;   // 30,72 m
+
+	// os ladrilhos que as estradas de asfalto tocam
+	TSet<FIntPoint> Tiles;
+	for (const FWorldDetail::FRoad& R : GD.GRoads)
+	{
+		if (!R.bPaved || R.Style == 1)
+		{
+			continue;
+		}
+		const float Reach = R.MaxHalf() + 3.0f;
+		for (const FVector2f& Pt : R.P)
+		{
+			const int32 X0 = FMath::FloorToInt((Pt.X - Reach) / TileM), X1 = FMath::FloorToInt((Pt.X + Reach) / TileM);
+			const int32 Y0 = FMath::FloorToInt((Pt.Y - Reach) / TileM), Y1 = FMath::FloorToInt((Pt.Y + Reach) / TileM);
+			for (int32 Y = Y0; Y <= Y1; ++Y) for (int32 X = X0; X <= X1; ++X) Tiles.Add(FIntPoint(X, Y));
+		}
+	}
+
+	// o ponto da laje: a altura (m) e se é laje. Fora dela (borda, placa que falta, areia por cima) o vértice desce 6 cm
+	// por baixo do chão e o degrau sai como a saia da malha (a maquete: z = chão − 0,06)
+	struct FSlabVert { float Z = 0.0f; bool bOn = false; bool bNear = false; float Wear = 0.0f; float Sand = 0.0f; };
+	auto Eval = [&M](FVector2f P) -> FSlabVert
+	{
+		FSlabVert V;
+		const FWorldDetail::FRoadHit Hit = GD.RoadAt(P);
+		const FWorldDetail::FSlabSample S = GD.SlabSample(M, P, Hit);
+		const float Ground = GD.SliceHeight(M, P);
+		V.Z = Ground - 0.06f;
+		V.Wear = S.Wear;
+		if (!S.bPaved || S.In > 1.5f)
+		{
+			return V;
+		}
+		V.bNear = true;
+		if (S.A < 0.5f)
+		{
+			return V;
+		}
+		const float Dd = FMath::Max(-S.In, 0.0f);
+		float Top = Hit.Z + FWorldDetail::SlabThick + FWorldDetail::SlabCrown * FMath::SmoothStep(0.0f, 4.0f, Dd);
+		// o desgaste (look_ground.EDGE_TYPES): inteira = sem quebra; gasta = quebra em trechos de 5–15 m; destruída = a
+		// borda toda. Os números de cada tipo misturados pelo desgaste
+		const float TW = FMath::SmoothStep(0.30f, 0.40f, S.Wear), TR = FMath::SmoothStep(0.62f, 0.72f, S.Wear);
+		const float Patches = FMath::SmoothStep(-0.35f, -0.15f, WorldNoise::Fbm(P.X / 9.0f, P.Y / 9.0f, 951u, 3));
+		const float Break = TW * FMath::Lerp(Patches, 1.0f, TR);
+		const float Broken = FMath::Lerp(0.9f, 1.4f, TR), Miss = FMath::Lerp(0.2f, 0.38f, TR), DropP = FMath::Lerp(0.4f, 0.55f, TR);
+		const float Zone = (1.0f - FMath::SmoothStep(0.2f, Broken, Dd)) * Break;
+		if (Zone > 0.0f)
+		{
+			float F1, F2;
+			FVector2f Cell, O;
+			SlabVoronoi(P, 0.5f, F1, F2, Cell, O);
+			const float H1 = SlabHash(Cell, 1.0f), H2 = SlabHash(Cell, 2.0f), H3 = SlabHash(Cell, 3.0f), H4 = SlabHash(Cell, 4.0f);
+			if (H1 < Miss * Zone && Dd < 0.9f)
+			{
+				return V;   // a placa que falta: aparece a areia de baixo
+			}
+			if (H2 < DropP * Zone)
+			{
+				// afundou e inclinou (a fresta de 1,5–5 cm entre as placas fica fora da geometria: é menor que o pixel
+				// do jogo e tremia com o TSR, o Look 14/10)
+				const float Tilt = ((P.X - O.X) * FMath::Cos(H4 * 6.283f) + (P.Y - O.Y) * FMath::Sin(H4 * 6.283f)) * 0.08f;
+				Top -= 0.02f + 0.06f * H3 + Tilt * Zone;
+			}
+		}
+		// a areia por cima (16/10, a 1ª versão escondia a laje debaixo do chão onde o monte passava do topo, e o corte
+		// seguia os triângulos de 0,5 m do Landscape: a beira da areia saía em dentes): como na maquete do Look
+		// (look_ground.road_slab, sand_up), a laje sobe com a areia e o material pinta a areia (a cor do vértice R: 0 o
+		// asfalto, 1 a areia; a película começa 10 cm abaixo do topo)
+		// (16/10, a 1ª prova no jogo: com a altura do chão aqui, a laje inteira saía cor de areia, porque debaixo do miolo o
+		// chão sobe de propósito até 1,5 cm do topo, pro tanque. A areia que cobre é só o monte encostado)
+		const float SandTop = Hit.Z + S.Drift - FWorldDetail::SlabSandDrop;
+		V.Sand = FMath::Clamp((SandTop - (Top - 0.10f)) / 0.12f, 0.0f, 1.0f);
+		V.Z = FMath::Max(Top, SandTop + 0.015f);   // (1,5 cm: o Landscape interpolado não fura a laje no côncavo)
+		V.bOn = true;
+		return V;
+	};
+
+	int32 NumMeshes = 0, TotalTris = 0, TotalVerts = 0;
+	TArray<FIntPoint> TileList = Tiles.Array();
+	TileList.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.Y != B.Y ? A.Y < B.Y : A.X < B.X; });
+	for (const FIntPoint& T : TileList)
+	{
+		const FVector2f Origin(T.X * TileM, T.Y * TileM);
+		// os vértices finos por índice global (o mesmo ponto nos dois ladrilhos vizinhos sai igual)
+		TMap<FIntPoint, FSlabVert> Cache;
+		auto At = [&](FIntPoint G) -> const FSlabVert&
+		{
+			if (const FSlabVert* F = Cache.Find(G))
+			{
+				return *F;
+			}
+			return Cache.Add(G, Eval(FVector2f(G.X * Fine, G.Y * Fine)));
+		};
+		TArray<FVector3f> Pos;
+		TArray<float> SandV;
+		TMap<FIntPoint, int32> Index;
+		TArray<int32> Tri;
+		auto Vert = [&](FIntPoint G) -> int32
+		{
+			if (const int32* F = Index.Find(G))
+			{
+				return *F;
+			}
+			const FSlabVert& V = At(G);
+			Pos.Add(FVector3f((G.X * Fine - Origin.X) * 100.0f, (G.Y * Fine - Origin.Y) * 100.0f, V.Z * 100.0f));
+			SandV.Add(V.Sand);
+			return Index.Add(G, Pos.Num() - 1);
+		};
+		// uma célula (canto G00, lado em passos finos N): só se algum canto é laje
+		auto Cell = [&](FIntPoint G00, int32 N)
+		{
+			const FIntPoint G10 = G00 + FIntPoint(N, 0), G01 = G00 + FIntPoint(0, N), G11 = G00 + FIntPoint(N, N);
+			if (!(At(G00).bOn || At(G10).bOn || At(G01).bOn || At(G11).bOn))
+			{
+				return;
+			}
+			const int32 A = Vert(G11), B = Vert(G10), C = Vert(G00), D = Vert(G01);
+			// a face pra cima na ordem da Unreal (+x+y, +x−y, −x−y, −x+y, a mesma da água)
+			Tri.Append({ A, B, C, A, C, D });
+		};
+		const FIntPoint Base(FMath::RoundToInt(Origin.X / Fine), FMath::RoundToInt(Origin.Y / Fine));
+		for (int32 CY = 0; CY < TileCells; ++CY)
+		{
+			for (int32 CX = 0; CX < TileCells; ++CX)
+			{
+				const FIntPoint G00 = Base + FIntPoint(CX * Sub, CY * Sub);
+				const FSlabVert V00 = At(G00);   // (cópias: o At cresce o mapa e invalida referência)
+				const FSlabVert V10 = At(G00 + FIntPoint(Sub, 0));
+				const FSlabVert V01 = At(G00 + FIntPoint(0, Sub));
+				const FSlabVert V11 = At(G00 + FIntPoint(Sub, Sub));
+				if (!(V00.bNear || V10.bNear || V01.bNear || V11.bNear))
+				{
+					continue;
+				}
+				// o miolo: os quatro cantos na laje e longe da beira e das placas quebradas (uma célula grossa)
+				const FVector2f C0 = FVector2f(G00.X * Fine, G00.Y * Fine) + FVector2f(0.5f * Coarse, 0.5f * Coarse);
+				const FWorldDetail::FRoadHit Hc = GD.RoadAt(C0);
+				const FWorldDetail::FSlabSample Sc = GD.SlabSample(M, C0, Hc);
+				const float Band = FMath::SmoothStep(0.30f, 0.40f, Sc.Wear) > 0.0f ? 1.9f : 0.9f;   // a beira que pode quebrar
+				if (V00.bOn && V10.bOn && V01.bOn && V11.bOn && Sc.A > 0.95f && -Sc.In > Band + Coarse && Sc.Drift < 0.05f
+					&& V00.Sand + V10.Sand + V01.Sand + V11.Sand == 0.0f)
+				{
+					Cell(G00, Sub);
+					continue;
+				}
+				// a beira: 6 cm onde pode quebrar, 12 cm na beira limpa
+				const int32 Step = (FMath::Max(FMath::Max(V00.Wear, V10.Wear), FMath::Max(V01.Wear, V11.Wear)) > 0.3f) ? 1 : 2;
+				for (int32 J = 0; J < Sub; J += Step)
+				{
+					for (int32 I = 0; I < Sub; I += Step)
+					{
+						Cell(G00 + FIntPoint(I, J), Step);
+					}
+				}
+			}
+		}
+		if (Tri.Num() == 0)
+		{
+			continue;
+		}
+		// as normais pela malha (a média das faces, por área): a saia da beira sai de lado e o material escurece a quebra
+		TArray<FVector3f> Nrm;
+		Nrm.Init(FVector3f::ZeroVector, Pos.Num());
+		for (int32 K = 0; K < Tri.Num(); K += 3)
+		{
+			const FVector3f& PA = Pos[Tri[K]];
+			const FVector3f N = FVector3f::CrossProduct(Pos[Tri[K + 2]] - PA, Pos[Tri[K + 1]] - PA);
+			Nrm[Tri[K]] += N;
+			Nrm[Tri[K + 1]] += N;
+			Nrm[Tri[K + 2]] += N;
+		}
+		FMeshDescription Desc;
+		FStaticMeshAttributes Attr(Desc);
+		Attr.Register();
+		TVertexAttributesRef<FVector3f> VPos = Attr.GetVertexPositions();
+		TVertexInstanceAttributesRef<FVector3f> VNrm = Attr.GetVertexInstanceNormals();
+		TVertexInstanceAttributesRef<FVector3f> VTan = Attr.GetVertexInstanceTangents();
+		TVertexInstanceAttributesRef<float> VSgn = Attr.GetVertexInstanceBinormalSigns();
+		TVertexInstanceAttributesRef<FVector2f> VUv = Attr.GetVertexInstanceUVs();
+		TVertexInstanceAttributesRef<FVector4f> VCol = Attr.GetVertexInstanceColors();
+		const FPolygonGroupID Group = Desc.CreatePolygonGroup();
+		Attr.GetPolygonGroupMaterialSlotNames()[Group] = TEXT("Asphalt");
+		TArray<FVertexInstanceID> Inst;
+		Inst.Reserve(Pos.Num());
+		for (int32 K = 0; K < Pos.Num(); ++K)
+		{
+			const FVertexID V = Desc.CreateVertex();
+			VPos[V] = Pos[K];
+			const FVertexInstanceID VI = Desc.CreateVertexInstance(V);
+			FVector3f N = Nrm[K].GetSafeNormal();
+			if (N.Z < 0.0f) N = -N;   // (a ordem das faces: a laje olha pra cima)
+			VNrm[VI] = N.IsNearlyZero() ? FVector3f(0, 0, 1) : N;
+			// a tangente no +X do mundo (o UV é o XY do mundo em metros, como o Landscape): a normal das camadas do chão
+			// (espaço tangente do terreno) cai igual na laje
+			FVector3f Tx = FVector3f(1, 0, 0) - VNrm[VI] * VNrm[VI].X;
+			VTan[VI] = Tx.IsNearlyZero() ? FVector3f(0, 1, 0) : Tx.GetSafeNormal();
+			VSgn[VI] = 1.0f;
+			VUv[VI] = FVector2f(Origin.X + Pos[K].X / 100.0f, Origin.Y + Pos[K].Y / 100.0f);
+			VCol[VI] = FVector4f(SandV[K], 0.0f, 0.0f, 1.0f);   // R: a areia por cima (o material da laje mistura a areia do chão)
+			Inst.Add(VI);
+		}
+		for (int32 K = 0; K < Tri.Num(); K += 3)
+		{
+			const FVertexInstanceID Q[3] = { Inst[Tri[K]], Inst[Tri[K + 1]], Inst[Tri[K + 2]] };
+			Desc.CreatePolygon(Group, Q);
+		}
+		const FString Name = FString::Printf(TEXT("SM_RoadSlab_%s_%d"), *MapName, NumMeshes);
+		const FString AssetPath = AssetDir / Name;
+		UStaticMesh* Mesh = LoadOrCreateAsset<UStaticMesh>(AssetPath);
+		Mesh->Modify();
+		Mesh->SetNumSourceModels(1);
+		FStaticMeshSourceModel& Model = Mesh->GetSourceModel(0);
+		Model.BuildSettings.bRecomputeNormals = false;
+		Model.BuildSettings.bRecomputeTangents = false;
+		Model.BuildSettings.bGenerateLightmapUVs = false;
+		TArray<FStaticMaterial> Materials;
+		Materials.Emplace(Material, FName(TEXT("Asphalt")), FName(TEXT("Asphalt")));
+		Mesh->SetStaticMaterials(Materials);
+		Mesh->GetSectionInfoMap().Clear();
+		Mesh->GetSectionInfoMap().Set(0, 0, FMeshSectionInfo(0));
+		Mesh->CreateMeshDescription(0, MoveTemp(Desc));
+		Mesh->CommitMeshDescription(0);
+		FMeshNaniteSettings Nanite = Mesh->GetNaniteSettings();
+		Nanite.bEnabled = true;
+		Mesh->SetNaniteSettings(Nanite);
+		Mesh->Build(true);
+		Mesh->PostEditChange();
+		Mesh->MarkPackageDirty();
+
+		AStaticMeshActor* Actor = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), FTransform(FVector(Origin.X * 100.0, Origin.Y * 100.0, 0.0)));
+		if (Actor)
+		{
+			Actor->SetActorLabel(FString::Printf(TEXT("RoadSlab_%d"), NumMeshes));
+			Actor->SetFolderPath(TEXT("RoadSlab"));
+			UStaticMeshComponent* Comp = Actor->GetStaticMeshComponent();
+			Comp->SetMobility(EComponentMobility::Static);
+			Comp->SetStaticMesh(Mesh);
+			Comp->SetMaterial(0, Material);
+			Comp->SetCastShadow(true);
+			Comp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			// (14/10, a 1ª foto: o asfalto da laje saiu liso, sem as rachaduras. O material lê as texturas pela posição
+			// no mundo e o streaming estima o mip pelo UV da malha; na laje ele pedia mips baixos. As mesmas texturas do
+			// chão, inteiras)
+			Comp->bForceMipStreaming = true;
+			// o jogo acha as lajes pela etiqueta (os parâmetros da memória do chão vão também nelas)
+			Actor->Tags.Add(FName(TEXT("WorldForgeRoadSlab")));
+		}
+		++NumMeshes;
+		TotalTris += Tri.Num() / 3;
+		TotalVerts += Pos.Num();
+	}
+	const FString Out = FString::Printf(TEXT("%d ladrilhos, %d vértices, %d triângulos"), NumMeshes, TotalVerts, TotalTris);
+	UE_LOG(LogTemp, Display, TEXT("FORGE road slab %s"), *Out);
+	return Out;
+}
+
+FString UWorldForgeEditorLib::LandscapeLayerReport(ALandscape* Landscape)
+{
+	ULandscapeInfo* Info = Landscape ? Landscape->GetLandscapeInfo() : nullptr;
+	if (!Info)
+	{
+		return TEXT("sem Landscape");
+	}
+	// por camada: componentes onde está alocada, e quantos desses têm o peso máximo ≤ 0, ≤ 3 e ≤ 8 (de 255)
+	struct FStat { int32 Alloc = 0, Max0 = 0, Max3 = 0, Max8 = 0; };
+	TMap<FName, FStat> PerLayer;
+	TMap<int32, int32> CountHist, CountHist3;   // componentes por nº de camadas (todas / só as com peso > 3)
+	int32 NumComp = 0;
+	// o FColor da fonte é BGRA: o canal R do alocador mora no byte 2
+	static const int32 ChannelOffset[4] = { 2, 1, 0, 3 };
+	for (const TPair<FIntPoint, ULandscapeComponent*>& It : Info->XYtoComponentMap)
+	{
+		ULandscapeComponent* C = It.Value;
+		if (!C)
+		{
+			continue;
+		}
+		++NumComp;
+		const TArray<FWeightmapLayerAllocationInfo>& Alloc = C->GetWeightmapLayerAllocations();
+		const TArray<UTexture2D*>& Tex = C->GetWeightmapTextures();
+		int32 Real = 0;
+		for (const FWeightmapLayerAllocationInfo& A : Alloc)
+		{
+			const FName Name = A.LayerInfo ? A.LayerInfo->GetLayerName() : FName(TEXT("?"));
+			FStat& S = PerLayer.FindOrAdd(Name);
+			++S.Alloc;
+			int32 MaxW = 255;
+			if (Tex.IsValidIndex(A.WeightmapTextureIndex) && Tex[A.WeightmapTextureIndex] && A.WeightmapTextureChannel < 4)
+			{
+				FTextureSource& Src = Tex[A.WeightmapTextureIndex]->Source;
+				const int64 Pixels = int64(Src.GetSizeX()) * Src.GetSizeY();
+				const uint8* Data = Src.LockMipReadOnly(0);
+				if (Data && Pixels > 0)
+				{
+					MaxW = 0;
+					const uint8* P = Data + ChannelOffset[A.WeightmapTextureChannel];
+					for (int64 I = 0; I < Pixels; ++I)
+					{
+						MaxW = FMath::Max<int32>(MaxW, P[I * 4]);
+					}
+				}
+				Src.UnlockMip(0);
+			}
+			S.Max0 += MaxW == 0;
+			S.Max3 += MaxW <= 3;
+			S.Max8 += MaxW <= 8;
+			Real += MaxW > 3;
+		}
+		CountHist.FindOrAdd(Alloc.Num())++;
+		CountHist3.FindOrAdd(Real)++;
+	}
+	FString Out = FString::Printf(TEXT("%d componentes"), NumComp);
+	for (const TPair<FName, FStat>& It : PerLayer)
+	{
+		Out += FString::Printf(TEXT("\n  %s: alocada em %d; peso max 0 em %d, <=3 em %d, <=8 em %d"), *It.Key.ToString(),
+			It.Value.Alloc, It.Value.Max0, It.Value.Max3, It.Value.Max8);
+	}
+	CountHist.KeySort(TLess<int32>());
+	CountHist3.KeySort(TLess<int32>());
+	Out += TEXT("\n  camadas por componente (alocadas):");
+	for (const TPair<int32, int32>& It : CountHist) Out += FString::Printf(TEXT(" %d->%d"), It.Key, It.Value);
+	Out += TEXT("\n  camadas por componente (peso > 3):");
+	for (const TPair<int32, int32>& It : CountHist3) Out += FString::Printf(TEXT(" %d->%d"), It.Key, It.Value);
+	return Out;
+}
+
 UTexture2D* UWorldForgeEditorLib::MakeWaterInfoTexture(const FString& AssetPath, float SizeM)
 {
 	// sem mapa gerado (ou sem água): 16×16 de "terra longe d'água". Serve de
@@ -472,13 +1060,7 @@ UTexture2D* UWorldForgeEditorLib::MakeWaterInfoTexture(const FString& AssetPath,
 	if (!GD.GMap.IsValid())
 	{
 		const FString Name = FPackageName::GetShortName(AssetPath);
-		UPackage* Package = CreatePackage(*AssetPath);
-		UTexture2D* Tex = FindObject<UTexture2D>(Package, *Name);
-		if (!Tex)
-		{
-			Tex = NewObject<UTexture2D>(Package, *Name, RF_Public | RF_Standalone);
-			FAssetRegistryModule::AssetCreated(Tex);
-		}
+		UTexture2D* Tex = LoadOrCreateAsset<UTexture2D>(AssetPath);
 		TArray<FColor> Dry;
 		Dry.Init(FColor(0, 0, 0, 128), 16 * 16);   // A = 128: tom neutro
 		Tex->Modify();
@@ -494,13 +1076,7 @@ UTexture2D* UWorldForgeEditorLib::MakeWaterInfoTexture(const FString& AssetPath,
 	int32 R = 0;
 	GD.WaterInfoPixels(SizeM, Pixels, R);
 	const FString Name = FPackageName::GetShortName(AssetPath);
-	UPackage* Package = CreatePackage(*AssetPath);
-	UTexture2D* Tex = FindObject<UTexture2D>(Package, *Name);
-	if (!Tex)
-	{
-		Tex = NewObject<UTexture2D>(Package, *Name, RF_Public | RF_Standalone);
-		FAssetRegistryModule::AssetCreated(Tex);
-	}
+	UTexture2D* Tex = LoadOrCreateAsset<UTexture2D>(AssetPath);
 	Tex->Modify();
 	Tex->Source.Init(R, R, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
 	Tex->SRGB = false;
@@ -641,8 +1217,12 @@ bool UWorldForgeEditorLib::AddInstances(AActor* Actor, UStaticMesh* Mesh, const 
 		C->SetCastShadow(bCastShadow);
 		// a sombra guardada mesmo com o vento (14/10, a otimização: o WPO da planta invalidava as páginas da sombra
 		// virtual todo quadro; Rigid = só o transform invalida, como o Fortnite faz nos prédios). Pedra e paredão não
-		// mexem, então não muda nada pra eles; a palmeira e a moita balançam e a sombra fica parada (a 77–157 m não se vê)
-		C->ShadowCacheInvalidationBehavior = EShadowCacheInvalidationBehavior::Rigid;
+		// mexem, então não muda nada pra eles; a palmeira e a moita balançam e a sombra fica parada (a 77–157 m não se vê).
+		// Só com SHADOW_RIGID=1 até o A/B na luz do jogo (a v2 congelada não muda)
+		if (FPlatformMisc::GetEnvironmentVariable(TEXT("SHADOW_RIGID")) == TEXT("1"))
+		{
+			C->ShadowCacheInvalidationBehavior = EShadowCacheInvalidationBehavior::Rigid;
+		}
 		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		if (CullDistanceM > 0.0f)
 		{
@@ -738,13 +1318,7 @@ UTexture2D* UWorldForgeEditorLib::MakeRoadDirTexture(const FString& AssetPath, f
 		Pixels.Init(FColor(128, 0, 0, 255), 16 * 16);
 	}
 	const FString Name = FPackageName::GetShortName(AssetPath);
-	UPackage* Package = CreatePackage(*AssetPath);
-	UTexture2D* Tex = FindObject<UTexture2D>(Package, *Name);
-	if (!Tex)
-	{
-		Tex = NewObject<UTexture2D>(Package, *Name, RF_Public | RF_Standalone);
-		FAssetRegistryModule::AssetCreated(Tex);
-	}
+	UTexture2D* Tex = LoadOrCreateAsset<UTexture2D>(AssetPath);
 	Tex->Modify();
 	Tex->Source.Init(R, R, 1, 1, TSF_BGRA8, reinterpret_cast<const uint8*>(Pixels.GetData()));
 	Tex->SRGB = false;
@@ -756,6 +1330,90 @@ UTexture2D* UWorldForgeEditorLib::MakeRoadDirTexture(const FString& AssetPath, f
 	Tex->PostEditChange();
 	Tex->MarkPackageDirty();
 	UE_LOG(LogTemp, Display, TEXT("FORGE road dir texture %s: %dx%d, %.0f m"), *Name, R, R, SizeM);
+	return Tex;
+}
+
+FString UWorldForgeEditorLib::SliceDuneStats()
+{
+	if (!GD.GMap.IsValid() || !GD.GDunes)
+	{
+		return TEXT("sem dunas (DUNE_POCKETS=1)");
+	}
+	const FWorldMap& M = *GD.GMap;
+	// a inclinação nas dunas a cada 0,5 m (a malha do Landscape), pela altura final do chão (SliceHeight)
+	int32 N = 0, Over34 = 0, Over31 = 0, Face = 0, Wind = 0, Max5 = 0, SteepCut = 0, SteepJoin = 0, SteepOwn = 0;
+	float MaxDeg = 0.0f;
+	TArray<int32> Hist;
+	Hist.Init(0, 46);
+	const float Half = M.Half();
+	// (16/10 à tarde: as dunas agora encostam; por duna contava o ponto duas vezes) cada célula de 32 m da grade das dunas
+	// uma vez só, a 0,5 m
+	for (const TPair<FIntPoint, TArray<int32>>& Cell : GD.GDuneGrid)
+	{
+		for (float Y = Cell.Key.Y * 32.0f + 0.25f; Y < (Cell.Key.Y + 1) * 32.0f; Y += 0.5f)
+		{
+			for (float X = Cell.Key.X * 32.0f + 0.25f; X < (Cell.Key.X + 1) * 32.0f; X += 0.5f)
+			{
+				const FVector2f P(X, Y);
+				if (FMath::Abs(X) > Half || FMath::Abs(Y) > Half || GD.DuneAt(M, P) < 0.05f) continue;
+				const float Gx = (GD.SliceHeight(M, P + FVector2f(0.5f, 0.0f)) - GD.SliceHeight(M, P - FVector2f(0.5f, 0.0f))) / 1.0f;
+				const float Gy = (GD.SliceHeight(M, P + FVector2f(0.0f, 0.5f)) - GD.SliceHeight(M, P - FVector2f(0.0f, 0.5f))) / 1.0f;
+				const float Deg = FMath::RadiansToDegrees(FMath::Atan(FMath::Sqrt(Gx * Gx + Gy * Gy)));
+				++N;
+				MaxDeg = FMath::Max(MaxDeg, Deg);
+				Over34 += Deg > 34.0f;
+				if (Deg > 34.0f)
+				{
+					// de onde vem o íngreme: o corte da borda (DuneAllowed < 1), duas dunas juntas, ou a duna sozinha
+					int32 NHit = 0;
+					GD.DuneRaw(M, P, &NHit);
+					const float Al = GD.DuneAllowed(M, P);
+					(Al < 0.98f ? SteepCut : (NHit >= 2 ? SteepJoin : SteepOwn))++;
+					if (Al >= 0.98f && NHit < 2 && SteepOwn <= 12)
+					{
+						UE_LOG(LogTemp, Display, TEXT("FORGE steep %.1f graus em %.1f %.1f: z %.2f"), Deg, P.X, P.Y, GD.DuneAt(M, P));
+					}
+				}
+				Over31 += Deg > 31.5f;
+				Face += Deg > 25.0f;
+				Wind += Deg > 5.0f && Deg <= 16.0f;
+				Max5 += Deg <= 5.0f;
+				Hist[FMath::Clamp(FMath::FloorToInt(Deg), 0, 45)]++;
+			}
+		}
+	}
+	FString Out = FString::Printf(TEXT("%d dunas, %d pontos (%.0f m2): max %.1f graus; >34: %.2f%%, >31,5: %.2f%%, face (>25): %.1f%%, barlavento (5-16): %.1f%%, plano (<=5): %.1f%%; hist"),
+		GD.GDuneInst.Num(), N, 0.25f * N, MaxDeg, 100.0f * Over34 / FMath::Max(N, 1), 100.0f * Over31 / FMath::Max(N, 1), 100.0f * Face / FMath::Max(N, 1),
+		100.0f * Wind / FMath::Max(N, 1), 100.0f * Max5 / FMath::Max(N, 1));
+	for (int32 K = 0; K < 46; K += 3) Out += FString::Printf(TEXT(" %d:%d"), K, Hist[K] + (K + 1 < 46 ? Hist[K + 1] : 0) + (K + 2 < 46 ? Hist[K + 2] : 0));
+	Out += FString::Printf(TEXT("; >34 por causa: borda %d, juntas %d, sozinha %d"), SteepCut, SteepJoin, SteepOwn);
+	return Out;
+}
+
+UTexture2D* UWorldForgeEditorLib::MakeRoadFrameTexture(const FString& AssetPath, float SizeM)
+{
+	TArray<FFloat16Color> Pixels;
+	int32 R = 16;
+	if (GD.GMap.IsValid())
+	{
+		GD.RoadFramePixels(SizeM, Pixels, R);
+	}
+	else
+	{
+		Pixels.Init(FFloat16Color(FLinearColor(0.0f, 0.0f, 0.0f, 1.0f)), 16 * 16);
+	}
+	UTexture2D* Tex = LoadOrCreateAsset<UTexture2D>(AssetPath);
+	Tex->Modify();
+	Tex->Source.Init(R, R, 1, 1, TSF_RGBA16F, reinterpret_cast<const uint8*>(Pixels.GetData()));
+	Tex->SRGB = false;
+	Tex->CompressionSettings = TC_HDR;
+	Tex->MipGenSettings = TMGS_NoMipmaps;
+	Tex->AddressX = TA_Clamp;
+	Tex->AddressY = TA_Clamp;
+	Tex->Filter = TF_Bilinear;
+	Tex->PostEditChange();
+	Tex->MarkPackageDirty();
+	UE_LOG(LogTemp, Display, TEXT("FORGE road frame texture %s: %dx%d RGBA16F, %.0f m"), *FPackageName::GetShortName(AssetPath), R, R, SizeM);
 	return Tex;
 }
 
@@ -890,13 +1548,7 @@ FString UWorldForgeEditorLib::MakeWaterExports(const FString& OutDir, const FStr
 	if (!TextureAssetPath.IsEmpty())
 	{
 		const FString Name = FPackageName::GetShortName(TextureAssetPath);
-		UPackage* Package = CreatePackage(*TextureAssetPath);
-		UTexture2D* Tex = FindObject<UTexture2D>(Package, *Name);
-		if (!Tex)
-		{
-			Tex = NewObject<UTexture2D>(Package, *Name, RF_Public | RF_Standalone);
-			FAssetRegistryModule::AssetCreated(Tex);
-		}
+		UTexture2D* Tex = LoadOrCreateAsset<UTexture2D>(TextureAssetPath);
 		Tex->Modify();
 		Tex->Source.Init(R, R, 1, 1, TSF_RGBA16F, reinterpret_cast<const uint8*>(Field.GetData()));
 		Tex->SRGB = false;
@@ -1007,13 +1659,7 @@ TArray<FString> UWorldForgeEditorLib::SpawnWaterBodies(UMaterialInterface* Mater
 
 		const FString Name = FString::Printf(TEXT("SM_Water_%s_%d"), *MapName, B.Id);
 		const FString AssetPath = AssetDir / Name;
-		UPackage* Package = CreatePackage(*AssetPath);
-		UStaticMesh* Mesh = FindObject<UStaticMesh>(Package, *Name);
-		if (!Mesh)
-		{
-			Mesh = NewObject<UStaticMesh>(Package, *Name, RF_Public | RF_Standalone | RF_Transactional);
-			FAssetRegistryModule::AssetCreated(Mesh);
-		}
+		UStaticMesh* Mesh = LoadOrCreateAsset<UStaticMesh>(AssetPath);
 		Mesh->Modify();
 		Mesh->SetNumSourceModels(1);
 		FStaticMeshSourceModel& Model = Mesh->GetSourceModel(0);
@@ -1260,13 +1906,7 @@ UStaticMesh* UWorldForgeEditorLib::VegetationToStaticMesh(USkeletalMesh* Source,
 
 	// a malha estática nova (ou a de antes, refeita)
 	const FString Name = FPackageName::GetShortName(AssetPath);
-	UPackage* Package = CreatePackage(*AssetPath);
-	UStaticMesh* Out = FindObject<UStaticMesh>(Package, *Name);
-	if (!Out)
-	{
-		Out = NewObject<UStaticMesh>(Package, *Name, RF_Public | RF_Standalone | RF_Transactional);
-		FAssetRegistryModule::AssetCreated(Out);
-	}
+	UStaticMesh* Out = LoadOrCreateAsset<UStaticMesh>(AssetPath);
 	Out->Modify();
 	Out->SetNumSourceModels(1);
 	FStaticMeshSourceModel& Model = Out->GetSourceModel(0);

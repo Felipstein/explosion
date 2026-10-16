@@ -7,7 +7,7 @@
 /**
  * Os controles da vila no JSON dos controles (o app, a lista de mapas, o
  * "qualidade real" e o editor leem e gravam pelo mesmo par de funções):
- *   "villages": 0|1, "keepout": [[x, y, raio], ...] (m)
+ *   "villages": 0|1, "keepout": [[x, y, raio], ...] (m), "sand": 1|2|3 (a areia do acabamento)
  */
 namespace WorldSettingsJson
 {
@@ -15,6 +15,7 @@ namespace WorldSettingsJson
 	{
 		J.SetNumberField(TEXT("villages"), S.Villages);
 		J.SetNumberField(TEXT("relief_type"), S.ReliefType);
+		J.SetNumberField(TEXT("sand"), S.Sand);
 		if (S.KeepOut.Num())
 		{
 			TArray<TSharedPtr<FJsonValue>> List;
@@ -31,6 +32,7 @@ namespace WorldSettingsJson
 	{
 		S.Villages = J.HasField(TEXT("villages")) ? int32(J.GetNumberField(TEXT("villages"))) : 0;
 		S.ReliefType = J.HasField(TEXT("relief_type")) ? int32(J.GetNumberField(TEXT("relief_type"))) : 0;
+		S.Sand = J.HasField(TEXT("sand")) ? FMath::Clamp(int32(J.GetNumberField(TEXT("sand"))), 1, 3) : 3;
 		S.KeepOut.Reset();
 		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
 		if (J.TryGetArrayField(TEXT("keepout"), List))
@@ -47,6 +49,7 @@ namespace WorldSettingsJson
 	inline FString VillageKey(const FWorldGenSettings& S)
 	{
 		FString K = FString::Printf(TEXT("v%d r%d"), S.Villages, S.ReliefType);
+		if (S.Sand != 3) K += FString::Printf(TEXT(" s%d"), S.Sand);   // (a de duna, o padrão, não muda a chave dos mapas de antes)
 		for (const FVector3f& P : S.KeepOut) K += FString::Printf(TEXT(";%.1f,%.1f,%.1f"), P.X, P.Y, P.Z);
 		return K;
 	}

@@ -224,6 +224,10 @@ def texture(path, folder, kind):
     elif kind == 'masks':
         tex.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS)
         tex.set_editor_property('srgb', False)
+    elif kind == 'gray':
+        # (16/10, a luz assada da ondulação do Look: um canal linear de 16 bits; o G8 guarda 1/255, o BC1 dava degrau de 3%)
+        tex.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_GRAYSCALE)
+        tex.set_editor_property('srgb', False)
     eal.save_loaded_asset(tex)
     _TEX[key] = tex
     return tex
@@ -253,6 +257,18 @@ def surface(aid):
 
 
 # ---- materiais ----------------------------------------------------------------
+
+def shared_material(name, folder=None):
+    """(16/10) O material que não depende do mapa (a faixa pintada, a rocha dos monólitos, as palmeiras, a água do
+    bioma, o chão da vista ao vivo): se já existe, é reusado. Apagar e recriar a cada montagem falhava com qualquer
+    Unreal usando o material (a vista do WorldForge, ou o jogo, que linka a Slice): o arquivo preso não sai e o
+    create_asset volta None (a montagem do World_TestSandV2Dune, 16/10 02:20). SHARED_REBUILD=1 refaz todos (quando
+    o código de um deles mudar)."""
+    path = (folder or DEST + '/Materials') + '/' + name
+    if os.environ.get('SHARED_REBUILD', '0') != '1' and eal.does_asset_exist(path):
+        return unreal.load_asset(path)
+    return None
+
 
 class Graph:
     def __init__(self, name, folder=DEST + '/Materials'):
@@ -339,6 +355,73 @@ F1 = unreal.CustomMaterialOutputType.CMOT_FLOAT1
 F2 = unreal.CustomMaterialOutputType.CMOT_FLOAT2
 F3 = unreal.CustomMaterialOutputType.CMOT_FLOAT3
 F4 = unreal.CustomMaterialOutputType.CMOT_FLOAT4
+
+
+# A pedra com desvio dinâmico (14/10, a otimização do chão, ROCK_BRANCH=1): a mesma conta da WorldAlignedTexture e
+# da WorldAlignedNormal da 5.8 (copiada do HLSL que a Unreal gera delas, UWorldForgeEditorLib::MaterialHlsl), num nó
+# só e com dois cortes que não mudam o pixel:
+# - Gate = 0: a pedra não pode aparecer ali (peso 0 e outra camada dominante, ≥ 0,53; a mistura por altura dá à pedra
+#   0,0001 contra ≥ 0,06 da dominante: menos de meio nível de 8 bits). Nada é amostrado.
+# - as projeções de lado com peso zero (a WorldAlignedTexture amostra as três e mistura por saturate(3·|N|−1): no chão
+#   com menos de ~48° de inclinação as duas de lado entram com zero).
+# Dentro do desvio as derivadas vêm de fora (SampleGrad): o ddx/ddy dentro de um "if" que varia por pixel é indefinido.
+ROCK_BRANCH_HLSL = r"""
+#define SS(T) GetMaterialSharedSampler(T##Sampler, View.MaterialTextureBilinearWrapedSampler)
+#define RB_SG(T, UV, D) T.SampleGrad(SS(T), UV, D.xy, D.zw)
+#define RB_ID(x) (x)
+#define RB_TRI(OUT, T, PROC, A, B, C, GA, GB, GC) { OUT = 0; if (wz < 1.0) { OUT = PROC(RB_SG(T, A, GA)).rgb; if (wx > 0.0) OUT = lerp(OUT, PROC(RB_SG(T, B, GB)).rgb, wx); } if (wz > 0.0) OUT = lerp(OUT, PROC(RB_SG(T, C, GC)).rgb, wz); }
+FWSVector3 wp = GetWorldPosition_NoMaterialOffsets(Parameters);
+FWSVector3 p1 = WSDivide(wp, MaterialFloat3(-S1, -S1, -S1));
+FWSVector3 p2 = WSDivide(wp, MaterialFloat3(-S2, -S2, -S2));
+float2 a1 = WSApplyAddressMode(MakeWSVector(WSGetX(p1), WSGetZ(p1)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float2 b1 = WSApplyAddressMode(MakeWSVector(WSGetY(p1), WSGetZ(p1)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float2 c1 = WSApplyAddressMode(MakeWSVector(WSGetX(p1), WSGetY(p1)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float2 a2 = WSApplyAddressMode(MakeWSVector(WSGetX(p2), WSGetZ(p2)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float2 b2 = WSApplyAddressMode(MakeWSVector(WSGetY(p2), WSGetZ(p2)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float2 c2 = WSApplyAddressMode(MakeWSVector(WSGetX(p2), WSGetY(p2)), LWCADDRESSMODE_WRAP, LWCADDRESSMODE_WRAP);
+float4 ga1 = float4(ddx(a1), ddy(a1)), gb1 = float4(ddx(b1), ddy(b1)), gc1 = float4(ddx(c1), ddy(c1));
+float4 ga2 = float4(ddx(a2), ddy(a2)), gb2 = float4(ddx(b2), ddy(b2)), gc2 = float4(ddx(c2), ddy(c2));
+float3 Np = Parameters.TangentToWorld[2];
+float wx = saturate(lerp((0.0 - 1.0), (1.0 + 1.0), abs(Np.r)));
+float wz = saturate(lerp((0.0 - 1.0), (1.0 + 1.0), abs(Np.b)));
+Nout = 0; Rough = 0; AO = 0; H = 0;
+float3 col = 0;
+[branch] if (Gate > 0.5)
+{
+    float3 d1, d2, m, h;
+    RB_TRI(d1, Diff, ProcessMaterialColorTextureLookup, a1, b1, c1, ga1, gb1, gc1)
+    RB_TRI(d2, Diff, ProcessMaterialColorTextureLookup, a2, b2, c2, ga2, gb2, gc2)
+    RB_TRI(m, Arm, RB_ID, a1, b1, c1, ga1, gb1, gc1)
+    RB_TRI(h, Disp, RB_ID, a1, b1, c1, ga1, gb1, gc1)
+    col = lerp(d1, d2, 0.5);
+    Rough = m.g;
+    AO = m.r;
+    H = h.r;
+    // a WorldAlignedNormal, conta por conta
+    float3 N1 = normalize(Np);
+    float3 T1 = cross(N1, normalize(float3(0.0, 0.0, 1.0)));
+    float q = dot(T1, T1);
+    float3 t1 = select((abs(q - 0.000001) > 0.00001), select((q >= 0.000001), float4(normalize(T1), 0.0), float4(0, 0, 0, 1.0)), float4(0, 0, 0, 1.0)).rgb;
+    float3 B1 = cross(T1, N1);
+    q = dot(B1, B1);
+    float3 bb1 = select((abs(q - 0.000001) > 0.00001), select((q >= 0.000001), float4(normalize(B1), 0.0), float4(0, 0, 0, 1.0)), float4(0, 0, 0, 1.0)).rgb;
+    float3 nA = UnpackNormalMap(RB_SG(Nor, a1, ga1)).rgb * float3(float2(select((dot(Np, float3(0.0, 1.0, 0.0)) >= 0.0), -1.0, 1.0), -1.0), 1.0);
+    float3 nB = UnpackNormalMap(RB_SG(Nor, b1, gb1)).rgb * float3(float2(select((dot(Np, float3(1.0, 0.0, 0.0)) >= 0.0), 1.0, -1.0), -1.0), 1.0);
+    float3 W27 = mul(float3(0.0, 0.0, 1.0), Parameters.TangentToWorld);
+    float3 mm = lerp(nA, nB, saturate(lerp((0.0 - 0.0), (0.0 + 1.0), abs(W27.r))).r);
+    float3 side = ((t1 * ((float3)mm.r)) + (bb1 * ((float3)mm.g))) + ((N1 * ((float3)mm.b)) + float3(0.0, 0.0, 0.0));
+    float3 T2 = cross(N1, normalize(float3(0.0, 1.0, 0.0)));
+    q = dot(T2, T2);
+    float3 t2 = select((abs(q - 0.000001) > 0.00001), select((q >= 0.000001), float4(normalize(T2), 0.0), float4(0, 0, 0, 1.0)), float4(0, 0, 0, 1.0)).rgb;
+    float3 B2 = cross(T2, N1);
+    q = dot(B2, B2);
+    float3 bb2 = select((abs(q - 0.000001) > 0.00001), select((q >= 0.000001), float4(normalize(B2), 0.0), float4(0, 0, 0, 1.0)), float4(0, 0, 0, 1.0)).rgb;
+    float3 nC = UnpackNormalMap(RB_SG(Nor, c1, gc1)).rgb * float3(float2(select((dot(Np, float3(0.0, 0.0, 1.0)) >= 0.0), 1.0, -1.0), -1.0), 1.0);
+    float3 top = ((t2 * ((float3)nC.r)) + (bb2 * ((float3)nC.g))) + ((N1 * ((float3)nC.b)) + float3(0.0, 0.0, 0.0));
+    Nout = mul((float3x3)(Parameters.TangentToWorld), lerp(side, top, saturate(lerp((0.0 - 0.0), (0.0 + 1.0), abs(W27.b))).r));
+}
+return col;
+"""
 
 
 # A areia v1 do Look (Game/Tools/look_materials/sand_desert_v1_ground.hlsl, a parte da areia com
@@ -603,7 +686,47 @@ def look_ground_memory_code():
     return unicodedata.normalize('NFKD', code.replace('°', ' graus').replace('×', 'x').replace('·', '*')).encode('ascii', 'ignore').decode('ascii')
 
 
-def ground_material(name, S, specs, cracks, biome='desert', live=False):
+def look_paint_v2_code():
+    """O PAINT_V2_CODE do Game/Tools/look_asphalt.py (a faixa pintada v2 do Look, 16/10: RECEITAS §7), lido sem rodar o
+    arquivo; só ASCII. None se não estiver lá. Vai na laje (BuildRoadSlabs) com a posição na pista do T_RoadFrame."""
+    import unicodedata
+    src_path = os.path.join(os.path.dirname(PROJECT), 'Game', 'Tools', 'look_asphalt.py')
+    if not os.path.exists(src_path):
+        return None
+    with open(src_path, encoding='utf-8') as f:
+        src = f.read()
+    a = src.find('PAINT_V2_CODE = r"""')
+    if a < 0:
+        return None
+    b = src.find('"""', a + len('PAINT_V2_CODE = r"""'))
+    code = src[a + len('PAINT_V2_CODE = r"""'):b]
+    return unicodedata.normalize('NFKD', code.replace('°', ' graus').replace('×', 'x').replace('·', '*')).encode('ascii', 'ignore').decode('ascii')
+
+
+SLAB_PAINT = False
+
+
+def look_ground_memory_code_v3():
+    """O code_v3() do Game/Tools/look_mf.py (a normal de iluminação da v3, o Look 16/10): o arquivo é executado até
+    antes do main() (só constantes e funções) e a função devolve o CODE; só ASCII. None se faltar."""
+    import unicodedata
+    src_path = os.path.join(os.path.dirname(PROJECT), 'Game', 'Tools', 'look_mf.py')
+    if not os.path.exists(src_path):
+        return None
+    with open(src_path, encoding='utf-8') as f:
+        src = f.read()
+    i = src.find('def main():')
+    if i < 0:
+        return None
+    ns = {'__name__': 'look_mf_v3'}
+    exec(compile(src[:i], src_path, 'exec'), ns)
+    if 'code_v3' not in ns:
+        return None
+    code = ns['code_v3']()
+    return unicodedata.normalize('NFKD', code.replace('°', ' graus').replace('×', 'x').replace('·', '*')).encode('ascii', 'ignore').decode('ascii')
+
+
+def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=False):
     """Landscape: camadas misturadas pela altura da textura, uma mistura por canal.
 
     live=True: o mesmo chão pra vista ao vivo do app (malha comum, sem
@@ -652,6 +775,8 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
         return f
 
     def rock_layer(lname, s, tile_m, tint, desat=None):
+        if os.environ.get('ROCK_BRANCH', '0') == '1' and not live:
+            return rock_layer_branch(lname, s, tile_m, tint, desat)
         diff = triplanar(s['diff'], tile_m)
         # a mesma rocha numa escala 2,7× maior, meio a meio: o estrato do ladrilho
         # de 3,6 m repetia em listras paralelas regulares na parede (06/10)
@@ -667,6 +792,31 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
             base = g.custom('return lerp(C, dot(C, float3(0.3, 0.59, 0.11)).xxx, %f);' % desat, [('C', base, '')], F3, 100)
         return {'name': lname, 'base': (base, ''), 'nor': (nor, 'XYZ Texture'), 'rough': (g.mask(arm, 'XYZ Texture', 'g'), ''),
                 'ao': (g.mask(arm, 'XYZ Texture', 'r'), ''), 'disp': (g.mask(disp, 'XYZ Texture', 'r'), '')}
+
+    def rock_layer_branch(lname, s, tile_m, tint, desat):
+        """A rock_layer com desvio dinâmico (ROCK_BRANCH_HLSL): a mesma saída, só calculada onde a pedra pode
+        aparecer. O portão olha os pesos das outras camadas (LandscapeLayerSample, a mesma leitura da mistura)."""
+        def tobj(tex, normal=False):
+            return g.node(unreal.MaterialExpressionTextureObject, -700, texture=tex,
+                          sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL if normal else
+                          (unreal.MaterialSamplerType.SAMPLERTYPE_COLOR if tex.get_editor_property('srgb') else unreal.MaterialSamplerType.SAMPLERTYPE_MASKS))
+        others = [sp[1] for sp in specs if sp[1] != lname]
+        def lsample(n):
+            return g.node(unreal.MaterialExpressionLandscapeLayerSample, -900, parameter_name=n, preview_weight=0.0)
+        gate = g.custom('\n'.join(['float o = 0.0;'] + ['o = max(o, O%d);' % i for i in range(len(others))] +
+                                   ['return (W > 0.0 || o < 0.53) ? 1.0 : 0.0;']),
+                        [('W', lsample(lname), '')] + [('O%d' % i, lsample(n), '') for i, n in enumerate(others)], F1, -700)
+        c = g.custom(ROCK_BRANCH_HLSL,
+                     [('Gate', gate, ''), ('S1', g.node(unreal.MaterialExpressionConstant, -700, r=tile_m * 100.0), ''),
+                      ('S2', g.node(unreal.MaterialExpressionConstant, -700, r=tile_m * 2.7 * 100.0), ''),
+                      ('Diff', tobj(s['diff']), ''), ('Nor', tobj(s['nor'], True), ''), ('Arm', tobj(s['arm']), ''),
+                      ('Disp', tobj(s['disp']), '')],
+                     F3, -400, extra=[('Nout', F3), ('Rough', F1), ('AO', F1), ('H', F1)])
+        base = g.mul(g.mul(c, '', g.const3(tint, -300), '', -200), '', macro, '', 0)
+        if desat:
+            base = g.custom('return lerp(C, dot(C, float3(0.3, 0.59, 0.11)).xxx, %f);' % desat, [('C', base, '')], F3, 100)
+        log('rock', lname, 'com desvio dinamico (portao: %s)' % ', '.join(others))
+        return {'name': lname, 'base': (base, ''), 'nor': (c, 'Nout'), 'rough': (c, 'Rough'), 'ao': (c, 'AO'), 'disp': (c, 'H')}
 
     def layer(lname, s, tile_m, tint, extra=None):
         extra = extra or {}
@@ -766,6 +916,13 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
                   'masks': unreal.MaterialSamplerType.SAMPLERTYPE_MASKS}[kind]
             return g.node(unreal.MaterialExpressionTextureObject, -700, texture=tex, sampler_type=st)
         grav, beach = S['gravelly_sand'], S['aerial_beach_01']
+        if GROUND_V3 and not live:
+            _tobj = tobj
+            def tobj(tex, kind):
+                if kind == 'gray':
+                    return g.node(unreal.MaterialExpressionTextureObject, -700, texture=tex,
+                                  sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_GRAYSCALE)
+                return _tobj(tex, kind)
         # o que o terreno diz: pisado (terra + asfalto) e pedra
         # e o deserto aberto (FWorldDetail::OpenAt): no B dos pesos ao vivo, no G da textura de informação do mapa
         if live:
@@ -788,7 +945,21 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
         wv.set_editor_property('collection', unreal.load_asset('/Game/Materials/MPC_Wind'))
         wv.set_editor_property('parameter_name', 'Wind')
         wind = g.custom('return degrees(atan2(W.y, W.x));', [('W', wv, '')], F1, -700)
-        c = g.custom(SAND_V2_HLSL, [('WP', wp, ''), ('VNrm', g.node(unreal.MaterialExpressionVertexNormalWS, -700), ''),
+        v3 = GROUND_V3 and not live
+        code = SAND_V2_HLSL
+        if v3:
+            a3 = '// as ondulacoes simuladas: o ladrilho de 10 m no espaco do vento'
+            b3 = """    float kT = zr * lerp(0.6, 1.0, m2) * (1.0 - smoothstep(0.03, 0.06, fw)) * RipTex;
+    nxy += wn / 0.8 * 2.2 * kT;
+    sand *= lerp(1.0, Rp.a, kT);"""
+            assert code.count(a3) == 1 and code.count(b3) == 1
+            code = code.replace(a3, 'RipLit = 1.0;\n' + a3)
+            code = code.replace(b3, """    // a v3 (16/10, o Look, CHAO_V3_ESTUDO 5.1): a luz assada da ondulacao (RippleLit, linear, com mips) nas mesmas
+    // 3 amostras; sem o corte pelo fw (a mip segura a distancia), sem a normal da ondulacao e sem a sombra velha na cor
+    float rl = (RipLitT.SampleGrad(SS(RipLitT), q + o1, dqx, dqy).r * w.x + RipLitT.SampleGrad(SS(RipLitT), q + o2, dqx, dqy).r * w.y
+              + RipLitT.SampleGrad(SS(RipLitT), q + o3, dqx, dqy).r * w.z) * 1.25;
+    RipLit = lerp(1.0, rl, zr * lerp(0.6, 1.0, m2) * RipTex);""")
+        c = g.custom(code, [('WP', wp, ''), ('VNrm', g.node(unreal.MaterialExpressionVertexNormalWS, -700), ''),
                                     ('Trod', trod, ''), ('Rock', rock, ''), ('Far', far, ''), ('WindYaw', wind, ''),
                                     ('Albedo', g.const3(albedo, -500), ''),
                                     ('Mottle', g.node(unreal.MaterialExpressionConstant, -500, r=extra.get('mottle', 0.25)), ''),
@@ -796,10 +967,14 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
                                     ('GravD', tobj(grav['diff'], 'color'), ''), ('GravN', tobj(grav['nor'], 'normal'), ''),
                                     ('GravM', tobj(grav['arm'], 'masks'), ''), ('Beach', tobj(beach['diff'], 'color'), ''),
                                     ('BeachN', tobj(beach['nor'], 'normal'), ''), ('SandM', tobj(s['arm'], 'masks'), ''),
-                                    ('Ripples', tobj(ripples_texture(), 'masks'), '')],
-                     F3, -150, extra=[('Nrm', F3), ('Rough', F1), ('AO', F1)])
+                                    ('Ripples', tobj(ripples_texture(), 'masks'), '')]
+                     + ([('RipLitT', tobj(riplit_texture(), 'gray'), '')] if v3 else []),
+                     F3, -150, extra=[('Nrm', F3), ('Rough', F1), ('AO', F1)] + ([('RipLit', F1)] if v3 else []))
         disp = g.sample(s['disp'], uv(tile_m), 'masks')
-        return {'name': lname, 'base': (c, ''), 'nor': (c, 'Nrm'), 'rough': (c, 'Rough'), 'ao': (c, 'AO'), 'disp': (disp, 'R')}
+        out = {'name': lname, 'base': (c, ''), 'nor': (c, 'Nrm'), 'rough': (c, 'Rough'), 'ao': (c, 'AO'), 'disp': (disp, 'R')}
+        if v3:
+            out['riplit'] = (c, 'RipLit')
+        return out
 
     look_asph = look_asphalt_code() if (not live and biome == 'desert') else None
     look_asph2 = look_asphalt_v2_code() if (not live and biome == 'desert') else None
@@ -925,7 +1100,7 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
     # têm os nomes de lá (o jogo põe por SetLandscapeMaterial*ParameterValue). GROUND_MEMORY=0 monta sem ela.
     ground_memory = None
     if not live and biome == 'desert' and os.environ.get('GROUND_MEMORY', '1') != '0':
-        ground_memory = look_ground_memory_code()
+        ground_memory = look_ground_memory_code_v3() if GROUND_V3 else look_ground_memory_code()
         log('ground memory', 'ok (inline)' if ground_memory else 'MISSING Game/Tools/look_mf.py')
     live_weights = None
     if live:
@@ -981,10 +1156,65 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
                 blends[channel] = blend
             else:
                 g.out(blend, '', prop)
-    for channel, prop, y in (() if live else (('base', unreal.MaterialProperty.MP_BASE_COLOR, 0),
+    if slab:
+        # a estrada com volume (14/10, v3: a laje, UWorldForgeEditorLib::BuildRoadSlabs): o mesmo asfalto v2 aprovado do
+        # chão, sem a mistura das camadas (a malha é só asfalto). A face da quebra (a saia da borda, normal de lado)
+        # escurece, como no kit do Look ("a face da quebra escura"); depois a areia molhada e a memória do chão por cima,
+        # iguais às do Landscape (a cratera e a esteira não somem em cima da estrada)
+        # (16/10) a areia por cima da laje: a cor do vértice R (BuildRoadSlabs) mistura a camada de areia do próprio chão
+        # (a mesma conta e as mesmas texturas pelo mundo: a emenda com o Landscape não aparece)
+        L = next(x for x in layers if x['name'] == 'Asphalt')
+        Sd = next((x for x in layers if x['name'] == 'Sand'), None)
+        paint_code = look_paint_v2_code() if os.environ.get('PAINT_V2', '0') == '1' else None   # (a faixa nova ainda sem a palavra dele: o padrão é o decalque, o da laje aprovada)
+        if paint_code:
+            # (16/10) a faixa pintada v2 do Look: a posição na pista do T_RoadFrame (16 bits; o RoadDir de 8 bits não dava a
+            # faixa de 15 cm); a cor da areia do mapa pro encardido; a trinca do asfalto v2 cortando a faixa
+            rft = g.node(unreal.MaterialExpressionTextureObjectParameter, -900, 4200, parameter_name='RoadFrame',
+                         texture=unreal.load_asset('/Game/Textures/T_WaterN'))
+            rfs = g.node(unreal.MaterialExpressionScalarParameter, -900, 4300, parameter_name='InfoSize', default_value=1024.0)
+            rf = g.custom('return T.SampleLevel(TSampler, P.xy / (S * 100.0) + 0.5, 0);', [('T', rft, ''), ('S', rfs, ''), ('P', wp, '')], F4, -700)
+            crk = texture(os.path.join(os.path.dirname(PROJECT), 'captures', 'look', 'textures', 'T_LL_Cracks.png'), '/Game/Slice/Look', 'masks')
+            crk_obj = g.node(unreal.MaterialExpressionTextureObject, -900, 4400, texture=crk,
+                             sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+            dust = Sd['base'] if Sd else (g.const3((0.49, 0.40, 0.27), -900), '')
+            pc = g.custom(paint_code, [('WP', wp, ''), ('RF', rf, ''), ('Base', L['base'][0], L['base'][1]), ('Rough', L['rough'][0], L['rough'][1]),
+                                       ('N', L['nor'][0], L['nor'][1]), ('Dust', dust[0], dust[1]), ('Cracks', crk_obj, '')],
+                          F3, 300, extra=[('Nout', F3), ('Rout', F1)])
+            L = dict(L)
+            L['base'], L['nor'], L['rough'] = (pc, ''), (pc, 'Nout'), (pc, 'Rout')
+            global SLAB_PAINT
+            SLAB_PAINT = True
+            log('road slab paint', 'PAINT_V2 do Look na laje')
+        vn = g.node(unreal.MaterialExpressionVertexNormalWS, 400, 0)
+        vc = g.node(unreal.MaterialExpressionVertexColor, 400, 100)
+        sb = (Sd['base'] if Sd else (g.const3((0.49, 0.40, 0.27), 300), ''))
+        sn = (Sd['nor'] if Sd else (g.const3((0.0, 0.0, 1.0), 300), ''))
+        sr = (Sd['rough'] if Sd else (g.node(unreal.MaterialExpressionConstant, 300, r=0.9), ''))
+        sa = (Sd['ao'] if Sd else (g.node(unreal.MaterialExpressionConstant, 300, r=1.0), ''))
+        blends['base'] = g.custom('return lerp(B * lerp(0.45, 1.0, smoothstep(0.35, 0.85, VN.z)), SB, saturate(VC.r));',
+                                  [('B', L['base'][0], L['base'][1]), ('VN', vn, ''), ('SB', sb[0], sb[1]), ('VC', vc, '')], F3, 500)
+        blends['nor'] = g.custom('return normalize(lerp(N, SN, saturate(VC.r)));',
+                                 [('N', L['nor'][0], L['nor'][1]), ('SN', sn[0], sn[1]), ('VC', vc, '')], F3, 500)
+        blends['rough'] = g.custom('return lerp(R, SR, saturate(VC.r));',
+                                   [('R', L['rough'][0], L['rough'][1]), ('SR', sr[0], sr[1]), ('VC', vc, '')], F1, 500)
+        ao = g.custom('return lerp(A, SA, saturate(VC.r));', [('A', L['ao'][0], L['ao'][1]), ('SA', sa[0], sa[1]), ('VC', vc, '')], F1, 500)
+        if GROUND_V3 and ground_memory is not None:
+            blends['ao'] = ao
+            blends['riplit'] = g.node(unreal.MaterialExpressionConstant, 400, 2100, r=1.0)
+        else:
+            g.out(ao, '', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
+        if ground_memory is None:
+            g.out(blends['nor'], '', unreal.MaterialProperty.MP_NORMAL)
+    v3_mem = GROUND_V3 and not live and ground_memory is not None
+    if v3_mem:
+        one = g.node(unreal.MaterialExpressionConstant, 400, 2100, r=1.0)
+        for L in layers:
+            L.setdefault('riplit', (one, ''))
+    for channel, prop, y in (() if (live or slab) else (('base', unreal.MaterialProperty.MP_BASE_COLOR, 0),
                              ('nor', unreal.MaterialProperty.MP_NORMAL, 600),
                              ('rough', unreal.MaterialProperty.MP_ROUGHNESS, 1200),
-                             ('ao', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION, 1800))):
+                             ('ao', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION, 1800))
+                             + ((('riplit', None, 2100),) if v3_mem else ())):
         blend = g.node(unreal.MaterialExpressionLandscapeLayerBlend, 600, y)
         entries = []
         for i, L in enumerate(layers):
@@ -997,10 +1227,8 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
         for L in layers:
             g.link(L[channel][0], L[channel][1], blend, 'Layer ' + L['name'])
             g.link(L['disp'][0], L['disp'][1], blend, 'Height ' + L['name'])
-        if channel in ('base', 'rough') or (channel == 'nor' and ground_memory is not None):
+        if channel in ('base', 'rough', 'riplit') or (channel == 'nor' and ground_memory is not None) or (channel == 'ao' and v3_mem):
             blends[channel] = blend
-        elif channel == 'ao' and GROUND_RVT is not None and ground_memory is not None:
-            pass   # (com o RVT: o AO saía da mistura das camadas e mantinha todas as amostras no main pass)
         else:
             g.out(blend, '', prop)
     # chão molhado: a faixa de ~3 m acima da linha d'água e o fundo debaixo dela
@@ -1070,33 +1298,11 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
         # misturado (cor linear, normal tangente, rugosidade); a brasa no emissivo. A RippleMask fica de fora por
         # enquanto (a esteira passa por cima da ondulação; de longe não erra)
         black = unreal.load_asset('/Engine/EngineResources/Black')
-        bc_src, n_src, r_src = (wet, ''), (blends['nor'], ''), (wet, 'Rough')
-        if GROUND_RVT is not None:
-            # o RVT do chão (14/10, a otimização: o NaniteBasePass era quase todo o chão, 5,7–6,8 ms a 1080p; Battlefield 3
-            # e Far Cry 4 assam o terreno numa textura virtual). O que não muda (as camadas, a areia molhada, o oásis) vai
-            # pro RVT pela saída de textura virtual; o main pass amostra o RVT e põe a memória do chão por cima (a lagarta e a
-            # cratera mudam em jogo e nunca invalidam o cache). A normal vai em espaço de mundo no RVT
-            vt_out = g.node(unreal.MaterialExpressionRuntimeVirtualTextureOutput, 1300, 3300)
-            to_world = g.node(unreal.MaterialExpressionTransform, 1100, 3400,
-                              transform_source_type=unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_TANGENT,
-                              transform_type=unreal.MaterialVectorCoordTransform.TRANSFORM_WORLD)
-            g.link(blends['nor'], '', to_world, '')
-            ok = [mel.connect_material_expressions(wet, '', vt_out, 'BaseColor'),
-                  mel.connect_material_expressions(wet, 'Rough', vt_out, 'Roughness'),
-                  mel.connect_material_expressions(to_world, '', vt_out, 'Normal')]
-            vt_in = g.node(unreal.MaterialExpressionRuntimeVirtualTextureSample, 900, 3600)
-            vt_in.set_editor_property('virtual_texture', GROUND_RVT)
-            vt_in.set_editor_property('material_type', unreal.RuntimeVirtualTextureMaterialType.BASE_COLOR_NORMAL_ROUGHNESS)
-            to_tan = g.node(unreal.MaterialExpressionTransform, 1100, 3700,
-                            transform_source_type=unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_WORLD,
-                            transform_type=unreal.MaterialVectorCoordTransform.TRANSFORM_TANGENT)
-            ok.append(mel.connect_material_expressions(vt_in, 'Normal', to_tan, ''))
-            bc_src, n_src, r_src = (vt_in, 'BaseColor'), (to_tan, ''), (vt_in, 'Roughness')
-            log('ground rvt', 'ok' if all(ok) else 'FALHOU uma ligacao %s' % ok)
-        ins = [('WP', wp, ''), ('BC', bc_src[0], bc_src[1]), ('N', n_src[0], n_src[1]), ('Rg', r_src[0], r_src[1]),
+        ins = [('WP', wp, ''), ('BC', wet, ''), ('N', blends['nor'], ''), ('Rg', wet, 'Rough'),
                # o chão de cada pixel pra cratera v2 (13/10, o Look): 1 = asfalto (o peso da camada, já com a beira de
                # 1,2 m e os buracos), 0 = areia/terra (a estrada de terra pinta a Dirt; a Salt também fica 0)
-               ('Surf', g.node(unreal.MaterialExpressionLandscapeLayerSample, 1000, parameter_name='Asphalt', preview_weight=0.0), '')]
+               ('Surf', g.node(unreal.MaterialExpressionConstant, 1000, r=1.0) if slab else
+                g.node(unreal.MaterialExpressionLandscapeLayerSample, 1000, parameter_name='Asphalt', preview_weight=0.0), '')]
         # (as texturas que o CODE lê; GroundTrackMid entrou em 13/10: o queimado no caderno do meio, que a câmera
         # do RTS vê; antes ele sumia com o pixel de 10–20 cm)
         mem_nodes = {}
@@ -1115,15 +1321,40 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False):
             mem_nodes[pin] = v
         for pname, pin, dv in (('ReliefRangeCm', 'Range', 0.0), ('ReliefTexel', 'Texel', 1.0 / 2048.0), ('UseCrater', 'UseCrater', 0.0),
                                ('HeatNits', 'HeatNits', 3000.0),   # (o padrão do Look, 13/10; o jogo manda 3000)
-                               ('MarkRamps', 'MarkRamps', 0.0)):   # (13/10: as marcas de cratera viram rampas quando o jogo ligar; 0 = como antes)
+                               ('MarkRamps', 'MarkRamps', 0.0),   # (13/10: as marcas de cratera viram rampas quando o jogo ligar; 0 = como antes)
+                               ('UseRubber', 'UseRubber', 0.0)):   # (16/10, o Look: o B do relevo vira a borracha da esteira no asfalto quando o jogo ligar; 0 = a sombra de antes)
             sp = g.node(unreal.MaterialExpressionScalarParameter, 1000, parameter_name=pname, default_value=dv)
             ins.append((pin, sp, ''))
             mem_nodes[pin] = sp
-        mem = g.custom(ground_memory, ins, F3, 1300, extra=[('Nout', F3), ('Rout', F1), ('Mask', F1), ('Emi', F3)])
+        if GROUND_V3:
+            # a v3 (16/10): os cadernos de luz do jogo (GroundSunLit: R a luz até 1,2, G o SkyAO; -RTSGroundV3 liga o
+            # UseSunLit), a RipLit da areia e o sol em espaço tangente (a direção da luz da atmosfera, mundo → tangente)
+            for pname, pin in (('GroundSunLit', 'SunLitT'), ('GroundSunLitMid', 'SunLitMidT')):
+                t = g.node(unreal.MaterialExpressionTextureObjectParameter, 1000, parameter_name=pname,
+                           sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR,
+                           sampler_source=unreal.SamplerSourceMode.SSM_CLAMP_WORLD_GROUP_SETTINGS)
+                if black:
+                    t.set_editor_property('texture', black)
+                ins.append((pin, t, ''))
+            ins.append(('UseSunLit', g.node(unreal.MaterialExpressionScalarParameter, 1000, parameter_name='UseSunLit', default_value=0.0), ''))
+            ins.append(('RipLit', blends['riplit'], ''))
+            ld = g.node(unreal.MaterialExpressionSkyAtmosphereLightDirection, 900, 3500)
+            lt = g.node(unreal.MaterialExpressionTransform, 1100, 3500,
+                        transform_source_type=unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_WORLD,
+                        transform_type=unreal.MaterialVectorCoordTransform.TRANSFORM_TANGENT)
+            g.link(ld, '', lt, '')
+            ins.append(('Lt', lt, ''))
+            ins.append(('V3On', g.node(unreal.MaterialExpressionConstant, 1000, r=1.0), ''))
+        mem = g.custom(ground_memory, ins, F3, 1300, extra=[('Nout', F3), ('Rout', F1), ('Mask', F1), ('Emi', F3)]
+                       + ([('AOout', F1)] if GROUND_V3 else []))
+        if GROUND_V3:
+            g.out(g.custom('return A * B;', [('A', blends['ao'], ''), ('B', mem, 'AOout')], F1, 1500), '',
+                  unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
+            log('ground v3', 'RippleLit', os.environ.get('RIPLIT', 'patch'), 'e a normal de iluminacao (code_v3)')
         # o deslocamento Nanite da cratera (13/10, o Look e o jogo): o DISP_CODE do look_mf.py no pino Displacement,
         # magnitude 200 cm e centro 0,5 (sem multiplicar no grafo: UE-370671, o terreno fantasma). DispOn = 0 (padrão)
         # devolve 0,5: nada mexe até o jogo ligar
-        disp_code = look_disp_code()
+        disp_code = look_disp_code() if not slab else None   # (a laje não tessela: 12 cm de malha de verdade)
         if disp_code:
             farm = texture(os.path.join(os.path.dirname(PROJECT), 'captures', 'look', 'downloads', 'farm_soil', 'farm_soil_disp_2k.jpg'),
                            '/Game/Slice/Look', 'masks')
@@ -1280,6 +1511,29 @@ WATER_INFO_SIZE = 1024.0
 MAP_NAME = ''            # o nome curto do mapa em curso (assets por mapa)
 
 
+# O chão da v3 (16/10, o Look: docs/CHAO_V3_ESTUDO.md §4.3, §5.1, §10). GROUNDV3=1 monta o chão com a luz do sol
+# assada: a ondulação lê a RippleLit (a luz linear da ondulação pro sol e o vento do mapa, ÷ 1,25) no lugar da normal
+# e da sombra velha, e a memória do chão usa o code_v3() do look_mf.py (a normal de iluminação, N'·L = luz assada × N·L;
+# o SkyAO no AO). RIPLIT escolhe a textura: patch (a proposta do Look, padrão), phys ou game (o A/B dele).
+# (16/10, o Felipe aprovou as trilhas v3 com a areia 3: "um baita avanço, tá aprovado"; o World_TestGroundV3Dune vira a
+# base) ligado por padrão no deserto (build: ground_v3_for); GROUNDV3=0|1 no ambiente ainda manda. Neve e floresta
+# ficam no chão de antes até o A/B delas
+GROUND_V3 = os.environ.get('GROUNDV3', '0') == '1'
+
+
+def ground_v3_for(sname):
+    global GROUND_V3
+    env = os.environ.get('GROUNDV3', '')
+    GROUND_V3 = env == '1' if env in ('0', '1') else sname == 'desert'
+    log('ground v3', sname, GROUND_V3)
+
+
+def riplit_texture():
+    kind = os.environ.get('RIPLIT', 'patch')
+    src = os.path.join(os.path.dirname(PROJECT), 'captures', 'look', 'textures_v3', 'T_LL_RippleLit_%s.png' % kind)
+    return texture(src, DEST + '/Surfaces/ripples', 'gray')
+
+
 def ripples_texture():
     """As ondulações simuladas do Look (Game/Tools/look_ripples.py; o PNG fica em captures/look/textures): R altura,
     GB normal, A a sombra do sol assada pra um sol a 155° do vento (o vento do mapa sai daí: FWorldMap::WindYaw)."""
@@ -1390,6 +1644,9 @@ def decal_material(name, tex, color):
 def paint_material(cracks):
     """Faixa pintada no asfalto: tinta branca gasta, falhando onde a pista
     rachou e onde o pneu passa; pontas dos traços suaves."""
+    m = shared_material('M_RoadPaint')
+    if m:
+        return m
     g = Graph('M_RoadPaint')
     g.m.set_editor_property('material_domain', unreal.MaterialDomain.MD_DEFERRED_DECAL)
     g.m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
@@ -1456,6 +1713,9 @@ return c;
 def monolith_material(S):
     """M_MonolithRock: a rocha do penhasco nos 3 planos (3,6 m e 9,7 m, como a camada de rocha do chão) com as
     camadas do arenito pela altura e areia no que olha pra cima. A normal fica a da textura nos 3 planos."""
+    m = shared_material('M_MonolithRock')
+    if m:
+        return m
     g = Graph('M_MonolithRock')
     WAT = unreal.load_asset('/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedTexture')
     WAN = unreal.load_asset('/Engine/Functions/Engine_MaterialFunctions01/Texturing/WorldAlignedNormal')
@@ -1542,6 +1802,9 @@ def place_monoliths(S):
 
 def palm_material(name, foliage, tex=None, fade=False):
     """fade=True: a versão da cópia _Fade (masked pelo MPC_TreeFade); a original fica opaca."""
+    m = shared_material(name)
+    if m:
+        return m
     g = Graph(name)
     g.m.set_editor_property('two_sided', True)
     if foliage:
@@ -1652,11 +1915,29 @@ def model(aid, sname, plant=False, nanite=True, tint=(1.0, 1.0, 1.0), snow=0.0, 
     files = [os.path.join(src, f) for f in os.listdir(src)]
     folder = DEST + '/Models/' + aid
     if aid not in _MESHES:
-        objs = import_file(find(files, '.fbx'), folder)
-        meshes = [o for o in objs if isinstance(o, unreal.StaticMesh)]
-        if not meshes:
-            meshes = [unreal.load_asset(a) for a in eal.list_assets(folder, recursive=False)
-                      if isinstance(unreal.load_asset(a), unreal.StaticMesh)]
+        # (16/10) já importada e o FBX não mudou: usa a que existe, sem regravar, como as texturas. Reimportar a cada
+        # montagem regravava o pacote, e com qualquer Unreal usando a malha (o jogo linka a Slice; o Nanite segura o
+        # arquivo pro streaming) a gravação falhava: "Error moving file", a montagem de 14/10 04:05
+        fbx = find(files, '.fbx')
+        have = [x.split('.')[0] for x in eal.list_assets(folder, recursive=False)]
+        have = [x for x in have if isinstance(unreal.load_asset(x), unreal.StaticMesh)]
+        def pkg_of(x):
+            return os.path.join(PROJECT, 'Content', x[len('/Game/'):].replace('/', os.sep) + '.uasset')
+        # a malha escolhida na importação fica anotada (a pasta pode ter várias: a mureta tem LOD0 a LOD5, e a escolha
+        # vinha da ordem do importador): a mesma peça sempre
+        pick = os.path.join(PROJECT, 'Saved', 'WorldForge', 'model_pick_%s.txt' % aid)
+        picked = open(pick, encoding='utf-8').read().strip() if os.path.exists(pick) else ''
+        fresh = picked in have and all(os.path.exists(pkg_of(x)) and os.path.getmtime(pkg_of(x)) >= os.path.getmtime(fbx) for x in have)
+        if fresh:
+            meshes = [unreal.load_asset(picked)]
+        else:
+            objs = import_file(fbx, folder)
+            meshes = [o for o in objs if isinstance(o, unreal.StaticMesh)]
+            if not meshes:
+                meshes = [unreal.load_asset(a) for a in eal.list_assets(folder, recursive=False)
+                          if isinstance(unreal.load_asset(a), unreal.StaticMesh)]
+            with open(pick, 'w', encoding='utf-8') as f:
+                f.write(meshes[0].get_path_name().split('.')[0])
         _MESHES[aid] = meshes[0]
     mesh = _MESHES[aid]
     if nanite and not mesh.get_editor_property('nanite_settings').enabled:
@@ -1813,7 +2094,7 @@ def environment(L):
 
 # ---- montagem -------------------------------------------------------------------
 
-def decals_along(points, material, half_len_cm, half_width_cm, offsets_cm, every=1, dash=None, skip_road=False):
+def decals_along(points, material, half_len_cm, half_width_cm, offsets_cm, every=1, dash=None, skip_road=False, keep=None):
     """Decalques ao longo de uma linha (cm): um por ponto (a cada `every`),
     deslocados de lado (offsets), virados ao longo dela. `dash` = (liga, período)
     em pontos, pra faixas tracejadas."""
@@ -1831,6 +2112,8 @@ def decals_along(points, material, half_len_cm, half_width_cm, offsets_cm, every
         for off in offs:
             loc = unreal.Vector(points[i].x - dy * off, points[i].y + dx * off, points[i].z)
             if skip_road and lib.slice_road_distance(unreal.Vector2D(loc.x, loc.y)) < 420.0:
+                continue
+            if keep is not None and not keep(loc, dx, dy):
                 continue
             # Rotator do Python é (roll, pitch, yaw): por nome. Pitch -90 projeta pra
             # baixo; aí o Z local fica ao longo da linha e o Y atravessado. O
@@ -1853,6 +2136,19 @@ def tire_tracks(decal_mat):
     log('tire track decals', n)
 
 
+def on_slab(loc, dx, dy):
+    """A faixa da beira só onde a laje existe (14/10, a 1ª foto da laje: a faixa a 0,55 m da beira nominal ficava solta na
+    areia onde a beira quebrou ou a areia cobriu): o pedaço de 2,2 m inteiro, as duas pontas e o meio, 15 cm pra dentro."""
+    for k in (-100.0, 0.0, 100.0):
+        w = lib.slice_slab_at(unreal.Vector2D(loc.x + dx * k, loc.y + dy * k))
+        if w.x < 0.0 or w.y > -0.15 or w.z > 0.16:
+            return False
+    return True
+
+
+SLAB_ON = False
+
+
 def road_paint(paint_mat, road_half_m):
     """Tracejado central (3 m pintados a cada 9 m, a maquete do Look, 13/10) e faixas de borda
     contínuas a 0,55 m da beira (a meia largura de cada ponto: a rua da vila alarga), por trecho de
@@ -1867,7 +2163,7 @@ def road_paint(paint_mat, road_half_m):
         if len(pts) < 3:
             continue
         n += decals_along(pts, paint_mat, 153.0, 7.0, (0.0,), every=1, dash=(1, 9))
-        n += decals_along(pts, paint_mat, 110.0, 6.0, edges, every=2)
+        n += decals_along(pts, paint_mat, 110.0, 6.0, edges, every=2, keep=on_slab if SLAB_ON else None)
     log('road paint decals', n)
 
 
@@ -1898,6 +2194,9 @@ def ocean_material(sname):
     espuma por cima: 0 no mar aberto (o padrão 1 apaga a água inteira, e era o
     "escuro" do teste de 05/10)."""
     absorb, scatter = WATER_OPTICS.get(sname, WATER_OPTICS['forest'])
+    m = shared_material('M_Ocean_' + sname)
+    if m:
+        return m
     g = Graph('M_Ocean_' + sname)
     g.m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_SINGLE_LAYER_WATER)
     g.m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_OPAQUE)
@@ -2045,41 +2344,6 @@ def ocean_material(sname):
     return g.finish('ocean material ' + sname)
 
 
-GROUND_RVT = None
-
-
-def make_ground_rvt(name):
-    """O RVT do chão (14/10): 32k texels em 1024 m (3,1 cm por texel, o pixel de perto da câmera do jogo; o grão de
-    1,3 m e a ondulação de 22 cm da areia aprovada pedem 2–3 cm), cor, normal e rugosidade, comprimido."""
-    path = DEST + '/Materials/' + name
-    if eal.does_asset_exist(path):
-        eal.delete_asset(path)
-    rvt = asset_tools.create_asset(name, DEST + '/Materials', unreal.RuntimeVirtualTexture, unreal.RuntimeVirtualTextureFactory())
-    rvt.set_editor_property('material_type', unreal.RuntimeVirtualTextureMaterialType.BASE_COLOR_NORMAL_ROUGHNESS)
-    rvt.set_editor_property('tile_count', int(os.environ.get('RVT_TILES', '128')))
-    rvt.set_editor_property('tile_size', 256)
-    rvt.set_editor_property('tile_border_size', 2)
-    rvt.set_editor_property('compress_textures', True)
-    eal.save_loaded_asset(rvt)
-    log('ground rvt asset', path, 'tiles', rvt.get_editor_property('tile_count'), 'size', rvt.get_size())
-    return rvt
-
-
-def attach_ground_rvt(landscape, rvt):
-    """O Landscape desenha no RVT e no main pass (ALWAYS: o main pass usa o material, que amostra o RVT); o volume
-    cobre o Landscape (a caixa unitária [0,1]³ escalada, RuntimeVirtualTextureComponent::CalcBounds)."""
-    landscape.set_editor_property('runtime_virtual_textures', [rvt])
-    landscape.set_editor_property('virtual_texture_render_pass_type', unreal.RuntimeVirtualTextureMainPassType.ALWAYS)
-    origin, extent = landscape.get_actor_bounds(False)
-    lo = origin - extent
-    vol = actors.spawn_actor_from_class(unreal.RuntimeVirtualTextureVolume, unreal.Vector(lo.x, lo.y, lo.z - 100.0))
-    vol.set_actor_label('GroundRVT')
-    vol.set_actor_scale3d(unreal.Vector(2.0 * extent.x, 2.0 * extent.y, 2.0 * extent.z + 200.0))
-    comp = vol.get_editor_property('virtual_texture_component')
-    comp.set_editor_property('virtual_texture', rvt)
-    log('ground rvt volume', lo, extent)
-
-
 def map_instance(parent, name, textures, scalars):
     """Instância de material deste mapa (a textura da água é por mapa)."""
     path = DEST + '/Water/' + name
@@ -2157,6 +2421,7 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     """Monta uma fatia (ou o mapa inteiro: build_world). `tag` dá nome aos assets
     (a fatia por padrão), `cfg` troca a configuração, `grid` o tamanho do terreno."""
     global ROCK_MASTER, PLANT_MASTER
+    ground_v3_for(sname)
     tag = tag or sname
     if cfg is None:
         # fatia: os controles do painel (os padrões do app + os da fatia) num JSON,
@@ -2178,12 +2443,11 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     ROCK_MASTER = prop_material('M_ScanRock_' + tag, False, defaults)
     PLANT_MASTER = prop_material('M_ScanPlant_' + tag, True, defaults)
     layer_specs = [s for s in cfg['layers'] if s[0] != 'asphalt' or cfg['road'] > 0]
-    global GROUND_RVT
-    GROUND_RVT = make_ground_rvt('RVT_Ground_' + tag) if os.environ.get('RVT', '0') == '1' and sname == 'desert' else None
     ground = ground_material('M_SliceGround_' + tag, S, layer_specs, cracks, sname)
     if tag.startswith('world_'):
         # o chão e a água da vista ao vivo do app (as mesmas camadas do mapa inteiro)
-        ground_material('M_LiveGround_' + sname, S, layer_specs, cracks, sname, live=True)
+        if not shared_material('M_LiveGround_' + sname):
+            ground_material('M_LiveGround_' + sname, S, layer_specs, cracks, sname, live=True)
         ocean_material(sname)
     tt = os.path.join(ASSETS, 'TireTracks001')
     tfiles = [os.path.join(tt, f) for f in os.listdir(tt)]
@@ -2215,8 +2479,6 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
                              {'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0})
     landscape, err = lib.build_slice_landscape(cfg['seed'], 2, cfg['biome'], 1024.0, c, grid[0], grid[1], grid[2],
                                                ground_mi, layers, cfg['road'])
-    if landscape and GROUND_RVT is not None:
-        attach_ground_rvt(landscape, GROUND_RVT)
     # (com água ou com salina: o C++ deixa a textura vazia quando não há nenhuma)
     WATER_INFO = lib.make_water_info_texture(info_path, WATER_INFO_SIZE)
     eal.save_loaded_asset(unreal.load_asset(info_path))
@@ -2227,6 +2489,20 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     mel.set_material_instance_texture_parameter_value(ground_mi, 'RoadDir', road_dir)
     mel.update_material_instance(ground_mi)
     eal.save_loaded_asset(ground_mi)
+    # (16/10, o Felipe pelo Look: "gostei da laje 3D, tá aprovado") a laje é o padrão do deserto; ROAD_SLAB=0 tira
+    if os.environ.get('ROAD_SLAB', '1') != '0' and sname == 'desert' and cfg['road'] > 0:
+        # a estrada com volume (14/10, v3): a laje de 12 cm com a borda quebrada onde a estrada é gasta ou destruída
+        slab_mat = ground_material('M_RoadSlab_' + tag, S, [sp for sp in layer_specs if sp[0] == 'asphalt' or sp[1] == 'Sand'],
+                                   cracks, sname, slab=True)
+        # a posição na pista em 16 bits (a faixa pintada nova do Look, quando entrar no material da laje: o parâmetro RoadFrame)
+        road_frame_path = DEST + '/Water/T_RoadFrame_' + MAP_NAME
+        road_frame = lib.make_road_frame_texture(road_frame_path, WATER_INFO_SIZE)
+        eal.save_loaded_asset(unreal.load_asset(road_frame_path))
+        slab_mi = map_instance(slab_mat, 'MI_RoadSlab_' + MAP_NAME, {'WaterInfo': WATER_INFO, 'RoadDir': road_dir, 'RoadFrame': road_frame},
+                               {'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0})
+        log('road slab', lib.build_road_slabs(slab_mi, DEST + '/RoadSlab', MAP_NAME))
+        global SLAB_ON
+        SLAB_ON = True
     if landscape:
         lib.build_landscape_nanite(landscape)
     if err:
@@ -2240,7 +2516,7 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     if sname == 'desert':
         place_monoliths(S)
     tire_tracks(decal)
-    if cfg['road'] > 0 and cfg.get('paint', True):
+    if cfg['road'] > 0 and cfg.get('paint', True) and not SLAB_PAINT:
         road_paint(paint_material(cracks), cfg['road'] * 0.5)
     if cfg['road'] > 0:
         roadside(meshes, cfg['road'] * 0.5)
@@ -2329,16 +2605,24 @@ def build_world(path):
     # sand_desert_v2_ground) e, na mesma razão, o cascalho, a terra e a cor da esteira, pra não misturar duas
     # areias. Os monólitos (o AlUla) saem na areia de arenito com óxido de ferro, 0,45/0,26/0,15 (a medida do Look
     # contra a r1_raid_slabs); SANDALB="r,g,b" força outra
-    alb = os.environ.get('SANDALB', '') or ('0.45,0.26,0.15' if sname == 'desert' and int(wj.get('relief_type', 0)) == 1 else '')
+    # (16/10) a areia do mapa ("sand" no JSON, o painel; o Felipe: "vai de 3", as três como opção por mapa): 3 a cor de
+    # duna (o padrão do deserto dourado), 2 a amarela (a v2 da maquete), 1 a clássica. SAND=v2|v1|classic e SANDALB no
+    # ambiente ainda mandam (os mapas de teste)
+    pick = int(wj.get('sand', 3))
+    sand = os.environ.get('SAND') or ('classic' if pick == 1 else 'v2')
+    if sname == 'desert' and sand == 'classic' and not os.environ.get('SAND'):
+        cfg['layers'] = SAND_CLASSIC + [l for l in cfg['layers'] if l[1] not in ('Sand', 'Gravel', 'Dirt')]
+        log('desert sand: classic (o mapa)')
+    dune = sname == 'desert' and ((pick == 3 and not os.environ.get('SAND')) or int(wj.get('relief_type', 0)) == 1)
+    alb = os.environ.get('SANDALB', '') or ('0.45,0.26,0.15' if dune else '')
     alb_tag = ''
-    if alb and sname == 'desert' and os.environ.get('SAND', 'v2') == 'v2':
+    if alb and sname == 'desert' and sand == 'v2':
         cfg = sand_albedo(cfg, tuple(float(v) for v in alb.split(',')))
         alb_tag = '_sa' + ''.join('%02d' % round(float(v) * 100) for v in alb.split(','))
     comps, quads = 16, 127
     log('world', sname, 'size', size, 'quad %.3f m' % (size / (comps * quads)), cfg['map'])
     # materiais e camadas por bioma (as prévias guardadas de biomas diferentes não se pisam)
     # (a areia escolhida tem material próprio: o World_TestSalt2 do jogo na classic não pisa nos mapas de teste na v2)
-    sand = os.environ.get('SAND', 'v2')
     tag = 'world_' + sname + ('' if sname != 'desert' or sand == 'v2' else '_' + sand) + alb_tag + os.environ.get('TAG_SUFFIX', '')
     build(sname, tag=tag, cfg=cfg, grid=(comps, quads, size / (comps * quads)), center=(0.0, 0.0))
     # a vila (Villages nos controles): o JSON que o jogo lê pra montar a grade e o

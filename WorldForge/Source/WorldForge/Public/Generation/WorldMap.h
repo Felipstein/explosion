@@ -47,6 +47,10 @@ struct WORLDFORGE_API FWorldGenSettings
 	 *  sempre), 1 monólitos (o AlUla: miolo de areia aberto, um anel de pilares
 	 *  de rocha com passagens largas e um rochedo no centro quando não há vila). */
 	int32 ReliefType = 0;
+	/** A areia do deserto, só no acabamento ("Ver em qualidade real" e o mapa do jogo; o gerador não muda). O Felipe,
+	 *  16/10: "vai de 3", com as três como opção por mapa: 3 a cor de duna (o padrão do deserto dourado), 2 a amarela
+	 *  (a v2 da maquete, pra sol alto), 1 a clássica (reserva). docs/APROVADOS.md, 16/10. */
+	int32 Sand = 3;
 	/** Áreas que a vila não pode tapar, além das bases e dos campos do próprio mapa
 	 *  (as do jogo: largadas extras e depósitos de suprimento): x, y, raio (m). */
 	TArray<FVector3f> KeepOut;

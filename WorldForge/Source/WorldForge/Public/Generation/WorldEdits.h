@@ -50,6 +50,10 @@ struct FWorldEdits
 		/** A ponta solta se desfaz devagar, como a do gerador que entra na base (a
 		 *  que veio de uma estrada do gerador guarda isso); senão termina em ~4 m. */
 		bool bFade[2] = { false, false };
+		/** O acabamento do asfalto (16/10, o Felipe: a laje aprovada "mas lembre-se que tinha mais de uma variação" e
+		 *  "também não descartei a original que é colada no chão"): 0 automático (o desgaste por trecho), 1 colada no
+		 *  chão (sem laje), 2 inteira, 3 gasta, 4 destruída. FWorldDetail::FRoad::Style. */
+		int32 Style = 0;
 	};
 	TArray<FRoadEdit> Roads;
 	/** Estradas do gerador tiradas à mão: um ponto do traçado (m); a estrada do
@@ -252,8 +256,8 @@ struct FWorldEdits
 		S += TEXT("\n ],\n \"roads\": [");
 		for (int32 R = 0; R < Roads.Num(); ++R)
 		{
-			S += FString::Printf(TEXT("%s\n  {\"paved\": %s, \"fade\": [%s, %s], \"points\": ["), R ? TEXT(",") : TEXT(""), Roads[R].bPaved ? TEXT("true") : TEXT("false"),
-				Roads[R].bFade[0] ? TEXT("true") : TEXT("false"), Roads[R].bFade[1] ? TEXT("true") : TEXT("false"));
+			S += FString::Printf(TEXT("%s\n  {\"paved\": %s, \"style\": %d, \"fade\": [%s, %s], \"points\": ["), R ? TEXT(",") : TEXT(""), Roads[R].bPaved ? TEXT("true") : TEXT("false"),
+				Roads[R].Style, Roads[R].bFade[0] ? TEXT("true") : TEXT("false"), Roads[R].bFade[1] ? TEXT("true") : TEXT("false"));
 			for (int32 K = 0; K < Roads[R].Points.Num(); ++K)
 			{
 				S += FString::Printf(TEXT("%s[%.2f, %.2f]"), K ? TEXT(", ") : TEXT(""), Roads[R].Points[K].X, Roads[R].Points[K].Y);
@@ -328,6 +332,7 @@ struct FWorldEdits
 				const TSharedPtr<FJsonObject> O = V->AsObject();
 				FRoadEdit& R = Roads.AddDefaulted_GetRef();
 				R.bPaved = O->GetBoolField(TEXT("paved"));
+				R.Style = O->HasField(TEXT("style")) ? FMath::Clamp(int32(O->GetNumberField(TEXT("style"))), 0, 4) : 0;
 				const TArray<TSharedPtr<FJsonValue>>* Fade;
 				if (O->TryGetArrayField(TEXT("fade"), Fade) && Fade->Num() == 2)
 				{

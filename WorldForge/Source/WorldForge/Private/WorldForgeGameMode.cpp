@@ -1328,6 +1328,28 @@ void AWorldForgeGameMode::RoadSetPaved(bool bPaved)
 	Generate(Settings);
 }
 
+int32 AWorldForgeGameMode::GetSelectedRoadStyle() const
+{
+	if (bRoadSelected && RoadSelUser != INDEX_NONE && Edits.IsValid() && Edits->Roads.IsValidIndex(RoadSelUser))
+	{
+		return Edits->Roads[RoadSelUser].Style;
+	}
+	return 0;
+}
+
+void AWorldForgeGameMode::RoadSetStyle(int32 Style)
+{
+	if (!bRoadSelected || IsGenerating() || !IsSelectedRoadPaved() || GetSelectedRoadStyle() == Style)
+	{
+		return;
+	}
+	RoadPushUndo();
+	RoadMakeUser();
+	Edits->Roads[RoadSelUser].Style = Style;
+	UE_LOG(LogTemp, Display, TEXT("FORGE edição: acabamento do asfalto %d"), Style);
+	Generate(Settings);
+}
+
 void AWorldForgeGameMode::RoadDeleteSelected()
 {
 	if (!bRoadSelected || IsGenerating())

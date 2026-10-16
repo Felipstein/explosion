@@ -280,4 +280,39 @@ public:
 	/** Troca o material do Landscape (a instância com a textura da água deste mapa). */
 	UFUNCTION(BlueprintCallable, Category = "WorldForge")
 	static void SetLandscapeMaterial(ALandscape* Landscape, UMaterialInterface* Material);
+
+	/** A medida das camadas do chão por componente (14/10, a otimização): quantas camadas cada componente carrega
+	 *  no shader e quantas têm peso máximo desprezível ali (a camada alocada entra inteira no material). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString LandscapeLayerReport(ALandscape* Landscape);
+
+	/** A estrada com volume (14/10, v3): a laje de asfalto de 12 cm das estradas de asfalto, em ladrilhos Nanite de
+	 *  ~31 m (SM_RoadSlab_<mapa>_<n>), com a borda quebrada em placas onde a estrada é gasta ou destruída (o kit do
+	 *  Look, look_ground.road_slab). Só com a laje ligada no Setup (ROAD_SLAB=1). Devolve o resumo. */
+	/** A laje no ponto (cm): (o desgaste 0..1, metros até a beira com sinal, a areia encostada em m); X < 0 fora do
+	 *  asfalto. Pra escolher as vistas das fotos (a inteira, a gasta, a destruída). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FVector SliceSlabAt(FVector2D PointCm);
+
+	/** A medida das dunas (o estudo do WORLDFORGE.md §12.7): a inclinação a cada 0,5 m nas barcanas. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString SliceDuneStats();
+
+	/** A posição na pista em 16 bits (RoadFramePixels): pra faixa pintada nova na laje. */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static UTexture2D* MakeRoadFrameTexture(const FString& AssetPath, float SizeM);
+
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString BuildRoadSlabs(UMaterialInterface* Material, const FString& AssetDir, const FString& MapName);
+
+	/** A mesma medida sem montar o Landscape: os pesos da montagem (o mesmo Setup), por componente, e quantas
+	 *  camadas sobram com cada limite da limpeza (LAYER_CULL na montagem). */
+	/** O HLSL que a Unreal gera do material (o Material.ush, sem compilar): pra copiar uma conta da engine
+	 *  idêntica num nó Custom (14/10, a pedra no desvio dinâmico). */
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString MaterialHlsl(UMaterialInterface* Material);
+
+	UFUNCTION(BlueprintCallable, Category = "WorldForge")
+	static FString SliceLayerStats(int32 Seed, int32 Players, int32 Biome, float MapSize, FVector2D CenterM,
+		int32 Components, int32 QuadsPerComponent, float QuadSizeM, int32 NumLayers, float RoadWidthM);
 };

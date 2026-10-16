@@ -9,6 +9,6 @@ public class WorldForgeEditor : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Landscape" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "WorldForge", "MeshDescription", "StaticMeshDescription", "MaterialEditor", "Json" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "WorldForge", "MeshDescription", "StaticMeshDescription", "MaterialEditor", "Json", "RHI" });
 	}
 }

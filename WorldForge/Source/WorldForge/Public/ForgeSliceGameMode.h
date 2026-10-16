@@ -46,6 +46,9 @@ private:
 	TSharedPtr<class SWidget> ShaderNote;   // aviso enquanto os materiais compilam
 	TArray<FForgeSliceView> Views;
 	bool bNoMotion = false;
+	// o passeio: de A a B (m), com yaw, pitch e distância (o padrão de antes; -ForgeMotion troca)
+	FVector2f MotionA = FVector2f(-30.0f, -20.0f), MotionB = FVector2f(15.0f, -10.0f);
+	FVector MotionView = FVector(15.0, 50.0, 75.0);
 	int32 Step = 0;
 	double Wait = 2.5;
 	int32 MotionFrame = -1;

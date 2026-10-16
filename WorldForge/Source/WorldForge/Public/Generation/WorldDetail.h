@@ -3,10 +3,15 @@
 #include "CoreMinimal.h"
 #include "Algo/AnyOf.h"
 #include "Async/ParallelFor.h"
+#include "Math/Float16Color.h"
 #include "Generation/WorldEdits.h"
 #include "Generation/WorldMap.h"
 #include "Generation/WorldNoise.h"
 #include "Generation/WorldTrees.h"
+#include "Generation/DuneSim.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 
 /**
  * O mundo "de verdade" a partir do mapa do gerador: a rede de estradas, as
@@ -236,6 +241,7 @@ struct FWorldDetail
 		// base); 4 na desenhada à mão, que termina onde o jogador parou (a de
 		// ~40 m sumia inteira nos buracos, 07/10)
 		float Fade[2] = { 45.0f, 45.0f };
+		int32 Style = 0;         // o acabamento do asfalto escolhido no painel (FWorldEdits::FRoadEdit::Style): 0 automático, 1 colada no chão, 2 inteira, 3 gasta, 4 destruída
 	};
 	TArray<FRoad> GRoads;
 	int32 NumGenRoads = 0;            // as primeiras são do gerador; depois, as desenhadas à mão
@@ -259,6 +265,7 @@ struct FWorldDetail
 		bool bPavedRoad = false; // batida não enxerga a lista de estradas)
 		FVector2f Dir = FVector2f(1.0f, 0.0f);   // a direção da pista no ponto (o trecho mais perto)
 		FVector2f Closest = FVector2f::ZeroVector;   // o ponto do eixo mais perto
+		float S = 0.0f;          // metros ao longo da estrada até o ponto mais perto (a fase do tracejado)
 		float Half() const { return Road != INDEX_NONE ? HalfWidth : 0.0f; }
 		bool Paved() const { return Road != INDEX_NONE && bPavedRoad; }
 	};
@@ -276,6 +283,404 @@ struct FWorldDetail
 		Out = Out.SizeSquared() > 1e-4f ? Out.GetSafeNormal() : FVector2f(-Hit.Dir.Y, Hit.Dir.X);
 		Drop = FMath::Abs(M.HeightAt(Hit.Closest + Out * (Flat + 10.0f)) - Hit.Z);
 		Bank = FMath::Clamp(Drop / 0.5f, Hit.Paved() ? 6.2f : 3.2f, 26.0f);
+	}
+
+	// ---- a estrada com volume (14/10, v3: a laje do Look, RECEITAS_DO_LOOK §6, Game/Tools/look_ground.py road_slab) ----
+	// O asfalto vira uma laje de 12 cm em cima do chão (uma malha Nanite por ladrilho, BuildRoadSlabs no editor), com a
+	// borda quebrada em placas onde a estrada é gasta ou destruída. O chão (o Landscape) faz o resto: a areia em volta
+	// 6 cm abaixo do asfalto (a maquete: base −0,06), os montes de areia encostados na beira em trechos (o próprio chão
+	// levantado, que cobre a laje onde passa do topo dela) e, escondido debaixo do miolo da laje, o chão levantado até
+	// 1,5 cm do topo: o jogo tira a altura das unidades do Landscape a cada 2 m (RTSMapBaker), e assim o tanque anda em
+	// cima da laje sem mudar nada no jogo. GSlab: ROAD_SLAB=1 (o mapa de teste; depois, uma escolha do mapa).
+	bool GSlab = false;
+	/** A estrada do ponto tem laje (a laje no mapa e a estrada de asfalto que não pediu "colada no chão"). */
+	bool SlabOn(const FRoadHit& Hit) const { return GSlab && Hit.Paved() && GRoads[Hit.Road].Style != 1; }
+	static constexpr float SlabThick = 0.12f;      // o topo acima do asfalto (look_layout ROAD_SLAB thick: 8 → 12 cm, "o degrau lia pouco")
+	static constexpr float SlabCrown = 0.025f;     // o abaulado no meio (smoothstep de 0 a 4 m da beira)
+	static constexpr float SlabSandDrop = 0.06f;   // a areia em volta, abaixo do asfalto
+
+	// ---- os bolsões de dunas (16/10, v3; o estudo com fontes no WORLDFORGE.md §12.7) ----
+	// Com o sol a 8° a duna aparece pela inclinação, não pela altura: barcanas baixas (0,8–2 m) no deserto aberto, longe
+	// do que se joga (40–100 m das bases, 25–60 m dos depósitos, fora do pisado: OpenAt). O perfil do estudo: barlavento
+	// em meia-senoide (máximo de 14°, comprimento 6,3× a altura), face de deslizamento a 31°, crista arredondada, chifres
+	// a favor do vento; a altura pela largura das barcanas do Marrocos, H ≈ (1/15)·√(L² − 10²). O lugar e o tamanho seguem
+	// a simetria do mapa (o giro de 180° ou 90°); a forma sai sempre do vento do mapa (girar a duna inverteria a face).
+	// DUNE_POCKETS=1 (o mapa de teste).
+	// (16/10 à tarde, o Felipe sobre as barcanas por fórmula, duas vezes: "muito padronizada e única" e "ainda tá muito
+	// padronizado, não tem nada natural aí") o passo atrás: a areia simulada (DuneSim.h, o modelo de lajes de Werner
+	// 1995 / Paris 2019). Um ladrilho periódico de 512 m com o vento em +x, a areia esparsa em manchas; as dunas nascem,
+	// crescem, se juntam e soltam filhotes sozinhas, cada uma diferente. O acabamento alisa os degraus da laje, achata
+	// pela metade (a barcana da simulação sai com ~1/7 da largura de altura; as reais têm 1/10–1/15: a proporção fica a
+	// real e, com o sol a 8°, a face de 18° continua inteira na sombra) e escorre acima de 30°. No mapa o ladrilho gira
+	// com o vento do mapa e cada duna entra inteira, só onde o contorno todo cabe no DuneAllowed (nada cortado na borda),
+	// sem encostar na outra. Os lados não recebem a mesma duna copiada (girada, a duna e o filhote a jusante dela
+	// inverteriam o vento): a justiça é a quantidade de duna por lado (o log mede), e a duna não bloqueia ninguém.
+	bool GDunes = false;
+	static constexpr int32 DuneTileN = 1024;       // o ladrilho (1024 células de 0,5 m: ~40 formas diferentes, cada uma entra no mapa uma vez)
+	// (16/10, a 1ª foto no jogo: achatada a 0,45, a face caía pra ~17° e com a luz do jogo não escurecia; a duna sumia)
+	// a duna inteira em meia escala, largura e altura juntas: a face fica a 30° e a crista nos mesmos ~1–2,5 m. A
+	// simulação não muda (laje/célula = 0,1 nos dois casos)
+	static constexpr float DuneTileCell = 0.5f;
+	TArray<float> GDuneH;                          // a altura acabada do ladrilho (m)
+	std::vector<int> GDuneLab, GDuneNear;          // a duna de cada célula e a mais perto até 8 m (o pé)
+	std::vector<float> GDuneNearDist;              // a distância (m) até ela
+	std::vector<DuneSim::FDune> GDuneComps;        // as dunas do ladrilho
+	struct FDuneInst { int32 Comp = 0; FVector2f A = FVector2f::ZeroVector; float R = 0.0f; bool bFlip = false; };   // a duna Comp com o centro em A (m), espelhada de lado
+
+	TArray<FDuneInst> GDuneInst;
+	TMap<FIntPoint, TArray<int32>> GDuneGrid;      // célula de 32 m → as dunas que alcançam
+	FVector2f GDuneWd = FVector2f(1.0f, 0.0f), GDuneWp = FVector2f(0.0f, 1.0f), GDuneOff = FVector2f::ZeroVector;
+
+	/** O quanto o ponto aceita duna (0..1): areia aberta, longe das bases, dos depósitos e do pisado. */
+	float DuneAllowed(const FWorldMap& M, FVector2f P) const
+	{
+		float A = OpenAt(P);
+		if (A <= 0.0f) return 0.0f;
+		for (const FWorldStart& St : M.Starts) A *= FMath::SmoothStep(M.BaseRadius + 40.0f, M.BaseRadius + 100.0f, FVector2f::Distance(P, St.Pos));
+		for (const FWorldResource& R : M.Resources) A *= FMath::SmoothStep(R.Radius + 25.0f, R.Radius + 60.0f, FVector2f::Distance(P, R.Pos));
+		if (M.WaterLevel > -100.0f) A *= FMath::SmoothStep(M.WaterLevel + 1.0f, M.WaterLevel + 3.0f, M.HeightAt(P));
+		// (16/10, a 1ª montagem: uma barcana caiu em cima do maciço) só no chão plano: a encosta medida em 8 m, até ~3°
+		const float Gx = M.HeightAt(P + FVector2f(8.0f, 0.0f)) - M.HeightAt(P - FVector2f(8.0f, 0.0f));
+		const float Gy = M.HeightAt(P + FVector2f(0.0f, 8.0f)) - M.HeightAt(P - FVector2f(0.0f, 8.0f));
+		A *= 1.0f - FMath::SmoothStep(0.035f, 0.14f, FMath::Sqrt(Gx * Gx + Gy * Gy) / 16.0f);   // (fade largo: estreito, cortava a duna em 2–4 m e passava de 45°)
+		return A;
+	}
+
+	/** O ladrilho de areia simulada (o arquivo guardado por semente: a simulação leva ~1 min). */
+	void BuildDuneTile(const FWorldMap& M)
+	{
+		const uint32 Seed = 0xD0E5u + uint32(M.Settings.Seed);
+		const FString Path = FPaths::ProjectSavedDir() / TEXT("WorldForge/dunes") / FString::Printf(TEXT("tile_%u_%d_v3.bin"), Seed, DuneTileN);
+		const int32 N = DuneTileN;
+		TArray<uint8> Bytes;
+		if (FFileHelper::LoadFileToArray(Bytes, *Path) && Bytes.Num() == N * N * int32(sizeof(float)))
+		{
+			GDuneH.SetNumUninitialized(N * N);
+			FMemory::Memcpy(GDuneH.GetData(), Bytes.GetData(), Bytes.Num());
+			UE_LOG(LogTemp, Display, TEXT("FORGE dunes: ladrilho guardado %s"), *Path);
+		}
+		else
+		{
+			const double T0 = FPlatformTime::Seconds();
+			DuneSim::FParams P;
+			P.N = N;
+			P.Cell = DuneTileCell;
+			P.Seed = Seed;   // (o resto: o modo conservado do DuneSim, o da bancada de 16/10, Tools/dunesim)
+			P.Cell = DuneTileCell;
+			P.Slab = 0.1f * DuneTileCell;
+			DuneSim::FState S;
+			S.Init(P);
+			DuneSim::SeedSandMean(S, 2.0f);   // 2 lajes (20 cm) em média: com 1–1,6 a areia fica em lençol e não vira duna
+			S.Run(uint64_t(N) * N * 2000);
+			// sem achatar: a meia escala já põe a crista em ~1–2,5 m com a face a 30°
+			const std::vector<float> Hf = DuneSim::Finish(S, 1.0f, 1.0f, 30.0f);
+			GDuneH.SetNumUninitialized(N * N);
+			FMemory::Memcpy(GDuneH.GetData(), Hf.data(), Hf.size() * sizeof(float));
+			IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
+			FFileHelper::SaveArrayToFile(TArrayView<const uint8>(reinterpret_cast<const uint8*>(GDuneH.GetData()), N * N * int32(sizeof(float))), *Path);
+			UE_LOG(LogTemp, Display, TEXT("FORGE dunes: ladrilho simulado em %.0f s -> %s"), FPlatformTime::Seconds() - T0, *Path);
+		}
+		std::vector<float> Hv(GDuneH.GetData(), GDuneH.GetData() + GDuneH.Num());
+		// o pé até 9 m (em células: na meia escala, 8 células eram 4 m e a pintura cortava ali numa moldura em volta da duna)
+		GDuneComps = DuneSim::Label(Hv, N, 0.05f, 60, FMath::CeilToInt(9.0f / DuneTileCell), GDuneLab, GDuneNear, GDuneNearDist);
+	}
+
+	/** A altura do ladrilho no ponto (células, periódico), só das células da duna Comp (bilinear com as de fora em zero). */
+	float DuneTileSample(float Tx, float Ty, int32 Comp, const std::vector<int>& Lab, const TArray<float>* H) const
+	{
+		const int32 N = DuneTileN, Mk = N - 1;
+		const float Fx = Tx - 0.5f, Fy = Ty - 0.5f;
+		const int32 X0 = FMath::FloorToInt(Fx), Y0 = FMath::FloorToInt(Fy);
+		const float Ax = Fx - X0, Ay = Fy - Y0;
+		auto At = [&](int32 X, int32 Y)
+		{
+			const int32 I = (Y & Mk) * N + (X & Mk);
+			return Lab[I] == Comp ? (H ? (*H)[I] : 1.0f) : 0.0f;
+		};
+		return FMath::Lerp(FMath::Lerp(At(X0, Y0), At(X0 + 1, Y0), Ax), FMath::Lerp(At(X0, Y0 + 1), At(X0 + 1, Y0 + 1), Ax), Ay);
+	}
+
+	/** O ponto do mapa no ladrilho (células): o ladrilho gira com o vento e anda GDuneOff (a semente). */
+	FVector2f DuneTileAt(FVector2f P) const
+	{
+		return FVector2f((P | GDuneWd), (P | GDuneWp)) / DuneTileCell + GDuneOff;
+	}
+
+	void BuildDunePockets(const FWorldMap& M)
+	{
+		GDuneInst.Reset();
+		GDuneGrid.Reset();
+		if (!GDunes) return;
+		BuildDuneTile(M);
+		const float Half = M.Half();
+		const int32 K = M.Settings.Players == 4 ? 4 : 2;
+		GDuneWd = FVector2f(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
+		GDuneWp = FVector2f(-GDuneWd.Y, GDuneWd.X);
+		// (16/10 à tarde: com o ladrilho preso no mapa só 2 dunas cabiam inteiras nos bolsões) o ladrilho vira a biblioteca
+		// de formas: cada duna dele, como nasceu ou espelhada de lado (o vento continua o mesmo), num ponto sorteado do
+		// bolsão, com as vizinhas dela no ladrilho a até 25 m (os filhotes, as que encostam) no mesmo arranjo. Para em ~10%
+		// do chão onde pode (a pesquisa: o campo esparso cobre 8–12%), os dois lados com a mesma área de duna (±10%)
+		const int32 ND = int32(GDuneComps.size());
+		TArray<TArray<TPair<int32, FVector2f>>> Groups;
+		Groups.SetNum(ND);
+		for (int32 A = 0; A < ND; ++A)
+			for (int32 B = 0; B < ND; ++B)
+			{
+				if (A == B) continue;
+				FVector2f D(GDuneComps[B].Cx - GDuneComps[A].Cx, GDuneComps[B].Cy - GDuneComps[A].Cy);
+				D.X -= DuneTileN * FMath::RoundToFloat(D.X / DuneTileN);   // a menor distância no ladrilho periódico
+				D.Y -= DuneTileN * FMath::RoundToFloat(D.Y / DuneTileN);
+				if (D.Size() < GDuneComps[A].R + GDuneComps[B].R + 25.0f) Groups[A].Add({ B, D });
+			}
+		float Open = 0.0f;
+		for (float Y = -Half + 4.0f; Y < Half; Y += 8.0f)
+			for (float X = -Half + 4.0f; X < Half; X += 8.0f)
+				Open += DuneAllowed(M, FVector2f(X, Y)) >= 0.85f ? 64.0f : 0.0f;
+		const float Target = 0.10f * Open;
+		// (16/10: o montinho de 26 cm cabia em todo canto e entrou 16 vezes, o carimbo de novo) só duna de verdade (a crista
+		// a 60 cm ou mais) e cada forma uma vez só, como nasceu ou espelhada
+		TArray<uint8> Uses;
+		Uses.Init(0, ND);
+		TArray<FVector2f> FirstAt;
+		FirstAt.Init(FVector2f(1e9f, 1e9f), ND);
+		// (normal e espelhada perto liam como gêmeas) e a crista até 2,6 m (16/10: a de 4,4 m passava do que o jogo aguenta:
+		// a sombra a 8° de sol cobre as unidades)
+		// (16/10, meia escala: só ~24 formas cabiam, 4% do chão) a forma volta uma segunda vez, espelhada e a 200 m ou mais da
+		// primeira: ninguém vê as duas juntas
+		auto Usable = [&](int32 C, bool bFlip, FVector2f At)
+		{
+			if (GDuneComps[C].HMax < 0.6f || GDuneComps[C].HMax > 2.6f) return false;
+			if (Uses[C] == 0) return true;
+			return Uses[C] != 3 && !(Uses[C] & (bFlip ? 2 : 1)) && FVector2f::Distance(FirstAt[C], At) > 200.0f;
+		};
+		auto Use = [&](int32 C, bool bFlip, FVector2f At)
+		{
+			if (Uses[C] == 0) FirstAt[C] = At;
+			Uses[C] |= bFlip ? 2 : 1;
+		};
+		float CoverSide[2] = { 0.0f, 0.0f };
+		int32 NSide[2] = { 0, 0 };
+		// o lado do mapa (o primeiro jogador do lado de x negativo no giro de 180°): a medida da justiça
+		auto SideOf = [K](FVector2f A) { return (K == 4 ? (A.X < 0.0f) : (A.X + 0.0001f * A.Y < 0.0f)) ? 0 : 1; };
+		auto ToMap = [this](float Tx, float Ty, bool bFlip) { return (GDuneWd * Tx + GDuneWp * (bFlip ? -Ty : Ty)) * DuneTileCell; };
+		auto Fits = [&](int32 C, FVector2f A, bool bFlip)
+		{
+			const DuneSim::FDune& D = GDuneComps[C];
+			const float R = D.R * DuneTileCell;
+			for (const FDuneInst& O : GDuneInst)
+				if (FVector2f::Distance(O.A, A) < O.R + R + 3.0f) return false;
+			for (size_t Q = 0; Q < D.ProbeX.size(); ++Q)
+			{
+				const FVector2f P = A + ToMap(float(D.ProbeX[Q]), float(D.ProbeY[Q]), bFlip);
+				if (FMath::Abs(P.X) > Half - 4.0f || FMath::Abs(P.Y) > Half - 4.0f || DuneAllowed(M, P) < 0.85f) return false;
+			}
+			return true;
+		};
+		auto Place = [&](int32 C, FVector2f A, bool bFlip)
+		{
+			const float R = GDuneComps[C].R * DuneTileCell;
+			const int32 Idx = GDuneInst.Add({ C, A, R, bFlip });
+			const int32 Side = SideOf(A);
+			CoverSide[Side] += GDuneComps[C].Cells * DuneTileCell * DuneTileCell;
+			NSide[Side]++;
+			const float Reach = R + 8.0f;
+			for (int32 Y = FMath::FloorToInt((A.Y - Reach) / 32.0f); Y <= FMath::FloorToInt((A.Y + Reach) / 32.0f); ++Y)
+				for (int32 X = FMath::FloorToInt((A.X - Reach) / 32.0f); X <= FMath::FloorToInt((A.X + Reach) / 32.0f); ++X)
+					GDuneGrid.FindOrAdd(FIntPoint(X, Y)).Add(Idx);
+		};
+		const uint32 Sd = 0xD0E5u + uint32(M.Settings.Seed);
+		for (int32 I = 0; I < 40000 && ND > 0 && CoverSide[0] + CoverSide[1] < Target; ++I)
+		{
+			const uint32 H1 = WorldNoise::Hash(I, 1, Sd);
+			const FVector2f P((2.0f * WorldNoise::Unit(H1) - 1.0f) * Half, (2.0f * WorldNoise::Unit(WorldNoise::Hash(H1)) - 1.0f) * Half);
+			if (DuneAllowed(M, P) < 0.85f) continue;
+			const int32 Side = SideOf(P);
+			if (CoverSide[Side] > CoverSide[1 - Side] + 0.06f * Target) continue;   // o lado com menos duna escolhe primeiro
+			const int32 C = FMath::Min(int32(WorldNoise::Unit(WorldNoise::Hash(H1 + 7u)) * ND), ND - 1);
+			const bool bFlip = (WorldNoise::Hash(H1 + 11u) & 256u) != 0;
+			if (!Usable(C, bFlip, P) || !Fits(C, P, bFlip)) continue;
+			Place(C, P, bFlip);
+			Use(C, bFlip, P);
+			for (const TPair<int32, FVector2f>& G : Groups[C])
+			{
+				const FVector2f A = P + ToMap(G.Value.X, G.Value.Y, bFlip);
+				if (Usable(G.Key, bFlip, A) && Fits(G.Key, A, bFlip))
+				{
+					Place(G.Key, A, bFlip);
+					Use(G.Key, bFlip, A);
+				}
+			}
+		}
+		UE_LOG(LogTemp, Display, TEXT("FORGE dunes: %d dunas no ladrilho, %d no mapa (lados %d/%d, %.0f/%.0f m2); ~%.0f%% do chão onde pode (%.0f%% do mapa)"),
+			ND, GDuneInst.Num(), NSide[0], NSide[1], CoverSide[0], CoverSide[1],
+			100.0f * (CoverSide[0] + CoverSide[1]) / FMath::Max(Open, 1.0f), 100.0f * Open / FMath::Square(2.0f * Half));
+		for (const FDuneInst& D : GDuneInst)
+			UE_LOG(LogTemp, Display, TEXT("FORGE duna %d em %.0f %.0f raio %.0f altura %.2f%s"), D.Comp, D.A.X, D.A.Y, D.R, GDuneComps[D.Comp].HMax, D.bFlip ? TEXT(" espelhada") : TEXT(""));
+	}
+
+	/** O quanto o chão é areia da duna (0..1): o corpo e o pé, caindo de 1 a 8 m fora dela (a pintura da camada; o relevo
+	 *  da areia de base enterra por ela, devagar: trocar em 1 m levantava ~1 m de marola de uma vez). */
+	float DunePaintAt(const FWorldMap& M, FVector2f P) const
+	{
+		const TArray<int32>* L = GDuneGrid.Find(FIntPoint(FMath::FloorToInt(P.X / 32.0f), FMath::FloorToInt(P.Y / 32.0f)));
+		if (!L) return 0.0f;
+		float Best = 0.0f;
+		for (const int32 I : *L)
+		{
+			const FDuneInst& D = GDuneInst[I];
+			const FVector2f Local = P - D.A;
+			if (Local.SizeSquared() > FMath::Square(D.R + 6.0f)) continue;
+			const DuneSim::FDune& C = GDuneComps[D.Comp];
+			const FVector2f T = FVector2f(C.Cx, C.Cy) + FVector2f(Local | GDuneWd, (D.bFlip ? -1.0f : 1.0f) * (Local | GDuneWp)) / DuneTileCell;
+			const int32 Mk = DuneTileN - 1;
+			const int32 Ci = (FMath::FloorToInt(T.Y) & Mk) * DuneTileN + (FMath::FloorToInt(T.X) & Mk);
+			if (GDuneNear[Ci] != D.Comp) continue;
+			Best = FMath::Max(Best, 1.0f - FMath::SmoothStep(1.0f, 8.0f, GDuneNearDist[Ci] * DuneTileCell));
+		}
+		return Best;
+	}
+
+	/** A altura das dunas no ponto (m). */
+	float DuneAt(const FWorldMap& M, FVector2f P) const
+	{
+		const float Raw = DuneRaw(M, P);
+		return Raw > 0.0f ? Raw * DuneAllowed(M, P) : 0.0f;
+	}
+
+	/** A altura das dunas antes do DuneAllowed (a medida separa o corte da borda); NHit = quantas dunas no ponto. */
+	float DuneRaw(const FWorldMap& M, FVector2f P, int32* NHit = nullptr) const
+	{
+		if (NHit) *NHit = 0;
+		const TArray<int32>* L = GDuneGrid.Find(FIntPoint(FMath::FloorToInt(P.X / 32.0f), FMath::FloorToInt(P.Y / 32.0f)));
+		if (!L) return 0.0f;
+		float Sum = 0.0f;
+		for (const int32 I : *L)
+		{
+			const FDuneInst& D = GDuneInst[I];
+			const FVector2f Local = P - D.A;
+			if (Local.SizeSquared() > FMath::Square(D.R + 2.0f)) continue;
+			const DuneSim::FDune& C = GDuneComps[D.Comp];
+			const FVector2f T = FVector2f(C.Cx, C.Cy) + FVector2f(Local | GDuneWd, (D.bFlip ? -1.0f : 1.0f) * (Local | GDuneWp)) / DuneTileCell;
+			const float Z = DuneTileSample(T.X, T.Y, D.Comp, GDuneLab, &GDuneH);
+			if (Z > 0.0f)
+			{
+				Sum += Z;
+				if (NHit) ++*NHit;
+			}
+		}
+		return Sum;
+	}
+
+	// ---- a areia encostada nas paredes (14/10, v3) ----
+	// A maquete do Look tem (look_ground.fields: pile = 0,35·exp(−d/0,9)·(0,4 + 0,6·ruído de 2 m)) e o r1_raid_slabs também:
+	// a areia batida contra as paredes, com a crista. No mapa o chão em volta das casas era plano. Aqui o chão levanta em
+	// volta das casas e dos muros da vila, mais do lado de onde vem o vento (barlavento: a areia para na parede) e menos
+	// no de sotavento (o redemoinho), em trechos; pintado de areia. WALL_SAND=1 (o mapa de teste)
+	bool GWallSand = false;
+	// (16/10, a 1ª foto: os 35 cm da maquete sumiam na câmera do jogo, a 67–100 m; o r1_raid_slabs tem montes de
+	// ~0,7–1 m com rampa de ~2 m) WALL_SAND=1 a da maquete (0,35 m, 0,9 m); WALL_SAND=2 a forte (0,75 m, 1,8 m): o A/B
+	float GWallSandPeak = 0.35f, GWallSandFall = 0.9f;
+	TMap<FIntPoint, TArray<int32>> GWallGrid;   // célula de 8 m → peças da vila (casas e muros) a até 3 m
+
+	void IndexWallSand()
+	{
+		GWallGrid.Reset();
+		if (!GWallSand) return;
+		for (int32 I = 0; I < GVillage.Num(); ++I)
+		{
+			const FVillagePiece& Pc = GVillage[I];
+			if (!(Pc.Type.StartsWith(TEXT("civ_house")) || Pc.Type.StartsWith(TEXT("civ_wall"))) || Pc.Height < 1.0f) continue;
+			const float R = 3.5f * GWallSandFall;
+			const FVector2f Lo = Pc.Center - 0.5f * Pc.Size - FVector2f(R), Hi = Pc.Center + 0.5f * Pc.Size + FVector2f(R);
+			for (int32 Y = FMath::FloorToInt(Lo.Y / 8.0f); Y <= FMath::FloorToInt(Hi.Y / 8.0f); ++Y)
+				for (int32 X = FMath::FloorToInt(Lo.X / 8.0f); X <= FMath::FloorToInt(Hi.X / 8.0f); ++X)
+					GWallGrid.FindOrAdd(FIntPoint(X, Y)).Add(I);
+		}
+	}
+
+	/** O monte de areia encostado nas paredes no ponto (m); 0 dentro da pegada e longe. */
+	float WallSandAt(const FWorldMap& M, FVector2f P) const
+	{
+		const TArray<int32>* L = GWallGrid.Find(FIntPoint(FMath::FloorToInt(P.X / 8.0f), FMath::FloorToInt(P.Y / 8.0f)));
+		if (!L) return 0.0f;
+		const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
+		float Best = 0.0f;
+		for (const int32 I : *L)
+		{
+			const FVillagePiece& Pc = GVillage[I];
+			const FVector2f D = P - Pc.Center;
+			const float Dx = FMath::Abs(D.X) - 0.5f * Pc.Size.X, Dy = FMath::Abs(D.Y) - 0.5f * Pc.Size.Y;
+			if (Dx <= 0.0f && Dy <= 0.0f) return 0.0f;   // dentro de uma pegada: o piso
+			const float Out = FMath::Sqrt(FMath::Square(FMath::Max(Dx, 0.0f)) + FMath::Square(FMath::Max(Dy, 0.0f)));
+			if (Out > 3.5f * GWallSandFall) continue;
+			// a face mais perto e a normal dela pra fora; o vento (M.WindYaw: pra onde sopra) bate na face que olha contra ele
+			const FVector2f N = Dx > Dy ? FVector2f(FMath::Sign(D.X), 0.0f) : FVector2f(0.0f, FMath::Sign(D.Y));
+			const float Wind = FMath::Lerp(0.55f, 1.25f, FMath::Clamp(0.5f - 0.5f * (N | Wd), 0.0f, 1.0f));
+			const float Big = Pc.Type.StartsWith(TEXT("civ_house")) ? 1.0f : 0.6f;   // o muro baixo junta menos
+			Best = FMath::Max(Best, GWallSandPeak * Big * Wind * FMath::Exp(-Out / GWallSandFall));
+		}
+		return Best * (0.4f + 0.6f * FMath::Clamp(0.5f + 0.9f * WorldNoise::Fbm(P.X / 2.0f, P.Y / 2.0f, 955u, 2), 0.0f, 1.0f));
+	}
+
+	/** A borda do asfalto no ponto (a mesma conta do DesertWeights): In = metros até a beira (< 0 dentro), com a beira
+	 *  quebrada (EdgeP), os buracos (Holes) e a ponta que se desfaz (Ends), e a esquina arredondada com a outra pista. */
+	void PavedEdge(FVector2f P, const FRoadHit& Hit, float& In, float& EdgeP, float& Holes, float& Ends)
+	{
+		const float Half = Hit.Half();
+		Ends = FMath::SmoothStep(0.0f, 1.0f, Hit.EndT);
+		Holes = FMath::SmoothStep(0.42f - 0.5f * (1.0f - Ends), 0.62f - 0.5f * (1.0f - Ends), WorldNoise::Fbm(P.X / 4.0f, P.Y / 4.0f, 923u, 4));
+		const float Narrow = Half * FMath::Lerp(0.7f, 1.0f, Ends);
+		// a beira quebrada da maquete do Look (13/10): ±0,7 m, pedaços de ~0,8 a 2 m
+		EdgeP = 0.5f * WorldNoise::Fbm(P.X / 2.0f, P.Y / 2.0f, 921u, 3) + 0.2f * WorldNoise::Fbm(P.X / 0.8f, P.Y / 0.8f, 927u, 2);
+		In = Hit.D + EdgeP - Narrow;
+		const FRoadHit Other = RoadAt(P, Hit.Road, true);
+		if (Other.Road != INDEX_NONE && Other.D < Other.Half() + 8.0f)
+		{
+			const float B = Other.D + EdgeP - Other.Half() * FMath::Lerp(0.7f, 1.0f, FMath::SmoothStep(0.0f, 1.0f, Other.EndT));
+			constexpr float Kr = 4.0f;
+			const float Hh = FMath::Clamp(0.5f + 0.5f * (B - In) / Kr, 0.0f, 1.0f);
+			In = FMath::Lerp(B, In, Hh) - Kr * Hh * (1.0f - Hh);
+		}
+	}
+
+	struct FSlabSample
+	{
+		bool bPaved = false;
+		float In = 1e9f;       // metros até a beira (< 0 dentro)
+		float A = 0.0f;        // o quanto é asfalto (o do DesertWeights sem as línguas de areia: a laje faz a língua com o chão)
+		float Drift = 0.0f;    // o monte de areia encostado na beira (m)
+		float Wear = 0.0f;     // o desgaste: < 0,35 inteira, 0,35–0,7 gasta (quebra em trechos), > 0,7 destruída
+	};
+
+	/** A laje no ponto (só nas estradas de asfalto). A areia encostada é a da maquete (look_ground.fields: a faixa de
+	 *  ~2,4 m em volta da beira, deslocada pelo ruído e esticada no vento, em trechos, 0,22 m × (1 + 0,9 sand_over)); o
+	 *  desgaste muda em trechos de ~150 m ao longo da estrada e a vila fica inteira (a folha do Look: "a vila inteira,
+	 *  intacta com areia"). */
+	FSlabSample SlabSample(const FWorldMap& M, FVector2f P, const FRoadHit& Hit)
+	{
+		FSlabSample S;
+		if (Hit.Road == INDEX_NONE || !Hit.Paved() || GRoads[Hit.Road].Style == 1)
+		{
+			return S;
+		}
+		S.bPaved = true;
+		float EdgeP, Holes, Ends;
+		PavedEdge(P, Hit, S.In, EdgeP, Holes, Ends);
+		S.A = (1.0f - FMath::SmoothStep(-0.6f, 0.6f, S.In)) * (1.0f - Holes) * FMath::SmoothStep(0.0f, 0.25f, Ends);
+		const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
+		const float Streak = WorldNoise::Fbm((P | Wd) / 6.0f, (P | FVector2f(-Wd.Y, Wd.X)) / 1.2f, 941u, 3);
+		// (16/10, a 1ª folha no jogo contra os alvos 14 e 12: com a faixa da maquete (centro 0,6 m, sand_over 1) a areia cobria
+		// meia pista e a estrada perdia a leitura na câmera do jogo; nos alvos a estrada fica à vista e a areia só na beira.
+		// O centro 1 m pra fora, a faixa mais estreita, a língua mais curta e a altura de sand_over 0,4)
+		const float Band = FMath::Exp(-FMath::Square((S.In - 1.0f + 1.0f * WorldNoise::Fbm(P.X / 7.0f, P.Y / 7.0f, 943u, 2) + 1.2f * Streak) / 2.0f));
+		const float Patchy = FMath::SmoothStep(-0.15f, 0.10f, WorldNoise::Fbm(P.X / 9.0f, P.Y / 9.0f, 945u, 3));
+		S.Drift = 0.22f * 1.36f * Band * Patchy;
+		const float VD = GPads.Num() ? VillageDistAt(P) : 1e9f;
+		S.Wear = FMath::Clamp(0.5f + 1.1f * WorldNoise::Fbm(P.X / 150.0f, P.Y / 150.0f, 947u, 2), 0.0f, 1.0f) * FMath::SmoothStep(25.0f, 60.0f, VD);
+		// (16/10) o acabamento escolhido no painel manda na estrada inteira: inteira, gasta ou destruída
+		const int32 Style = GRoads[Hit.Road].Style;
+		if (Style >= 2) S.Wear = Style == 2 ? 0.1f : (Style == 3 ? 0.52f : 0.85f);
+		return S;
 	}
 
 	/** A estrada que manda no ponto: a de beira mais perto (distância − meia largura; o asfalto ganha 2 m). */
@@ -308,6 +713,7 @@ struct FWorldDetail
 				H.bPavedRoad = R.bPaved;
 				H.Z = FMath::Lerp(R.Z[K - 1], R.Z[K], T);
 				const float S = float(K - 1) + T;   // metros desde o começo
+				H.S = S;
 				const float E0 = R.bOpen[0] ? S : 1e9f, E1 = R.bOpen[1] ? float(R.P.Num() - 1) - S : 1e9f;
 				H.End = FMath::Min(E0, E1);
 				H.EndT = FMath::Min(E0 / R.Fade[0], E1 / R.Fade[1]);
@@ -726,6 +1132,7 @@ struct FWorldDetail
 				R.P = UserRoadLine(E.Points);
 				R.Half = bPav ? MainHalf : DirtHalf;
 				R.bPaved = bPav;
+				R.Style = bPav ? E.Style : 0;
 				R.Fade[0] = E.bFade[0] ? 45.0f : 4.0f;
 				R.Fade[1] = E.bFade[1] ? 45.0f : 4.0f;
 				const int32 Me = GRoads.Num() - 1;
@@ -1417,23 +1824,10 @@ struct FWorldDetail
 				// base o asfalto se desfaz em buracos até virar terra (sem "toco")
 				// (45 m afinando até 70% da largura: em 25 m e na largura cheia a
 				// ponta lia como toco esburacado, 06/10)
-				const float Ends = FMath::SmoothStep(0.0f, 1.0f, Hit.EndT);
-				const float Holes = FMath::SmoothStep(0.42f - 0.5f * (1.0f - Ends), 0.62f - 0.5f * (1.0f - Ends), WorldNoise::Fbm(P.X / 4.0f, P.Y / 4.0f, 923u, 4));
-				const float Narrow = Half * FMath::Lerp(0.7f, 1.0f, Ends);
-				// a beira quebrada da maquete do Look (13/10): ±0,7 m, pedaços de ~0,8 a 2 m
-				const float EdgeP = 0.5f * WorldNoise::Fbm(P.X / 2.0f, P.Y / 2.0f, 921u, 3) + 0.2f * WorldNoise::Fbm(P.X / 0.8f, P.Y / 0.8f, 927u, 2);
-				// In: metros até a beira (< 0 dentro da pista). A esquina do cruzamento arredondada:
-				// a união suave com a outra pista de asfalto (raio ~4 m; a maquete tem 5 m), sem ela
-				// o cruzamento era a quina reta de duas faixas
-				float In = Hit.D + EdgeP - Narrow;
-				const FRoadHit Other = RoadAt(P, Hit.Road, true);
-				if (Other.Road != INDEX_NONE && Other.D < Other.Half() + 8.0f)
-				{
-					const float B = Other.D + EdgeP - Other.Half() * FMath::Lerp(0.7f, 1.0f, FMath::SmoothStep(0.0f, 1.0f, Other.EndT));
-					constexpr float Kr = 4.0f;
-					const float Hh = FMath::Clamp(0.5f + 0.5f * (B - In) / Kr, 0.0f, 1.0f);
-					In = FMath::Lerp(B, In, Hh) - Kr * Hh * (1.0f - Hh);
-				}
+				// In: metros até a beira (< 0 dentro da pista), com a beira quebrada, os buracos, a ponta que se
+				// desfaz e a esquina arredondada com a outra pista (PavedEdge, a mesma da laje)
+				float In, EdgeP, Holes, Ends;
+				PavedEdge(P, Hit, In, EdgeP, Holes, Ends);
 				// as línguas de areia que o vento joga pra dentro da pista (a maquete: até ~2 m, manchas
 				// de ~9 m esticadas na direção do vento do mapa)
 				const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
@@ -1491,6 +1885,25 @@ struct FWorldDetail
 			W[2] += 0.7f * A;
 			W[1] += 0.3f * A;
 		}
+		if (GDunes)
+		{
+			// a duna é areia: o chão debaixo dela vira a camada de areia (16/10)
+			const float A = DunePaintAt(M, P);   // (o pé largo; pela altura trocava a camada em meio metro)
+			if (A > 0.0f)
+			{
+				for (int32 K = 0; K < 6; ++K) W[K] *= 1.0f - A;
+				W[0] += A;
+			}
+		}
+		if (GWallSand)
+		{
+			const float A = FMath::SmoothStep(0.03f, 0.12f, WallSandAt(M, P));
+			if (A > 0.0f)
+			{
+				for (int32 K = 0; K < 6; ++K) W[K] *= 1.0f - A;
+				W[0] += A;
+			}
+		}
 		// por último, a pintura à mão (FWorldEdits::Paint): a camada pintada toma
 		// o lugar das outras na medida da pincelada
 		if (Edits.IsValid() && Edits->Paint.Num())
@@ -1526,7 +1939,10 @@ struct FWorldDetail
 			// baixo sem atrapalhar o jogo; o areal liso não tinha escala média (07/10)
 			const float U = 0.94f * P.X + 0.34f * P.Y, Vv = -0.34f * P.X + 0.94f * P.Y;   // vento de ~20°
 			const float Dune = 1.0f - FMath::Abs(WorldNoise::Fbm(U / 34.0f, Vv / 95.0f, 933u, 3));
-			H += W[0] * (0.12f * WorldNoise::Fbm(P.X / 6.0f, P.Y / 6.0f, 917u, 3) + 0.25f * WorldNoise::Fbm(P.X / 20.0f, P.Y / 20.0f, 919u, 2)
+			if (GDunes) H += DuneAt(M, P);   // (16/10: × o peso da areia cortava a duna em degrau de 2 m na borda de outra camada, até 70°; a duna pinta o chão de areia no DesertWeights)
+			// (16/10 à tarde) debaixo da duna o relevo da areia de base fica enterrado (80% a menos, pelo pé largo)
+			const float Buried = GDunes ? 1.0f - 0.8f * DunePaintAt(M, P) : 1.0f;
+			H += W[0] * Buried * (0.12f * WorldNoise::Fbm(P.X / 6.0f, P.Y / 6.0f, 917u, 3) + 0.25f * WorldNoise::Fbm(P.X / 20.0f, P.Y / 20.0f, 919u, 2)
 				+ 0.7f * FMath::Square(Dune) * FMath::SmoothStep(-0.3f, 0.3f, WorldNoise::Fbm(P.X / 160.0f, P.Y / 160.0f, 935u, 2)));
 		}
 		const FRoadHit Hit = RoadAt(P);
@@ -1537,8 +1953,21 @@ struct FWorldDetail
 			float Flat, Bank, Drop;
 			RoadCut(M, P, Hit, Flat, Bank, Drop);
 			H = FMath::Lerp(H, Hit.Z, 1.0f - FMath::SmoothStep(Flat, Flat + Bank, Hit.D));
+			if (SlabOn(Hit))
+			{
+				// a laje (14/10): a areia 6 cm abaixo do asfalto e os montes encostados (some no fim do acostamento);
+				// debaixo do miolo (a 1–1,6 m da beira pra dentro, longe dos buracos), o chão a 1,5 cm do topo da laje
+				const FSlabSample S = SlabSample(M, P, Hit);
+				const float Near = 1.0f - FMath::SmoothStep(Flat - 1.0f, Flat, Hit.D);
+				const float Dd = FMath::Max(-S.In, 0.0f);
+				const float Under = (SlabThick - 0.015f + SlabCrown * FMath::SmoothStep(0.0f, 4.0f, Dd))
+					* FMath::SmoothStep(1.0f, 1.6f, Dd) * FMath::SmoothStep(0.6f, 0.9f, S.A);
+				H += FMath::Max((S.Drift - SlabSandDrop) * Near, Under);
+			}
 		}
-		return PadHeight(P, H);   // o lote da vila: piso plano
+		H = PadHeight(P, H);   // o lote da vila: piso plano
+		if (GWallSand) H += WallSandAt(M, P);
+		return H;
 	}
 
 	/** Um lugar sorteado pelo espalhamento, antes de assentar a malha (SliceScatterMeshes). */
@@ -1988,9 +2417,22 @@ struct FWorldDetail
 		GCenter = Center;
 		GHalf = HalfM;
 		GWaterRes = 0;
+		// (16/10, o Felipe pelo Look: "gostei da laje 3D, tá aprovado") a laje é o padrão do deserto; ROAD_SLAB=0 tira, e a
+		// estrada que pediu "colada no chão" no painel fica sem ela (SlabOn)
+		GSlab = bPaved && !GWinter && !GForest && FPlatformMisc::GetEnvironmentVariable(TEXT("ROAD_SLAB")) != TEXT("0");
+		{
+			const FString WS = FPlatformMisc::GetEnvironmentVariable(TEXT("WALL_SAND"));
+			GWallSand = !GWinter && !GForest && (WS == TEXT("1") || WS == TEXT("2"));
+			GWallSandPeak = WS == TEXT("2") ? 0.75f : 0.35f;
+			GWallSandFall = WS == TEXT("2") ? 1.8f : 0.9f;
+		}
+		GWallGrid.Reset();
 		BuildRoads(M, MainRoadHalf, bPaved, 2.2f);
 		BuildOpenness(M);
+		GDunes = !GWinter && !GForest && FPlatformMisc::GetEnvironmentVariable(TEXT("DUNE_POCKETS")) == TEXT("1");
+		BuildDunePockets(M);
 		if (GVillage.Num()) PlaceVillagePoles(M);
+		IndexWallSand();
 	}
 
 	// o deserto aberto (o Look, 13/10, pela referência nova do Felipe: longe do pisado a ondulação de vento
@@ -2686,6 +3128,40 @@ struct FWorldDetail
 					uint8(FMath::Clamp(0.5f + 0.5f * FMath::Sin(A), 0.0f, 1.0f) * 255.0f + 0.5f),
 					uint8(FMath::Clamp(0.5f + Across / 20.0f, 0.0f, 1.0f) * 255.0f + 0.5f),
 					uint8(FMath::Clamp(Half / 12.75f, 0.0f, 1.0f) * 255.0f + 0.5f));
+			}
+		});
+	}
+
+	/** A posição na pista com precisão de centímetro (16/10, pra faixa pintada nova do Look na laje: o RoadDir é de 8 bits,
+	 *  ~8 cm por degrau, e a faixa tem 13 cm). A 1 m por texel, em 16 bits: R = a distância com sinal até o eixo (m, o mesmo
+	 *  sinal do RoadDir), G = a meia largura (m; 0 longe, no cruzamento e na ponta que se desfaz: ali não se pinta),
+	 *  B/A = sen/cos(2π·s/9 m), s ao longo da estrada (o tracejado de 3 m a cada 9 m sem emenda). Só o asfalto. */
+	void RoadFramePixels(float SizeM, TArray<FFloat16Color>& Pixels, int32& R)
+	{
+		constexpr float Texel = 1.0f;
+		R = FMath::Clamp(FMath::RoundToInt(SizeM / Texel), 16, 4096);
+		Pixels.SetNumUninitialized(R * R);
+		ParallelFor(R, [&](int32 J)
+		{
+			for (int32 I = 0; I < R; ++I)
+			{
+				const FVector2f P = GCenter + FVector2f((I + 0.5f) * Texel - 0.5f * SizeM, (J + 0.5f) * Texel - 0.5f * SizeM);
+				const FRoadHit Hit = RoadAt(P, INDEX_NONE, true);
+				FLinearColor C(0.0f, 0.0f, 0.0f, 1.0f);
+				if (Hit.Road != INDEX_NONE && Hit.D < Hit.Half() + 6.0f)
+				{
+					FVector2f D = Hit.Dir;
+					const float Th = FMath::Atan2(D.Y, D.X);
+					if (Th <= -0.25f * PI || Th > 0.75f * PI) D = -D;
+					const FVector2f Off = P - Hit.Closest;
+					C.R = D.X * Off.Y - D.Y * Off.X;
+					C.G = Hit.Half();
+					const FRoadHit Other = RoadAt(P, Hit.Road, true);
+					if ((Other.Road != INDEX_NONE && Other.D < Other.Half() + 4.0f) || Hit.EndT < 1.0f) C.G = 0.0f;
+					C.B = FMath::Sin(2.0f * PI * Hit.S / 9.0f);
+					C.A = FMath::Cos(2.0f * PI * Hit.S / 9.0f);
+				}
+				Pixels[J * R + I] = FFloat16Color(C);
 			}
 		});
 	}

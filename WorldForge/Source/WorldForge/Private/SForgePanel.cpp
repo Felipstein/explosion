@@ -275,6 +275,19 @@ void SForgePanel::Construct(const FArguments& InArgs)
 									[this]() { return Edit.ReliefType; },
 									[this](int32 V) { Edit.ReliefType = V; Regenerate(); })
 							]
+							// a areia do deserto (16/10, o Felipe: as três como opção pra construir e variar; a de duna é o
+							// padrão). Só o acabamento: não gera o mapa de novo, vale no "Ver em qualidade real"
+							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+							[
+								SNew(SBox)
+								.Visibility_Lambda([this]() { return Edit.Biome == EWorldBiome::Desert ? EVisibility::Visible : EVisibility::Collapsed; })
+								[
+									Choice(TEXT("Sand"), LOCTEXT("Sand", "Areia (no acabamento)"),
+										{ { LOCTEXT("SandDune", "Duna"), 3 }, { LOCTEXT("SandYellow", "Amarela"), 2 }, { LOCTEXT("SandClassic", "Clássica"), 1 } },
+										[this]() { return Edit.Sand; },
+										[this](int32 V) { Edit.Sand = V; if (GameMode.IsValid()) GameMode->SetSand(V); })
+								]
+							]
 							// a vila do kit civil (docs §12): uma no centro é a escolha do Felipe
 							+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 							[
@@ -676,6 +689,24 @@ TSharedRef<SWidget> SForgePanel::RoadRows()
 					{ { LOCTEXT("RoadDirt", "Terra"), 0 }, { LOCTEXT("RoadPaved", "Asfalto"), 1 } },
 					[this]() { return GameMode.IsValid() && GameMode->IsSelectedRoadPaved() ? 1 : 0; },
 					[this](int32 V) { if (GameMode.IsValid()) GameMode->RoadSetPaved(V == 1); })
+			]
+		]
+		// o acabamento do asfalto (16/10, o Felipe: a laje aprovada "mas lembre-se que tinha mais de uma variação" e "também
+		// não descartei a original que é colada no chão"): vale no "Ver em qualidade real"
+		+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return GameMode.IsValid() && GameMode->HasRoadSelection() && GameMode->IsSelectedRoadPaved()
+					&& GameMode->GetSettings().Biome == EWorldBiome::Desert ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				Choice(TEXT("RoadStyle"), LOCTEXT("RoadStyle", "Acabamento do asfalto"),
+					{ { LOCTEXT("RoadStyleAuto", "Auto"), 0 }, { LOCTEXT("RoadStyleFlat", "Colada"), 1 }, { LOCTEXT("RoadStyleWhole", "Inteira"), 2 },
+					  { LOCTEXT("RoadStyleWorn", "Gasta"), 3 }, { LOCTEXT("RoadStyleBroken", "Destruída"), 4 } },
+					[this]() { return GameMode.IsValid() ? GameMode->GetSelectedRoadStyle() : 0; },
+					[this](int32 V) { if (GameMode.IsValid()) GameMode->RoadSetStyle(V); })
 			]
 		]
 		// o que fazer agora (muda com o estado)
