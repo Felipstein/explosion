@@ -234,6 +234,15 @@ void FForgeUITest::Build()
 		[Map]() -> FString { return Map() && Map()->Settings.Players == 4 && Map()->Starts.Num() == 4 ? FString() : TEXT("não ficou com 4 bases"); } });
 	Steps.Add({ TEXT("desert"), [this, Remember]() { Remember(); Click(Target(TEXT("Biome_1"))); }, NewMap,
 		[Map]() -> FString { return Map() && Map()->Settings.Biome == EWorldBiome::Desert ? FString() : TEXT("bioma não mudou"); } });
+	// (16/10) a areia do acabamento (só no deserto): a amarela e de volta a de duna; só guarda, não gera o mapa de novo
+	Steps.Add({ TEXT("scroll_sand"), [this]()
+		{
+			if (AForgePlayerController* PC = Cast<AForgePlayerController>(GameMode->GetWorld()->GetFirstPlayerController())) PC->GetPanel()->ScrollToTarget(TEXT("Sand_2"));
+		}, Always, []() { return FString(); }, 0.4f });
+	Steps.Add({ TEXT("sand_yellow"), [this]() { Click(Target(TEXT("Sand_2"))); }, Always,
+		[this]() -> FString { return GameMode->GetSettings().Sand == 2 ? FString() : FString::Printf(TEXT("a areia ficou em %d"), GameMode->GetSettings().Sand); }, 0.4f });
+	Steps.Add({ TEXT("sand_dune"), [this]() { Click(Target(TEXT("Sand_3"))); }, Always,
+		[this]() -> FString { return GameMode->GetSettings().Sand == 3 ? FString() : FString::Printf(TEXT("a areia ficou em %d"), GameMode->GetSettings().Sand); }, 0.4f });
 	// arrastar o controle de água de onde está até 90%
 	Steps.Add({ TEXT("water90"), [this, Remember]()
 		{
@@ -586,6 +595,10 @@ void FForgeUITest::Build()
 	Steps.Add(ScrollTo(TEXT("RoadType_1")));
 	Steps.Add({ TEXT("road_paved"), [this, Remember]() { Remember(); Click(Target(TEXT("RoadType_1"))); }, NewMap,
 		[RoadIs, UserRoads]() -> FString { return RoadIs(1, 1) ? FString() : UserRoads(); }, 1.0f });
+	// (16/10) o acabamento do asfalto da escolhida: Gasta (vale no "qualidade real"; aqui confere que guardou)
+	Steps.Add(ScrollTo(TEXT("RoadStyle_3")));
+	Steps.Add({ TEXT("road_style_worn"), [this, Remember]() { Remember(); Click(Target(TEXT("RoadStyle_3"))); }, NewMap,
+		[GM]() -> FString { return GM()->GetSelectedRoadStyle() == 3 ? FString() : FString::Printf(TEXT("o acabamento ficou em %d"), GM()->GetSelectedRoadStyle()); }, 1.0f });
 	Steps.Add({ TEXT("road_delete"), [this, Remember]()
 		{
 			Remember();
