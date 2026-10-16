@@ -1693,6 +1693,39 @@ pequenas espalhados com poucas maiores em grupo, moitas secas baixas e esparsas.
 - Ewing & Kocurek;
 - o código do Generals (`WorldHeightMap.cpp`);
 - as regras do Dune 2000 no OpenRA.
+### 12.7.1 A sujeira na beira da estrada (16/10/2026, o pedido do Felipe no jogo)
+
+**O pedido:** "achei bem exagerado a areia passando por cima da estrada, quase não dá pra ver nenhuma borda [...] tinha
+que ser uma vez por outra [...] não pode ser travada um tipo de textura só [...] é um tipo de ferramenta [...] a gente
+'suja' a estrada usando a textura que tá ao lado dela". Antes, uma faixa de areia (a camada de areia) cobria a beira em
+quase toda a estrada.
+
+**A pesquisa** (agente, com fontes):
+- Wildlands e a spline do Landscape: a sujeira é uma máscara de quanto, e o material é o do chão vizinho.
+- Na vida real, a areia entra em trechos. O levantamento do Kuwait dá ~10% da extensão numa estrada moderada, 30% numa
+  severa e 50% numa muito severa. Entra mais pelo lado de onde o vento vem; o mais comum é uma película fina na beira, e
+  as línguas atravessando aparecem perto de dunas.
+- O RVT só pra ler a cor foi descartado: borra, e debaixo da laje devolve o leito.
+
+**O que ficou** (`WorldDetail.h`: `RoadDirtAt`, `SlabDirtSource`, `FbmQuantile`):
+- **Os trechos:** um ruído ao longo da estrada (a fase S), por lado. O limiar sai do quantil do ruído pra fração pedida.
+  Cada trecho tem 25–60 m e a película entra 0,2–0,8 m; as línguas (~1 em 10 m de trecho) entram até 2,5 m.
+- **A fração:** mais do lado de onde vem o vento (×0,3–1,6) e menos na estrada que corre com ele.
+- **Fora dos trechos:** só o monte encostado de antes (o aprovado com a laje), abaixo do topo da laje. A beira fica à vista.
+- **Por estrada, no painel** ("Sujeira na beira"):
+  - Auto: pela areia solta do lado, 4–13%; com dunas perto, até 45%; menos na vila;
+  - Nenhuma, Pouca (10%), Média (28%) e Muita (50%);
+  - `FRoadEdit::Dirt`; no JSON, `"dirt"`.
+- **O material é o chão do lado:**
+  - A laje grava na cor do vértice o chão 3 m além da pista: R a película, G/B/A o cascalho, a terra e o sal; a areia é
+    o resto, e a rocha entra como cascalho e terra. A conversão sRGB é desfeita: o byte sai igual.
+  - O material da laje mistura as 4 camadas pela altura, com as mesmas texturas pelo mundo. A película entra primeiro
+    nas trincas do asfalto.
+- **À mão:** o pincel Pintar também suja a laje. A camada pintada vira a sujeira, e o Asfalto pintado limpa.
+- **A estrada colada:** a mesma película tira o asfalto, e o chão de baixo (o do lado) aparece.
+- **A medida:** o log da montagem dá "FORGE sujeira na beira: X% da beira suja".
+- **O teste:** o `World_TestRoadDirt` (o TestSalt2 só com a sujeira nova) e as cenas `dirt_*` contra as `laje_*_v2`.
+
 ### 12.8 O tanque derruba e amassa: o desenho (estudo de 16/10/2026; plano, sem código ainda)
 
 **O pedido** (o Felipe pelo Look, 16/10 de manhã; a regra e o evento são do jogo, em `docs/ESMAGAR_E_DERRUBAR.md`):
@@ -1756,6 +1789,10 @@ pequenas espalhados com poucas maiores em grupo, moitas secas baixas e esparsas.
   - o material da palmeira caída (`PALM_FALL_HLSL`) lê os CustomPrimitiveData do jogo (1 o tombo, 2 a direção, 3 caída,
     4 o impacto): a copa atrasa na queda, chicoteia e amortece no impacto, e nada passa do chão (a copa achata e abre
     por cima dele).
+- **A pedra pequena quebrada** (`Tools/blender_rock_break.py`): `<malha>_Broken` das `namaqualand_boulder_05/06` (2–3
+  planos, os pedaços abertos e assentados, o cascalho, a pilha a 65% da altura); o jogo troca a pedra sob o tanque e o
+  Dozer (a compilação 29). A face nova `M_RockFreshV2`: a 1ª (clara, 0,50/0,41/0,32) saiu no jogo como plástico; agora
+  um tom acima da casca, quente e fosca.
 - **O fio solto** (o plugin `RTSWorldProps`, `URTSWireSystem`; a fonte em `WorldForge/Plugins/RTSWorldProps`, o jogo usa
   em `Game/Plugins`):
   - o vão vira uma corrente Verlet (~1 ponto a cada 1,2 m, passo de 1/120 s), presa no poste de pé e na cruzeta do que
@@ -1789,10 +1826,6 @@ Felipe pelo Look):
 - v2: a v1 do Look (albedo físico 0,49/0,40/0,27, o desenho da textura a 25%) + as zonas (liso, ondulado,
   pedregoso, revirado; o resto é o pisado) + as ondulações simuladas (`T_LL_Ripples`) só na zona delas.
 - As zonas saem do terreno, não de textura: o fbm de ruído de valor do Look (hash inteiro) com as regras do
-- **A pedra pequena quebrada** (`Tools/blender_rock_break.py`): `<malha>_Broken` das `namaqualand_boulder_05/06` (2–3
-  planos, os pedaços abertos e assentados, o cascalho, a pilha a 65% da altura); o jogo troca a pedra sob o tanque e o
-  Dozer (a compilação 29). A face nova `M_RockFreshV2`: a 1ª (clara, 0,50/0,41/0,32) saiu no jogo como plástico; agora
-  um tom acima da casca, quente e fosca.
   terreno (pedregoso na encosta e na pedra, liso no pisado, ondulado no aberto e longe do pisado: +0,25 a
   partir de ~45 m, pela grade `FWorldDetail::OpenAt`), a borda rasgada (ruído de 0,8 m antes de um limiar de
   0,03) e pouco tom. O material e o C++ (`FWorldDetail::ZonesAt`) fazem a mesma conta.

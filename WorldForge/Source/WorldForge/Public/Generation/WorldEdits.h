@@ -54,6 +54,10 @@ struct FWorldEdits
 		 *  "também não descartei a original que é colada no chão"): 0 automático (o desgaste por trecho), 1 colada no
 		 *  chão (sem laje), 2 inteira, 3 gasta, 4 destruída. FWorldDetail::FRoad::Style. */
 		int32 Style = 0;
+		/** A sujeira na beira do asfalto (16/10, o Felipe: "deixar isso aqui como uma ferramenta mais customizável", sujando
+		 *  a estrada com o chão que está do lado): 0 automático (pela areia em volta), 1 nenhuma, 2 pouca, 3 média, 4 muita.
+		 *  FWorldDetail::FRoad::Dirt. */
+		int32 Dirt = 0;
 	};
 	TArray<FRoadEdit> Roads;
 	/** Estradas do gerador tiradas à mão: um ponto do traçado (m); a estrada do
@@ -256,8 +260,8 @@ struct FWorldEdits
 		S += TEXT("\n ],\n \"roads\": [");
 		for (int32 R = 0; R < Roads.Num(); ++R)
 		{
-			S += FString::Printf(TEXT("%s\n  {\"paved\": %s, \"style\": %d, \"fade\": [%s, %s], \"points\": ["), R ? TEXT(",") : TEXT(""), Roads[R].bPaved ? TEXT("true") : TEXT("false"),
-				Roads[R].Style, Roads[R].bFade[0] ? TEXT("true") : TEXT("false"), Roads[R].bFade[1] ? TEXT("true") : TEXT("false"));
+			S += FString::Printf(TEXT("%s\n  {\"paved\": %s, \"style\": %d, \"dirt\": %d, \"fade\": [%s, %s], \"points\": ["), R ? TEXT(",") : TEXT(""), Roads[R].bPaved ? TEXT("true") : TEXT("false"),
+				Roads[R].Style, Roads[R].Dirt, Roads[R].bFade[0] ? TEXT("true") : TEXT("false"), Roads[R].bFade[1] ? TEXT("true") : TEXT("false"));
 			for (int32 K = 0; K < Roads[R].Points.Num(); ++K)
 			{
 				S += FString::Printf(TEXT("%s[%.2f, %.2f]"), K ? TEXT(", ") : TEXT(""), Roads[R].Points[K].X, Roads[R].Points[K].Y);
@@ -333,6 +337,7 @@ struct FWorldEdits
 				FRoadEdit& R = Roads.AddDefaulted_GetRef();
 				R.bPaved = O->GetBoolField(TEXT("paved"));
 				R.Style = O->HasField(TEXT("style")) ? FMath::Clamp(int32(O->GetNumberField(TEXT("style"))), 0, 4) : 0;
+				R.Dirt = O->HasField(TEXT("dirt")) ? FMath::Clamp(int32(O->GetNumberField(TEXT("dirt"))), 0, 4) : 0;
 				const TArray<TSharedPtr<FJsonValue>>* Fade;
 				if (O->TryGetArrayField(TEXT("fade"), Fade) && Fade->Num() == 2)
 				{

@@ -158,6 +158,10 @@ public:
 	int32 GetSelectedRoadStyle() const;
 	/** Troca o acabamento da escolhida (vale no "Ver em qualidade real": a laje é de lá). */
 	void RoadSetStyle(int32 Style);
+	/** A sujeira na beira da escolhida (FWorldEdits::FRoadEdit::Dirt; 0 automática). */
+	int32 GetSelectedRoadDirt() const;
+	/** Troca a sujeira na beira da escolhida (a laje e a estrada colada). */
+	void RoadSetDirt(int32 Dirt);
 	void RoadDeleteSelected();
 
 private:

@@ -242,6 +242,7 @@ struct FWorldDetail
 		// ~40 m sumia inteira nos buracos, 07/10)
 		float Fade[2] = { 45.0f, 45.0f };
 		int32 Style = 0;         // o acabamento do asfalto escolhido no painel (FWorldEdits::FRoadEdit::Style): 0 automático, 1 colada no chão, 2 inteira, 3 gasta, 4 destruída
+		int32 Dirt = 0;          // a sujeira na beira (FWorldEdits::FRoadEdit::Dirt): 0 automática, 1 nenhuma, 2 pouca, 3 média, 4 muita
 	};
 	TArray<FRoad> GRoads;
 	int32 NumGenRoads = 0;            // as primeiras são do gerador; depois, as desenhadas à mão
@@ -650,7 +651,152 @@ struct FWorldDetail
 		float A = 0.0f;        // o quanto é asfalto (o do DesertWeights sem as línguas de areia: a laje faz a língua com o chão)
 		float Drift = 0.0f;    // o monte de areia encostado na beira (m)
 		float Wear = 0.0f;     // o desgaste: < 0,35 inteira, 0,35–0,7 gasta (quebra em trechos), > 0,7 destruída
+		float Film = 0.0f;     // a sujeira por cima do asfalto (0–1, RoadDirtAt)
+		float Patch = 0.0f;    // o trecho sujo (0–1): fora dele não há película
 	};
+
+	/** O quantil do Fbm (a fração Q dos valores fica abaixo dele): a sujeira da estrada acha o limiar pela fração da beira
+	 *  pedida. A tabela sai uma vez, de 16 mil amostras (a estática do C++ é segura entre as threads). */
+	static float FbmQuantile(float Q, int32 Octaves)
+	{
+		auto Make = [](int32 Oct)
+		{
+			TArray<float> T;
+			T.Reserve(16384);
+			for (int32 I = 0; I < 16384; ++I) T.Add(WorldNoise::Fbm((I % 128) * 1.618034f + 0.37f, (I / 128) * 1.414214f + 0.71f, 977u, Oct));
+			T.Sort();
+			return T;
+		};
+		static const TArray<float> T2 = Make(2), T3 = Make(3);
+		const TArray<float>& T = Octaves <= 2 ? T2 : T3;
+		return T[FMath::Clamp(int32(Q * (T.Num() - 1)), 0, T.Num() - 1)];
+	}
+
+	/** A sujeira na beira do asfalto (16/10, o Felipe: "achei bem exagerado a areia passando por cima da estrada, quase não
+	 *  dá pra ver nenhuma borda [...] tinha que ser uma vez por outra" e "a gente 'suja' a estrada usando a textura que tá
+	 *  ao lado dela"). A pesquisa (Wildlands, a spline do Landscape; o levantamento do Kuwait, ~10% da extensão numa estrada
+	 *  moderada, 30% numa severa, 50% numa muito severa): a sujeira é uma máscara de quanto, em trechos ao longo da estrada,
+	 *  e o material é o do chão do lado (SlabDirtSource). Pouca/Média/Muita = 10/28/50% da beira de cada lado; Auto pela
+	 *  areia solta do lado (4–13%) e as dunas perto (até 45%), menos na vila. Entra mais pelo lado de onde vem o vento e
+	 *  menos na estrada que corre com ele. Os trechos têm 25–60 m; neles a película entra 0,2–0,8 m na pista, e nas línguas
+	 *  (as pontas dos trechos, ~1 em 10 m de trecho) até 2,5 m. Fora dos trechos, só o monte encostado de antes (aprovado
+	 *  com a laje), abaixo do topo dela: a beira fica à vista. Film: 0–1 por cima do asfalto; Drift: o monte (m). */
+	struct FRoadDirt { float Film = 0.0f; float Drift = 0.0f; float Patch = 0.0f; };
+	FRoadDirt RoadDirtAt(const FWorldMap& M, FVector2f P, const FRoadHit& Hit, float In)
+	{
+		FRoadDirt R;
+		if (Hit.Road == INDEX_NONE || !Hit.Paved())
+		{
+			return R;
+		}
+		const FRoad& Road = GRoads[Hit.Road];
+		const FVector2f Off = P - Hit.Closest;
+		const float Cross = Hit.Dir.X * Off.Y - Hit.Dir.Y * Off.X;
+		const float SideSign = Cross >= 0.0f ? 1.0f : -1.0f;
+		const FVector2f N = FVector2f(-Hit.Dir.Y, Hit.Dir.X) * SideSign;   // a normal pra fora, do lado do ponto
+		const FVector2f Pn = Hit.Closest + N * (Hit.Half() + 3.0f);        // o chão do lado (passado o acostamento)
+		const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
+		float Wn[6];
+		ScatterWeights(M, Pn, Wn);
+		const float Sandy = FMath::Clamp(Wn[0] + Wn[4] + Wn[5], 0.0f, 1.0f);   // o que o vento carrega (areia, sal); rocha e terra não
+		// o monte encostado de antes (aprovado com a laje): até 16 cm, abaixo do topo da laje (12 cm + os 6 da areia)
+		R.Drift = 0.16f * Sandy * FMath::Exp(-FMath::Square((In - 0.5f) / 0.9f))
+			* (0.55f + 0.45f * FMath::Clamp(0.5f + WorldNoise::Fbm(P.X / 5.0f, P.Y / 5.0f, 943u, 2), 0.0f, 1.0f));
+		// a fração da beira suja deste lado
+		float C;
+		const int32 L = Road.Dirt;
+		if (L == 1)
+		{
+			return R;
+		}
+		if (L >= 2)
+		{
+			C = L == 2 ? 0.15f : (L == 3 ? 0.30f : 0.50f);   // (16/10, a 2ª: 10/28/50; o Felipe achou rara demais)
+		}
+		else
+		{
+			const float Dn = GDunes ? FMath::Max(DunePaintAt(M, Pn), DunePaintAt(M, Pn + N * 20.0f)) : 0.0f;
+			const float VD = GPads.Num() ? VillageDistAt(P) : 1e9f;
+			// (16/10, a 2ª, o Felipe: "não ficou tão raro assim? [...] aparecer pelo menos um pedaço grande desse igual da
+			// primeira": a 1ª dava 8,8% da beira; agora ~12–26% na areia, até 55% com dunas perto)
+			C = FMath::Clamp(0.12f + 0.14f * Sandy + 0.30f * Dn, 0.0f, 0.55f) * FMath::Lerp(0.5f, 1.0f, FMath::SmoothStep(25.0f, 60.0f, VD));
+		}
+		const float Up = -(N | Wd);                       // 1: este lado olha pra onde o vento vem
+		const float Along = FMath::Square(Hit.Dir | Wd);  // 1: a estrada corre com o vento
+		C *= FMath::Clamp(1.0f + 0.55f * Up, 0.3f, 1.6f) * FMath::Lerp(1.0f, 0.6f, Along);
+		if (C <= 0.002f)
+		{
+			return R;
+		}
+		// os trechos: um ruído ao longo da estrada (a fase S), um por lado e por estrada
+		const float Lane = SideSign * 17.3f + Hit.Road * 5.71f;
+		const float T = FbmQuantile(1.0f - FMath::Min(C, 0.95f), 3);
+		const float Nn = WorldNoise::Fbm(Hit.S / 45.0f, Lane, 981u, 3);
+		const float Patch = FMath::SmoothStep(T - 0.04f, T + 0.04f, Nn);
+		if (Patch <= 0.0f)
+		{
+			return R;
+		}
+		R.Patch = Patch;
+		const float Depth = FMath::Clamp((Nn - T) / 0.15f, 0.0f, 1.0f);
+		// as línguas: os picos curtos (~5 m) dentro dos trechos, esticados no vento
+		const float Tq = FbmQuantile(0.90f, 2);
+		const float Tongue = FMath::SmoothStep(Tq - 0.03f, Tq + 0.06f, WorldNoise::Fbm(Hit.S / 7.0f, Lane + 40.0f, 983u, 2)) * Patch;
+		const float Reach = FMath::Lerp(0.3f, 2.2f, FMath::Pow(Depth, 0.8f)) + 1.0f * Tongue;   // (a 1ª: 0,2–0,8 m; o pedaço grande da 1ª versão entrava ~2–3 m)
+		// a beira da película em recortes: o ruído fino e o risco no vento
+		const float Streak = WorldNoise::Fbm((P | Wd) / 6.0f, (P | FVector2f(-Wd.Y, Wd.X)) / 1.2f, 941u, 3);
+		const float Scal = (0.22f + 0.15f * Depth) * WorldNoise::Fbm(P.X / 2.2f, P.Y / 2.2f, 985u, 2) + (0.18f + 0.15f * Depth) * Streak;
+		const float Dd = FMath::Max(-In, 0.0f);
+		// (16/10, a 2ª no jogo: a película cheia com a borda dura lia como tinta cor de areia) a borda esfarela em ~1 m: a
+		// areia rala, em grãos e fiapos, deixando o asfalto aparecer; cheia só no miolo do trecho
+		const float Inner = 1.0f - FMath::SmoothStep(Reach - 1.0f, Reach + 0.1f, Dd + Scal);
+		const float Grain = FMath::Clamp(0.5f + 1.3f * WorldNoise::Fbm(P.X / 0.7f, P.Y / 0.7f, 987u, 3), 0.0f, 1.0f);
+		R.Film = Patch * Inner * FMath::Lerp(Grain, 1.0f, FMath::SmoothStep(0.55f, 0.95f, Inner));
+		// no trecho o monte sobe acima do topo da laje (cobre o degrau) e some 1,8 m pra fora
+		const float Mound = Patch * FMath::Lerp(0.20f, 0.25f, Depth) * (1.0f - FMath::SmoothStep(0.2f, 1.8f, In))
+			* (1.0f - FMath::SmoothStep(0.0f, 0.5f, Dd));
+		R.Drift = FMath::Max(R.Drift, Mound);
+		return R;
+	}
+
+	/** O material da sujeira no ponto da laje: o chão do lado (3 m além da pista; debaixo dela é o leito), em 4 partes
+	 *  (areia, cascalho, terra, sal; a rocha entra como cascalho e terra, a pedra moída). A pintura à mão manda: a camada
+	 *  pintada vira a sujeira e o asfalto pintado limpa (Film). Src: as partes, somam 1. */
+	void SlabDirtSource(const FWorldMap& M, FVector2f P, const FRoadHit& Hit, float& Film, float Src[4])
+	{
+		Src[0] = 1.0f; Src[1] = Src[2] = Src[3] = 0.0f;
+		if (Hit.Road == INDEX_NONE)
+		{
+			return;
+		}
+		const FVector2f Off = P - Hit.Closest;
+		const float SideSign = (Hit.Dir.X * Off.Y - Hit.Dir.Y * Off.X) >= 0.0f ? 1.0f : -1.0f;
+		const FVector2f Pn = Hit.Closest + FVector2f(-Hit.Dir.Y, Hit.Dir.X) * SideSign * (Hit.Half() + 3.0f);
+		float Wn[6];
+		ScatterWeights(M, Pn, Wn);
+		float S4[4] = { Wn[0] + Wn[5], Wn[1] + 0.7f * Wn[3], Wn[2] + 0.3f * Wn[3], Wn[4] };
+		if (Edits.IsValid() && Edits->Paint.Num())
+		{
+			int32 Layer;
+			const float A = Edits->PaintAt(P, Layer);
+			if (A > 0.0f && Layer >= 0 && Layer < 6)
+			{
+				if (Layer == 5)
+				{
+					Film *= 1.0f - A;   // o asfalto pintado limpa
+				}
+				else
+				{
+					const int32 K = Layer == 0 ? 0 : Layer == 1 ? 1 : Layer == 2 ? 2 : Layer == 3 ? 1 : 3;
+					for (float& X : S4) X *= 1.0f - A;
+					S4[K] += A;
+					Film = FMath::Max(Film, A);
+				}
+			}
+		}
+		const float Sum = FMath::Max(S4[0] + S4[1] + S4[2] + S4[3], 1e-4f);
+		for (int32 K = 0; K < 4; ++K) Src[K] = S4[K] / Sum;
+	}
 
 	/** A laje no ponto (só nas estradas de asfalto). A areia encostada é a da maquete (look_ground.fields: a faixa de
 	 *  ~2,4 m em volta da beira, deslocada pelo ruído e esticada no vento, em trechos, 0,22 m × (1 + 0,9 sand_over)); o
@@ -667,14 +813,12 @@ struct FWorldDetail
 		float EdgeP, Holes, Ends;
 		PavedEdge(P, Hit, S.In, EdgeP, Holes, Ends);
 		S.A = (1.0f - FMath::SmoothStep(-0.6f, 0.6f, S.In)) * (1.0f - Holes) * FMath::SmoothStep(0.0f, 0.25f, Ends);
-		const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
-		const float Streak = WorldNoise::Fbm((P | Wd) / 6.0f, (P | FVector2f(-Wd.Y, Wd.X)) / 1.2f, 941u, 3);
-		// (16/10, a 1ª folha no jogo contra os alvos 14 e 12: com a faixa da maquete (centro 0,6 m, sand_over 1) a areia cobria
-		// meia pista e a estrada perdia a leitura na câmera do jogo; nos alvos a estrada fica à vista e a areia só na beira.
-		// O centro 1 m pra fora, a faixa mais estreita, a língua mais curta e a altura de sand_over 0,4)
-		const float Band = FMath::Exp(-FMath::Square((S.In - 1.0f + 1.0f * WorldNoise::Fbm(P.X / 7.0f, P.Y / 7.0f, 943u, 2) + 1.2f * Streak) / 2.0f));
-		const float Patchy = FMath::SmoothStep(-0.15f, 0.10f, WorldNoise::Fbm(P.X / 9.0f, P.Y / 9.0f, 945u, 3));
-		S.Drift = 0.22f * 1.36f * Band * Patchy;
+		// (16/10, o Felipe no jogo: a faixa de areia de antes cobria a beira em quase toda a estrada, "quase não dá pra ver
+		// nenhuma borda"; agora a sujeira em trechos e do chão do lado, RoadDirtAt)
+		const FRoadDirt Dirt = RoadDirtAt(M, P, Hit, S.In);
+		S.Drift = Dirt.Drift;
+		S.Film = Dirt.Film;
+		S.Patch = Dirt.Patch;
 		const float VD = GPads.Num() ? VillageDistAt(P) : 1e9f;
 		S.Wear = FMath::Clamp(0.5f + 1.1f * WorldNoise::Fbm(P.X / 150.0f, P.Y / 150.0f, 947u, 2), 0.0f, 1.0f) * FMath::SmoothStep(25.0f, 60.0f, VD);
 		// (16/10) o acabamento escolhido no painel manda na estrada inteira: inteira, gasta ou destruída
@@ -1133,6 +1277,7 @@ struct FWorldDetail
 				R.Half = bPav ? MainHalf : DirtHalf;
 				R.bPaved = bPav;
 				R.Style = bPav ? E.Style : 0;
+				R.Dirt = bPav ? E.Dirt : 0;
 				R.Fade[0] = E.bFade[0] ? 45.0f : 4.0f;
 				R.Fade[1] = E.bFade[1] ? 45.0f : 4.0f;
 				const int32 Me = GRoads.Num() - 1;
@@ -1828,12 +1973,10 @@ struct FWorldDetail
 				// desfaz e a esquina arredondada com a outra pista (PavedEdge, a mesma da laje)
 				float In, EdgeP, Holes, Ends;
 				PavedEdge(P, Hit, In, EdgeP, Holes, Ends);
-				// as línguas de areia que o vento joga pra dentro da pista (a maquete: até ~2 m, manchas
-				// de ~9 m esticadas na direção do vento do mapa)
-				const FVector2f Wd(FMath::Cos(FMath::DegreesToRadians(M.WindYaw)), FMath::Sin(FMath::DegreesToRadians(M.WindYaw)));
-				const float Tn = WorldNoise::Fbm((P | Wd) / 9.0f, (P | FVector2f(-Wd.Y, Wd.X)) / 2.2f, 925u, 3);
-				const float Reach = FMath::Lerp(0.2f, 2.4f, FMath::SmoothStep(-0.05f, 0.45f, Tn));
-				const float Tongue = 1.0f - FMath::SmoothStep(Reach - 0.6f, Reach + 0.6f, -In);
+				// a sujeira que entra na pista (16/10: em trechos, do chão do lado, RoadDirtAt; antes eram línguas de areia
+				// pela estrada toda). Debaixo da pista os pesos são os do chão em volta: tirando o asfalto, é ele que aparece
+				const float Tongue = SlabOn(Hit) ? 0.0f : RoadDirtAt(M, P, Hit, In).Film;
+				const float Tn = 0.45f * Tongue;
 				// borda com 1,2 m de transição: mais fina que o espaçamento do terreno
 				// (0,5 m) a borda virava escadinha na diagonal (visto na neve em 06/10)
 				const float A = (1.0f - FMath::SmoothStep(-0.6f, 0.6f, In)) * (1.0f - Holes) * FMath::SmoothStep(0.0f, 0.25f, Ends) * (1.0f - 0.85f * Tongue);

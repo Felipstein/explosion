@@ -1350,6 +1350,28 @@ void AWorldForgeGameMode::RoadSetStyle(int32 Style)
 	Generate(Settings);
 }
 
+int32 AWorldForgeGameMode::GetSelectedRoadDirt() const
+{
+	if (bRoadSelected && RoadSelUser != INDEX_NONE && Edits.IsValid() && Edits->Roads.IsValidIndex(RoadSelUser))
+	{
+		return Edits->Roads[RoadSelUser].Dirt;
+	}
+	return 0;
+}
+
+void AWorldForgeGameMode::RoadSetDirt(int32 Dirt)
+{
+	if (!bRoadSelected || IsGenerating() || !IsSelectedRoadPaved() || GetSelectedRoadDirt() == Dirt)
+	{
+		return;
+	}
+	RoadPushUndo();
+	RoadMakeUser();
+	Edits->Roads[RoadSelUser].Dirt = Dirt;
+	UE_LOG(LogTemp, Display, TEXT("FORGE edição: sujeira na beira %d"), Dirt);
+	Generate(Settings);
+}
+
 void AWorldForgeGameMode::RoadDeleteSelected()
 {
 	if (!bRoadSelected || IsGenerating())

@@ -704,7 +704,8 @@ FVector UWorldForgeEditorLib::SliceSlabAt(FVector2D PointCm)
 	}
 	const FVector2f P = GD.ToMap(PointCm);
 	const FWorldDetail::FSlabSample S = GD.SlabSample(*GD.GMap, P, GD.RoadAt(P));
-	return S.bPaved ? FVector(S.Wear, S.In, S.Drift) : FVector(-1.0, 0.0, 0.0);
+	// (16/10) z: o monte encostado, ou 1 onde a sujeira cobre a pista (a faixa da beira não é pintada por cima da areia)
+	return S.bPaved ? FVector(S.Wear, S.In, FMath::Max(S.Drift, S.Film > 0.3f ? 1.0f : 0.0f)) : FVector(-1.0, 0.0, 0.0);
 }
 
 FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const FString& AssetDir, const FString& MapName)
@@ -743,7 +744,7 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 
 	// o ponto da laje: a altura (m) e se é laje. Fora dela (borda, placa que falta, areia por cima) o vértice desce 6 cm
 	// por baixo do chão e o degrau sai como a saia da malha (a maquete: z = chão − 0,06)
-	struct FSlabVert { float Z = 0.0f; bool bOn = false; bool bNear = false; float Wear = 0.0f; float Sand = 0.0f; };
+	struct FSlabVert { float Z = 0.0f; bool bOn = false; bool bNear = false; float Wear = 0.0f; float Sand = 0.0f; float Src[4] = { 1.0f, 0.0f, 0.0f, 0.0f }; };
 	auto Eval = [&M](FVector2f P) -> FSlabVert
 	{
 		FSlabVert V;
@@ -794,9 +795,16 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 		// asfalto, 1 a areia; a película começa 10 cm abaixo do topo)
 		// (16/10, a 1ª prova no jogo: com a altura do chão aqui, a laje inteira saía cor de areia, porque debaixo do miolo o
 		// chão sobe de propósito até 1,5 cm do topo, pro tanque. A areia que cobre é só o monte encostado)
+		// (16/10, o Felipe no jogo: "achei bem exagerado a areia passando por cima da estrada" e "a gente 'suja' a estrada
+		// usando a textura que tá ao lado dela") a película é a da sujeira em trechos (RoadDirtAt) e o material é o chão do
+		// lado ou o pintado à mão (SlabDirtSource). A película engrossa até 5 cm junto da beira (o monte que cobre o degrau)
+		// e, onde o monte passa do topo, a laje sobe com ele
+		float Film = S.Film;
+		GD.SlabDirtSource(M, P, Hit, Film, V.Src);
+		V.Sand = Film;
 		const float SandTop = Hit.Z + S.Drift - FWorldDetail::SlabSandDrop;
-		V.Sand = FMath::Clamp((SandTop - (Top - 0.10f)) / 0.12f, 0.0f, 1.0f);
-		V.Z = FMath::Max(Top, SandTop + 0.015f);   // (1,5 cm: o Landscape interpolado não fura a laje no côncavo)
+		V.Z = FMath::Max(Top + Film * FMath::Lerp(0.006f, 0.05f, 1.0f - FMath::SmoothStep(0.0f, 0.7f, Dd)),
+			Film > 0.05f ? SandTop + 0.015f : Top);   // (1,5 cm: o Landscape interpolado não fura a laje no côncavo)
 		V.bOn = true;
 		return V;
 	};
@@ -819,6 +827,7 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 		};
 		TArray<FVector3f> Pos;
 		TArray<float> SandV;
+		TArray<FColor> SrcV;
 		TMap<FIntPoint, int32> Index;
 		TArray<int32> Tri;
 		auto Vert = [&](FIntPoint G) -> int32
@@ -830,6 +839,8 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 			const FSlabVert& V = At(G);
 			Pos.Add(FVector3f((G.X * Fine - Origin.X) * 100.0f, (G.Y * Fine - Origin.Y) * 100.0f, V.Z * 100.0f));
 			SandV.Add(V.Sand);
+			auto B8 = [](float X) { return uint8(FMath::Clamp(X, 0.0f, 1.0f) * 255.0f + 0.5f); };
+			SrcV.Add(FColor(B8(V.Sand), B8(V.Src[1]), B8(V.Src[2]), B8(V.Src[3])));
 			return Index.Add(G, Pos.Num() - 1);
 		};
 		// uma célula (canto G00, lado em passos finos N): só se algum canto é laje
@@ -864,7 +875,7 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 				const FWorldDetail::FSlabSample Sc = GD.SlabSample(M, C0, Hc);
 				const float Band = FMath::SmoothStep(0.30f, 0.40f, Sc.Wear) > 0.0f ? 1.9f : 0.9f;   // a beira que pode quebrar
 				if (V00.bOn && V10.bOn && V01.bOn && V11.bOn && Sc.A > 0.95f && -Sc.In > Band + Coarse && Sc.Drift < 0.05f
-					&& V00.Sand + V10.Sand + V01.Sand + V11.Sand == 0.0f)
+					&& V00.Sand + V10.Sand + V01.Sand + V11.Sand == 0.0f && (Sc.Patch <= 0.0f || -Sc.In > 3.5f + Coarse))   // (a película chega a ~3,2 m)
 				{
 					Cell(G00, Sub);
 					continue;
@@ -922,7 +933,10 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 			VTan[VI] = Tx.IsNearlyZero() ? FVector3f(0, 1, 0) : Tx.GetSafeNormal();
 			VSgn[VI] = 1.0f;
 			VUv[VI] = FVector2f(Origin.X + Pos[K].X / 100.0f, Origin.Y + Pos[K].Y / 100.0f);
-			VCol[VI] = FVector4f(SandV[K], 0.0f, 0.0f, 1.0f);   // R: a areia por cima (o material da laje mistura a areia do chão)
+			// a sujeira (16/10): R a película, G/B/A o cascalho, a terra e o sal dela (a areia é o resto). A Unreal grava a cor
+			// em sRGB (ToFColor(true)) e o shader lê o byte cru: a conversão de volta aqui faz o byte sair igual ao pedido
+			const FLinearColor Lc(SrcV[K]);
+			VCol[VI] = FVector4f(Lc.R, Lc.G, Lc.B, Lc.A);
 			Inst.Add(VI);
 		}
 		for (int32 K = 0; K < Tri.Num(); K += 3)
@@ -975,6 +989,32 @@ FString UWorldForgeEditorLib::BuildRoadSlabs(UMaterialInterface* Material, const
 		TotalTris += Tri.Num() / 3;
 		TotalVerts += Pos.Num();
 	}
+	// (16/10) a medida da sujeira: a fração da beira (os dois lados, a cada metro, 15 cm pra dentro) com película, e a das
+	// línguas (película a 1,2 m da beira); o pedido: "uma vez por outra" (Pouca ~10%)
+	int32 EdgeN = 0, EdgeDirty = 0, EdgeTongue = 0;
+	for (const FWorldDetail::FRoad& R : GD.GRoads)
+	{
+		if (!R.bPaved || R.Style == 1) continue;
+		for (int32 K = 1; K + 1 < R.P.Num(); ++K)
+		{
+			const FVector2f Dir = (R.P[K + 1] - R.P[K - 1]).GetSafeNormal();
+			const FVector2f Nn(-Dir.Y, Dir.X);
+			for (const float Sg : { -1.0f, 1.0f })
+			{
+				for (const float Depth : { 0.15f, 1.2f })
+				{
+					const FVector2f P = R.P[K] + Nn * Sg * (R.HalfAt(K) - Depth);
+					const FWorldDetail::FRoadHit H = GD.RoadAt(P);
+					if (H.Road == INDEX_NONE || !H.Paved()) continue;
+					const FWorldDetail::FSlabSample Sm = GD.SlabSample(M, P, H);
+					if (Depth < 0.5f) { ++EdgeN; EdgeDirty += Sm.Film > 0.25f; }
+					else EdgeTongue += Sm.Film > 0.25f;
+				}
+			}
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("FORGE sujeira na beira: %.1f%% da beira suja, %.1f%% com língua (1,2 m), %d pontos"),
+		100.0f * EdgeDirty / FMath::Max(EdgeN, 1), 100.0f * EdgeTongue / FMath::Max(EdgeN, 1), EdgeN);
 	const FString Out = FString::Printf(TEXT("%d ladrilhos, %d vértices, %d triângulos"), NumMeshes, TotalVerts, TotalTris);
 	UE_LOG(LogTemp, Display, TEXT("FORGE road slab %s"), *Out);
 	return Out;

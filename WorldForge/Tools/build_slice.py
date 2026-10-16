@@ -1187,17 +1187,32 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             log('road slab paint', 'PAINT_V2 do Look na laje')
         vn = g.node(unreal.MaterialExpressionVertexNormalWS, 400, 0)
         vc = g.node(unreal.MaterialExpressionVertexColor, 400, 100)
-        sb = (Sd['base'] if Sd else (g.const3((0.49, 0.40, 0.27), 300), ''))
-        sn = (Sd['nor'] if Sd else (g.const3((0.0, 0.0, 1.0), 300), ''))
-        sr = (Sd['rough'] if Sd else (g.node(unreal.MaterialExpressionConstant, 300, r=0.9), ''))
-        sa = (Sd['ao'] if Sd else (g.node(unreal.MaterialExpressionConstant, 300, r=1.0), ''))
-        blends['base'] = g.custom('return lerp(B * lerp(0.45, 1.0, smoothstep(0.35, 0.85, VN.z)), SB, saturate(VC.r));',
-                                  [('B', L['base'][0], L['base'][1]), ('VN', vn, ''), ('SB', sb[0], sb[1]), ('VC', vc, '')], F3, 500)
-        blends['nor'] = g.custom('return normalize(lerp(N, SN, saturate(VC.r)));',
-                                 [('N', L['nor'][0], L['nor'][1]), ('SN', sn[0], sn[1]), ('VC', vc, '')], F3, 500)
-        blends['rough'] = g.custom('return lerp(R, SR, saturate(VC.r));',
-                                   [('R', L['rough'][0], L['rough'][1]), ('SR', sr[0], sr[1]), ('VC', vc, '')], F1, 500)
-        ao = g.custom('return lerp(A, SA, saturate(VC.r));', [('A', L['ao'][0], L['ao'][1]), ('SA', sa[0], sa[1]), ('VC', vc, '')], F1, 500)
+        # (16/10, o Felipe: "a gente 'suja' a estrada usando a textura que tá ao lado dela") a sujeira por cima da laje é o
+        # chão do lado (UWorldForgeEditorLib::BuildRoadSlabs, a cor do vértice: R a película, G/B/A o cascalho, a terra e o
+        # sal; a areia é o resto), misturado pela altura como no Landscape, com as mesmas texturas pelo mundo (a emenda com o
+        # chão não aparece). A película entra primeiro nas trincas do asfalto (o asfalto baixo da altura dele)
+        dl = [next((x for x in layers if x['name'] == nm), None) for nm in ('Sand', 'Gravel', 'Dirt', 'Salt')]
+        dl = [x if x is not None else (Sd or L) for x in dl]
+        dirt = {}
+        for ch, typ in (('base', F3), ('nor', F3), ('rough', F1), ('ao', F1)):
+            # (a 1ª: VC.a pela saída RGB do nó, o shader não compilava e a laje saía em xadrez no jogo: o A vem à parte)
+            code = ['float w[4] = { saturate(1.0 - VC.g - VC.b - VA), VC.g, VC.b, VA };', 'float sum = 0.0;',
+                    ('float3' if typ == F3 else 'float') + ' acc = 0;']
+            ins = [('VC', vc, ''), ('VA', vc, 'A')]
+            for i, x in enumerate(dl):
+                code.append('{ float m = clamp(lerp(-1.0, 1.0, w[%d]) + H%d, 0.0001, 1.0) * step(0.004, w[%d]); acc += L%d * m; sum += m; }' % (i, i, i, i))
+                ins += [('L%d' % i, x[ch][0], x[ch][1]), ('H%d' % i, x['disp'][0], x['disp'][1])]
+            code.append('return acc / max(sum, 0.0001);')
+            dirt[ch] = g.custom('\n'.join(code), ins, typ, 450)
+        dmask = g.custom('return saturate((VC.r - 0.5) * 2.5 + 0.5 + (0.5 - HA) * 1.2) * step(0.004, VC.r);',
+                         [('VC', vc, ''), ('HA', L['disp'][0], L['disp'][1])], F1, 450)
+        blends['base'] = g.custom('return lerp(B * lerp(0.45, 1.0, smoothstep(0.35, 0.85, VN.z)), SB, M);',
+                                  [('B', L['base'][0], L['base'][1]), ('VN', vn, ''), ('SB', dirt['base'], ''), ('M', dmask, '')], F3, 500)
+        blends['nor'] = g.custom('return normalize(lerp(N, SN, M));',
+                                 [('N', L['nor'][0], L['nor'][1]), ('SN', dirt['nor'], ''), ('M', dmask, '')], F3, 500)
+        blends['rough'] = g.custom('return lerp(R, SR, M);',
+                                   [('R', L['rough'][0], L['rough'][1]), ('SR', dirt['rough'], ''), ('M', dmask, '')], F1, 500)
+        ao = g.custom('return lerp(A, SA, M);', [('A', L['ao'][0], L['ao'][1]), ('SA', dirt['ao'], ''), ('M', dmask, '')], F1, 500)
         if GROUND_V3 and ground_memory is not None:
             blends['ao'] = ao
             blends['riplit'] = g.node(unreal.MaterialExpressionConstant, 400, 2100, r=1.0)
@@ -2778,7 +2793,8 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     # (16/10, o Felipe pelo Look: "gostei da laje 3D, tá aprovado") a laje é o padrão do deserto; ROAD_SLAB=0 tira
     if os.environ.get('ROAD_SLAB', '1') != '0' and sname == 'desert' and cfg['road'] > 0:
         # a estrada com volume (14/10, v3): a laje de 12 cm com a borda quebrada onde a estrada é gasta ou destruída
-        slab_mat = ground_material('M_RoadSlab_' + tag, S, [sp for sp in layer_specs if sp[0] == 'asphalt' or sp[1] == 'Sand'],
+        # (16/10, a sujeira na beira: o chão do lado, então as camadas soltas também: areia, cascalho, terra e sal)
+        slab_mat = ground_material('M_RoadSlab_' + tag, S, [sp for sp in layer_specs if sp[0] == 'asphalt' or sp[1] in ('Sand', 'Gravel', 'Dirt', 'Salt')],
                                    cracks, sname, slab=True)
         # a posição na pista em 16 bits (a faixa pintada nova do Look, quando entrar no material da laje: o parâmetro RoadFrame)
         road_frame_path = DEST + '/Water/T_RoadFrame_' + MAP_NAME

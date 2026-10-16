@@ -709,6 +709,25 @@ TSharedRef<SWidget> SForgePanel::RoadRows()
 					[this](int32 V) { if (GameMode.IsValid()) GameMode->RoadSetStyle(V); })
 			]
 		]
+		// a sujeira na beira (16/10, o Felipe: "uma vez por outra" e "a gente suja a estrada usando a textura que tá ao lado
+		// dela"): o chão do lado entra na pista em trechos; Auto põe mais onde há areia solta em volta. À mão, o pincel de
+		// Pintar também suja a estrada
+		+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]()
+			{
+				return GameMode.IsValid() && GameMode->HasRoadSelection() && GameMode->IsSelectedRoadPaved()
+					&& GameMode->GetSettings().Biome == EWorldBiome::Desert ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			[
+				Choice(TEXT("RoadDirt"), LOCTEXT("RoadDirt", "Sujeira na beira"),
+					{ { LOCTEXT("RoadDirtAuto", "Auto"), 0 }, { LOCTEXT("RoadDirtNone", "Nenhuma"), 1 }, { LOCTEXT("RoadDirtLow", "Pouca"), 2 },
+					  { LOCTEXT("RoadDirtMid", "Média"), 3 }, { LOCTEXT("RoadDirtHigh", "Muita"), 4 } },
+					[this]() { return GameMode.IsValid() ? GameMode->GetSelectedRoadDirt() : 0; },
+					[this](int32 V) { if (GameMode.IsValid()) GameMode->RoadSetDirt(V); })
+			]
+		]
 		// o que fazer agora (muda com o estado)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 		[

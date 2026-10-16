@@ -599,6 +599,10 @@ void FForgeUITest::Build()
 	Steps.Add(ScrollTo(TEXT("RoadStyle_3")));
 	Steps.Add({ TEXT("road_style_worn"), [this, Remember]() { Remember(); Click(Target(TEXT("RoadStyle_3"))); }, NewMap,
 		[GM]() -> FString { return GM()->GetSelectedRoadStyle() == 3 ? FString() : FString::Printf(TEXT("o acabamento ficou em %d"), GM()->GetSelectedRoadStyle()); }, 1.0f });
+	// (16/10) a sujeira na beira da escolhida: Muita
+	Steps.Add(ScrollTo(TEXT("RoadDirt_4")));
+	Steps.Add({ TEXT("road_dirt_high"), [this, Remember]() { Remember(); Click(Target(TEXT("RoadDirt_4"))); }, NewMap,
+		[GM]() -> FString { return GM()->GetSelectedRoadDirt() == 4 ? FString() : FString::Printf(TEXT("a sujeira ficou em %d"), GM()->GetSelectedRoadDirt()); }, 1.0f });
 	Steps.Add({ TEXT("road_delete"), [this, Remember]()
 		{
 			Remember();
