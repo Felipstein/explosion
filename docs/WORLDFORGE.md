@@ -1774,6 +1774,16 @@ quase toda a estrada.
   - a planta gira pela base ao longo da trilha (a direção pelo gradiente do tráfego, cada tufo pro seu lado, ±25°) e
     amassa; a pisada desbota e o queimado largo escurece;
   - o componente vai com a sombra guardada (Rigid): o WPO muda devagar.
+  - **(17/10) Nunca tinha funcionado:**
+    - o `ObjectPositionWS` numa malha instanciada devolve, no pixel (e no vértice do Nanite), a posição do componente;
+    - todas as plantas liam o mapa no mesmo ponto, o centro, sem tráfego (A/B com e sem: 0,37% dos pixels).
+    - Achado pelas provas `TRAMPLE_FORCE=1` (deita tudo) e `TRAMPLE_DEBUG=1` (pinta o R lido).
+    - O pé da planta agora vem do `TransformPosition` do espaço Instance.
+    - Uma passada deita inteira (o limiar 0,002–0,014; o R de uma passada é ~1/32 numa faixa de 0,9 m por lagarta).
+    - O anel de 8 amostras a 1,4 m pega o capim entre as lagartas.
+    - A cor: palha clara (o talo deitado reflete mais luz visto de cima). `TRAMPLE_TONE=dark` volta a escura, que sumia na areia.
+  - **APROVADO (17/10, "aprovado"):** o padrão da montagem (`TRAMPLE=0` desliga). Falta medir o custo no mapa do jogo
+    antes de remontar o `World_TestSalt2` com ele.
 - **O toco e o tronco quebrado das palmeiras** (`Tools/blender_palm_break.py`, `PALM_BREAK=1` por padrão):
   - `SM_DatePalm_{Mature,Urban,OasisCluster}_Stump` e `_Fallen` na pasta da palmeira (o jogo procura pelo nome);
   - a quebra a 0,8 m; o pivô do _Fallen no centro da quebra;

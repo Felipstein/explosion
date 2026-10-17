@@ -1635,31 +1635,49 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
 # tamanho em cm), as mesmas que o Landscape e a laje recebem; o jogo liga o UseTrample. A planta gira pela base pro
 # lado da trilha (a direção pelo gradiente do R) e amassa; a pisada desbota e o queimado escurece. TRAMPLE=1 liga na
 # montagem (o mapa de teste; o do jogo só depois da prova e da palavra dele)
-TRAMPLE = os.environ.get('TRAMPLE', '0') == '1'
+# (17/10, o Felipe: "aprovado") o capim deitado é o padrão; TRAMPLE=0 volta o capim sem a trilha
+TRAMPLE = os.environ.get('TRAMPLE', '1') == '1'
+_TONE_DARK = os.environ.get('TRAMPLE_TONE') == 'dark'
+# (17/10) TRAMPLE_DEBUG=1: a prova da leitura, o capim vermelho na força do R que ele lê (e o resto cinza, pra ver se chega)
+TRAMPLE_DEBUG = '        base = float3(saturate(m.r * 40.0), 0.15, 0.15);\n' if os.environ.get('TRAMPLE_DEBUG') == '1' else ''
 TRAMPLE_WPO = r"""
 if (U < 0.5) return float3(0.0, 0.0, 0.0);
 float2 sz = max(B.zw, float2(1.0, 1.0));
 float2 uv = (OP.xy - B.xy) / sz;
 if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return float3(0.0, 0.0, 0.0);
+// (17/10, o Felipe: "achatado no chao, deitado, amassado"; de cima mal se via) a faixa do tanque inteiro: o casco passa
+// por cima do capim entre as lagartas e deita ele tambem. O anel de 8 amostras a 1,4 m (o tanque tem ~3,5 m de largura)
+// da o trafego largo e a direcao da faixa: em cima de uma lagarta a trilha corre pro lado de mais trafego; entre as duas,
+// pro de menos (as lagartas ficam dos lados). O mapa de marcas nao guarda a direcao (R o trafego, ~1/32 por passada)
 float r0 = Tex.SampleLevel(TexSampler, uv, 0).r;
-// (uma passada de tanque ja deita o capim, como no real: o R sobe ~1/32 por passada; 2 passadas = deitado)
-float t = smoothstep(0.004, 0.065, r0);
-if (t < 0.001) return float3(0.0, 0.0, 0.0);
-float2 du = float2(100.0, 0.0) / sz, dv = float2(0.0, 100.0) / sz;
-float2 gr = float2(Tex.SampleLevel(TexSampler, uv + du, 0).r - Tex.SampleLevel(TexSampler, uv - du, 0).r,
-                   Tex.SampleLevel(TexSampler, uv + dv, 0).r - Tex.SampleLevel(TexSampler, uv - dv, 0).r);
+float rw = r0;
+float2 m2 = float2(0.0, 0.0);
+[unroll] for (int k = 0; k < 8; k++)
+{
+    float an = k * 0.785398;
+    float v = Tex.SampleLevel(TexSampler, uv + float2(cos(an), sin(an)) * 140.0 / sz, 0).r;
+    rw = max(rw, 0.9 * v);
+    m2 += v * float2(cos(2.0 * an), sin(2.0 * an));
+}
+// (17/10, a 2ª prova: com 0,004–0,05 uma passada, ~1/32 no R, só inclinava ~50 graus e o capim seguia em pé com a sombra
+// comprida) o tanque achata na 1ª passada: deita inteiro a partir de ~meia passada (a linha de 1 px lida entre os pixels)
+float t = smoothstep(0.002, 0.014, rw);
+@FORCE@if (t < 0.001) return float3(0.0, 0.0, 0.0);
 float ph = Rnd * 6.2832;
-// ao longo da trilha (de lado ao gradiente do trafego), cada tufo pro seu lado, com ate ~25 graus de acaso
-float2 along = dot(gr, gr) > 1e-8 ? normalize(float2(-gr.y, gr.x)) : float2(cos(ph), sin(ph));
-along *= frac(Rnd * 7.13) < 0.5 ? -1.0 : 1.0;
-float a = (frac(Rnd * 3.71) - 0.5) * 0.9;
+float th = dot(m2, m2) > 1e-10 ? 0.5 * atan2(m2.y, m2.x) : ph;
+if (r0 < 0.5 * rw) th += 1.5708;
+float2 along = float2(cos(th), sin(th));
+// todos penteados pro mesmo lado ao longo da faixa (o capim que o tanque empurrou), com ate ~15 graus de acaso
+along *= dot(along, float2(0.8, 0.6)) < 0.0 ? -1.0 : 1.0;
+float a = (frac(Rnd * 3.71) - 0.5) * 0.5;
 along = float2(along.x * cos(a) - along.y * sin(a), along.x * sin(a) + along.y * cos(a));
 float3 d = WP - OP;
 float h = max(d.z, 0.0);
-float ang = t * 1.35;
+// ~87 graus: rente ao chao, e prensado ~3 cm no sulco da lagarta
+float ang = t * 1.52;
 float3 nd;
-nd.xy = d.xy * (1.0 + 0.3 * t) + along * h * sin(ang);
-nd.z = h * cos(ang) * (1.0 - 0.3 * t);
+nd.xy = d.xy * (1.0 + 0.25 * t) + along * h * sin(ang);
+nd.z = h * cos(ang) * (1.0 - 0.5 * t) - 3.0 * t;
 return nd - float3(d.xy, h);
 """
 TRAMPLE_COLOR = r"""
@@ -1670,11 +1688,21 @@ if (U > 0.5)
     if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0)
     {
         float4 m = Tex.SampleLevel(TexSampler, uv, 0);
-        float trod = smoothstep(0.004, 0.065, m.r);
+        // a mesma faixa larga do WPO (o casco por cima do capim entre as lagartas)
+        float rw = m.r;
+        [unroll] for (int k = 0; k < 8; k++)
+        {
+            float an = k * 0.785398;
+            rw = max(rw, 0.9 * Tex.SampleLevel(TexSampler, uv + float2(cos(an), sin(an)) * 140.0 / sz, 0).r);
+        }
+        float trod = smoothstep(0.002, 0.014, rw);   // a mesma da deitada (o WPO)
         float burn = smoothstep(0.1, 0.6, m.b);
-        base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)) * float3(1.08, 0.97, 0.78), 0.5 * trod);
+        // amassado: palha quebrada e amarelada. TRAMPLE_TONE=dark: a 1a prova (17/10), mais escura (x0,62), sumia na areia
+        // vermelha e lia como chao limpo; o padrao, a palha clara: o talo deitado reflete mais luz visto de cima (a faixa
+        // do gramado cortado, o capim acamado das lavouras)
+        base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)) * float3(1.05, 0.9, 0.62) * @TONE@, @MIX@ * trod);
         base *= lerp(1.0, 0.16, burn);
-    }
+@DEBUG@    }
 }
 """
 
@@ -1713,11 +1741,18 @@ def prop_material(name, plant, defaults):
                         texture=unreal.load_asset('/Engine/EngineResources/Black'))
         tr_b = g.node(unreal.MaterialExpressionVectorParameter, -900, parameter_name='BattleBounds', default_value=unreal.LinearColor(0, 0, 0, 0))
         tr_u = g.node(unreal.MaterialExpressionScalarParameter, -900, parameter_name='UseTrample', default_value=0.0)
-        tr_op = g.node(unreal.MaterialExpressionObjectPositionWS, -900)
+        # (17/10) o pé de cada planta: a origem da instância levada ao mundo. O ObjectPositionWS, numa malha instanciada,
+        # devolve no pixel (e no vértice do Nanite) a posição do COMPONENTE, não a da instância (MaterialTemplate.ush da 5.8):
+        # todas as plantas liam o caderno no mesmo ponto, o centro do mapa, sem tráfego, e nada deitava (a prova
+        # TRAMPLE_DEBUG: o capim inteiro sem leitura; a TRAMPLE_FORCE: deitado inteiro)
+        tr_op = g.node(unreal.MaterialExpressionTransformPosition, -900)
+        tr_op.set_editor_property('transform_source_type', unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_INSTANCE)
+        tr_op.set_editor_property('transform_type', unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_WORLD)
+        g.link(g.const3((0.0, 0.0, 0.0), -1000), '', tr_op, '')   # (a entrada única sem nome, como o Transform da normal)
         tr_ins = [('Tex', tr_tex, ''), ('B', tr_b, 'RGBA'), ('U', tr_u, ''), ('OP', tr_op, '')]
     c = g.custom('\n'.join([
         'float3 base = C * T;',
-        'base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)).xxx, Desat);'] + ([TRAMPLE_COLOR] if trample else []) + [
+        'base = lerp(base, dot(base, float3(0.3, 0.59, 0.11)).xxx, Desat);'] + ([TRAMPLE_COLOR.replace('@DEBUG@', TRAMPLE_DEBUG).replace('@TONE@', '0.62' if _TONE_DARK else '1.15').replace('@MIX@', '0.8' if _TONE_DARK else '0.7')] if trample else []) + [
         'float up = saturate((VN.z + (Nt.y * 2.0 - 1.0) * 0.25 - 0.45) * 3.5);',
         'float s = Snow * up * saturate((Wp.z - Wl - 30.0) / 70.0);',
         'Rough = lerp(Ar.g, 0.65, s);',
@@ -1727,7 +1762,9 @@ def prop_material(name, plant, defaults):
         F3, -300, extra=[('Rough', F1)])
     if trample:
         rnd = g.node(unreal.MaterialExpressionPerInstanceRandom, -900)
-        wpo = g.custom(TRAMPLE_WPO, tr_ins + [('WP', wz, ''), ('Rnd', rnd, '')], F3, -300)
+        # (17/10) TRAMPLE_FORCE=1: a prova de depuração, todo capim deitado sem olhar o mapa de marcas
+        code = TRAMPLE_WPO.replace('@FORCE@', 't = 1.0;\n' if os.environ.get('TRAMPLE_FORCE') == '1' else '')
+        wpo = g.custom(code, tr_ins + [('WP', wz, ''), ('Rnd', rnd, '')], F3, -300)
         g.out(wpo, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
         log('trample', name, 'o capim e a moita deitam na trilha (UseTrample)')
     g.out(c, '', unreal.MaterialProperty.MP_BASE_COLOR)
