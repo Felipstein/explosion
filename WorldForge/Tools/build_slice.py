@@ -1885,7 +1885,7 @@ def place_monoliths(S):
 # - na queda a copa atrasa (o tronco enverga ao contrário da queda, mais no meio do caminho);
 # - no impacto ela chicoteia e amortece (~1 s);
 # - deitada, nada passa do chão: a copa achata e abre por cima dele (o chão fica 0,8 m abaixo do pivô, a altura da
-#   quebra);
+#   quebra; ou o plano do chão em volta da copa que o jogo põe em 5, 6 e 7: z = a + b·x + c·y, cm do mundo);
 # - o vento some aos poucos conforme deita.
 PALM_FALL_HLSL = r"""
 float fallen = step(0.5, C3);
@@ -1906,16 +1906,23 @@ if (fallen > 0.5)
         float osc = exp(-3.2 * dt) * sin(13.0 * dt);
         off += float3(0.0, 0.0, -1.0) * 90.0 * h * h * osc + fd * 40.0 * h * h * osc;
     }
-    // nada abaixo do chao: o que passaria (a copa) achata numa camada fina e abre pros lados
-    float g = OP.z - 80.0 + 12.0;
+    // nada abaixo do chao: o que passaria (a copa) achata numa camada fina rente ao chão
+    // (16/10, a palmeira_quebra2 e 3: o empurrão pro lado media a distância à reta do tronco pelo pé; a tamareira é torta e
+    // a copa fica toda de um lado dessa reta, então ela inteira escorregava ~1 m e saía da ponta. Só sobe, sem empurrão:
+    // a copa fica presa na ponta. O chão pelo pivô a 0,8 m vezes a escala da palmeira, a do eixo Z do objeto)
+    float g = OP.z - 80.0 * length(UpR) + 12.0;
+    // (16/10 noite, a palmeira_quebra_f4: no mapa de dunas a copa cai num chão mais alto que o do pé e as folhas de baixo
+    // ficavam dentro da duna; a copa saía com 6 folhas) o chão de verdade em volta da copa, quando o jogo dá: o plano
+    // z = a + b·x + c·y (cm do mundo) nos CustomPrimitiveData 5, 6 e 7. Tudo zero: a conta pelo pivô, como antes
+    if (abs(C5) + abs(C6) + abs(C7) > 0.0) g = C5 + C6 * W.x + C7 * W.y + 12.0;
     float z = W.z + off.z;
     if (z < g)
     {
-        float under = g - z;
-        off.z += under * 0.85;
-        float2 away = W.xy - OP.xy;
-        away = dot(away, away) > 1.0 ? normalize(away) : fd2;
-        off.xy += away * under * 0.35;
+        // (16/10, a palmeira_quebra5: subir só 85% deixava as folhas de baixo, ~4 m abaixo, ainda ~60 cm enterradas, e a
+        // copa caída saía rala, 6 a 8 folhas à vista. Todas sobem até o chão e deitam numa camada de até 6 cm, a mais
+        // funda por cima, como a folha que dobra debaixo da copa)
+        float d = g - z;
+        off.z += d + 6.0 * (1.0 - exp(-d / 200.0));
     }
 }
 return off;
@@ -2023,10 +2030,12 @@ def palm_material(name, foliage, tex=None, fade=False, fallen=False):
         upn = g.custom('return normalize(V);', [('V', up, '')], F3, -600)
         # (na 5.8 o dado do primitivo entra por um parâmetro escalar com "use custom primitive data", não por nó próprio)
         cpd = [g.node(unreal.MaterialExpressionScalarParameter, -900, parameter_name=nm, default_value=0.0,
-                      use_custom_primitive_data=True, primitive_data_index=i) for nm, i in (('ToppleDir', 2), ('Fallen', 3), ('ImpactTime', 4))]
-        wind = g.custom(PALM_FALL_HLSL, [('Wind', wind, ''), ('Up', upn, ''), ('L', lp, ''), ('T', tm, ''), ('W', wp, ''),
+                      use_custom_primitive_data=True, primitive_data_index=i) for nm, i in (('ToppleDir', 2), ('Fallen', 3), ('ImpactTime', 4),
+                                                                                       ('CrownGroundA', 5), ('CrownGroundB', 6), ('CrownGroundC', 7))]
+        wind = g.custom(PALM_FALL_HLSL, [('Wind', wind, ''), ('Up', upn, ''), ('UpR', up, ''), ('L', lp, ''), ('T', tm, ''), ('W', wp, ''),
                                           ('OP', g.node(unreal.MaterialExpressionObjectPositionWS, -900), ''),
-                                          ('C2', cpd[0], ''), ('C3', cpd[1], ''), ('C4', cpd[2], '')], F3, -400)
+                                          ('C2', cpd[0], ''), ('C3', cpd[1], ''), ('C4', cpd[2], ''),
+                                          ('C5', cpd[3], ''), ('C6', cpd[4], ''), ('C7', cpd[5], '')], F3, -400)
     g.out(wind, '', unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_INSTANCED_STATIC_MESHES)
     mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
@@ -2128,8 +2137,11 @@ def palm_break_meshes(names):
                 lib.enable_nanite(mesh, part == 'Fallen')   # (a copa caída: preservar a área, como a palmeira)
             mesh = unreal.load_asset(mesh_path)
             fallen = part == 'Fallen'
-            fol = palm_material('M_' + n + '_Foliage' + ('_Fallen' if fallen else ''), True, fallen=fallen)
-            trk = palm_material('M_' + n + '_Trunk' + ('_Fallen' if fallen else ''), False, texs[0] if texs else None, fallen=fallen)
+            # (_Fallen3, 16/10: a copa presa na ponta, só sobe ao bater no chão; o nome novo refaz o material)
+            # (_Fallen4, 16/10: a copa inteira à vista, as folhas de baixo deitam rente ao chão em vez de ficar enterradas)
+            # (_Fallen5, 16/10 noite: o plano do chão em volta da copa, se o jogo der, nos CustomPrimitiveData 5–7)
+            fol = palm_material('M_' + n + '_Foliage' + ('_Fallen5' if fallen else ''), True, fallen=fallen)
+            trk = palm_material('M_' + n + '_Trunk' + ('_Fallen5' if fallen else ''), False, texs[0] if texs else None, fallen=fallen)
             for k, sm in enumerate(mesh.get_editor_property('static_materials')):
                 nm = str(sm.material_slot_name).lower() + ' ' + (sm.material_interface.get_name().lower() if sm.material_interface else '')
                 mesh.set_material(k, brk if 'break' in nm else (trk if 'trunk' in nm else fol))

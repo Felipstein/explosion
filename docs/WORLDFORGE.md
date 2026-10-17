@@ -1789,6 +1789,15 @@ quase toda a estrada.
   - o material da palmeira caída (`PALM_FALL_HLSL`) lê os CustomPrimitiveData do jogo (1 o tombo, 2 a direção, 3 caída,
     4 o impacto): a copa atrasa na queda, chicoteia e amortece no impacto, e nada passa do chão (a copa achata e abre
     por cima dele).
+  - a copa presa na ponta (`_Fallen3`, conferida pelo Jogo e por mim na palmeira_quebra5); a copa caída rala (6 de ~25
+    folhas à vista): no mapa de dunas a copa cai num chão mais alto que o do pé e as folhas de baixo ficavam dentro da
+    areia. `_Fallen4` deita as folhas abaixo do chão numa camada de até 6 cm (antes subiam só 85%); `_Fallen5` lê o
+    plano do chão em volta da copa nos CustomPrimitiveData 5–7 (z = a + b·x + c·y, cm do mundo; tudo zero = a conta pelo
+    pivô). O Jogo põe o plano (mínimos quadrados em 5 pontos em volta da ponta) e para o tombo quando a ponta encosta
+    no chão de verdade (16/10 noite, a compilação 39 dele). A prova: `palmeira_quebra_f5` (o vídeo), a copa cheia do tombo
+    ao fim, contra ~6 folhas na `palmeira_quebra5`. O Felipe aprovou no jogo (17/10, "a palmeira ta top"; a linha no
+    `docs/APROVADOS.md`, registrada pelo Jogo). A receita do lado de cá: `PALM_FALL_HLSL` e os materiais `_Fallen5` do
+    `build_slice.py` (`palm_material`, `palm_break_meshes`).
 - **A pedra pequena quebrada** (`Tools/blender_rock_break.py`): `<malha>_Broken` das `namaqualand_boulder_05/06` (2–3
   planos, os pedaços abertos e assentados, o cascalho, a pilha a 65% da altura); o jogo troca a pedra sob o tanque e o
   Dozer (a compilação 29). A face nova `M_RockFreshV2`: a 1ª (clara, 0,50/0,41/0,32) saiu no jogo como plástico; agora
