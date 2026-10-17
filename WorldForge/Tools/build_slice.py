@@ -1165,7 +1165,9 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         # (a mesma conta e as mesmas texturas pelo mundo: a emenda com o Landscape não aparece)
         L = next(x for x in layers if x['name'] == 'Asphalt')
         Sd = next((x for x in layers if x['name'] == 'Sand'), None)
-        paint_code = look_paint_v2_code() if os.environ.get('PAINT_V2', '0') == '1' else None   # (a faixa nova ainda sem a palavra dele: o padrão é o decalque, o da laje aprovada)
+        # (17/10, o Felipe: "ta aprovado") a faixa v2 do Look pintada na laje é o padrão: só existe onde há asfalto e sai
+        # gasta (o decalque passava por cima da areia onde a laje quebrou, o item 9); PAINT_V2=0 volta o decalque
+        paint_code = look_paint_v2_code() if os.environ.get('PAINT_V2', '1') == '1' else None
         if paint_code:
             # (16/10) a faixa pintada v2 do Look: a posição na pista do T_RoadFrame (16 bits; o RoadDir de 8 bits não dava a
             # faixa de 15 cm); a cor da areia do mapa pro encardido; a trinca do asfalto v2 cortando a faixa

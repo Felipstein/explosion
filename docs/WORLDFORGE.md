@@ -1984,3 +1984,13 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
    (as lascas finas em volta do pilar de pedra, perto da estrada do World_TestSalt2). Achar qual espalhamento põe essas
    malhas, qual o lado aberto de cada escaneada, e assentar pela face de cima (a normal do chão, só o giro no eixo
    vertical e uma inclinação pequena), nunca mostrando o oco.
+9. Pedido do Felipe de 16/10 (pra alguma hora): **a faixa branca da beira passa por cima da areia** onde a laje quebrou ("tem
+   fita na areia [...] isso não existe, tem que tá degradado"). A foto: `docs/aprovados/mundos/2026-10-16_faixa_na_areia_PROBLEMA.jpg`.
+   - A causa: a faixa é um decalque (`road_paint`, os pedaços de 2,2 m) e projeta em tudo, o Landscape também. O `on_slab`
+     só olha 3 pontos de cada pedaço, então a falha da laje entre eles fica pintada.
+   - O caminho: a faixa v2 do Look pintada no próprio material da laje (`PAINT_V2`, ainda sem a avaliação dele), que só
+     existe onde há asfalto e já vem gasta; ou o decalque só receber na laje.
+   - Em teste (16/10 noite): o World_TestRoadDirt remontado com `PAINT_V2=1`, a foto `dirt_gasta_67_paredao_p2` contra a
+     `dirt_gasta_67_v2l` (o decalque). Na foto a faixa da beira segue a laje: some onde ela quebra, sai gasta e falhada
+     e não passa mais por cima da areia. **APROVADO (17/10, "tá aprovado")**: o `PAINT_V2` virou o padrão da montagem
+     (`PAINT_V2=0` volta o decalque). O World_TestSalt2 recebe na próxima remontagem.
