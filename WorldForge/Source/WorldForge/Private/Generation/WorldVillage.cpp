@@ -420,6 +420,7 @@ void FWorldDetail::BuildVillages(const FWorldMap& M, float MainHalf)
 				const FVector2f P = ToWorld(FVector2f(U, V), C, Q);
 				if (FMath::Abs(P.X) > Half - 24.0f || FMath::Abs(P.Y) > Half - 24.0f) { Why = 1; return false; }
 				for (const FKeep& K : Keep) if (FVector2f::Distance(P, K.P) < K.R + 6.0f) { Why = 2; return false; }
+				if (M.FormAt(P) > 0.06f) { Why = 2; return false; }   // (16/10) lote no flanco de um morro: o PadHeight ergueria um paredão
 				const float H = M.HeightAt(P);
 				// (13/10: 0,3 m acima da água e 6 m longe da água de verdade; com 1 m o chão baixo do lago
 				// que recuou da vila, seco mas a menos de 1 m da água, matava os cantos do cruzamento)

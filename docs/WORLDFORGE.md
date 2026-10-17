@@ -1953,21 +1953,32 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
        - DECAL (Nield e Baas 2008): nebkhas e dunas parabólicas;
        - Gaea: Dunes com Undulation e o detalhe por cima;
        - Journey: as ripples no material.
-   - **O plano, em duas fases:**
-     - **A fase A** (rápida, a que mais muda a cara do chão):
-       - a ondulação do lençol: ruído de banda alongado na crista perpendicular ao vento, λ 80–250 m, ±0,5–1,5 m
-         (rampas de 1,5–4°), modulada por um mapa de espessura de areia;
-       - os corredores de cascalho onde a areia é rala, com a cor do cascalho;
-       - as nebkhas: um monte por moita na areia (0,4–1,2 m, diâmetro de 3–8 m, cauda a sotavento de 2–4 diâmetros),
-         com a moita no topo; a pedra com a sombra de areia menor.
-     - **A fase B:** o Werner no mapa inteiro (célula de 1–2 m, a areia que cada lugar recebe pelo mapa de espessura, a
-       areia entrando pela borda a montante, a vegetação no modelo), no lugar dos bolsões carimbados.
+   - **A fase A (o lençol ondulado e uma nebkha por moita) foi REPROVADA no rumo** (16/10): "não é questão de colocar
+     isso aí pedaço por pedaço, é questão de pincelar e naturalizar, morros e descidas, olha lá o C&C, é cheio disso
+     [...] bota a cabeça pra funcionar ALÉM do bloquinho e bolha". O código fica desligado (`SAND_SHEET`, fora do padrão).
+   - **O que o C&C tem** (medido em 7 mapas do ranqueado, `captures/reference/zh_relief.py`): 50–75% do chão plano e o
+     resto formas grandes com intenção (morros redondos de 100–300 m e 5–15 m, cristas, platôs, vales, rampas de
+     17–25°); o nosso areal é uma mesa com ±0,8 m (`Undulate`). O WorldBuilder (o fonte da EA) só tem Mound/Dig, Height
+     Brush, Feather e Ramp, sem ruído: o natural vem da mão (muitos morros tortos sobrepostos e suavizados).
+   - **O novo rumo** (o estudo de 16/10, agente com fontes: o WorldBuilder, o Landmass do Unreal, o Gaea, o World
+     Machine, o AoE2/AoE4, a erosão por gotas de Beyer 2015 e Lague, a térmica):
+     1. **O gerador:** as formas com intenção no chão aberto (6–8 grandes, 6–10 menores, ≥180 m entre elas, longe das
+        bases, das estradas e da vila), o contorno entortado por ruído, a encosta mais suave do lado do vento, a altura
+        pelo controle Montanhas; a erosão por gotas com máscara de dureza (nada nas bases, nas rampas, na água e no sal)
+        e a térmica a 25° por último. Meta: 50–75% do mapa plano.
+     2. **Os pincéis:** Morro (perfil-alvo que guarda o máximo, raio entortado, o traço longo vira crista), Vale (cava em
+        U com o fundo descendo), Suavizar (gaussiano), Naturalizar (as gotas só dentro do pincel e a térmica local);
+        pincéis de 50 e 100 m; o mapa de inclinação ao vivo.
+     3. As dunas aprovadas ficam por cima disso, nos baixios planos.
    - **As medidas de "natural":**
      - a fração de areia com inclinação abaixo de 0,5° (a meta inicial é menos de 20%);
      - o espectro de alturas sem buraco entre o ruído e a duna;
      - o brilho da areia sob o sol do jogo contra o game shot;
      - toda moita na areia com monte;
      - os limites de jogo: lençol ≤ 4°, nebkha ≤ 25°, duna ≤ 33°.
+   - **APROVADO (17/10):** os morros e descidas ("top,,, aprovado", vistos na luz dos game shots,
+     `docs/aprovados/mundos/2026-10-17_morros_e_descidas_APROVADO.jpg`) e os pincéis junto ("pode comitar os pinceis
+     tambem, não tem o que eu avaliar isso"). Os pincéis compilam, mas não passaram pelo teste clicando no app.
 8. Pedido do Felipe de 16/10 (pro final): **as pedras mal posicionadas** pela geração automática, "posicionadas em direções
    erradas na maioria das vezes [...] dá pra ver ela por dentro". A foto: `docs/aprovados/mundos/2026-10-16_pedras_viradas_PROBLEMA.jpg`
    (as lascas finas em volta do pilar de pedra, perto da estrada do World_TestSalt2). Achar qual espalhamento põe essas

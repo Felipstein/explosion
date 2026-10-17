@@ -3,6 +3,8 @@
 #include "Generation/WorldDetail.h"
 #include "Generation/WorldImport.h"
 #include "Generation/WorldSettingsJson.h"
+#include "Generation/WorldNoise.h"
+#include "Generation/ErosionFilter.h"
 
 #include "Async/Async.h"
 #include "RHI.h"
@@ -41,6 +43,8 @@ struct FEditUndo
 	bool bHeight = false;
 	TMap<FIntPoint, float> Applied;              // altura: o desvio somado por vértice no arrasto
 	float FlatTarget = 0.0f;
+	int32 MirrorK = 1;                           // altura: em quantas cópias giradas o arrasto foi aplicado
+	uint32 Seed = 0;                             // altura: o ruído do contorno do morro e do vale
 	FVector2f Min = FVector2f(1e9f), Max = FVector2f(-1e9f);
 	bool bRoads = false;                         // estrada: a lista de antes
 	TArray<FWorldEdits::FRoadEdit> PrevRoads;
@@ -895,11 +899,18 @@ bool AWorldForgeGameMode::EditUndo()
 		// peças e a malha de agora são outras; volta nos dados e refaz
 		if (U->bHeight)
 		{
-			for (const TPair<FIntPoint, float>& K : U->Applied)
+			const int32 NG = Terrain && Terrain->GetLive() ? Terrain->GetLive()->Detail->GMap->N : 0;
+			for (int32 R = 0; R < U->MirrorK; ++R)
 			{
-				float& H = Edits->Height.FindOrAdd(K.Key);
-				H -= K.Value;
-				if (FMath::Abs(H) < 1e-4f) Edits->Height.Remove(K.Key);
+				for (const TPair<FIntPoint, float>& K : U->Applied)
+				{
+					const int32 Q = R * (4 / FMath::Max(U->MirrorK, 1));
+					const FIntPoint C = K.Key;
+					const FIntPoint Kr = (Q & 3) == 1 ? FIntPoint(NG - 1 - C.Y, C.X) : (Q & 3) == 2 ? FIntPoint(NG - 1 - C.X, NG - 1 - C.Y) : (Q & 3) == 3 ? FIntPoint(C.Y, NG - 1 - C.X) : C;
+					float& H = Edits->Height.FindOrAdd(Kr);
+					H -= K.Value;
+					if (FMath::Abs(H) < 1e-4f) Edits->Height.Remove(Kr);
+				}
 			}
 		}
 		else if (U->bPaint)
@@ -917,8 +928,8 @@ bool AWorldForgeGameMode::EditUndo()
 	{
 		TMap<FIntPoint, float> Back;
 		for (const TPair<FIntPoint, float>& K : U->Applied) Back.Add(K.Key, -K.Value);
-		ApplyHeightDeltas(Back);
-		RefreshRegion(U->Min, U->Max);
+		ApplyHeightDeltasMirrored(Back, U->MirrorK);
+		RefreshRegionMirrored(U->Min, U->Max, U->MirrorK);
 		return true;
 	}
 	if (U->bPaint)
@@ -994,40 +1005,195 @@ void AWorldForgeGameMode::EditHeight(FVector2f P, bool bStart, float DeltaSecond
 		return;
 	}
 	const FWorldMap& D = *L->Detail->GMap;
+	const int32 MirrorK = HeightMirror ? (Settings.Players == 4 ? 4 : 2) : 1;
 	if (bStart || UndoStack.Num() == 0 || !UndoStack.Last()->bHeight)
 	{
 		TSharedPtr<FEditUndo> U = MakeShared<FEditUndo>();
 		U->bHeight = true;
 		U->Stamp = Shown;
 		U->FlatTarget = D.HeightAt(P);
+		U->MirrorK = MirrorK;
+		U->Seed = FMath::Rand();
 		UndoStack.Add(U);
+		HeightAccum = 0.0f;
 	}
 	FEditUndo& U = *UndoStack.Last();
+	const float R = BrushRadius;
+	// (16/10) o pincel grande refaz a altura final, as peças e o chão de milhares de vértices: ~10 vezes por segundo
+	HeightAccum += DeltaSeconds;
+	if (R >= 40.0f && HeightAccum < 0.1f) return;
+	const float Dt = HeightAccum;
+	HeightAccum = 0.0f;
 	// subir/baixar: ~1,5 m por segundo segurando no meio do pincel; aplainar:
 	// puxa ~2× por segundo pra altura de onde o arrasto começou
-	const float R = BrushRadius;
-	U.Min = FVector2f(FMath::Min(U.Min.X, P.X - R - 2.0f), FMath::Min(U.Min.Y, P.Y - R - 2.0f));
-	U.Max = FVector2f(FMath::Max(U.Max.X, P.X + R + 2.0f), FMath::Max(U.Max.Y, P.Y + R + 2.0f));
+	// (16/10) morro e vale: a forma-alvo (o contorno entortado por ruído, como as formas do gerador) a partir do chão do
+	// começo do arrasto, guardando o máximo: passar de novo não empilha, e arrastar faz crista (o Height Brush do
+	// WorldBuilder, com a borda smoothstep em vez da linear dele, que deixava vinco). Suavizar: o desfoque gaussiano.
+	// Naturalizar: os sulcos da erosão (o filtro do Rune Johansen, o mesmo das encostas do gerador) só onde pincelou
+	const bool bForm = HeightMode == 3 || HeightMode == 4;
+	const float Reach = bForm ? 1.25f * R : R;
+	U.Min = FVector2f(FMath::Min(U.Min.X, P.X - Reach - 2.0f), FMath::Min(U.Min.Y, P.Y - Reach - 2.0f));
+	U.Max = FVector2f(FMath::Max(U.Max.X, P.X + Reach + 2.0f), FMath::Max(U.Max.Y, P.Y + Reach + 2.0f));
 	const FVector2f G = D.ToGrid(P);
-	const int32 Rc = FMath::CeilToInt(R / D.Cell) + 1;
-	TMap<FIntPoint, float> Deltas;
-	for (int32 J = FMath::FloorToInt(G.Y) - Rc; J <= FMath::CeilToInt(G.Y) + Rc; ++J)
+	const int32 Rc = FMath::CeilToInt(Reach / D.Cell) + 1;
+	const int32 Ia = FMath::Max(FMath::FloorToInt(G.X) - Rc, 0), Ib = FMath::Min(FMath::CeilToInt(G.X) + Rc, D.N - 1);
+	const int32 Ja = FMath::Max(FMath::FloorToInt(G.Y) - Rc, 0), Jb = FMath::Min(FMath::CeilToInt(G.Y) + Rc, D.N - 1);
+	if (Ia > Ib || Ja > Jb) return;
+	// suavizar: o desfoque gaussiano separável da janela (o raio do desfoque um quarto do pincel)
+	TArray<float> Blur;
+	const int32 Bw = Ib - Ia + 1, Bh = Jb - Ja + 1;
+	if (HeightMode == 5)
 	{
-		for (int32 I = FMath::FloorToInt(G.X) - Rc; I <= FMath::CeilToInt(G.X) + Rc; ++I)
+		const int32 Kr = FMath::Max(2, FMath::RoundToInt(0.25f * R / D.Cell));
+		TArray<float> Wk;
+		float Ws = 0.0f;
+		for (int32 K = -Kr; K <= Kr; ++K) { Wk.Add(FMath::Exp(-0.5f * FMath::Square(K / (0.5f * Kr)))); Ws += Wk.Last(); }
+		TArray<float> Tmp;
+		Tmp.SetNumZeroed(Bw * Bh);
+		Blur.SetNumZeroed(Bw * Bh);
+		for (int32 J = 0; J < Bh; ++J)
+			for (int32 I = 0; I < Bw; ++I)
+			{
+				float S = 0.0f;
+				for (int32 K = -Kr; K <= Kr; ++K) S += Wk[K + Kr] * D.Height[D.Index(FMath::Clamp(Ia + I + K, 0, D.N - 1), Ja + J)];
+				Tmp[J * Bw + I] = S / Ws;
+			}
+		for (int32 J = 0; J < Bh; ++J)
+			for (int32 I = 0; I < Bw; ++I)
+			{
+				float S = 0.0f;
+				for (int32 K = -Kr; K <= Kr; ++K)
+				{
+					const int32 Jj = FMath::Clamp(J + K, 0, Bh - 1);   // (a borda da janela repete: o peso ali é pequeno)
+					S += Wk[K + Kr] * Tmp[Jj * Bw + I];
+				}
+				Blur[J * Bw + I] = S / Ws;
+			}
+	}
+	ErosionFilter::FParams Prm;
+	Prm.Scale = FMath::Clamp(R / 3.0f, 4.0f, 20.0f);
+	Prm.Octaves = 3;
+	Prm.Strength = 0.12f;
+	Prm.Seed = 0x6E47u;
+	const float HillH = FMath::Clamp(0.12f * R, 0.8f, 12.0f), ValeD = FMath::Clamp(0.08f * R, 0.5f, 8.0f);
+	TMap<FIntPoint, float> Deltas;
+	for (int32 J = Ja; J <= Jb; ++J)
+	{
+		for (int32 I = Ia; I <= Ib; ++I)
 		{
-			if (I < 0 || J < 0 || I >= D.N || J >= D.N) continue;
-			const float Dist = FVector2f::Distance(D.CellPos(I, J), P);
-			const float F = 1.0f - FMath::SmoothStep(0.45f * R, R, Dist);
-			if (F <= 0.0f) continue;
-			float Delta;
-			if (HeightMode == 2) Delta = (U.FlatTarget - D.Height[D.Index(I, J)]) * FMath::Min(1.0f, 2.0f * DeltaSeconds) * F;
-			else Delta = (HeightMode == 0 ? 1.5f : -1.5f) * DeltaSeconds * F;
+			const FVector2f Cp = D.CellPos(I, J);
+			const float Dist = FVector2f::Distance(Cp, P);
+			const int32 Vi = D.Index(I, J);
+			const float Applied = U.Applied.FindRef(FIntPoint(I, J));
+			float Delta = 0.0f;
+			if (bForm)
+			{
+				const float Dw = Dist * (1.0f + 0.22f * WorldNoise::Fbm(Cp.X / (0.8f * R), Cp.Y / (0.8f * R), U.Seed, 2));
+				const float Prof = 1.0f - FMath::SmoothStep(0.0f, 1.0f, Dw / R);
+				if (Prof <= 0.0f) continue;
+				if (HeightMode == 3)
+				{
+					const float Target = HillH * Prof * (1.0f + 0.12f * WorldNoise::Fbm(Cp.X / (0.5f * R), Cp.Y / (0.5f * R), U.Seed + 1u, 2));
+					if (Target > Applied) Delta = (Target - Applied) * FMath::Min(1.0f, 2.5f * Dt);
+				}
+				else
+				{
+					float Target = -ValeD * Prof;
+					// (o plano d'água cobre o mapa todo: o leito não desce abaixo de 0,4 m da água)
+					const float Base = D.Height[Vi] - Applied;
+					if (D.WaterLevel > -100.0f && Base > D.WaterLevel + 0.4f) Target = FMath::Max(Target, D.WaterLevel + 0.4f - Base);
+					if (Target < Applied) Delta = (Target - Applied) * FMath::Min(1.0f, 2.5f * Dt);
+				}
+			}
+			else
+			{
+				const float F = 1.0f - FMath::SmoothStep(0.45f * R, R, Dist);
+				if (F <= 0.0f) continue;
+				if (HeightMode == 2) Delta = (U.FlatTarget - D.Height[Vi]) * FMath::Min(1.0f, 2.0f * Dt) * F;
+				else if (HeightMode == 5) Delta = (Blur[(J - Ja) * Bw + (I - Ia)] - D.Height[Vi]) * FMath::Min(1.0f, 3.0f * Dt) * F;
+				else if (HeightMode == 6)
+				{
+					const int32 I0 = FMath::Max(I - 1, 0), I1 = FMath::Min(I + 1, D.N - 1), J0 = FMath::Max(J - 1, 0), J1 = FMath::Min(J + 1, D.N - 1);
+					const float Gx = (D.Height[D.Index(I1, J)] - D.Height[D.Index(I0, J)]) / ((I1 - I0) * D.Cell);
+					const float Gy = (D.Height[D.Index(I, J1)] - D.Height[D.Index(I, J0)]) / ((J1 - J0) * D.Cell);
+					const float Target = F * ErosionFilter::Apply(Cp, Gx, Gy, 0.0f, Prm);
+					Delta = (Target - Applied) * FMath::Min(1.0f, 2.0f * Dt);
+				}
+				else Delta = (HeightMode == 0 ? 1.5f : -1.5f) * Dt * F;
+			}
 			if (FMath::Abs(Delta) < 1e-4f) continue;
 			Deltas.Add(FIntPoint(I, J), Delta);
 			U.Applied.FindOrAdd(FIntPoint(I, J)) += Delta;
 		}
 	}
-	ApplyHeightDeltas(Deltas);
+	ApplyHeightDeltasMirrored(Deltas, U.MirrorK);
+}
+
+void AWorldForgeGameMode::ApplyHeightDeltasMirrored(const TMap<FIntPoint, float>& Deltas, int32 K)
+{
+	FWorldLive* L = Terrain ? Terrain->GetLive() : nullptr;
+	if (!L || Deltas.Num() == 0) return;
+	const int32 NG = L->Detail->GMap->N;
+	if (K <= 1)
+	{
+		ApplyHeightDeltas(Deltas);
+		return;
+	}
+	// as cópias giradas (a mesma conta do FSym do gerador: N é ímpar e centrado, o giro é exato)
+	TArray<TMap<FIntPoint, float>> Copies;
+	TArray<FIntRect> Boxes;
+	for (int32 R = 0; R < K; ++R)
+	{
+		const int32 Q = R * (4 / K);
+		TMap<FIntPoint, float>& C = Copies.AddDefaulted_GetRef();
+		FIntRect B(INT_MAX, INT_MAX, INT_MIN, INT_MIN);
+		for (const TPair<FIntPoint, float>& E : Deltas)
+		{
+			const FIntPoint P = E.Key;
+			const FIntPoint Pr = (Q & 3) == 1 ? FIntPoint(NG - 1 - P.Y, P.X) : (Q & 3) == 2 ? FIntPoint(NG - 1 - P.X, NG - 1 - P.Y) : (Q & 3) == 3 ? FIntPoint(P.Y, NG - 1 - P.X) : P;
+			C.Add(Pr, E.Value);
+			B.Min.X = FMath::Min(B.Min.X, Pr.X); B.Min.Y = FMath::Min(B.Min.Y, Pr.Y);
+			B.Max.X = FMath::Max(B.Max.X, Pr.X); B.Max.Y = FMath::Max(B.Max.Y, Pr.Y);
+		}
+		Boxes.Add(B);
+	}
+	// as que se encostam viram uma (no vértice das duas, o de maior valor: perto do centro o pincel não soma duas vezes)
+	TArray<bool> Done;
+	Done.Init(false, K);
+	for (int32 A = 0; A < K; ++A)
+	{
+		if (Done[A]) continue;
+		TMap<FIntPoint, float> Merged = Copies[A];
+		FIntRect Box = Boxes[A];
+		Done[A] = true;
+		for (int32 B = A + 1; B < K; ++B)
+		{
+			if (Done[B]) continue;
+			const FIntRect& O = Boxes[B];
+			if (O.Min.X > Box.Max.X + 2 || O.Max.X < Box.Min.X - 2 || O.Min.Y > Box.Max.Y + 2 || O.Max.Y < Box.Min.Y - 2) continue;
+			for (const TPair<FIntPoint, float>& E : Copies[B])
+			{
+				float* Cur = Merged.Find(E.Key);
+				if (!Cur) Merged.Add(E.Key, E.Value);
+				else if (FMath::Abs(E.Value) > FMath::Abs(*Cur)) *Cur = E.Value;
+			}
+			Box.Min.X = FMath::Min(Box.Min.X, O.Min.X); Box.Min.Y = FMath::Min(Box.Min.Y, O.Min.Y);
+			Box.Max.X = FMath::Max(Box.Max.X, O.Max.X); Box.Max.Y = FMath::Max(Box.Max.Y, O.Max.Y);
+			Done[B] = true;
+		}
+		ApplyHeightDeltas(Merged);
+	}
+}
+
+void AWorldForgeGameMode::RefreshRegionMirrored(FVector2f MinM, FVector2f MaxM, int32 K)
+{
+	for (int32 R = 0; R < FMath::Max(K, 1); ++R)
+	{
+		const int32 Q = R * (4 / FMath::Max(K, 1));
+		auto Rot = [Q](FVector2f V) { return (Q & 3) == 1 ? FVector2f(-V.Y, V.X) : (Q & 3) == 2 ? FVector2f(-V.X, -V.Y) : (Q & 3) == 3 ? FVector2f(V.Y, -V.X) : V; };
+		const FVector2f A = Rot(MinM), B = Rot(MaxM);
+		RefreshRegion(FVector2f(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y)), FVector2f(FMath::Max(A.X, B.X), FMath::Max(A.Y, B.Y)));
+	}
 }
 
 void AWorldForgeGameMode::EditPaint(FVector2f P, bool bStart)
@@ -1096,7 +1262,7 @@ void AWorldForgeGameMode::EditStrokeEnd()
 	if (UndoStack.Num() && (UndoStack.Last()->bPaint || UndoStack.Last()->bHeight) && UndoStack.Last()->Stamp == Shown)
 	{
 		const FEditUndo& U = *UndoStack.Last();
-		RefreshRegion(U.Min, U.Max);
+		RefreshRegionMirrored(U.Min, U.Max, U.bHeight ? U.MirrorK : 1);
 	}
 }
 

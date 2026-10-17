@@ -33,6 +33,10 @@ struct WORLDFORGE_API FWorldGenSettings
 	float Plateaus = 0.5f;    // platôs com penhascos (o "degrau" de RTS)
 	float Water = 0.35f;      // lagos
 	float Erosion = 0.5f;     // erosão hidráulica (vales e sulcos)
+	/** Morros e descidas no chão aberto (16/10, o Felipe: "é questão de pincelar e naturalizar, morros e descidas, olha lá
+	 *  o C&C"): formas grandes com intenção (morro, crista, mesa, vale entre ombros), como nos mapas do ZH. 0 = nenhuma (os
+	 *  mapas de antes não mudam). docs/WORLDFORGE.md, item 7. */
+	float Hills = 0.0f;
 	float Forests = 0.5f;     // árvores
 	float Resources = 0.5f;   // campos de recurso
 	/**
@@ -142,6 +146,7 @@ struct WORLDFORGE_API FWorldMap
 	float WindSpeed = 5.0f;                   // m/s (o vento do deserto de dia: 3–8)
 
 	TArray<float> Height;                     // N×N, m
+	TArray<float> Forms;                      // N×N: o quanto o vértice é morro/crista/mesa/vale (0–1; vazio = nenhum)
 	/**
 	 * Pesos das camadas do chão por vértice (o material mistura nesta ordem):
 	 * R = terra batida (bases, caminhos, campos de recurso)
@@ -188,6 +193,8 @@ struct WORLDFORGE_API FWorldMap
 
 	/** Altura no ponto (m), bilinear; fora do mapa repete a borda. */
 	float HeightAt(FVector2f P) const;
+	/** O quanto o ponto é forma de relevo (0–1, bilinear; 0 sem formas). As dunas e a vila ficam fora. */
+	float FormAt(FVector2f P) const;
 	/** Normal da superfície no ponto (diferenças centrais). */
 	FVector3f NormalAt(FVector2f P) const;
 	bool IsInside(FVector2f P) const { return FMath::Abs(P.X) <= Half() && FMath::Abs(P.Y) <= Half(); }

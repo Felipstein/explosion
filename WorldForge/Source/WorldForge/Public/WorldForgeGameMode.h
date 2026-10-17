@@ -105,9 +105,12 @@ public:
 	int32 BrushLayer = 0;
 	float BrushRadius = 6.0f;
 	/** Pincel de altura: aplica em P (m) por DeltaSeconds (segurando, sobe/desce
-	 *  contínuo). Modo: 0 subir, 1 baixar, 2 aplainar (na altura do começo). */
+	 *  contínuo). Modo: 0 subir, 1 baixar, 2 aplainar (na altura do começo), e os de 16/10 (o Felipe: "é questão de
+	 *  pincelar e naturalizar, morros e descidas"): 3 morro, 4 vale, 5 suavizar, 6 naturalizar. */
 	void EditHeight(FVector2f P, bool bStart, float DeltaSeconds);
 	int32 HeightMode = 0;
+	/** O pincel de altura repete nos outros lados (a simetria do mapa: o ranqueado justo). 1 = sim. */
+	int32 HeightMirror = 1;
 	/** Fim do arraste do pincel (chão ou altura): o pedaço é sorteado de novo
 	 *  (capim, pedra, árvore com as regras de verdade no chão novo). */
 	void EditStrokeEnd();
@@ -188,6 +191,10 @@ private:
 	int32 RegionRefreshes = 0;
 	/** Soma desvios de altura (por vértice) no mapa ao vivo e refaz malha, peças e chão. */
 	void ApplyHeightDeltas(const TMap<FIntPoint, float>& Deltas);   // (ponteiro: o tipo é do .cpp)
+	/** O mesmo nas K cópias giradas do mapa (K = 1: só aqui); as que se encostam (perto do centro) viram uma só, sem somar. */
+	void ApplyHeightDeltasMirrored(const TMap<FIntPoint, float>& Deltas, int32 K);
+	void RefreshRegionMirrored(FVector2f MinM, FVector2f MaxM, int32 K);
+	float HeightAccum = 0.0f;
 	void CaptureStep();
 
 	FWorldGenSettings Settings;

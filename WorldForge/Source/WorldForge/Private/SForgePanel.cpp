@@ -265,6 +265,8 @@ void SForgePanel::Construct(const FArguments& InArgs)
 							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Plateaus"), LOCTEXT("Plateaus", "Platôs"), &FWorldGenSettings::Plateaus)]
 							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Water"), LOCTEXT("Water", "Água"), &FWorldGenSettings::Water)]
 							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Erosion"), LOCTEXT("Erosion", "Erosão"), &FWorldGenSettings::Erosion)]
+							// (16/10) morros e descidas no chão aberto, como nos mapas do ZH
+							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Hills"), LOCTEXT("Hills", "Morros e descidas"), &FWorldGenSettings::Hills)]
 							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Forests"), LOCTEXT("Forests", "Florestas"), &FWorldGenSettings::Forests)]
 							+ SVerticalBox::Slot().AutoHeight()[SliderRow(TEXT("Resources"), LOCTEXT("Resources", "Recursos"), &FWorldGenSettings::Resources)]
 							// o tipo de relevo (fase 2): morros e platôs, ou monólitos (o AlUla)
@@ -331,15 +333,30 @@ void SForgePanel::Construct(const FArguments& InArgs)
 										.Visibility_Lambda([this]() { return GameMode.IsValid() && GameMode->EditTool == 3 ? EVisibility::Visible : EVisibility::Collapsed; })
 										[
 											Choice(TEXT("HeightMode"), LOCTEXT("HeightMode", "Altura (segure no mapa)"),
-												{ { LOCTEXT("HeightUp", "Subir"), 0 }, { LOCTEXT("HeightDown", "Baixar"), 1 }, { LOCTEXT("HeightFlat", "Aplainar"), 2 } },
+												{ { LOCTEXT("HeightHill", "Morro"), 3 }, { LOCTEXT("HeightVale", "Vale"), 4 }, { LOCTEXT("HeightSmooth", "Suavizar"), 5 },
+												  { LOCTEXT("HeightNatural", "Naturalizar"), 6 }, { LOCTEXT("HeightUp", "Subir"), 0 }, { LOCTEXT("HeightDown", "Baixar"), 1 },
+												  { LOCTEXT("HeightFlat", "Aplainar"), 2 } },
 												[this]() { return GameMode.IsValid() ? GameMode->HeightMode : 0; },
 												[this](int32 V) { if (GameMode.IsValid()) GameMode->HeightMode = V; })
+										]
+									]
+									// (16/10) o pincel de altura repete nos outros lados (a simetria do mapa)
+									+ SVerticalBox::Slot().AutoHeight()
+									[
+										SNew(SBox)
+										.Visibility_Lambda([this]() { return GameMode.IsValid() && GameMode->EditTool == 3 ? EVisibility::Visible : EVisibility::Collapsed; })
+										[
+											Choice(TEXT("HeightMirror"), LOCTEXT("HeightMirror", "Espelhar nos outros lados"),
+												{ { LOCTEXT("MirrorYes", "Sim"), 1 }, { LOCTEXT("MirrorNo", "Não"), 0 } },
+												[this]() { return GameMode.IsValid() ? GameMode->HeightMirror : 1; },
+												[this](int32 V) { if (GameMode.IsValid()) GameMode->HeightMirror = V; })
 										]
 									]
 									+ SVerticalBox::Slot().AutoHeight().Padding(0, 4, 0, 0)
 									[
 										Choice(TEXT("BrushSize"), LOCTEXT("BrushSize", "Tamanho do pincel"),
-											{ { LOCTEXT("BrushS", "3 m"), 3 }, { LOCTEXT("BrushM", "6 m"), 6 }, { LOCTEXT("BrushL", "12 m"), 12 }, { LOCTEXT("BrushXL", "24 m"), 24 } },
+											{ { LOCTEXT("BrushS", "3 m"), 3 }, { LOCTEXT("BrushM", "6 m"), 6 }, { LOCTEXT("BrushL", "12 m"), 12 }, { LOCTEXT("BrushXL", "24 m"), 24 },
+											  { LOCTEXT("BrushXXL", "50 m"), 50 }, { LOCTEXT("BrushXXXL", "100 m"), 100 } },
 											[this]() { return GameMode.IsValid() ? FMath::RoundToInt(GameMode->BrushRadius) : 6; },
 											[this](int32 V) { if (GameMode.IsValid()) GameMode->BrushRadius = float(V); })
 									]

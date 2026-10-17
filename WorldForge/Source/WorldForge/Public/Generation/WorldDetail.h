@@ -337,13 +337,15 @@ struct FWorldDetail
 	{
 		float A = OpenAt(P);
 		if (A <= 0.0f) return 0.0f;
+		A *= 1.0f - FMath::SmoothStep(0.0f, 0.08f, M.FormAt(P));   // (16/10) nada de duna em cima dos morros e da mesa
 		for (const FWorldStart& St : M.Starts) A *= FMath::SmoothStep(M.BaseRadius + 40.0f, M.BaseRadius + 100.0f, FVector2f::Distance(P, St.Pos));
 		for (const FWorldResource& R : M.Resources) A *= FMath::SmoothStep(R.Radius + 25.0f, R.Radius + 60.0f, FVector2f::Distance(P, R.Pos));
 		if (M.WaterLevel > -100.0f) A *= FMath::SmoothStep(M.WaterLevel + 1.0f, M.WaterLevel + 3.0f, M.HeightAt(P));
 		// (16/10, a 1ª montagem: uma barcana caiu em cima do maciço) só no chão plano: a encosta medida em 8 m, até ~3°
 		const float Gx = M.HeightAt(P + FVector2f(8.0f, 0.0f)) - M.HeightAt(P - FVector2f(8.0f, 0.0f));
 		const float Gy = M.HeightAt(P + FVector2f(0.0f, 8.0f)) - M.HeightAt(P - FVector2f(0.0f, 8.0f));
-		A *= 1.0f - FMath::SmoothStep(0.035f, 0.14f, FMath::Sqrt(Gx * Gx + Gy * Gy) / 16.0f);   // (fade largo: estreito, cortava a duna em 2–4 m e passava de 45°)
+		// (16/10: com os morros e descidas o chão aberto ondula até ~10°; a duna senta na ondulação, só a encosta forte recusa)
+		A *= 1.0f - FMath::SmoothStep(GMap.IsValid() && GMap->Settings.Hills > 0.01f ? 0.12f : 0.035f, GMap.IsValid() && GMap->Settings.Hills > 0.01f ? 0.22f : 0.14f, FMath::Sqrt(Gx * Gx + Gy * Gy) / 16.0f);   // (fade largo: estreito, cortava a duna em 2–4 m e passava de 45°)
 		return A;
 	}
 

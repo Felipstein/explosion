@@ -16,6 +16,7 @@ namespace WorldSettingsJson
 		J.SetNumberField(TEXT("villages"), S.Villages);
 		J.SetNumberField(TEXT("relief_type"), S.ReliefType);
 		J.SetNumberField(TEXT("sand"), S.Sand);
+		if (S.Hills > 0.0f) J.SetNumberField(TEXT("hills"), S.Hills);
 		if (S.KeepOut.Num())
 		{
 			TArray<TSharedPtr<FJsonValue>> List;
@@ -33,6 +34,7 @@ namespace WorldSettingsJson
 		S.Villages = J.HasField(TEXT("villages")) ? int32(J.GetNumberField(TEXT("villages"))) : 0;
 		S.ReliefType = J.HasField(TEXT("relief_type")) ? int32(J.GetNumberField(TEXT("relief_type"))) : 0;
 		S.Sand = J.HasField(TEXT("sand")) ? FMath::Clamp(int32(J.GetNumberField(TEXT("sand"))), 1, 3) : 3;
+		S.Hills = J.HasField(TEXT("hills")) ? FMath::Clamp(float(J.GetNumberField(TEXT("hills"))), 0.0f, 1.0f) : 0.0f;   // (sem o campo: os mapas de antes)
 		S.KeepOut.Reset();
 		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
 		if (J.TryGetArrayField(TEXT("keepout"), List))
@@ -50,6 +52,7 @@ namespace WorldSettingsJson
 	{
 		FString K = FString::Printf(TEXT("v%d r%d"), S.Villages, S.ReliefType);
 		if (S.Sand != 3) K += FString::Printf(TEXT(" s%d"), S.Sand);   // (a de duna, o padrão, não muda a chave dos mapas de antes)
+		if (S.Hills > 0.0f) K += FString::Printf(TEXT(" h%.2f"), S.Hills);
 		for (const FVector3f& P : S.KeepOut) K += FString::Printf(TEXT(";%.1f,%.1f,%.1f"), P.X, P.Y, P.Z);
 		return K;
 	}

@@ -15,6 +15,19 @@ float FWorldMap::HeightAt(FVector2f P) const
 	return FMath::Lerp(FMath::Lerp(H00, H10, FX), FMath::Lerp(H01, H11, FX), FY);
 }
 
+float FWorldMap::FormAt(FVector2f P) const
+{
+	if (N < 2 || Forms.Num() != N * N)
+	{
+		return 0.0f;
+	}
+	const FVector2f G = ToGrid(P);
+	const float X = FMath::Clamp(G.X, 0.0f, float(N - 1)), Y = FMath::Clamp(G.Y, 0.0f, float(N - 1));
+	const int32 I = FMath::Min(int32(X), N - 2), J = FMath::Min(int32(Y), N - 2);
+	const float FX = X - I, FY = Y - J;
+	return FMath::Lerp(FMath::Lerp(Forms[Index(I, J)], Forms[Index(I + 1, J)], FX), FMath::Lerp(Forms[Index(I, J + 1)], Forms[Index(I + 1, J + 1)], FX), FY);
+}
+
 FVector3f FWorldMap::NormalAt(FVector2f P) const
 {
 	const float E = Cell;

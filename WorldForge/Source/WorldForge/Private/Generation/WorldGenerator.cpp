@@ -311,6 +311,79 @@ namespace
 		TArray<float> MountainField; // S4 por vértice (montanha)
 		TArray<float> PillarField;   // pilar por vértice (0–1): parede e topo
 
+		// morros e descidas (16/10, S.Hills; docs/WORLDFORGE.md item 7): formas inteiras com intenção no chão aberto. A
+		// lista guarda a órbita toda (a forma e as cópias giradas, cada uma no referencial dela: a simetria sai exata)
+		struct FForm
+		{
+			FVector2f C = FVector2f::ZeroVector;
+			float A = 60.0f, B = 40.0f;  // semieixos (m): A ao longo do giro, B atravessado
+			float Yaw = 0.0f;            // rad
+			float H = 4.0f;              // altura (m)
+			uint8 Type = 0;              // 0 morro, 1 crista, 2 mesa, 3 vale (dois ombros com o leito no meio)
+			float Steep = 1.0f;          // o lado mais íngreme (sinal no eixo B)
+			uint32 Seed = 0;
+		};
+		TArray<FForm> FormList;
+		TArray<float> FormField;     // por vértice: o quanto é forma (0–1), a altura normalizada
+		TArray<float> FormDB, FormDP;   // grade lógica: a distância (m) à borda de nível/ao bloqueado e à trilha (PlaceForms)
+
+		/** A altura das formas no ponto (m) e o quanto ele é forma (0–1). Tudo no referencial da forma: o contorno entortado
+		 *  por ruído (18% dos eixos, comprimento de 0,9 A) e o lado íngreme 30% mais curto. Perfis: o morro e a crista pela
+		 *  smoothstep do centro ao pé (topo redondo, pé macio, nunca linear: a borda linear do WorldBuilder deixa vinco); a
+		 *  mesa com o topo plano até 35% e a borda até ~22°; o vale com dois ombros ao longo do eixo e o leito no meio. */
+		float FormHeight(FVector2f P, float& OutN) const
+		{
+			float Best = 0.0f;
+			OutN = 0.0f;
+			for (const FForm& F : FormList)
+			{
+				const FVector2f D = P - F.C;
+				const float Reach = 1.35f * F.A + 20.0f;
+				if (D.SizeSquared() > Reach * Reach) continue;
+				const float Cs = FMath::Cos(F.Yaw), Sn = FMath::Sin(F.Yaw);
+				float U = D.X * Cs + D.Y * Sn, Vv = -D.X * Sn + D.Y * Cs;
+				const float Lw = 0.8f * F.A;
+				const float U0 = U, V0 = Vv;
+				U += 0.25f * F.A * Fbm(U0 / Lw, V0 / Lw, F.Seed, 3);
+				Vv += 0.25f * F.B * Fbm(U0 / Lw + 7.3f, V0 / Lw - 3.1f, F.Seed + 1u, 3);
+				float Hf, Nf;
+				if (F.Type == 3)
+				{
+					const float Al = FMath::Abs(U) / F.A, Ac = FMath::Abs(Vv) / F.B;
+					const float Sh = 1.0f - FMath::SmoothStep(0.0f, 1.0f, FMath::Abs(Ac - 0.55f) / 0.45f);
+					Hf = F.H * Sh * (1.0f - FMath::SmoothStep(0.55f, 1.0f, Al));
+					Nf = Sh * (1.0f - FMath::SmoothStep(0.55f, 1.0f, Al)) + (Ac < 0.6f && Al < 1.0f ? 0.25f : 0.0f);
+				}
+				else
+				{
+					const float Side = Vv * F.Steep > 0.0f ? 1.3f : 1.0f;
+					float Nn = FMath::Sqrt(FMath::Square(U / F.A) + FMath::Square(Vv * Side / F.B));
+					// (16/10, a 1ª medida: o morro redondo e a crista lisa liam como bolha) o morro e a crista grandes têm 1–2
+					// lóbulos a mais, encostados no corpo (o morro de verdade é um maciço de corpos, como os do ZH)
+					if (F.Type <= 1 && F.A > 45.0f)
+					{
+						const int32 NLobes = 1 + int32(Hash(F.Seed + 7u) % 2u);
+						for (int32 Lb = 0; Lb < NLobes; ++Lb)
+						{
+							const float Ang = (Hash(F.Seed + 11u + Lb) % 6283u) / 1000.0f;
+							const float Off = 0.55f + 0.25f * ((Hash(F.Seed + 19u + Lb) % 1000u) / 1000.0f);
+							const float Sz = 0.45f + 0.2f * ((Hash(F.Seed + 23u + Lb) % 1000u) / 1000.0f);
+							const float Lu = U - FMath::Cos(Ang) * Off * F.A, Lv = Vv - FMath::Sin(Ang) * Off * F.B;
+							Nn = FMath::Min(Nn, FMath::Sqrt(FMath::Square(Lu / (Sz * F.A)) + FMath::Square(Lv * Side / (Sz * F.B))) / (0.75f + 0.25f * Sz));
+						}
+					}
+					const float S0 = F.Type == 2 ? 0.35f : 0.0f;
+					const float Prof = 1.0f - FMath::SmoothStep(S0, 1.0f, Nn);
+					// o corpo: a altura varia devagar ao longo da forma (ombros, um cume mais alto que o outro)
+					Hf = F.H * Prof * (1.0f + 0.15f * Fbm(U0 / (0.6f * F.A), V0 / (0.6f * F.A), F.Seed + 2u, 2));
+					Nf = FMath::Max(Prof, 1.0f - FMath::SmoothStep(0.85f, 1.1f, Nn) > 0.0f ? 0.15f * (1.0f - FMath::SmoothStep(0.85f, 1.1f, Nn)) : 0.0f);
+				}
+				if (Hf > Best) Best = Hf;
+				OutN = FMath::Max(OutN, FMath::Clamp(Nf, 0.0f, 1.0f));
+			}
+			return Best;
+		}
+
 		FGen(const FWorldGenSettings& InS, FWorldMap& InM) : S(InS), M(InM) {}
 
 		uint32 SubSeed(uint32 Stage) const
@@ -350,6 +423,7 @@ namespace
 		TArray<float> Distances(const TArray<int32>& Sources, TArray<int8>* OutOwner, const TArray<int8>* SourceOwner) const;
 		TArray<uint8> Reach(int32 From) const;
 		void PlaceResources();
+		void PlaceForms();
 		void BuildHeights();
 		void BuildLayers();
 		void PlaceProps();
@@ -1838,6 +1912,195 @@ namespace
 	// ------------------------------------------------------------------------
 	// 7. Relevo visível (grade de 2 m)
 	// ------------------------------------------------------------------------
+	/** Os morros e descidas (16/10, o Felipe: "morros e descidas, olha lá o C&C"; os 7 mapas do ranqueado do ZH medidos:
+	 *  50–75% plano, o resto formas grandes com intenção). Sorteadas inteiras com a órbita da simetria, no chão aberto da
+	 *  baixada: longe do que não é baixada (platô, alto, montanha, água, bacia, moldura, rampa, pilar: 35 m além do eixo
+	 *  maior, as bordas de platô e as rampas ficam como estão), das trilhas (a borda da forma a 25 m ou mais; entre as
+	 *  boas, a que deixa a borda a ~55 m da trilha: o corredor), das bases, dos campos de recurso e das áreas guardadas.
+	 *  6–8 grandes por km² (morro redondo, crista, mesa, vale entre ombros) e ~10 menores, escalados por S.Hills, com
+	 *  espaço entre elas. Alturas pela sombra: o sol baixo do jogo estica a sombra de um morro de 15 m por ~100 m e cobre
+	 *  unidades; os flancos ficam de 8° a 22°. */
+	void FGen::PlaceForms()
+	{
+		FormList.Reset();
+		if (S.Hills <= 0.01f || NL < 4) return;
+		auto Chamfer = [&](TFunctionRef<bool(int32)> Src)
+		{
+			TArray<float> D;
+			D.Init(1e9f, NL * NL);
+			for (int32 C = 0; C < NL * NL; ++C) if (Src(C)) D[C] = 0.0f;
+			const float A = LogicCell, Bd = LogicCell * 1.41421f;
+			for (int32 B = 0; B < NL; ++B)
+			{
+				for (int32 Aa = 0; Aa < NL; ++Aa)
+				{
+					float& V = D[LIdx(Aa, B)];
+					if (Aa > 0) V = FMath::Min(V, D[LIdx(Aa - 1, B)] + A);
+					if (B > 0) V = FMath::Min(V, D[LIdx(Aa, B - 1)] + A);
+					if (Aa > 0 && B > 0) V = FMath::Min(V, D[LIdx(Aa - 1, B - 1)] + Bd);
+					if (Aa + 1 < NL && B > 0) V = FMath::Min(V, D[LIdx(Aa + 1, B - 1)] + Bd);
+				}
+			}
+			for (int32 B = NL - 1; B >= 0; --B)
+			{
+				for (int32 Aa = NL - 1; Aa >= 0; --Aa)
+				{
+					float& V = D[LIdx(Aa, B)];
+					if (Aa + 1 < NL) V = FMath::Min(V, D[LIdx(Aa + 1, B)] + A);
+					if (B + 1 < NL) V = FMath::Min(V, D[LIdx(Aa, B + 1)] + A);
+					if (Aa + 1 < NL && B + 1 < NL) V = FMath::Min(V, D[LIdx(Aa + 1, B + 1)] + Bd);
+					if (Aa > 0 && B + 1 < NL) V = FMath::Min(V, D[LIdx(Aa - 1, B + 1)] + Bd);
+				}
+			}
+			return D;
+		};
+		// (16/10, a 1ª medida: só na baixada cabia 1 grande por jogador; o chão aberto do mapa é muito platô, e no ZH tem
+		// morro em qualquer nível) a distância à borda de nível (célula com vizinho de outro nível) e ao que não é chão aberto
+		auto Blocked = [&](int32 C)
+		{
+			return Level[C] < LLow || Level[C] > LHigh || (BasinCell.Num() && BasinCell[C]) || (FrameKind.Num() && FrameKind[C] != 0)
+				|| (RampMask.Num() && RampMask[C]) || (PillarMask.Num() && PillarMask[C]);
+		};
+		const TArray<float> DB = Chamfer([&](int32 C)
+		{
+			if (Blocked(C)) return true;
+			const int32 Aa = C % NL, B = C / NL;
+			for (const FIntPoint O : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+			{
+				const int32 X = Aa + O.X, Y = B + O.Y;
+				if (X < 0 || Y < 0 || X >= NL || Y >= NL) return true;
+				if (Level[LIdx(X, Y)] != Level[C]) return true;
+			}
+			return false;
+		});
+		const TArray<float> DP = Chamfer([&](int32 C) { return PathMask.Num() && PathMask[C] != 0; });
+		FormDB = DB;
+		FormDP = DP;
+		auto At = [&](const TArray<float>& D, FVector2f P) { const FIntPoint Cc = LCellOf(P); return D[LIdx(Cc.X, Cc.Y)]; };
+		const float Area = FMath::Square(2.0f * Half) / (1024.0f * 1024.0f);
+		// (16/10, a 4ª medida: 8 morros soltos no plano liam como as dunas que ele reprovou, "do nada essas montanhas
+		// espalhadas"; o chão inteiro agora ondula, BuildHeights) poucas formas grandes, as marcantes
+		const int32 NBig = FMath::Max(1, FMath::RoundToInt(5.0f * S.Hills * Area / Sym.K));
+		const int32 NSmall = 0;
+		const float Hk = 0.6f + 0.6f * S.Hills;
+		FRng Rng(SubSeed(61));
+		auto Make = [&](bool bBig, FVector2f C)
+		{
+			FForm F;
+			F.C = C;
+			F.Seed = Rng.Next();
+			F.Yaw = Rng.Range(0.0f, 2.0f * PI);
+			F.Steep = Rng.Float() < 0.5f ? 1.0f : -1.0f;
+			if (!bBig)
+			{
+				// (16/10: as pequenas redondas eram bolinhas) a crista baixa e comprida, o "espinhaço" entre as grandes
+				F.Type = 1;
+				F.A = Rng.Range(35.0f, 70.0f);
+				F.B = FMath::Max(14.0f, F.A / Rng.Range(1.8f, 2.8f));
+				F.H = Rng.Range(1.2f, 2.4f) * Hk;
+				return F;
+			}
+			const float T = Rng.Float();
+			F.Type = T < 0.45f ? 0 : (T < 0.75f ? 1 : (T < 0.87f ? 2 : 3));
+			switch (F.Type)
+			{
+			// (16/10, a 3ª medida: com 120–300 m quase nada cabia nos campos abertos deste mapa, de 200–350 m entre as bordas
+			// de platô; 90–240 m, ainda na faixa dos morros do ZH)
+			case 0: F.A = Rng.Range(45.0f, 95.0f); F.B = F.A / Rng.Range(1.0f, 1.4f); F.H = Rng.Range(3.0f, 5.5f) * Hk; break;   // morro
+			case 1: F.A = Rng.Range(60.0f, 120.0f); F.B = F.A / Rng.Range(2.0f, 3.0f); F.H = Rng.Range(2.5f, 4.5f) * Hk; break;   // crista
+			case 2: F.A = Rng.Range(35.0f, 65.0f); F.B = F.A / Rng.Range(1.0f, 1.3f); F.H = Rng.Range(3.5f, 5.5f) * Hk; break;   // mesa
+			default: F.A = Rng.Range(60.0f, 110.0f); F.B = Rng.Range(30.0f, 45.0f); F.H = Rng.Range(2.5f, 4.5f) * Hk; break;   // vale entre ombros
+			}
+			return F;
+		};
+		// a forma cabe? (todas as cópias da órbita) e a nota dela (a borda a ~55 m da trilha: o corredor)
+		// o contorno (a elipse a 1,2 com a margem do entortado), em 16 pontos e o centro, no referencial da forma
+		auto Outline = [&](const FForm& F, TArray<FVector2f>& Out)
+		{
+			Out.Reset();
+			const float Cs = FMath::Cos(F.Yaw), Sn = FMath::Sin(F.Yaw);
+			Out.Add(F.C);
+			for (int32 K = 0; K < 16; ++K)
+			{
+				const float A = 2.0f * PI * K / 16.0f;
+				const float U = 1.2f * F.A * FMath::Cos(A), V = 1.2f * F.B * FMath::Sin(A);
+				Out.Add(F.C + FVector2f(U * Cs - V * Sn, U * Sn + V * Cs));
+			}
+		};
+		TArray<FVector2f> Pts;
+		int32 Why[8] = { 0 };   // o motivo de cada recusa (o log): nível, borda do mapa, outro nível, borda de platô, trilha, base, recurso/guardado, outra forma
+		auto Score = [&](const FForm& F, bool bBig) -> float
+		{
+			const uint8 Lv = Level[LIdx(LCellOf(F.C).X, LCellOf(F.C).Y)];
+			if (Lv < LLow || Lv > LHigh) { ++Why[0]; return -1.0f; }
+			float MinPath = 1e9f;
+			for (int32 R = 0; R < Sym.K; ++R)
+			{
+				FForm Fr = F;
+				Fr.C = Sym.Rot(F.C, R);
+				Fr.Yaw = F.Yaw + R * Sym.Quarter() * HALF_PI;
+				Outline(Fr, Pts);
+				for (int32 Pi = 0; Pi < Pts.Num(); ++Pi)
+				{
+					const FVector2f Q = Pts[Pi];
+					if (FMath::Abs(Q.X) > Half - 30.0f || FMath::Abs(Q.Y) > Half - 30.0f) { ++Why[1]; return -1.0f; }
+					const FIntPoint Qc = LCellOf(Q);
+					if (Level[LIdx(Qc.X, Qc.Y)] != Lv) { ++Why[2]; return -1.0f; }
+					if (At(DB, Q) < 20.0f) { ++Why[3]; return -1.0f; }            // a borda do platô e a rampa ficam como estão
+					// (16/10, a 2ª medida: o contorno inteiro longe das trilhas não cabia no mapa) a trilha pode passar no
+					// flanco (a estrada faz corte e aterro, como no ZH a estrada sobe o morro baixo); o miolo fica livre
+					const FVector2f Mid = Pi == 0 ? Q : Fr.C + 0.5f * (Q - Fr.C);
+					const float Dp = At(DP, Mid);
+					if (Dp < 10.0f) { ++Why[4]; return -1.0f; }
+					MinPath = FMath::Min(MinPath, At(DP, Q));
+					for (const FVector2f& St : StartPos) if (FVector2f::Distance(Q, St) < BaseRadius + 45.0f) { ++Why[5]; return -1.0f; }
+					for (const FWorldResource& Rs : M.Resources) if (FVector2f::Distance(Q, Rs.Pos) < Rs.Radius + 30.0f) { ++Why[6]; return -1.0f; }
+					for (const FVector3f& K : S.KeepOut) if (FVector2f::Distance(Q, FVector2f(K.X, K.Y)) < K.Z + 20.0f) { ++Why[6]; return -1.0f; }
+				}
+				for (const FForm& G : FormList)
+				{
+					const float Need = bBig && G.A > 45.0f ? FMath::Max(150.0f, F.A + G.A + 40.0f) : 0.8f * (F.A + G.A) + 25.0f;
+					if (FVector2f::Distance(Fr.C, G.C) < Need) { ++Why[7]; return -1.0f; }
+				}
+				for (int32 R2 = R + 1; R2 < Sym.K; ++R2) if (FVector2f::Distance(Fr.C, Sym.Rot(F.C, R2)) < 2.0f * F.A + 40.0f) { ++Why[7]; return -1.0f; }
+			}
+			// entre as que cabem, a que deixa a borda perto da trilha sem tapar (o corredor)
+			return 1.0f / (1.0f + FMath::Abs(MinPath - 20.0f) / 25.0f);
+		};
+		int32 Placed[2] = { 0, 0 };
+		for (int32 Pass = 0; Pass < 2; ++Pass)
+		{
+			const bool bBig = Pass == 0;
+			const int32 Want = bBig ? NBig : NSmall;
+			for (int32 K = 0; K < Want; ++K)
+			{
+				FForm Best;
+				float BestS = -1.0f;
+				int32 Found = 0;
+				for (int32 Try = 0; Try < 2000 && Found < 12; ++Try)
+				{
+					const FVector2f C(Rng.Range(-Half, Half), Rng.Range(-Half, Half));
+					const FForm F = Make(bBig, C);
+					const float Sc = Score(F, bBig);
+					if (Sc < 0.0f) continue;
+					++Found;
+					if (Sc > BestS) { BestS = Sc; Best = F; }
+				}
+				if (BestS < 0.0f) break;
+				for (int32 R = 0; R < Sym.K; ++R)
+				{
+					FForm F = Best;
+					F.C = Sym.Rot(Best.C, R);
+					F.Yaw = Best.Yaw + R * Sym.Quarter() * HALF_PI;
+					FormList.Add(F);
+				}
+				++Placed[Pass];
+			}
+		}
+		UE_LOG(LogTemp, Display, TEXT("FORGE morros e descidas: %d grandes e %d pequenas por jogador (pedidas %d e %d), %d formas no mapa; recusas: nível %d, borda %d, outro nível %d, borda de platô %d, trilha %d, base %d, recurso %d, outra forma %d"),
+			Placed[0], Placed[1], NBig, NSmall, FormList.Num(), Why[0], Why[1], Why[2], Why[3], Why[4], Why[5], Why[6], Why[7]);
+	}
+
 	void FGen::BuildHeights()
 	{
 		const int32 N = M.N;
@@ -1890,9 +2153,22 @@ namespace
 		const float BaseH = LevelHeight(BaseLevel);
 		M.Height.SetNumZeroed(N * N);
 		MountainField.SetNumZeroed(N * N);
+		FormField.Reset();
+		if (FormList.Num()) FormField.SetNumZeroed(N * N);
 		auto Contour = [&](FVector2f Q, int32) { return Fbm(Q.X / 26.0f, Q.Y / 26.0f, SeedC, 3); };
 		auto Ridge = [&](FVector2f Q, int32) { return Ridged(Q.X / 150.0f, Q.Y / 150.0f, SeedR, 5); };
 		auto Undulate = [&](FVector2f Q, int32) { return Fbm(Q.X / 55.0f, Q.Y / 55.0f, SeedU, 3) + 1.6f * Fbm(Q.X / 190.0f, Q.Y / 190.0f, SeedU + 5u, 2); };
+		const uint32 SeedH = SubSeed(62);
+		auto Rolling = [&](FVector2f Q, int32)
+		{
+			const FVector2f Wq = Q + 60.0f * FVector2f(Fbm(Q.X / 400.0f, Q.Y / 400.0f, SeedH, 2), Fbm(Q.X / 400.0f + 5.2f, Q.Y / 400.0f - 1.3f, SeedH + 1u, 2));
+			const float Ro = Fbm(Wq.X / 150.0f, Wq.Y / 150.0f, SeedH + 2u, 3);
+			const float Rg = 1.0f - FMath::Abs(Fbm(Wq.X / 260.0f, Wq.Y / 260.0f, SeedH + 3u, 2));
+			// (16/10, a 1ª no jogo: as ondas de 150–260 m (desvio de 1,5 m, rampa de ~1° a 30 m) passavam do quadro de 67 m e
+			// o chão lia plano) a escala média, ~45 m e ~0,6 m (rampa de ~5°): é a que o sol baixo desenha na câmera do jogo
+			const float Md = Fbm(Wq.X / 45.0f, Wq.Y / 45.0f, SeedH + 4u, 3);
+			return Ro + 0.5f * (Rg * Rg - 0.45f) + 0.8f * Md;
+		};
 		// as dunas da moldura do deserto (13/10, a arte do AlUla: dunas grandes em volta do mapa): dunas transversais
 		// ao vento, com a encosta de barlavento a ~12° e a face de deslizamento no ângulo de repouso da areia seca,
 		// ~32° (Bagnold 1941; Pye & Tsoar, "Aeolian Sand and Sand Dunes"): o comprimento de onda é a altura ×
@@ -1976,6 +2252,28 @@ namespace
 				// ondulação leve fora das montanhas (platôs continuam legíveis); a
 				// baixada nunca afunda até a água (água só onde o mapa decidiu)
 				H += (0.4f + 0.4f * S.Relief) * Sym.Field(P, Undulate, true) * (1.0f - S4) * S1;
+				// (16/10, o Felipe: "é questão de pincelar e naturalizar, morros e descidas [...] olha lá o C&C, é cheio disso")
+				// o chão aberto inteiro ondula: o campo contínuo de morros e descidas (não peças soltas). O ruído entortado em
+				// ondas de ~150 m com cristas de ~260 m (o "ridged" ao quadrado), simétrico como a ondulação de antes; mais alto
+				// no sopé dos maciços e das bordas de platô (o morro nasce da serra, não do nada), mais suave nas trilhas e
+				// nada nas bases e nos campos de recurso
+				if (S.Hills > 0.01f && FormDB.Num())
+				{
+					const FIntPoint Lc = LCellOf(P);
+					const float Db = FormDB[LIdx(Lc.X, Lc.Y)], Dpth = FormDP[LIdx(Lc.X, Lc.Y)];
+					float Am = 8.0f * S.Hills *   // (12 dava só 13% plano e a rampa mediana de 7°; o ZH tem 50–75% plano)
+						 (1.0f + 0.8f * FMath::Exp(-Db / 70.0f)) * FMath::Lerp(0.35f, 1.0f, FMath::SmoothStep(8.0f, 60.0f, Dpth));
+					for (const FVector2f& St : StartPos) Am *= FMath::SmoothStep(BaseRadius + 10.0f, BaseRadius + 70.0f, FVector2f::Distance(P, St));
+					for (const FWorldResource& Rs : M.Resources) Am *= FMath::SmoothStep(Rs.Radius + 5.0f, Rs.Radius + 40.0f, FVector2f::Distance(P, Rs.Pos));
+					if (Am > 0.01f) H += Am * Sym.Field(P, Rolling, true) * (1.0f - S4) * S1;
+				}
+				// (16/10) os morros e descidas marcantes (PlaceForms), só na baixada fora da montanha
+				if (FormList.Num())
+				{
+					float Fn;
+					H += FormHeight(P, Fn) * (1.0f - S4) * S1;
+					FormField[V] = Fn * (1.0f - S4) * S1;
+				}
 				H = FMath::Max(H, FMath::Lerp(H, WaterSurface + 0.5f, S1));
 				const float Sea = SampleLogic(BSea, NL, U, W);
 				if (Sea > 0.0f)
@@ -2000,6 +2298,8 @@ namespace
 		});
 		Sym.Enforce(M.Height, N);
 		Sym.Enforce(MountainField, N);
+		if (FormField.Num()) Sym.Enforce(FormField, N);
+		M.Forms = FormField;
 		Sym.Enforce(OpenField, N);
 		Sym.Enforce(TalusField, N);
 
@@ -2036,6 +2336,11 @@ namespace
 			Prm.Octaves = 3;
 			Prm.Strength = 0.10f + 0.16f * S.Erosion;
 			Prm.Seed = SubSeed(10);
+			// (16/10) nas formas: a amplitude da de cima (força × escala, 2,6–6,8 m) picava um morro de 5 m
+			ErosionFilter::FParams PrmF = Prm;
+			PrmF.Scale = 16.0f;
+			PrmF.Strength = 0.03f + 0.04f * S.Erosion;   // (a 1ª, 0,05–0,12, deixava os morros com cara de couve-flor)
+			PrmF.Seed = SubSeed(11);
 			const TArray<float> Base = M.Height;
 			ParallelFor(N, [&](int32 J)
 			{
@@ -2047,8 +2352,10 @@ namespace
 					const int32 I0 = FMath::Max(I - 1, 0), I1 = FMath::Min(I + 1, N - 1), J0 = FMath::Max(J - 1, 0), J1 = FMath::Min(J + 1, N - 1);
 					const FVector2f Grad((Base[M.Index(I1, J)] - Base[M.Index(I0, J)]) / ((I1 - I0) * M.Cell),
 						(Base[M.Index(I, J1)] - Base[M.Index(I, J0)]) / ((J1 - J0) * M.Cell));
-					const float Mask = FMath::Max(MountainField[V], FMath::SmoothStep(0.2f, 0.6f, Grad.Size()));
-					if (Mask < 0.02f) continue;
+					const float Fm = FormField.Num() ? FormField[V] : 0.0f;
+					const float Mask = FMath::Max(MountainField[V], FMath::SmoothStep(0.2f, 0.6f, Grad.Size()) * (1.0f - FMath::SmoothStep(0.0f, 0.15f, Fm)));
+					const float MaskF = Fm > 0.02f ? FMath::SmoothStep(0.02f, 0.2f, Fm) * FMath::SmoothStep(0.02f, 0.12f, Grad.Size()) : 0.0f;
+					if (Mask < 0.02f && MaskF < 0.02f) continue;
 					const FVector2f P = M.CellPos(I, J);
 					const float Fade = MountainField[V] > 0.1f ? FMath::Clamp((Base[V] - LevelHeight(LHigh)) / (0.6f * MountainAmp) * 2.0f - 1.0f, -1.0f, 1.0f) : 0.0f;
 					auto Gully = [&](FVector2f Q, int32 Rot)
@@ -2056,7 +2363,19 @@ namespace
 						const FVector2f GR = Sym.Rot(Grad, Rot);
 						return ErosionFilter::Apply(Q, GR.X, GR.Y, Fade, Prm);
 					};
-					M.Height[V] = Base[V] + Mask * Sym.Field(P, Gully, true);
+					float Add = Mask >= 0.02f ? Mask * Sym.Field(P, Gully, true) : 0.0f;
+					if (MaskF >= 0.02f)
+					{
+						// o sulco da chuva no flanco: −1 no pé, +1 no topo (a forma normalizada)
+						const float FadeF = FMath::Clamp(2.0f * Fm - 1.0f, -1.0f, 1.0f);
+						auto GullyF = [&](FVector2f Q, int32 Rot)
+						{
+							const FVector2f GR = Sym.Rot(Grad, Rot);
+							return ErosionFilter::Apply(Q, GR.X, GR.Y, FadeF, PrmF);
+						};
+						Add += MaskF * Sym.Field(P, GullyF, true);
+					}
+					M.Height[V] = Base[V] + Add;
 				}
 			});
 			Sym.Enforce(M.Height, N);
@@ -2661,6 +2980,7 @@ namespace
 			UE_LOG(LogTemp, Warning, TEXT("FORGE seed %d attempt %d: bases not connected, re-rolling"), S.Seed, Attempt);
 		}
 		Time(TEXT("resources"), [this] { PlaceResources(); });
+		Time(TEXT("forms"), [this] { PlaceForms(); });
 		Time(TEXT("heights"), [this] { BuildHeights(); });
 		Time(TEXT("layers"), [this] { BuildLayers(); });
 		Time(TEXT("props"), [this] { PlaceProps(); });
