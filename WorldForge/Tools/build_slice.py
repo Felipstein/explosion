@@ -1652,8 +1652,10 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
 # tamanho em cm), as mesmas que o Landscape e a laje recebem; o jogo liga o UseTrample. A planta gira pela base pro
 # lado da trilha (a direção pelo gradiente do R) e amassa; a pisada desbota e o queimado escurece. TRAMPLE=1 liga na
 # montagem (o mapa de teste; o do jogo só depois da prova e da palavra dele)
-# (17/10, o Felipe: "aprovado") o capim deitado é o padrão; TRAMPLE=0 volta o capim sem a trilha
-TRAMPLE = os.environ.get('TRAMPLE', '1') == '1'
+# (17/10, o Felipe: "aprovado") o capim deitado foi o padrão das 16:29 às 18:05; (17/10 18:05, o Jogo: o World_TestSalt2
+# com ele ficou ~3x mais lento, 30-40 ms -> 95 ms por quadro; o custo é ter o WPO no material do capim, não a
+# deformação: o A/B pelo rts.Ground.Trample não pegava) desligado até achar o custo com o A/B certo (com e sem o WPO)
+TRAMPLE = os.environ.get('TRAMPLE', '0') == '1'
 _TONE_DARK = os.environ.get('TRAMPLE_TONE') == 'dark'
 # (17/10) TRAMPLE_DEBUG=1: a prova da leitura, o capim vermelho na força do R que ele lê (e o resto cinza, pra ver se chega)
 TRAMPLE_DEBUG = '        base = float3(saturate(m.r * 40.0), 0.15, 0.15);\n' if os.environ.get('TRAMPLE_DEBUG') == '1' else ''

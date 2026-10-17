@@ -1784,6 +1784,15 @@ quase toda a estrada.
     - A cor: palha clara (o talo deitado reflete mais luz visto de cima). `TRAMPLE_TONE=dark` volta a escura, que sumia na areia.
   - **APROVADO (17/10, "aprovado"):** o padrão da montagem (`TRAMPLE=0` desliga). Falta medir o custo no mapa do jogo
     antes de remontar o `World_TestSalt2` com ele.
+  - **O custo (17/10): a minha medida estava ERRADA.**
+    - Eu medi com o `rts.Ground.Trample` 1 e 0 e deu dentro do ruído, mas o WPO fica no material do capim nos dois lados
+      (o 0 só sai cedo na conta).
+    - O Jogo mediu certo pela mediana de quadro dos testes: o `World_TestSalt2` com o capim foi de 30–40 ms pra ~95 ms (3×),
+      o `World_TestRoadDirt` de 40 pra 96 ms, e o `World_TestTrample`, que já tinha o capim, dá 78–152 ms; o mapa sem
+      capim ficou nos 29 ms.
+    - **Desligado por padrão às 18:05** (`TRAMPLE=0`) e o `World_TestSalt2` remontado sem ele às 18:09.
+    - Pra voltar: o A/B do material com e sem o WPO (`TRAMPLE` 1 contra 0, a mesma cena) e o motivo do custo (a
+      rasterização programável do Nanite com WPO, a sombra virtual que invalida com WPO, os componentes do capim).
 - **O toco e o tronco quebrado das palmeiras** (`Tools/blender_palm_break.py`, `PALM_BREAK=1` por padrão):
   - `SM_DatePalm_{Mature,Urban,OasisCluster}_Stump` e `_Fallen` na pasta da palmeira (o jogo procura pelo nome);
   - a quebra a 0,8 m; o pivô do _Fallen no centro da quebra;
