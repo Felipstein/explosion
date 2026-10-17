@@ -1394,12 +1394,39 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             dirt[ch] = g.custom('\n'.join(code), ins, typ, 450)
         dmask = g.custom('return saturate((VC.r - 0.5) * 2.5 + 0.5 + (0.5 - HA) * 1.2) * step(0.004, VC.r);',
                          [('VC', vc, ''), ('HA', L['disp'][0], L['disp'][1])], F1, 450)
-        blends['base'] = g.custom('return lerp(B * lerp(0.45, 1.0, smoothstep(0.35, 0.85, VN.z)), SB, M);',
-                                  [('B', L['base'][0], L['base'][1]), ('VN', vn, ''), ('SB', dirt['base'], ''), ('M', dmask, '')], F3, 500)
+        # (16/10, a comparação com os game shots aprovados, road_town_battle, road_battle e street_battle: neles o asfalto
+        # inteiro tem um véu de poeira em manchas, a beira tem sempre uma linha fina de poeira (a forma mais comum da areia
+        # na estrada, pela pesquisa) e as trincas têm areia dentro) o véu: manchas largas (~10 m) fracas, a faixa de ~1,5 m
+        # da beira e a linha de ~40 cm na beira; a cor é a da sujeira (o chão do lado, a cor do
+        # vértice); por baixo da película dos trechos. O UV 1 traz a distância à beira (BuildRoadSlabs)
+        # (a distância à beira pela textura RoadDir do mapa, a mesma conta do asfalto v2 do Look: o UV 1 da malha não chegava
+        # ao material no jogo, a 1ª prova saiu sem a faixa da beira)
+        rdt_s = g.node(unreal.MaterialExpressionTextureObjectParameter, 300, 3500, parameter_name='RoadDir',
+                       texture=unreal.load_asset('/Game/Textures/T_WaterN'))
+        rsize_s = g.node(unreal.MaterialExpressionScalarParameter, 300, 3600, parameter_name='InfoSize', default_value=1024.0)
+        redge = g.custom('float4 t = T.SampleLevel(TSampler, P.xy / (S * 100.0) + 0.5, 0);\n'
+                         'return 0.5 * t.a * 25.5 - abs((t.b - 0.5) * 20.0);',
+                         [('T', rdt_s, ''), ('S', rsize_s, ''), ('P', g.node(unreal.MaterialExpressionWorldPosition, 300, 3700), '')], F1, 400)
+        vnoise = g.sample(S['aerial_beach_01']['diff'], uv(11.0, 0.37), 'color')
+        veil = g.custom('\n'.join([
+            'float dd = max(Ed, 0.0);',
+            'float edge = 1.0 - smoothstep(0.0, 1.6, dd);',
+            'float edl = 1.0 - smoothstep(0.05, 0.45, dd);',   # (não 'line': palavra reservada do HLSL)
+            'float patches = smoothstep(0.4, 0.75, Nz.r);',
+            'float v = 0.20 * patches + 0.30 * edge + 0.35 * edl;',
+            'v *= 0.7 + 0.3 * Nz.g;',
+            # (16/10, a 2ª prova: as trincas cheias pela altura do asfalto viraram bolinhas de areia repetidas a cada ~1 m,
+            # o desenho do ladrilho da altura; nos game shots as trincas são escuras, sem areia: saiu)
+            'return v;']), [('Ed', redge, ''), ('Nz', vnoise, 'RGB')], F1, 450)
+        # (17/10, o Felipe: "já tá aprovado") o véu é o padrão; ROAD_VEIL=0 volta a sujeira de 16/10 sem ele
+        if os.environ.get('ROAD_VEIL', '1') != '1':
+            veil = g.node(unreal.MaterialExpressionConstant, 300, 3800, r=0.0)
+        blends['base'] = g.custom('float3 a = B * lerp(0.45, 1.0, smoothstep(0.35, 0.85, VN.z)); a = lerp(a, SB * 0.92, 0.55 * Vl); return lerp(a, SB, M);',
+                                  [('B', L['base'][0], L['base'][1]), ('VN', vn, ''), ('SB', dirt['base'], ''), ('M', dmask, ''), ('Vl', veil, '')], F3, 500)
         blends['nor'] = g.custom('return normalize(lerp(N, SN, M));',
                                  [('N', L['nor'][0], L['nor'][1]), ('SN', dirt['nor'], ''), ('M', dmask, '')], F3, 500)
-        blends['rough'] = g.custom('return lerp(R, SR, M);',
-                                   [('R', L['rough'][0], L['rough'][1]), ('SR', dirt['rough'], ''), ('M', dmask, '')], F1, 500)
+        blends['rough'] = g.custom('return lerp(lerp(R, SR, 0.5 * Vl), SR, M);',
+                                   [('R', L['rough'][0], L['rough'][1]), ('SR', dirt['rough'], ''), ('M', dmask, ''), ('Vl', veil, '')], F1, 500)
         ao = g.custom('return lerp(A, SA, M);', [('A', L['ao'][0], L['ao'][1]), ('SA', dirt['ao'], ''), ('M', dmask, '')], F1, 500)
         if GROUND_V3 and ground_memory is not None:
             blends['ao'] = ao

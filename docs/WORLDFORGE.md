@@ -1725,6 +1725,11 @@ quase toda a estrada.
 - **A estrada colada:** a mesma película tira o asfalto, e o chão de baixo (o do lado) aparece.
 - **A medida:** o log da montagem dá "FORGE sujeira na beira: X% da beira suja".
 - **O teste:** o `World_TestRoadDirt` (o TestSalt2 só com a sujeira nova) e as cenas `dirt_*` contra as `laje_*_v2`.
+- **O véu de poeira no asfalto** (16/10, pela comparação com os game shots aprovados road_town_battle, road_battle e
+  street_battle; **APROVADO 17/10**, "já tá aprovado"): manchas largas e fracas (~10 m) no asfalto inteiro, a faixa de
+  ~1,5 m da beira e a linha fina de ~40 cm na beira, na cor da sujeira do lado; a distância à beira vem da textura RoadDir
+  do mapa (a conta do asfalto v2 do Look). As trincas cheias de areia saíram (viravam bolinhas repetidas; nos game shots
+  as trincas são escuras). `build_slice.py`, o `veil` da laje; `ROAD_VEIL=0` volta o de antes.
 
 ### 12.8 O tanque derruba e amassa: o desenho (estudo de 16/10/2026; plano, sem código ainda)
 
