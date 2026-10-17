@@ -420,12 +420,14 @@ def wall(name, length, hw):
 
 
 def pole(name):
-    """O poste de madeira (~8 m) com a cruzeta ao longo de X, os isoladores e a ponta dos fios."""
+    """O poste de madeira (~8 m) com a cruzeta ao longo de X e os isoladores. (17/10, o WorldForge) sem a ponta dos fios
+    (os 4 pedaços de 2 m ao longo de Y em cada isolador): no jogo o fio de verdade sai do isolador, e no poste derrubado os
+    pedaços giravam com ele e ficavam em pé na cruzeta (o Felipe pelo Fluxo: "três fios saem da cruzeta subindo quase na
+    vertical")."""
     o = boxes_obj('SM_LL_' + name, [(-0.13, 0.13, -0.13, 0.13, 0.0, 8.0)], WOOD())
     parts = [boxes_obj(name + '_arm', [(-1.1, 1.1, -0.07, 0.07, 7.25, 7.4)], WOOD()),
              boxes_obj(name + '_brace', [(-0.5, 0.5, -0.04, 0.04, 6.9, 7.0)], WOOD()),
-             boxes_obj(name + '_ins', [(x - 0.05, x + 0.05, -0.05, 0.05, 7.4, 7.6) for x in (-0.95, -0.35, 0.35, 0.95)], DARK()),
-             boxes_obj(name + '_wire', [(x - 0.012, x + 0.012, -1.0, 1.0, 7.56, 7.584) for x in (-0.95, -0.35, 0.35, 0.95)], DARK())]
+             boxes_obj(name + '_ins', [(x - 0.05, x + 0.05, -0.05, 0.05, 7.4, 7.6) for x in (-0.95, -0.35, 0.35, 0.95)], DARK())]
     harden(o, 0.03)
     select_only(o)
     for p in parts:

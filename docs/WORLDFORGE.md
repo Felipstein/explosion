@@ -1823,6 +1823,15 @@ quase toda a estrada.
     cai;
   - arrebenta acima de 1,5× o comprimento, deita no chão com atrito e dorme quando assenta;
   - `OnWireSnap` e `OnWireGround` pro arco e a faísca, que são do jogo e do Fluxo.
+  - **(17/10) Os "três fios em pé" no poste derrubado** (o Felipe pelo Fluxo):
+    - não eram o fio: o `SM_civ_pole` do Look tinha 4 pontas de fio de 2 m ao longo do fio (`look_houses.py`, `_wire`), que
+      no tombo giravam com o poste e ficavam em pé. Saíram do modelo, e o Look concordou.
+    - Junto, no fio solto:
+      - o trecho só puxa (a corda, restrição unilateral do PBD): não empurra mais a sobra pra cima;
+      - cada pedaço leva o movimento do quadro anterior (`SetHasPerInstancePrevTransforms`, sem o `MarkRenderStateDirty`
+        de todo quadro), o que tirou o tracejado e o borrão do TSR com o fio balançando;
+      - as emendas passam um raio de cada lado.
+    - **APROVADO (17/10, "aprovado")**.
 
 **As fontes:**
 - `ToppleUpdate.cpp` (EA, CnC_Generals_Zero_Hour);

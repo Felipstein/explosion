@@ -73,6 +73,8 @@ private:
 		bool bAsleep = false;
 		bool bSnapped = false;
 		bool bDirty = false;          // mexeu desde o último desenho
+		bool bMoved = false;          // o último desenho andou (o próximo quadro parado zera o movimento)
+		TArray<FTransform> Drawn;     // os pedaços do último desenho (o quadro anterior do movimento)
 		UInstancedStaticMeshComponent* Comp = nullptr;
 		int32 FirstInstance = 0;
 	};

@@ -83,6 +83,9 @@ UInstancedStaticMeshComponent* URTSWireSystem::CompFor(UStaticMesh* Mesh, UMater
 	}
 	C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	C->SetCastShadow(true);
+	// (17/10) o movimento de cada pedaço (o quadro anterior por instância): sem ele o TSR não sabe que o fio fino andou e
+	// borra o fio balançando (o "borrão pontilhado" perto do poste que o Fluxo viu); antes das instâncias entrarem
+	C->SetHasPerInstancePrevTransforms(true);
 	C->SetupAttachment(Holder->GetRootComponent());
 	C->RegisterComponent();
 	Comps.Add(Key, C);
@@ -180,7 +183,11 @@ void URTSWireSystem::Step(FSpan& S, int32 Handle, float Dt)
 		S.Prev[I] = S.P[I];
 		S.P[I] += V + G;
 	}
-	// o comprimento de cada trecho (o fio não estica): as pontas presas não andam
+	// o comprimento de cada trecho (o fio não estica): as pontas presas não andam. Só puxa, nunca empurra (a corda, a
+	// restrição de distância unilateral do PBD, Müller et al. 2007): (17/10, o Felipe pelo Fluxo, "três fios saem da
+	// cruzeta subindo quase na vertical") com a vareta rígida dos dois lados (o "stick" do Jakobsen, GDC 2001), o fio mais
+	// comprido que o caminho até o poste deitado não dobrava no chão: a sobra empurrava o trecho do lado da cruzeta pra
+	// cima e ele ficava em pé (a gravidade reta não derruba)
 	for (int32 It = 0; It < Iterations; ++It)
 	{
 		for (int32 I = 0; I + 1 < N; ++I)
@@ -189,7 +196,7 @@ void URTSWireSystem::Step(FSpan& S, int32 Handle, float Dt)
 			const bool bB = (I + 1 == N - 1 && S.bPinned[1]);
 			const FVector D = S.P[I + 1] - S.P[I];
 			const float L = D.Size();
-			if (L < 1e-3f || (bA && bB))
+			if (L <= S.Rest || (bA && bB))
 			{
 				continue;
 			}
@@ -246,7 +253,8 @@ void URTSWireSystem::Draw(FSpan& S)
 	{
 		return;
 	}
-	// cada trecho é um pedaço do fio: o cilindro de pé no Z (100 cm de altura e de diâmetro), esticado e girado
+	// cada trecho é um pedaço do fio: o cilindro de pé no Z (100 cm de altura e de diâmetro), esticado e girado. (17/10)
+	// Cada pedaço passa um raio de cada ponta (sem a fresta na emenda quando o fio dobra)
 	const int32 N = S.P.Num();
 	TArray<FTransform> X;
 	X.Reserve(N - 1);
@@ -256,9 +264,14 @@ void URTSWireSystem::Draw(FSpan& S)
 		const FVector A = S.P[I], B = S.P[I + 1];
 		const FVector D = B - A;
 		const float L = FMath::Max(D.Size(), 0.1f);
-		X.Add(FTransform(FQuat::FindBetweenNormals(FVector::UpVector, D / L), (A + B) * 0.5f, FVector(W, W, L / 100.0f)));
+		X.Add(FTransform(FQuat::FindBetweenNormals(FVector::UpVector, D / L), (A + B) * 0.5f, FVector(W, W, (L + 2.0f * S.Radius) / 100.0f)));
 	}
-	S.Comp->BatchUpdateInstancesTransforms(S.FirstInstance, X, true, true, false);
+	// o quadro anterior é o último desenho (o 1º desenho fica parado); sem refazer o componente: na 5.8 a mudança da
+	// instância chega ao desenho sozinha, e o MarkRenderStateDirty de todo quadro jogava fora o movimento
+	const TArray<FTransform>& Before = S.Drawn.Num() == X.Num() ? S.Drawn : X;
+	S.Comp->BatchUpdateInstancesTransforms(S.FirstInstance, X, Before, true, false, false);
+	S.Drawn = MoveTemp(X);
+	S.bMoved = true;
 }
 
 void URTSWireSystem::Tick(float DeltaTime)
@@ -267,7 +280,7 @@ void URTSWireSystem::Tick(float DeltaTime)
 	bool bAny = false;
 	for (const FSpan& S : Spans)
 	{
-		bAny |= !S.bAsleep;
+		bAny |= !S.bAsleep || S.bMoved;   // (o que dormiu agora ainda zera o movimento no quadro seguinte)
 	}
 	if (!bAny)
 	{
@@ -291,6 +304,12 @@ void URTSWireSystem::Tick(float DeltaTime)
 		{
 			Draw(S);
 			S.bDirty = false;
+		}
+		else if (S.bMoved && S.Comp)
+		{
+			// parou neste quadro: o anterior igual ao de agora (senão o último movimento fica valendo pra sempre)
+			S.Comp->BatchUpdateInstancesTransforms(S.FirstInstance, S.Drawn, S.Drawn, true, false, false);
+			S.bMoved = false;
 		}
 	}
 }
