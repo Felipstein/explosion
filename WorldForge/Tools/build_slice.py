@@ -853,6 +853,9 @@ def look_paint_v2_code():
 SLAB_PAINT = False
 
 
+GROUND_SPEC = False   # (17/10) o look_mf.py tem a chave SPEC_READY: o Specular da areia (look_ground_memory_code_v3)
+
+
 def look_ground_memory_code_v3():
     """O code_v3() do Game/Tools/look_mf.py (a normal de iluminação da v3, o Look 16/10): o arquivo é executado até
     antes do main() (só constantes e funções) e a função devolve o CODE; só ASCII. None se faltar."""
@@ -869,6 +872,12 @@ def look_ground_memory_code_v3():
     exec(compile(src[:i], src_path, 'exec'), ns)
     if 'code_v3' not in ns:
         return None
+    # (17/10, o pedido do Look) o especular da areia: o material põe a entrada 'SandSpec' e a saída 'Sout' (o pino Specular)
+    # sempre que o look_mf.py tiver a chave; ligada aqui, a linha entra no começo do CODE
+    global GROUND_SPEC
+    GROUND_SPEC = 'SPEC_READY' in ns
+    if GROUND_SPEC:
+        ns['SPEC_READY'] = True
     code = ns['code_v3']()
     return unicodedata.normalize('NFKD', code.replace('°', ' graus').replace('×', 'x').replace('·', '*')).encode('ascii', 'ignore').decode('ascii')
 
@@ -1575,8 +1584,16 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             g.link(ld, '', lt, '')
             ins.append(('Lt', lt, ''))
             ins.append(('V3On', g.node(unreal.MaterialExpressionConstant, 1000, r=1.0), ''))
+        spec_on = GROUND_V3 and GROUND_SPEC
+        if spec_on:
+            # (17/10, o Look) o Specular da areia e da terra: o parâmetro 'SandSpecular' (0,12: F0 ≈ 1%, a sombra dos grãos
+            # do BRDF.ush; a receita troca em jogo); o asfalto (Surf) fica no 0,5 do padrão, a laje inteira também
+            ins.append(('SandSpec', g.node(unreal.MaterialExpressionScalarParameter, 1000, parameter_name='SandSpecular', default_value=0.12), ''))
         mem = g.custom(ground_memory, ins, F3, 1300, extra=[('Nout', F3), ('Rout', F1), ('Mask', F1), ('Emi', F3)]
-                       + ([('AOout', F1)] if GROUND_V3 else []))
+                       + ([('AOout', F1)] if GROUND_V3 else []) + ([('Sout', F1)] if spec_on else []))
+        if spec_on:
+            g.out(mem, 'Sout', unreal.MaterialProperty.MP_SPECULAR)
+            log('ground v3', 'o Specular da areia (SandSpecular 0,12, o asfalto 0,5)')
         if GROUND_V3:
             g.out(g.custom('return A * B;', [('A', blends['ao'], ''), ('B', mem, 'AOout')], F1, 1500), '',
                   unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
