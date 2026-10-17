@@ -1994,3 +1994,50 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
      `dirt_gasta_67_v2l` (o decalque). Na foto a faixa da beira segue a laje: some onde ela quebra, sai gasta e falhada
      e não passa mais por cima da areia. **APROVADO (17/10, "tá aprovado")**: o `PAINT_V2` virou o padrão da montagem
      (`PAINT_V2=0` volta o decalque). O World_TestSalt2 recebe na próxima remontagem.
+10. Pedido do Felipe de 16/10 noite (pra fila, "pensarem e discutirem e chegarem num resultado de arrepiar"): **o asfalto
+    tem um desenho repetido** que aparece na hora dourada ("olha quanto padronizado ficou esses detalhes [...] não tá
+    natural"), mantendo "a qualidade deliciosa que tínhamos de estrada". A foto (a rua da vila, sol baixo):
+    `docs/aprovados/mundos/2026-10-16_estrada_padrao_repetido_PROBLEMA.jpg`.
+    - A causa: a textura base do asfalto (`road_damaged_2`, a camada `asphalt` do deserto) tem poucos buracos marcados (um
+      grande em forma de amendoim e uns pequenos) e se repete a cada 2,2 m; o sol baixo acende o relevo deles em grade.
+      O véu de poeira (as trincas cheias pela altura, já tirado) pintava os mesmos buracos de areia.
+    - O estudo (com a 2ª opinião, fontes: Mikkelsen, "Practical Real-Time Hex-Tiling", JCGT 2022; Heitz & Neyret 2018;
+      Inigo Quilez, "texture repetition"; GPU Gems cap. 20, texture bombing; Frostbite 2007): a base em hexágonos girados
+      que só lê janelas da foto SEM buraco, e os buracos como carimbos soltos recortados da mesma foto. O estocástico do
+      Heitz serve pra textura sem estrutura (buraco é estrutura); o TextureVariation da Unreal pontilha no tempo.
+    - Feito (sem commit, `ASPH_HEX=1`, só na laje): `Tools/asphalt_hex_prep.py` acha 12 centros livres (raio de 43 cm,
+      18% da foto) e recorta os 4 buracos (0,55 a 1,29 m) num atlas; o `ASPH_HEX_HLSL` do `build_slice.py` faz o hex (um peso
+      pras 4 texturas, a normal como derivada girada de volta, SampleGrad) e o carimbo por célula de 6 m (as zonas do asfalto
+      v2 do Look: boa 0,03, cansada 0,25, abandonada 0,5; 60% a mais na beira).
+    - A simulação em numpy (12 × 7 m, sol a 8°): a repetição no passo de 2,2 m caiu de 1,00 pra 0,00; a nitidez ficou em
+      93%; a normal girada segue o relevo (a rotação ao contrário zera a coerência).
+    - No jogo (16/10 noite): a rua da vila na hora dourada, `vila_ouro_A` contra `vila_ouro_B`: a grade de buracos sumiu.
+      No sol a 20° (`dirt_gasta_67_hex`) a 1ª versão saiu lisa: o detalhe fino caiu 27% e o Laplaciano 44%. A causa: o
+      `ddx` dentro do Custom; no Nanite as derivadas são analíticas e saem pelos nós DDX/DDY da Unreal, ligados por fora
+      (o aviso da 2ª opinião). Corrigido (`dirt_gasta_67_paredao2`): o detalhe fino em 93% e o Laplaciano em 102% do de
+      antes, o mesmo da simulação. Falta medir o custo (`perf_hex` contra `perf_plain`, o perfil CSV).
+    - Na hora dourada, com as derivadas certas (`perf_hex`), ampliado: um relevo de "paralelepípedo" de ~40 cm, o tamanho
+      das células. A 67 m a textura vem num mip liso e a troca brusca da normal entre duas cópias giradas (o peso nítido,
+      expoente 7 e ganho) vira uma dobra na borda de cada célula. O conserto em teste: a normal e a altura com a transição
+      larga (expoente 3, sem ganho; o artigo usa r = 0,5 nas normais), a cor e o ARM nítidos. A prova de perto:
+      `perto_plain` contra `perto_hex2` (a cena `vila_rua_perto`, 30 m), e `vila_ouro_C`.
+    - O hex2: de perto saiu asfalto de verdade (o agregado, as trincas finas, sem grade e sem paralelepípedo); a 67 m na
+      hora dourada sobra uma mancha leve, sem padrão. Mas no sol a 20° o detalhe fino voltou a cair (7,7 contra 10,5): a
+      média de três normais giradas achata o relevo na transição larga. O hex3 (em teste): a mistura que preserva a
+      variância só na normal (Burley, JCGT 2019; Heitz e Neyret 2018), a soma dividida pela raiz da soma dos pesos ao
+      quadrado; na simulação devolve o fino ao nível da versão nítida sem a dobra.
+    - O custo (GTX 1660, 1080p, a rua da vila na hora dourada, a cena `vila_perf` de 40 s, o perfil CSV parado no quadro
+      900, a mediana dos quadros 600–900, duas rodadas cada, iguais entre si): `GPU/NaniteBasePass` +1,0 ms (8,6 contra
+      7,6) com o hex2. O tempo total da placa subiu 3,4 ms, mas passes que não dependem do material (o TSR, o Lumen, a
+      névoa) subiram juntos ~10%: ou a placa ocupada por outra coisa nas rodadas do hex, ou o relevo fino a mais pesando no
+      Lumen/TSR. A medida intercalada (17/10, o World_TestSalt2 sem hex e o meu mapa com hex3, alternando: antes, hex,
+      antes, hex) separou: o TSR, o Lumen, as sombras e a luz ficam iguais (o +2,4 ms era a placa ocupada); o
+      `GPU/NaniteBasePass` sobe +0,9 ms em média (0 a +1,9 entre as rodadas). O custo: ~+1 ms na vista da vila, 1080p, Ultra.
+      Se pesar, os cortes: o ARM e a altura só da célula dominante (−4 amostras) e o hex só no preset alto.
+    - **APROVADO (17/10, "aprovado"):** o hex3 (a normal com a mistura que preserva a variância) é o padrão da laje
+      (`ASPH_HEX=0` volta o de antes); o `forge.ps1 slice` roda o `asphalt_hex_prep.py` quando falta o atlas.
+    - O hex3 no jogo: no sol a 20° o detalhe fino voltou (9,7, e o Laplaciano 19,3, contra 10,5 e 18,9 antes do hex); a
+      67 m na hora dourada sem grade e sem dobra, só uma mancha leve. De perto, o A/B com o mesmo jogo, em sequência
+      (`perto_ab_antes`, `perto_ab_hex3`, `perto_ab_antes2`, o World_TestSalt2 como o "antes"): 93% do detalhe fino, e a
+      areia, as caixas e a casa iguais nas três. A lição: a foto de perto do hex2 (`perto_hex2`, 03:05) saiu mais nítida em
+      tudo, até nas caixas (7,3 contra ~4,0 em todas as outras rodadas, antes e depois); A/B só em sequência e com controle.

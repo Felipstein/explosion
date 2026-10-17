@@ -62,6 +62,11 @@ switch ($Command) {
   'build' { Build }
   'slice' {
     $env:SLICE = if ($Target) { $Target } else { 'desert,snow,forest' }
+    # (17/10) o asfalto sem desenho repetido: os centros livres e o atlas dos buracos (Tools/asphalt_hex_prep.py, com
+    # numpy e scipy, fora da Unreal), uma vez; sem eles a laje usa o ladrilho de antes
+    if (-not (Test-Path (Join-Path $Root 'Intermediate\Assets\road_damaged_2_pot\AsphPot_D.png'))) {
+      python (Join-Path $PSScriptRoot 'asphalt_hex_prep.py')
+    }
     RunUnrealPython 'Tools\build_slice.py'
   }
   'py' { RunUnrealPython $Target }

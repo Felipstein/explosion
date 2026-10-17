@@ -424,6 +424,153 @@ return col;
 """
 
 
+# O asfalto sem desenho repetido (16/10, o Felipe na hora dourada: "olha quanto padronizado ficou esses detalhes [...] não
+# tá natural", docs/WORLDFORGE.md item 10; a 2ª opinião pela literatura). A foto road_damaged_2 (4K, ladrilho de 2,2 m) tem
+# poucos buracos marcados, e repetida eles viravam grade; o sol baixo acende o relevo. Dois passos, só na laje (ASPH_HEX=1):
+# 1. a base em hexágonos girados (Mikkelsen, "Practical Real-Time Hex-Tiling", JCGT 2022; o TriangleGrid e o Gain3 do
+#    código dele): cada vértice da grade gira a foto ao acaso e lê uma janela SEM buraco (os centros livres que o
+#    Tools/asphalt_hex_prep.py acha na altura); um só peso pras 4 texturas (cor, normal, ARM, altura), pela altura com o
+#    expoente 7 e o contraste 0,6; a normal mistura como derivada, girada de volta com a célula; o mip pelas derivadas do
+#    UV contínuo (SampleGrad), sem costura;
+# 2. os buracos como carimbos (o texture bombing, GPU Gems cap. 20): os 4 recortados da mesma foto (o atlas do prep), um
+#    sorteio por célula de 6 m, girados, espelhados e na escala 0,8–1,2; a chance pelas zonas do asfalto v2 do Look
+#    (ASPHALT_V2_CODE, item 8: boa 0,03, cansada 0,25, abandonada 0,5) e 60% a mais perto da beira.
+# Os amostradores são os compartilhados do mundo (o mesmo filtro das outras camadas; o terreno tem limite de 16).
+ASPH_HEX_HLSL = r"""
+#define HX_SS(T) GetMaterialSharedSampler(T##Sampler, View.MaterialTextureBilinearWrapedSampler)
+#define HX_SC(T) GetMaterialSharedSampler(T##Sampler, View.MaterialTextureBilinearClampedSampler)
+static const float2 HX_CEN[@NC@] = { @CEN@ };
+static const float HX_SZ[4] = { @SZ@ };
+const float TILE = @TILE@;
+const float RATE = @RATE@;
+float2 uv = WP.xy / (TILE * 100.0);
+// as derivadas do UV vêm de fora (os nós DDX/DDY da Unreal): no Nanite elas são analíticas, e o ddx dentro do Custom
+// escolhia mips borrados (a 1ª prova, dirt_gasta_67_hex: o detalhe fino caiu 27% no sol a 20°)
+float2 DX = DUx, DY = DUy;
+// 1. a grade de triângulos (TriangleGrid): os 3 vértices em volta e os pesos baricêntricos
+float2 gq = uv * RATE * 3.4641016;
+float2 sk = float2(gq.x - 0.57735027 * gq.y, 1.15470054 * gq.y);
+float2 bid = floor(sk);
+float3 tt = float3(frac(sk), 0.0);
+tt.z = 1.0 - tt.x - tt.y;
+float s = step(0.0, -tt.z);
+float s2 = 2.0 * s - 1.0;
+float3 w = float3(-tt.z * s2, s - tt.y * s2, s - tt.x * s2);
+float2 vx[3];
+vx[0] = bid + float2(s, s);
+vx[1] = bid + float2(s, 1.0 - s);
+vx[2] = bid + float2(1.0 - s, s);
+float3 cc[3];
+float2 dd[3];
+float3 aa[3];
+float3 hv = 0;
+[unroll] for (int i = 0; i < 3; i++)
+{
+    float2 v = vx[i];
+    float2 cuv = float2(v.x + 0.5 * v.y, 0.8660254 * v.y) / (3.4641016 * RATE);
+    float hA = frac(sin(dot(v, float2(127.1, 311.7))) * 43758.5453);
+    float hB = frac(sin(dot(v, float2(269.5, 183.3))) * 43758.5453);
+    float an = hA * 6.2831853;
+    float cs = cos(an), sn = sin(an);
+    float2x2 R = float2x2(cs, -sn, sn, cs);
+    float2 st = mul(uv - cuv, R) + HX_CEN[min((int)(hB * @NC@.0), @NC@ - 1)];
+    float2 gx = mul(DX, R), gy = mul(DY, R);
+    cc[i] = ProcessMaterialColorTextureLookup(D.SampleGrad(HX_SS(D), st, gx, gy)).rgb;
+    float3 nt = UnpackNormalMap(Nn.SampleGrad(HX_SS(Nn), st, gx, gy)).rgb;
+    dd[i] = mul(R, -nt.xy / max(nt.z, 0.125));
+    aa[i] = Ar.SampleGrad(HX_SS(Ar), st, gx, gy).rgb;
+    hv[i] = Hh.SampleGrad(HX_SS(Hh), st, gx, gy).r;
+}
+// o peso: a mais alta ganha (0,6) e o expoente 7; depois o contraste (Gain3, r = 0,6)
+float3 W = lerp(1.0, hv, 0.6) * pow(max(w, 0.0), 7.0);
+W /= max(W.x + W.y + W.z, 1e-5);
+float gk = log(1.0 - 0.6) / log(0.5);
+float3 sg = 2.0 * step(0.5, W);
+float3 mg = 2.0 * (1.0 - sg);
+float3 gr = 0.5 * sg + 0.25 * mg * pow(max(0.0, sg + W * mg), gk);
+W = gr / (gr.x + gr.y + gr.z);
+float3 col = W.x * cc[0] + W.y * cc[1] + W.z * cc[2];
+float3 arm = W.x * aa[0] + W.y * aa[1] + W.z * aa[2];
+// a normal e a altura com a transição larga (o expoente 3, sem o ganho; o artigo usa r = 0,5 nas normais): com a cor
+// nítida nas três, a 67 m a textura vem num mip liso e a troca brusca entre duas cópias giradas virava uma dobra na borda
+// de cada célula, e o sol rasante acendia um "paralelepípedo" de ~40 cm (a prova perf_hex, 17/10)
+float3 Wn = pow(max(w, 0.0), 3.0);
+Wn /= max(Wn.x + Wn.y + Wn.z, 1e-5);
+// a mistura que preserva a variância (Burley, "On Histogram-Preserving Blending for Randomized Texture Tiling", JCGT 2019;
+// Heitz e Neyret 2018): a média de três normais giradas achata o relevo na transição larga (a prova dirt_gasta_67_hex2:
+// o detalhe fino caiu de 10,5 pra 7,7 no sol a 20°); dividir pela raiz da soma dos pesos ao quadrado devolve o contraste.
+// A derivada do asfalto tem média ~0 (o chão plano), então não precisa tirar a média antes
+float2 dv = (Wn.x * dd[0] + Wn.y * dd[1] + Wn.z * dd[2]) / max(sqrt(dot(Wn, Wn)), 0.25);
+float h = dot(Wn, hv);
+// 2. o buraco da célula de 6 m (um sorteio por célula; o carimbo nunca passa da borda dela)
+float2 pm = WP.xy * 0.01;
+float2 cell = floor(pm / 6.0);
+float q0 = frac(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+float q1 = frac(sin(dot(cell, float2(39.346, 11.135))) * 24634.6345);
+float q2 = frac(sin(dot(cell, float2(73.156, 52.235))) * 15731.7431);
+float q3 = frac(sin(dot(cell, float2(26.651, 91.733))) * 32462.3197);
+float q4 = frac(q0 * 17.31 + q3 * 3.7);
+float q5 = frac(q1 * 13.17 + q2 * 5.3);
+float2 zc = (cell + 0.5) * 6.0;
+float zA = saturate((Beach.SampleLevel(HX_SS(Beach), zc / 35.0 + 0.13, 0).r - 0.262) / 0.04);
+float zB = saturate((Beach.SampleLevel(HX_SS(Beach), zc / 55.0 + 0.47, 0).g - 0.226) / 0.03);
+float tired = smoothstep(0.4, 0.75, zA);
+float aband = smoothstep(0.5, 0.85, zB) * (1.0 - 0.4 * tired);
+float2 pc = zc + (float2(q4, q5) - 0.5) * 3.8;
+float4 rt = RD.SampleLevel(HX_SC(RD), pc / S + 0.5, 0);
+float edge = 0.5 * rt.a * 25.5 - abs((rt.b - 0.5) * 20.0);
+float chance = (0.03 + 0.22 * tired + 0.47 * aband) * (1.0 + 0.6 * (1.0 - smoothstep(0.3, 2.5, edge)));
+Pot = 0.0;
+[branch] if (q0 < chance)
+{
+    int ks = min((int)(q1 * 4.0), 3);
+    float sz = HX_SZ[ks] * (0.8 + 0.4 * q2);
+    float an = q3 * 6.2831853;
+    float ca = cos(an), sa = sin(an);
+    float fl = frac(q2 * 7.77) < 0.5 ? -1.0 : 1.0;
+    float2 d = pm - pc;
+    float2 lq = float2((ca * d.x + sa * d.y) * fl, -sa * d.x + ca * d.y) / sz;
+    if (abs(lq.x) < 0.5 && abs(lq.y) < 0.5)
+    {
+        float2 at = (float2(ks % 2, ks / 2) + lq + 0.5) * 0.5;
+        float2 dxm = DX * TILE, dym = DY * TILE;
+        float2 gx = float2((ca * dxm.x + sa * dxm.y) * fl, -sa * dxm.x + ca * dxm.y) * (0.5 / sz);
+        float2 gy = float2((ca * dym.x + sa * dym.y) * fl, -sa * dym.x + ca * dym.y) * (0.5 / sz);
+        float4 pd = PD.SampleGrad(HX_SS(PD), at, gx, gy);
+        float m = pd.a;
+        float3 pn = UnpackNormalMap(PN.SampleGrad(HX_SS(PN), at, gx, gy)).rgb;
+        float2 pdv = -pn.xy / max(pn.z, 0.125);
+        pdv.x *= fl;
+        pdv = float2(ca * pdv.x - sa * pdv.y, sa * pdv.x + ca * pdv.y);
+        col = lerp(col, ProcessMaterialColorTextureLookup(pd).rgb, m);
+        dv = lerp(dv, pdv, m);
+        arm = lerp(arm, PA.SampleGrad(HX_SS(PA), at, gx, gy).rgb, m);
+        h = lerp(h, PH.SampleGrad(HX_SS(PH), at, gx, gy).r, m);
+        Pot = m;
+    }
+}
+Nrm = normalize(float3(-dv, 1.0));
+Rough = arm.g;
+Ao = arm.r;
+Disp = h;
+return col;
+"""
+
+
+def asphalt_hex_code():
+    """O ASPH_HEX_HLSL com os centros livres e o tamanho dos buracos do Tools/asphalt_hex.json (o asphalt_hex_prep.py);
+    None sem o arquivo ou sem os atlas."""
+    path = os.path.join(PROJECT, 'Tools', 'asphalt_hex.json')
+    if not os.path.exists(path) or not os.path.exists(os.path.join(PROJECT, 'Intermediate', 'Assets', 'road_damaged_2_pot', 'AsphPot_D.png')):
+        return None
+    with open(path, encoding='utf-8') as f:
+        j = json.load(f)
+    cen = ', '.join('float2(%.4f, %.4f)' % (c[0], c[1]) for c in j['centers'])
+    sz = ', '.join('%.3f' % s for s in (j['stamp_m'] + [j['stamp_m'][-1]] * 4)[:4])
+    return (ASPH_HEX_HLSL.replace('@NC@', str(len(j['centers']))).replace('@CEN@', cen).replace('@SZ@', sz)
+            .replace('@TILE@', '%.3f' % j['tile_m']).replace('@RATE@', '%.3f' % j['rate']))
+
+
 # A areia v1 do Look (Game/Tools/look_materials/sand_desert_v1_ground.hlsl, a parte da areia com
 # SALB = 1; a normal sai no espaço tangente do terreno: vn + nxy·0,8 vira (nxy·0,8, 1)). O
 # amostrador é o compartilhado do mundo (GetMaterialSharedSampler), como as outras camadas.
@@ -821,12 +968,48 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
     def layer(lname, s, tile_m, tint, extra=None):
         extra = extra or {}
         far = extra.get('far')
-        a = g.sample(s['diff'], uv(tile_m), 'color')
-        b = g.sample(s['diff'], uv(tile_m * 3.7, 0.37), 'color')
-        diff = g.node(unreal.MaterialExpressionLinearInterpolate, -400, const_alpha=0.35)
-        g.link(a, 'RGB', diff, 'A')
-        g.link(b, 'RGB', diff, 'B')
-        nor = g.sample(s['nor'], uv(tile_m), 'normal')
+        hx = None
+        # (17/10, o Felipe: "aprovado") a base em hexágonos sem buraco e os buracos como carimbos (o item 10, ASPH_HEX_HLSL) é o
+        # padrão da laje; ASPH_HEX=0 volta o ladrilho de antes
+        if slab and lname == 'Asphalt' and os.environ.get('ASPH_HEX', '1') == '1':
+            code = asphalt_hex_code()
+            if code:
+                pot = os.path.join(PROJECT, 'Intermediate', 'Assets', 'road_damaged_2_pot')
+                pot_tex = '/Game/Slice/Surfaces/road_damaged_2_pot'
+                def hobj(tex, kind):
+                    return g.node(unreal.MaterialExpressionTextureObject, -1300, texture=tex,
+                                  sampler_type={'color': unreal.MaterialSamplerType.SAMPLERTYPE_COLOR,
+                                                'normal': unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL,
+                                                'masks': unreal.MaterialSamplerType.SAMPLERTYPE_MASKS}[kind])
+                huv = uv(tile_m)
+                hdx = g.node(unreal.MaterialExpressionDDX, -1300)
+                g.link(huv, '', hdx, 'Value')
+                hdy = g.node(unreal.MaterialExpressionDDY, -1300)
+                g.link(huv, '', hdy, 'Value')
+                hx = g.custom(code, [('WP', wp, ''), ('DUx', hdx, ''), ('DUy', hdy, ''),
+                                     ('D', hobj(s['diff'], 'color'), ''), ('Nn', hobj(s['nor'], 'normal'), ''),
+                                     ('Ar', hobj(s['arm'], 'masks'), ''), ('Hh', hobj(s['disp'], 'masks'), ''),
+                                     ('PD', hobj(texture(os.path.join(pot, 'AsphPot_D.png'), pot_tex, 'color'), 'color'), ''),
+                                     ('PN', hobj(texture(os.path.join(pot, 'AsphPot_N.png'), pot_tex, 'normal'), 'normal'), ''),
+                                     ('PA', hobj(texture(os.path.join(pot, 'AsphPot_ARM.png'), pot_tex, 'masks'), 'masks'), ''),
+                                     ('PH', hobj(texture(os.path.join(pot, 'AsphPot_H.png'), pot_tex, 'masks'), 'masks'), ''),
+                                     ('Beach', hobj(S['aerial_beach_01']['diff'], 'color'), ''),
+                                     ('RD', g.node(unreal.MaterialExpressionTextureObjectParameter, -1300, parameter_name='RoadDir',
+                                                   texture=unreal.load_asset('/Game/Textures/T_WaterN')), ''),
+                                     ('S', g.node(unreal.MaterialExpressionScalarParameter, -1300, parameter_name='InfoSize', default_value=1024.0), '')],
+                              F3, -700, extra=[('Nrm', F3), ('Rough', F1), ('Ao', F1), ('Disp', F1), ('Pot', F1)])
+                log('asphalt', 'hex sem buraco + buracos carimbados (ASPH_HEX)')
+            else:
+                log('asphalt', 'ASPH_HEX sem o Tools/asphalt_hex.json ou os atlas: rode o asphalt_hex_prep.py')
+        if hx is not None:
+            diff, nor = hx, None
+        else:
+            a = g.sample(s['diff'], uv(tile_m), 'color')
+            b = g.sample(s['diff'], uv(tile_m * 3.7, 0.37), 'color')
+            diff = g.node(unreal.MaterialExpressionLinearInterpolate, -400, const_alpha=0.35)
+            g.link(a, 'RGB', diff, 'A')
+            g.link(b, 'RGB', diff, 'B')
+            nor = g.sample(s['nor'], uv(tile_m), 'normal')
         if extra.get('vary'):
             # anti-ladrilho: as duas escalas trocam em manchas de ~60 m (a foto
             # aérea como ruído), na cor e no relevo; a 35% fixo a grade de placas
@@ -844,8 +1027,9 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             arm = g.sample(s['arm'], uv(tile_m), 'masks')
             disp = g.sample(s['disp'], uv(tile_m), 'masks')
             return {'name': lname, 'base': (base0, ''), 'nor': (nmix, ''), 'rough': (arm, 'G'), 'ao': (arm, 'R'), 'disp': (disp, 'R')}
-        arm = g.sample(s['arm'], uv(tile_m), 'masks')
-        disp = g.sample(s['disp'], uv(tile_m), 'masks')
+        if hx is None:
+            arm = g.sample(s['arm'], uv(tile_m), 'masks')
+            disp = g.sample(s['disp'], uv(tile_m), 'masks')
         base = g.mul(diff, '', g.const3(tint, -300), '', -200)
         if far is not None:
             # a foto aérea por cima da de perto (o grão de perto vira ruído de
@@ -883,6 +1067,8 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             n = g.sample(S['aerial_beach_01']['diff'], uv(hs, 0.57), 'color', -1200)
             base = g.custom('return C * lerp(A, B, smoothstep(0.35, 0.65, N.g));',
                             [('C', base, ''), ('A', g.const3(ha, -300), ''), ('B', g.const3(hb, -300), ''), ('N', n, 'RGB')], F3, 100)
+        if hx is not None:
+            return {'name': lname, 'base': (base, ''), 'nor': (hx, 'Nrm'), 'rough': (hx, 'Rough'), 'ao': (hx, 'Ao'), 'disp': (hx, 'Disp')}
         return {'name': lname, 'base': (base, ''), 'nor': (nor, 'RGB'), 'rough': (arm, 'G'), 'ao': (arm, 'R'), 'disp': (disp, 'R')}
 
     def sand_v1_layer(lname, s, tile_m, albedo, extra):
