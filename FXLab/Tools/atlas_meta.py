@@ -1,6 +1,6 @@
 """Medidas do cozimento que o laboratório (FXLab/web) e a Unreal (FXLab) usam igual.
 
-Uso: blender -b --factory-startup --python atlas_meta.py -- <pasta_do_cozimento>
+Uso: blender -b --factory-startup --python atlas_meta.py -- <pasta_do_cozimento> [segurar_o_fundo_a_partir_de_s]
 
 Acrescenta ao atlas.json:
 - pivot: [x, y] o centro da bola no 1º quadro (centroide da cobertura), fração do quadro com y pra cima.
@@ -53,6 +53,17 @@ for k in range(N):
     bottoms.append(round(b / R, 4))
     e = cell(emit, k)[..., :3]
     sums.append(float((e @ np.array([0.2126, 0.7152, 0.0722])).sum()))
+# segurar o fundo a partir de um tempo (16/10, a gravação que se desfaz de baixo pra cima: a base some primeiro, o
+# "fundo da bola" medido subiria e o cartão, assentado por ele, desceria junto: o "cair" que o Felipe reprovou)
+argv = sys.argv[sys.argv.index('--') + 1:]
+if len(argv) > 1:
+    hold_t = float(argv[1])
+    times = meta.get('times_s', [])
+    k_hold = next((k for k in range(N) if k < len(times) and times[k] >= hold_t), None)
+    if k_hold is not None:
+        for k in range(k_hold + 1, N):
+            bottoms[k] = bottoms[k_hold]
+        print('ATLAS_META fundo segurado a partir do quadro', k_hold, '(%.2f s):' % times[k_hold], bottoms[k_hold])
 peak = int(np.argmax(sums))
 fire_end = next((k for k in range(peak, N) if sums[k] < 0.005 * sums[peak]), N - 1)
 

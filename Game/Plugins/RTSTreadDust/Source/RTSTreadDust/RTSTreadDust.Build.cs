@@ -8,7 +8,7 @@ public class RTSTreadDust : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "Json", "Projects" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Json", "Projects", "Landscape", "RHI", "RenderCore", "RTSSunShadow", "RTSDustField" });
 		// o perfil e o atlas (JSON) vão junto no jogo empacotado
 		RuntimeDependencies.Add(Path.Combine(PluginDirectory, "Resources", "*.json"));
 	}

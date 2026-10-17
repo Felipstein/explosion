@@ -3,7 +3,10 @@ alfa dos quadros f e f+1 (os dois que o material mistura), com folga. O jogo des
 menos pixel pintado e o mesmo visual (só sai pixel de alfa zero). A técnica é a dos "particle cutouts" (Humus, Epic):
 o fecho convexo da máscara reduzido a 8 vértices tirando, a cada passo, a aresta cuja remoção acrescenta menos área.
 Grava "cut8": [[u0, v0, u1, v1, ...] por quadro] no atlas.json (v pra cima, fração do quadro).
-Uso: python atlas_cut8.py <pasta_do_cozimento> [limiar=0.01] [folga_px=6]"""
+Com lod > 0 (16/10): o alfa medido como a placa lê no mip mínimo do material (o mipMin do perfil): a média em blocos de
+2^L (a cadeia de mips) e a leitura bilinear entre os dois níveis vizinhos. A folha borrada espalha o alfa uns 10–20 px além
+do que a folha nítida mostra; medido na nítida, o octógono cortava a poeira em linha reta no jogo (a quina de 16/10).
+Uso: python atlas_cut8.py <pasta_do_cozimento> [limiar=0.01] [folga_px=6] [lod=0]"""
 import json
 import os
 import subprocess
@@ -15,6 +18,7 @@ import numpy as np
 d = sys.argv[1]
 thr = float(sys.argv[2]) if len(sys.argv) > 2 else 0.01
 pad = int(sys.argv[3]) if len(sys.argv) > 3 else 6
+lod = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
 meta = json.load(open(os.path.join(d, 'atlas.json')))
 R, C, N = meta['res'], meta['cols'], meta['frames']
 W, H = C * R, meta['rows'] * R
@@ -23,9 +27,27 @@ raw = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), '-loglevel', 'error', '-i
 A = np.frombuffer(raw, np.uint16).reshape(H, W, 4)[..., 3].astype(np.float32) / 65535
 
 
+def mip_level(f, L):
+    # o nível L (média 2^L × 2^L, como a cadeia de mips) lido de volta no tamanho do quadro pela bilinear (centros de texel)
+    if L <= 0:
+        return f
+    b = 2 ** L
+    m = f.reshape(R // b, b, R // b, b).mean(axis=(1, 3))
+    c = (np.arange(R) + 0.5) / b - 0.5
+    i0 = np.clip(np.floor(c).astype(int), 0, R // b - 1)
+    i1 = np.clip(i0 + 1, 0, R // b - 1)
+    t = np.clip(c - np.floor(c), 0.0, 1.0)
+    m = m[i0] * (1 - t)[:, None] + m[i1] * t[:, None]
+    return m[:, i0] * (1 - t)[None, :] + m[:, i1] * t[None, :]
+
+
 def frame(k):
     r, c = divmod(k, C)
-    return A[r * R:(r + 1) * R, c * R:(c + 1) * R]
+    f = A[r * R:(r + 1) * R, c * R:(c + 1) * R]
+    if lod <= 0:
+        return f
+    l0 = int(np.floor(lod))
+    return mip_level(f, l0) * (1 - (lod - l0)) + mip_level(f, l0 + 1) * (lod - l0)
 
 
 def hull(pts):

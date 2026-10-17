@@ -1,0 +1,22 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS Sun Shadow",
+	"Description": "O mapa de sombra do sol de todas as fumaças, fogos e poeiras (a regra do CLAUDE.md: um sistema só; docs/ESTUDO_LUZ_NA_FUMACA.md). Camada estática do mapa e camada dos veículos, numa grade girada pro sol. Feito no FXLab (a sessão da arte); o jogo copia esta pasta pra Game/Plugins.",
+	"Category": "RTS",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "RTSSunShadowShaders",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		},
+		{
+			"Name": "RTSSunShadow",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -1,0 +1,132 @@
+// O mapa de sombra do sol de todas as fumaças, fogos e poeiras (o plugin RTSSunShadow; a regra do CLAUDE.md: um sistema
+// só; docs/ESTUDO_LUZ_NA_FUMACA.md). Quem inclui: #include "/Plugin/RTSSunShadow/Private/SunShadow.ush".
+//
+// Duas texturas, na mesma grade girada pro azimute do sol (u = o sentido em que a luz anda, v = de lado), com o mesmo texel:
+// - a estática (RGBA16F, o mapa inteiro): R = o chão desenhado (m acima da base do mapa); G = até que altura acima do chão
+//   o ponto está na sombra presa ao chão (relevo, prédio, muro, tronco: um horizon map, exato com o sol fixo); B e A = o
+//   fundo e o topo da faixa solta da sombra da copa, acima do chão (m; iguais = sem faixa: o sol passa por baixo dela);
+// - a dos veículos (R16F, uma janela em volta do foco, refeita quando alguém anda): o topo da sombra das caixas de cada
+//   veículo acima do chão desenhado (m; −1 = nada).
+// O ponto está na sombra se a altura dele acima do chão for menor que o topo da sombra ali (ou estiver dentro da faixa).
+
+struct FRTSSunShadow
+{
+	float3 CamToMapCm;   // a câmera no quadro do mapa (cm): posição da câmera − origem do mapa (z: acima da base)
+	float3 Axis;         // xy = o eixo da luz no chão (o de lado é (−y, x)); z = 1/largura do mapa (cm)
+	float TanE;          // a tangente da altura do sol
+	float3 Window;       // xy = o canto da janela dos veículos (cm, no quadro do mapa); z = 1/largura da janela (cm)
+};
+
+// A fração de sol (1 = sol, 0 = sombra) num ponto P (cm, relativo à câmera). O teste olha uma faixa vertical em volta do
+// ponto, de ±HalfM (m), cortada no chão, mais a borda SoftM (m): a fração da faixa que fica acima da sombra.
+// - Na marcha de um volume: HalfM = 0 e SoftM ~ o passo da marcha × tan da vista (a borda fica do tamanho da amostra).
+// - Num cartão (a poeira): HalfM = a meia corda da nuvem que o raio de vista atravessa, projetada na altura da sombra.
+// Sem sombra o resultado é 1 exato (a areia aberta não muda).
+float RTSSunVisibility(Texture2D HMap, SamplerState HMapSampler, Texture2D TMap, SamplerState TMapSampler, FRTSSunShadow S,
+	float3 PosCamRelCm, float HalfM, float SoftM)
+{
+	const float3 P = PosCamRelCm + S.CamToMapCm;
+	const float2 C = float2(dot(P.xy, S.Axis.xy), dot(P.xy, float2(-S.Axis.y, S.Axis.x)));
+	const float4 M = HMap.SampleLevel(HMapSampler, C * S.Axis.z + 0.5, 0);
+	const float T = TMap.SampleLevel(TMapSampler, (C - S.Window.xy) * S.Window.z, 0).r;
+	const float H = P.z * 0.01 - M.r;                                  // m acima do chão desenhado
+	const float Lo = max(H - HalfM - SoftM, 0.0);
+	const float Hi = max(H + HalfM + SoftM, Lo + 0.05);
+	float V = 1.0 - saturate((max(max(M.g, T), Lo) - Lo) / (Hi - Lo));
+	V *= 1.0 - saturate((M.a - M.b) / 0.3) * saturate((min(Hi, M.a) - max(Lo, M.b)) / (Hi - Lo));
+	return V;
+}
+
+// A mesma conta com o filtro de 2×2 (o PCF): os 4 texels vizinhos testados um a um e misturados pelo peso bilinear. Mais
+// nítida na borda da casa (a bilinear das alturas arredonda a quina) e sem serrilhado dentro do volume; 4 leituras de cada.
+float RTSSunVisibilityPCF(Texture2D HMap, SamplerState HMapSampler, Texture2D TMap, SamplerState TMapSampler, FRTSSunShadow S,
+	float3 PosCamRelCm, float HalfM, float SoftM, float MapTexels)
+{
+	const float3 P = PosCamRelCm + S.CamToMapCm;
+	const float2 C = float2(dot(P.xy, S.Axis.xy), dot(P.xy, float2(-S.Axis.y, S.Axis.x)));
+	const float2 F = (C * S.Axis.z + 0.5) * MapTexels - 0.5;
+	const float2 I = floor(F), W = F - I;
+	float V = 0.0;
+	UNROLL
+	for (int K = 0; K < 4; ++K)
+	{
+		const float2 O = float2(K & 1, K >> 1);
+		const float2 Uv = (I + O + 0.5) / MapTexels;
+		const float4 M = HMap.SampleLevel(HMapSampler, Uv, 0);
+		const float2 Cc = (Uv - 0.5) / S.Axis.z;                       // o centro do texel, de volta em cm
+		const float T = TMap.SampleLevel(TMapSampler, (Cc - S.Window.xy) * S.Window.z, 0).r;
+		const float H = P.z * 0.01 - M.r;
+		const float Lo = max(H - HalfM - SoftM, 0.0), Hi = max(H + HalfM + SoftM, Lo + 0.05);
+		float Vk = 1.0 - saturate((max(max(M.g, T), Lo) - Lo) / (Hi - Lo));
+		Vk *= 1.0 - saturate((M.a - M.b) / 0.3) * saturate((min(Hi, M.a) - max(Lo, M.b)) / (Hi - Lo));
+		V += Vk * (O.x > 0.5 ? W.x : 1.0 - W.x) * (O.y > 0.5 ? W.y : 1.0 - W.y);
+	}
+	return V;
+}
+
+// Shaders globais (o raymarch): com RTS_SUN_SHADOW_GLOBALS definido antes do include, os parâmetros vêm do
+// FRTSSunShadowParameters (RTSSunShadow.h, SHADER_PARAMETER_STRUCT_INCLUDE) com estes nomes
+#if defined(RTS_SUN_SHADOW_GLOBALS) && RTS_SUN_SHADOW_GLOBALS
+Texture2D RTSSunHMap;
+SamplerState RTSSunHMapSampler;
+Texture2D RTSSunTMap;
+SamplerState RTSSunTMapSampler;
+float3 RTSSunCamToMapCm;
+float4 RTSSunAxis;          // xy o eixo da luz, z = 1/largura do mapa (cm), w = os texels do mapa
+float RTSSunTanE;
+float3 RTSSunWindow;
+float RTSSunValid;          // 0: ainda sem mapa (tudo ao sol)
+
+FRTSSunShadow RTSSunShadowGlobal()
+{
+	FRTSSunShadow S;
+	S.CamToMapCm = RTSSunCamToMapCm;
+	S.Axis = RTSSunAxis.xyz;
+	S.TanE = RTSSunTanE;
+	S.Window = RTSSunWindow;
+	return S;
+}
+
+// PosCamRelM: o ponto em metros relativo à câmera (a unidade da marcha); SoftM ~ o passo da marcha. Duas leituras (a
+// bilinear das alturas já dá a borda macia): pra ser chamada em toda amostra da marcha
+float RTSSunVisibilityM(float3 PosCamRelM, float SoftM)
+{
+	if (RTSSunValid < 0.5)
+	{
+		return 1.0;
+	}
+	return RTSSunVisibility(RTSSunHMap, RTSSunHMapSampler, RTSSunTMap, RTSSunTMapSampler, RTSSunShadowGlobal(),
+		PosCamRelM * 100.0, 0.0, SoftM);
+}
+
+// O sol no CHÃO embaixo do ponto (a areia ao sol devolve luz pra fumaça; a da sombra não): a altura forçada pra 5 cm
+// acima do chão desenhado ali
+float RTSSunVisibilityGroundM(float3 PosCamRelM)
+{
+	if (RTSSunValid < 0.5)
+	{
+		return 1.0;
+	}
+	const FRTSSunShadow S = RTSSunShadowGlobal();
+	const float3 P = PosCamRelM * 100.0 + S.CamToMapCm;
+	const float2 C = float2(dot(P.xy, S.Axis.xy), dot(P.xy, float2(-S.Axis.y, S.Axis.x)));
+	const float4 M = RTSSunHMap.SampleLevel(RTSSunHMapSampler, C * S.Axis.z + 0.5, 0);
+	const float T = RTSSunTMap.SampleLevel(RTSSunTMapSampler, (C - S.Window.xy) * S.Window.z, 0).r;
+	// o ponto a 5 cm do chão: o mesmo teste do RTSSunVisibility com a faixa de 0 a 0,15 m
+	float V = 1.0 - saturate((max(max(M.g, T), 0.0) - 0.0) / 0.15);
+	V *= 1.0 - saturate((M.a - M.b) / 0.3) * saturate((min(0.15, M.a) - max(0.0, M.b)) / 0.15);
+	return V;
+}
+
+// A mesma com o PCF de 2×2 (8 leituras): a quina da casa mais nítida; pra poucas chamadas (o cache de luz, um ponto por
+// pixel), não pra toda amostra da marcha
+float RTSSunVisibilityPCFM(float3 PosCamRelM, float SoftM)
+{
+	if (RTSSunValid < 0.5)
+	{
+		return 1.0;
+	}
+	return RTSSunVisibilityPCF(RTSSunHMap, RTSSunHMapSampler, RTSSunTMap, RTSSunTMapSampler, RTSSunShadowGlobal(),
+		PosCamRelM * 100.0, 0.0, SoftM, RTSSunAxis.w);
+}
+#endif

@@ -8,6 +8,8 @@ param(
   [string[]]$Profiles = @('tread_v1_ember.json', 'tread_v1_handmade.json'),
   [double]$Seconds = 5,
   [string]$Tag = 'base',
+  [string]$ShotSize = '',          # o tamanho da foto (ex.: 1024x572, o do game shot r1); vazio = o da câmera
+  [string]$Recipe = 'desert_golden_hour_v2_aprovada',   # a luz: a do jogo é desert_golden_dust (Game/Config/RTS/Maps.json)
   [string]$More = ''          # argumentos a mais pra Unreal (ex.: '-TreadPath=toasphalt -TreadLog')
 )
 $ErrorActionPreference = 'Stop'
@@ -20,13 +22,14 @@ $Ffmpeg = & python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe
 $N = [int]($Seconds * 30)
 $At = (0..($N - 1) | ForEach-Object { '{0:0.0000}' -f ($_ / 30.0) }) -join ','
 foreach ($cam in $Cams) {
-  $size = if ($cam -eq 'r1') { '1600x900' } else { '1280x720' }
+  $size = if ($cam -eq 'r1' -or $cam -eq 'game') { '1600x900' } else { '1280x720' }
+  if ($ShotSize) { $size = $ShotSize }   # o PowerShell não distingue $Size de $size   # game: a câmera do jogo (o teste dele é em 1600×900)
   foreach ($prof in $Profiles) {
     $short = ($prof -replace '^tread_', '' -replace '\.json$', '')
     $name = "${Tag}_${cam}_${short}"
     Get-ChildItem $Shots -Filter "${name}_*.png" -ErrorAction SilentlyContinue | Remove-Item
     & $Fx shot -Name $name -Map World_TestSalt2 -Cam $cam -At $At -Size $size `
-      -Extra "-Fx=tread -Load=0 -GameLight -GameTank -LookRecipe=desert_golden_hour_v2_aprovada -Cam=$cam -TreadProfile=$prof $More" | Out-Null
+      -Extra "-Fx=tread -Load=0 -GameLight -GameTank -LookRecipe=$Recipe -Cam=$cam -TreadProfile=$prof $More" | Out-Null
     Copy-Item (Join-Path $Repo 'FXLab\Saved\Logs\FXLab.log') (Join-Path $Out "$name.log") -Force
     # as fotos saem com o tempo no nome (x_0.0333s.png): em ordem, viram o vídeo a 30 qps
     $list = Join-Path $Out "$name.txt"

@@ -1,0 +1,178 @@
+// A vista de DEPURAÇÃO do campo da poeira (rts.DustField.Debug 1, só o FXLab): marcha o campo com as funções do
+// DustField.ush e a MESMA conta de luz do raymarch das explosões (BlastRaymarch.usf: a fase HG dupla 0,42/0,22/0,32, as
+// 3 oitavas de Wrenninge 0,52/0,52/0,55, a integral de Hillaire por passo, o sol e o céu da View). Não é entrega nem
+// um segundo sistema: serve pra conferir a forma, a densidade e a luz das células enquanto o Fluxo integra a poeira no
+// MarchJoint (lá a poeira entra junto com as explosões, na meia resolução e no acúmulo dele).
+
+#include "/Engine/Private/Common.ush"
+
+#define RTS_DUST_FIELD_GLOBALS 1
+#include "/Plugin/RTSTreadDust/Private/DustField.ush"
+#define RTS_SUN_SHADOW_GLOBALS 1
+#include "/Plugin/RTSSunShadow/Private/SunShadow.ush"
+
+Texture2D<float4> SceneColorIn;
+Texture2D<float> SceneDepthIn;
+RWTexture2D<float4> SceneColorOut;
+uint2 RectMin;
+uint2 RectMax;
+float3 BoxMin;                      // a caixa justa da poeira (m relativos à câmera)
+float3 BoxMax;
+float StepM;
+int MaxSteps;
+float SkyGainK;                     // o céu na poeira (3,4, medido; 2π = o físico)
+float SunFullK;                     // o sol na poeira: 0 = × seno da altura (o KeyGround), 1 = inteiro (0,27, medido)
+float GroundAlbedoK;                // a areia embaixo, pro rebote do sol
+float ShowMode;
+float OctExp;                       // 1 = as oitavas com a sombra exponencial (o certo); 0 = o lerp do WebGL (o A/B)                     // 0 = a luz; 1 = só a densidade (cinza); 2 = SunT; 3 = SkyT; 4 = a luz local
+
+static const float PI_F = 3.14159265;
+
+float PhaseHG(float CosT, float G)
+{
+	const float G2 = G * G;
+	const float D = 1.0 + G2 - 2.0 * G * CosT;
+	return (1.0 - G2) / (4.0 * PI_F * max(D * sqrt(max(D, 1e-4)), 1e-4));
+}
+
+float2 RayBox(float3 Ro, float3 Rd, float3 BMin, float3 BMax)
+{
+	const float3 Inv = 1.0 / (Rd + float3(abs(Rd) < 1e-8) * 1e-8);
+	const float3 T0 = (BMin - Ro) * Inv, T1 = (BMax - Ro) * Inv;
+	const float3 Tn = min(T0, T1), Tf = max(T0, T1);
+	return float2(max(max(Tn.x, Tn.y), Tn.z), min(min(Tf.x, Tf.y), Tf.z));
+}
+
+[numthreads(8, 8, 1)]
+void MainDebug(uint2 Gid : SV_DispatchThreadID)
+{
+	const uint2 Id = Gid + RectMin;
+	if (any(Id >= RectMax))
+	{
+		return;
+	}
+	float4 Scene = SceneColorIn[Id];
+	const float2 SvPos = float2(Id) + 0.5;
+	const float3 Tw = SvPositionToTranslatedWorld(float4(SvPos, 0.5, 1.0));
+	const float3 Rd = normalize(Tw - View.TranslatedWorldCameraOrigin);
+	const float DeviceZ = SceneDepthIn.Load(int3(Id, 0));
+	const float Dist = DeviceZ <= 1e-7 ? 1e9 : ConvertFromDeviceZ(DeviceZ) * 0.01 / max(dot(Rd, View.ViewForward), 1e-4);
+	// a luz da View (InitLights do raymarch): o sol inteiro (a poeira não tem normal), o céu do SkyLight
+	const float3 KeySunFull = View.AtmosphereLightIlluminanceOnGroundPostTransmittance[0].rgb;
+	const float3 KeyDir = normalize(View.AtmosphereLightDirection[0].xyz + 1e-6);
+	const float3 KeySun = KeySunFull * lerp(max(KeyDir.z, 0.0), 1.0, SunFullK);   // o KeyI do raymarch (InstLight2.x)
+	const float4 N = float4(0.0, 0.0, 1.0, 1.0);
+	float3 I0, I1;
+	I0.x = dot(View.SkyIrradianceEnvironmentMap[0], N);
+	I0.y = dot(View.SkyIrradianceEnvironmentMap[1], N);
+	I0.z = dot(View.SkyIrradianceEnvironmentMap[2], N);
+	const float4 VB = N.xyzz * N.yzzx;
+	I1.x = dot(View.SkyIrradianceEnvironmentMap[3], VB);
+	I1.y = dot(View.SkyIrradianceEnvironmentMap[4], VB);
+	I1.z = dot(View.SkyIrradianceEnvironmentMap[5], VB);
+	const float3 I2 = View.SkyIrradianceEnvironmentMap[6].xyz * (N.x * N.x - N.y * N.y);
+	const float3 SkyColor = max(I0 + I1 + I2, 0.0) * View.SkyLightColor.rgb;
+	const float3 GroundSun = KeySunFull * max(KeyDir.z, 0.0) * GroundAlbedoK / PI_F;
+	const float CosSun = dot(Rd, KeyDir);
+	const float PhSun = lerp(PhaseHG(CosSun, 0.42), PhaseHG(CosSun, -0.22), 0.32);
+	const float PhIso = 1.0 / (4.0 * PI_F);
+	if (RTSDustValid < 0.5)
+	{
+		SceneColorOut[Id] = Scene;
+		return;
+	}
+
+	// A sombra da poeira no chão (só a vista de depuração; no jogo ela entra pelo mapa de sombra das explosões): do
+	// ponto da cena até o sol pelo campo; escurece só a parte do chão que é sol (o céu fica), onde o mapa deixa o sol
+	if (Dist < 1e8 && KeyDir.z > 0.02 && ShowMode < 0.5)
+	{
+		const float3 Pg = Rd * Dist + float3(0.0, 0.0, 0.05);
+		const float2 Ts = RayBox(Pg, KeyDir, BoxMin, BoxMax);
+		if (Ts.y > max(Ts.x, 0.0))
+		{
+			float TauG = 0.0;
+			const float Ta = max(Ts.x, 0.0), Tl = min(Ts.y - Ta, 24.0);
+			for (int G = 0; G < 32; G++)
+			{
+				const float3 Q = Pg + KeyDir * (Ta + Tl * (float(G) + 0.5) / 32.0);
+				TauG += RTSDustFieldAtW(Q + RTSDustCamToWindowM) * (Tl / 32.0);
+			}
+			const float Esun = dot(KeySunFull, 1.0) * KeyDir.z, Esky = dot(SkyColor, 1.0) * PI_F;
+			const float SunFrac = Esun / max(Esun + Esky, 1e-3) * RTSSunVisibilityM(Pg, 0.1);
+			Scene.rgb *= lerp(1.0, exp(-TauG), SunFrac);
+		}
+	}
+	const float2 Tb = RayBox(0.0, Rd, BoxMin, BoxMax);
+	const float T0 = max(Tb.x, 0.0), T1 = min(Tb.y, Dist);
+	if (T1 <= T0)
+	{
+		SceneColorOut[Id] = Scene;
+		return;
+	}
+
+	float Tr[3] = { 1.0, 1.0, 1.0 };
+	float3 L = 0.0;
+	const float2 Jp = SvPos + 5.588238 * float(View.StateFrameIndexMod8);     // o IGN de Jimenez, andando com o quadro
+	const float Jit = frac(52.9829189 * frac(dot(Jp, float2(0.06711056, 0.00583715))));
+	// a marcha estratificada (17/10, a mesma do MarchDustFull do Fluxo): cada amostra cobre o trecho [S0, S0 + Dt] e cai
+	// tremida dentro dele. Os trechos cobrem o raio inteiro, então não há viés, e o último fica na frente do chão. Depois
+	// de um vazio, o trecho seguinte começa na saída do tijolo, com a mesma tremida do pixel: sem isso, todo pixel recomeçava
+	// na borda + 0,01 e saía um degrau de 0,125 m preso aos planos dos tijolos, que o TSR não integra
+	float S0 = T0;
+	for (int S = 0; S < MaxSteps && S0 < T1; S++)
+	{
+		const float Dt = min(StepM, T1 - S0);
+		const float T = S0 + Dt * Jit;
+		const float3 P = Rd * T;
+		float SigT, Alb;
+		float3 Col;
+		if (!RTSDustAt(P, SigT, Col, Alb))
+		{
+			S0 = max(S0 + StepM, T + RTSDustSkipM(P, Rd));
+			continue;
+		}
+		float SunT, MapV, SkyT;
+		float3 LocalIrr;
+		RTSDustLightAt(P, SunT, MapV, SkyT, LocalIrr);
+		const float Vg = RTSDustGroundVisAt(P);
+		LocalIrr *= 128000.0;
+		if (ShowMode > 0.5)
+		{
+			const float3 V = ShowMode < 1.5 ? 1.0 : ShowMode < 2.5 ? SunT * MapV : ShowMode < 3.5 ? SkyT : LocalIrr / 1000.0;
+			const float TrStep = exp(-SigT * Dt);
+			L += Tr[0] * V * (1.0 - TrStep) * 3000.0;
+			Tr[0] *= TrStep;
+			S0 += StepM;
+			continue;
+		}
+		// as oitavas de espalhamento múltiplo com a sombra exponencial (Wrenninge 2013; o UE 5.8, VolumetricCloud.usf:
+		// T^(a^i)), não o lerp(1, T, Ap) do WebGL, que devolvia luz às reentrâncias (o estudo da nitidez de 17/10)
+		const float LnSun = log(max(SunT, 1e-6)), LnSky = log(max(SkyT, 1e-6));
+		float Ae = 1.0, Ab = 1.0, Ap = 1.0;
+		[unroll] for (int O = 0; O < 3; O++)
+		{
+			const float Sig = SigT * Ae;
+			const float Sc = Sig * Ab;
+			const float Ph = lerp(PhIso, PhSun, Ap);
+			const float TSun = MapV * (OctExp > 0.5 ? exp(LnSun * Ae) : lerp(1.0, SunT, Ap));
+			const float TSky = OctExp > 0.5 ? exp(LnSky * Ae) : lerp(1.0, SkyT, Ap * 0.7 + 0.3);
+			const float3 Src = Col * Sc * (KeySun * (TSun * Ph)
+				+ (SkyColor * TSky + GroundSun * Vg) * (SkyGainK * PhIso)
+				+ LocalIrr * PhIso);
+			const float Ext = max(Sig, 1e-5);
+			const float TrStep = exp(-Ext * Dt);
+			L += Tr[O] * (Src - Src * TrStep) / Ext;
+			Tr[O] *= TrStep;
+			Ae *= 0.52;
+			Ab *= 0.52;
+			Ap *= 0.55;
+		}
+		if (Tr[0] < 0.005)
+		{
+			break;
+		}
+		S0 += StepM;
+	}
+	Scene.rgb = Scene.rgb * Tr[0] + L * View.PreExposure;
+	SceneColorOut[Id] = Scene;
+}

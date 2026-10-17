@@ -68,7 +68,304 @@ o resumo dos estudos é captures/fxlab/tread_study/study_dump.md e a síntese co
 
 ---
 
+# Redesenho (14/10, depois da reprovação no jogo)
+
+O Felipe viu a v12 no jogo (14/10, ~1h) e reprovou:
+- "exagerada, fora da realidade, parece jogo de 2012";
+- "entra dentro dos outros tanques e do próprio tanque";
+- "tem que ficar a cor exata do chão; areia mais clara, poeira mais clara";
+- "testar teste por teste, posição por posição".
+
+A poeira fica no pacote da v2, por decisão dele. O conserto vai no próximo.
+
+**Estudo** (9 agentes: 3 diagnósticos medidos, 3 pesquisas, 2 propostas e 1 juiz adversário; o resultado inteiro está em `captures/fxlab/tread_study/redesenho/poeira_redesenho.json`).
+Folha jogo × alvo: `captures/fxlab/tread_study/redesenho/` e o scratchpad da sessão.
+
+**Medido no jogo contra o alvo r1:**
+
+| | Jogo | Alvo |
+|---|---|---|
+| Casco do próprio tanque coberto | 19–46% (dois tanques 100%) | ≤ 5% |
+| Parte densa | 1,8–2,1 cascos | 0,65 |
+| Largura | 1,9–2,2× o veículo | 1,3–1,7× |
+| Brilho | 1,04–1,53× a areia | 0,78–0,9× |
+| Cor | fixa, laranja, mais saturada que o chão | a do chão |
+| Ritmo dos discos | autocorrelação 0,23–0,33 a cada ~1,2 m | ≤ 0,1 |
+| Na sombra | 5,7× o chão sombreado (consertado em 14/10) | — |
+
+**A causa:**
+- cartão de frente pra câmera, puxado 0,4 m na direção dela (camOffset) e crescendo até 8–14 m;
+- tint fixo (1; 0,64; 0,38);
+- espaçamento regular;
+- calibrado no laboratório, de perto e na luz da r1; o jogo tem o sol a 8°.
+
+**O plano** (a proposta A corrigida: os cartões do EmberGen, que ele aprovou na v11). Cada passo tem um A/B, primeiro no laboratório na câmera do jogo e depois no jogo:
+- **0. Bancada de medida (CPU primeiro, depois o jogo)**
+- **1. Tamanho e lugar, só no perfil (tread_v13.json)**
+- **2. A máscara de unidade (o defeito obrigatório)**
+- **3. A cor do chão e o brilho na luz do jogo**
+- **4. Sem rosário (só código, sem gravar de novo)**
+- **5. Luz e sombra**
+- **6. Outros veículos, custo e fechamento**
+
+**A especificação do visual** (os números com fonte, inteiros no JSON):
+- **Lugar:** atrás e ao lado; nunca sobre o convés nem sobre a torre.
+- **Altura:** ≤ 1,2 m ao lado das lagartas; ≤ 2,3 m até 0,3 casco atrás.
+- **Largura:** 1,3–1,7× o veículo.
+- **Comprimento:** densa até 0,65 casco; véu até 1,0–1,6 casco. O "longo" (3 cascos) vai em A/B pra ele decidir.
+- **Cobertura:** torre 0%; acima da roda motriz ≤ 2%; contraste do casco ≥ 0,9; telhado 0%.
+- **Cor:** o matiz do chão onde nasceu, ±2°.
+  - Nunca mais vermelha que o chão. O topo um pouco mais pálido que o chão.
+  - Proporcional ao chão: Y_poeira(A)/Y_poeira(B) = Y_chão(A)/Y_chão(B), ±10%.
+- **Brilho na luz do jogo:** p50 0,78–0,9 da areia ao sol.
+- **Na sombra:** 0,5–0,6× a poeira ao sol e 1–2× o chão sombreado.
+- **Forma:** autocorrelação ≤ 0,1.
+
+**A cor do chão** (o jeito do Dagor/War Thunder: a cor do terreno lida onde o efeito nasce):
+- uma captura ortográfica da BaseColor do Landscape, de cima, no carregamento;
+- cada cartão guarda a cor de onde nasceu (média de ~1,5 m);
+- no material, a regra de Hapke: a nuvem fina fica com o albedo de espalhamento simples, w = 1 − ((1 − A)/(1 + A))², mais claro e pálido; a densa fica com a cor do chão;
+- um ganho só (G), calibrado na luz do jogo;
+- a prova: a captura bate com a BaseColor vista pela câmera do jogo (≤ 2/255), e uma reta areia clara → escura → terra → sal → rocha → asfalto.
+
+**O teste antes de mostrar a ele:**
+- a matriz no jogo: rumos de 45 em 45°, 5 posições na tela, 3 zooms, sozinho, coluna, par, prédio, sombra, cada chão, as velocidades, os veículos, os níveis Épico e Ultra;
+- poeira ligada × desligada na mesma semente;
+- recortes 4× de cada veículo, folha ao lado da r1, vídeo;
+- uma tabela caso × portão com o número medido.
+
+**O custo da v12 hoje** (A/B no mesmo processo, 40 tanques na câmera do jogo, sol a 8°), na placa:
+
+| Preset | Custo |
+|---|---|
+| Baixa | +2,3 ms |
+| Média | +4,3 ms |
+| Alta | +4,4 ms |
+| Ultra | +6,3 ms |
+
+- No Ultra, a sombra no chão custa ~1,9 ms sozinha: com o sol baixo, cada sombra estica 6×.
+- A CPU da poeira fica em 3,2–4,9 ms.
+- O passo 1 deve levar o K2 a ~0,27× disso. Tudo é remedido no passo 6.
+
+**Pausa:** às ~02:55 de 14/10 o Felipe parou todos os testes na placa até jogar a v2 com o pai. O redesenho continua só em código, sem compilar, até ele liberar.
+
+**16/10, madrugada: o redesenho contra o game shot, imagem sobre imagem** (o pedido dele: "coloque nas mesmas posições, na mesma direção, compare imagem por imagem, sobreponha").
+- **A régua:** o FXLab põe o tanque na pose do tanque GLA da r1.
+  - Na mesma tela: 1024×572, `-CamScreen=0.282,0.649`.
+  - Na mesma direção: `-CamRel=55`, medido pela inclinação do casco na tela (18°) com a câmera a 28°.
+  - No mesmo tamanho: `-CamFrac=0.125`.
+  - Na mesma luz do alvo, numa reta de areia aberta, sem sombra (`-TreadPath=open`).
+  - `FXLab/Tools/tread_overlay.py` faz a folha (alvo, nosso, sobrepostos e diferença), o GIF que pisca e as medidas nas mesmas regiões: brilho ÷ areia ao sol, barulho = o detalhe miúdo dentro da poeira ÷ o do chão, e saturação.
+- **Os consertos que a régua mostrou:**
+  - a cor do chão vinha preta. Com o Landscape em Nanite, quem desenha é o LandscapeNaniteComponent; e no meio da compilação dos shaders o terreno sai cinza, com o material padrão;
+  - a direção do sol vai no normal do vértice, e o teste de identidade bateu (luma p50 0,131 contra 0,130);
+  - o expoente e a saturação foram por parâmetros sem uso na poeira, porque um quarto canal no vetor quebrou o material;
+  - a sombra no chão com o sol baixo do jogo (8°) virava mancha de óleo: agora a força cai na proporção do esticamento, calibrada no sol da r1.
+- **As voltas** (o miolo ÷ areia; o alvo dá 0,90, barulho 0,32, saturação 0,46 com a areia a 0,48):
+
+| Versão | O que entrou | Miolo | Barulho | Saturação |
+|---|---|---|---|---|
+| v15b | a cor do chão + G 3,2 | 0,85 | 0,52 | 0,57 |
+| v16b | o pálido no miolo, a folha 2,5 mips acima, sem o jato K1, cartões a cada 0,8 m (uma massa só) | 0,79 | 0,64 | 0,58 |
+| v17b | sem erosão, a nuvem 1,7, G 4,2 | 0,89 | 0,65 | 0,59 |
+| v18a | a 2ª opinião: contraste das 6 luzes 45 % pro neutro, alfa 0,6, sombra 0,15, névoa H | 0,75 | 0,48 | 0,57 |
+| v19b | G 5,2, saturação 0,6×, alfa 0,7 | 0,92 | 0,54 | 0,53 |
+| **v20b** | a luz no volume inteiro (o lado ao sol mais claro, sunSide 0,6), G 6,0 | **0,90** | **0,49** | **0,53** (0,95× a do chão; o alvo, 0,96×) |
+
+- **Na câmera e na luz do jogo** (sol a 8°): pálida e macia nos três rumos, sem cobrir o tanque. Na coluna de 3, a máscara deixa os cascos de trás limpos (`captures/fxlab/tread_base/gj_v19b_*`).
+- **Falta, contra o alvo:** os montes do alvo têm topos creme mais definidos, e o nosso véu fino não brilha acima da areia (véu 0,81 contra 1,16).
+- **O pacote:** `FXLAB_TREAD_PROFILE=tread_v20b.json` em `pack_tread_dust.py` gera `Resources/tread.json` e as folhas BC7 como padrão.
+- **A v21:** a v20b sem a névoa H, que na câmera do jogo aparecia como discos pálidos. Está no jogo desde as 06:49 de 16/10, com `Resources/tread_longo.json` pro A/B do comprimento.
+- **A sombra do cenário no jogo:** a calibração foi refeita em três voltas.
+  - A 1ª deixava a tolerância crescer junto com o espalhamento, e uma orientação errada "batia" 80 de 81.
+  - A 2ª cortava em 4 m, e nada passava.
+  - A de agora usa a orientação fixa da Unreal, (+1, −1). No jogo dá mediana 32 cm, espalhamento 181 cm e folga 400 cm.
+- **O custo da v20b** (40 tanques, câmera do jogo, A/B no mesmo processo), na placa:
+
+| Preset | v12 | v20b |
+|---|---|---|
+| Baixa | +2,3 ms | +1,0 ms |
+| Média | +4,3 ms | +1,2 ms |
+| Alta | +4,4 ms | +1,1 ms |
+| Ultra | +6,3 ms | +1,7 ms |
+
+  A CPU fica em 2,4–3,2 ms. Na `chao` do jogo, o quadro deu 32,7–32,9 ms, contra 33,2–33,4 com a v12.
+
+**16/10, manhã (depois do "gostei do rastro curto!"):**
+- **A cor:** o Felipe disse que a poeira está "sem cor porque eu pedi pra ser a cor sempre do chão; a nossa areia que está escura". O teste da cor passou pra areia nova, `World_TestSandV2`, na luz do jogo (o Look confirmou: matiz 29° contra 30° do r1). Os cenários são `poeira_{estrela,formacao,nuvem}_perto_{sandv2,sandv2dune,groundv3dune}`, em (30, −340) m.
+  - Na areia clara a poeira sai creme. Onde o tanque passou pela terra do oásis, sai marrom e leva essa cor por uns metros pra cima da areia (`captures/game/pz_sandv2_estrela`).
+- **A quina reta** (vista ampliada na estrela, aos 3 s): o alfa borrado vazava do octógono.
+  - O bias somado ao nível da distância dava, de longe, um nível alto, e o octógono tinha sido medido na folha nítida.
+  - Corrigido com o `mipMin` (o nível mínimo, igual em todo zoom) e o octógono medido na folha borrada (`atlas_cut8.py`, nível 4, +16% de área). É a v24.
+  - Na pose do r1 a v24 sai igual à v21: o miolo 0,91, o barulho 0,55 contra 0,60.
+- **A sombra do cenário com o terreno à parte:** a casa, a pedra e a árvore têm folga de 50 cm; só o terreno fica com a folga grande. Detalhes no `INTEGRACAO.md`.
+
+**16/10, tarde: o Felipe escolheu a v26** ("fico com a v26, tá ótima pra início de jogo"; a v27, a gravação que se desfaz dentro, fica guardada). **O pedido seguinte: "as sombras do mapa não projetam na poeira, ela sempre brilha".**
+- **O diagnóstico** (o estudo, a revisão adversária do desenho e a do código; tudo no scratchpad da sessão da Arte, resumido aqui):
+  - os prédios ficavam fora do mapa: eles levam a etiqueta `RTSUnit`;
+  - a sombra do tanque era por cartão, com 2 pontos de altura (T ≈ 0,5 no cartão inteiro, sem forma);
+  - a do terreno tinha a folga de 4 m ao longo do raio, por causa do Nanite contra a colisão.
+- **O feito: a sombra por pixel** (o modo 2, `RTSTreadDustShadow.cpp`; detalhes e os ganchos do jogo no `INTEGRACAO.md`).
+  - Um mapa de altura da sombra numa grade girada pro sol, a partir de 4 fotos ortográficas.
+  - Uma grade dos tanques, refeita só quando alguém anda.
+  - O material compara a altura do pixel com elas, filtrando a corda da nuvem.
+- **A 2ª revisão do código** (8 agentes, 4 frentes, cada achado conferido por outro): 30 achados reais, todos corrigidos. Os maiores:
+  - a sombra podia clarear o pé da nuvem;
+  - o filtro de finos tirava os muros da vila;
+  - a grade dos tanques custava ~1 ms;
+  - refazer a área de um prédio travava a partida (agora a leitura da placa é sem esperar).
+- **As medidas, no FXLab** (`World_TestSalt2`, luz `desert_golden_dust`, sol a 8°):
+  - o chão das fotos bate com os raios no terreno: mediana 0, p75 1,1–1,4 cm;
+  - o mapa chega em ~1,2 s (36 blocos, sem travar);
+  - na câmera do jogo, quando o tanque entra na sombra do paredão, ele perde a sombra própria e o mapa diz 3–5 m de sombra: os dois batem;
+  - o custo, com 40 tanques na câmera do jogo: **+0,10 ms na placa e +0,16 ms na CPU**.
+- **O céu na sombra, medido** (brilho da poeira ÷ chão em volta, na câmera do jogo):
+
+  | | Ao sol | Na sombra |
+  |---|---|---|
+  | Modo de antes | 1,11 | 1,19 |
+  | Céu de volume da revisão física | 1,17 | **1,36** |
+  | Céu do visual aprovado (só sai o sol) | 1,15 | 0,71 |
+  | **Metade de cada (o padrão, `"sky": 0.5`)** | **1,16** | **1,03** |
+
+  - O céu de volume fazia a poeira na sombra brilhar mais que o chão: era o defeito que ele apontou.
+  - Só o céu aprovado virava mancha escura.
+  - A metade deixa a poeira no tom do chão sombreado, dentro da faixa física da revisão (0,75–1,1).
+  - No vídeo, a borda da sombra atravessa a nuvem: a parte que entrou escurece e a que está no sol fica clara (`captures/fxlab/tread_base/sf_game_m2.mp4` × `sd_game_m0.mp4`).
+- **No contraluz (a deitada)** a poeira ficou mais clara e acesa, mais perto do game shot. Saiu o escurecimento falso por cartão perto do tanque. É mudança de visual: ele julga.
+
+**16/10, noite: a sombra por pixel REPROVADA ("MUDOU NADA") e o redesenho como VOLUME.** O Felipe: "o BlastLab fazia
+perfeito nas fumaças deles, inclusive luz de explosões rebatendo... não joga ajuste gambiarrento em cima de outra coisa
+feita errada... se for pra quebrar o projeto e refazer do 0 que seja". A regra nova do CLAUDE.md (toda fumaça, fogo e
+poeira tem volume, recebe a sombra do mapa, projeta sombra e é acesa por fogo e explosões; um sistema só) vale pra ela.
+- **O desenho** (estudo + juízes; o plano inteiro no scratchpad da Arte, `dust_redesign_plan.md`): a poeira vira mais
+  um meio no raymarch das explosões (o `BlastRaymarch` do Fluxo), com a MESMA luz (a fase HG dupla, as 3 oitavas, o
+  passo de Hillaire, o sol e o céu da View, as luzes do `RTSSceneLights`). A simulação da v26 fica inteira (nascer,
+  andar, crescer, sumir): cada cartão vira um puff da MESMA gravação do EmberGen das folhas aprovadas.
+- **O campo** (módulo `RTSDustField` no plugin `RTSTreadDust`; `RTSDustField.h`, `DustField.ush/.usf`):
+  - tijolos de 2 m (voxels de 0,25 m) presos ao mundo, numa janela de 192 × 192 × 32 m em volta de onde a câmera olha;
+    tabela de páginas + uma grossa de 8 m (o salto dos vazios);
+  - a densidade de cada tijolo é a soma dos puffs (a gravação `Resources/dust_kick_v2.rtsdust`, 48 quadros de
+    48×48×24 a 0,1 m, feita por `FXLab/Tools/build_dust_volume.py`), com a erosão do BlastLab
+    (ρ − E·(0,5 − 0,5n)/(1 + 9ρ), o Worley do mundo subindo 0,3 m/s);
+  - a luz por célula de 0,5 m: a sombra da própria poeira até o sol (a de um tanque cobre o rastro do outro), a do
+    mapa do sol comum (`RTSSunShadow`), o céu pela poeira acima, e as luzes do fogo e das explosões com a
+    transmitância pela poeira;
+  - metade dos tijolos refeita por quadro, em xadrez (os novos sempre).
+- **A cor:** o albedo de espalhamento simples sai da cor do chão onde o puff nasceu pela inversão de Hapke
+  (r0 = (1 − γ)/(1 + γ), γ = √(1 − w)), com a saturação relativa do perfil (0,6) e teto 0,97. Sem ganho de material.
+- **A espessura, medida** (`calib_vol.py`: o volume projetado pela câmera do cozimento contra o alfa da folha, alinhados,
+  erro de α 0,6–4 % nos quadros 4/12/24/40): o τ do volume dá 1,5–1,8× o da folha → `"volume": {"density": 0.62}`.
+- **A luz, medida** (poeira ÷ chão em volta, mediana do miolo; `captures/fxlab/tread_vol/`). A luz é a do raymarch
+  (a fase HG dupla, 3 oitavas, Hillaire); os dois ajustes por instância que ele já tem (SunFull, SkyGain) saem de
+  dois alvos: ao sol 0,90 (a r1) e na sombra do paredão 0,90 (um pouco abaixo do chão sombreado, pra sombra se ler;
+  a faixa física é 0,75–1,1).
+
+  | Luz do jogo (sol a 8°) | Ao sol | Na sombra do paredão |
+  |---|---|---|
+  | Cartões da v26, sombra por pixel | 1,15 | 1,06–1,14 (o "sempre brilha") |
+  | Volume, céu 1,1 (o das explosões), sol inteiro | 0,97 | **0,19** (mancha escura) |
+  | Volume, céu 2π (o físico) | 1,23–1,30 na r1 (pálida, cor de vapor) | ~1,1 |
+  | Volume, céu 5,2 e o sol 27 % inteiro (a conta linear; não vale: as fotos passam pela curva de tela) | 1,37 | 1,58 |
+  | Varredura (sw1), céu 2,6 / sol 0 e 0,27 | 0,64 / 0,85 | 0,60 |
+  | Varredura (sw1), céu 3,4 / sol 0 e 0,27 | 0,85 / 1,03 | 0,92 / 0,91 |
+  | Volume, céu 3,4 e o sol 8 % inteiro (interpolado) + a sombra própria fina | 0,89 | 0,91 (mas na r1 0,77–0,85: marrom, cara de fumaça) |
+  | **Volume, céu 3,4 e o sol 27 % inteiro + a sombra própria fina (o padrão)** | **1,02** | **0,92** |
+
+  - Na régua r1 o padrão dá miolo 0,83 / 0,84 / 0,90 (o alvo 0,90; os cartões 0,84 / 0,90 / 0,91) e a saturação da
+    areia (0,55–0,56).
+  - A sombra própria em duas escalas (as nuvens AAA): a longa nas células de 0,5 m e a curta em cada amostra (3
+    amostras nos primeiros 0,5 m até o sol). Dá o topo aceso e a reentrância escura de cada bolo.
+  - Reprovado por mim: a erosão fina na marcha (o ruído de 0,15–0,6 m a 2/m) deixou a poeira granulada e suja.
+  - A luz do fogo, à noite (`-TreadFire`): nos cartões a poeira vira uma silhueta escura contra o clarão; no volume o
+    lado virado pro fogo acende laranja e o de lá fica azul de lua.
+
+  - Na régua r1 com céu 1,1: miolo 0,87 / 0,89 / 0,94 (o alvo 0,90; os cartões 0,84 / 0,90 / 0,91), saturação 0,57
+    (areia 0,55; o alvo 0,96×). A saturação da v26 (0,6) era da regra do material dos cartões; no volume a inversão
+    de Hapke já empalidece, e com 0,6 dava 0,73× a da areia: `"sat": 1.0`.
+  - A erosão do cartão estava numa unidade errada no volume (÷ (1 + 9ρ), a do BlastLab pra densidade normalizada) e
+    quase não comia: a cauda não sumia. Agora é a do cartão, em extinção (E ÷ a corda da nuvem).
+  - O detalhe: o campo foi de 0,25 m pra 0,125 m (a gravação é de 0,1 m); a cor fica na grade de 0,5 m.
+- **O custo, medido** (`tread_measure.ps1 -AB field,volume -Grid 8x5`: 40 tanques, 1920×1080, câmera do jogo, A/B no
+  mesmo processo, 12 pares): 3996 tijolos de 2 m, 1249 puffs (cada ponto soma 10–20 puffs sobrepostos, como os cartões
+  da v26 se empilham). Só os passes do campo: **+5,3 ms de placa a mais que os cartões**; com a marcha da depuração,
+  +7,0 ms. O caro é o preenchimento a 0,125 m.
+  - Ler a gravação só dentro da caixa da nuvem de cada quadro: a nuvem ocupa 16–37 % do domínio; a imagem é a mesma
+    (diferença média de ~1/255). Os passes do campo foram de +5,3 pra **+3,2 ms** a mais que os cartões.
+  - Os presets, pelo `sg.EffectsQuality` (a mesma régua do raymarch; `rts.DustField.Fine` força): **Ultra** (3 ou
+    mais) a 0,125 m e metade dos tijolos por quadro, +3,2 ms a mais que os cartões; **Alta** a 0,25 m e um quarto dos
+    tijolos por quadro, **−0,8 ms (mais barata que os cartões)**, um pouco mais mole (`captures/fxlab/tread_vol/alta_vs_ultra.jpg`).
+- **No jogo** (o Fluxo integrou no `MarchJoint` em 16/10 à noite; `rts.TreadDust.Path=1`): a cena `poeira_sombra_wf2`
+  (dois tanques entram e saem da sombra da War Factory, sol a 8°). Na sombra: **cartões 1,30× o chão sombreado
+  (brilham), volume 1,04** (`captures/game/poeira_volume_jogo_sombra_wf.mp4`, lado a lado). Falta a nitidez: o raymarch
+  marcha em meia resolução com acúmulo e a poeira fica mais mole que os tanques; o Fluxo testa a resolução inteira, menos
+  acúmulo e a subida bilateral. À noite (`poeira_noite_tiro2`) a poeira em volume dá 0,65 do chão ao luar (a lua por trás
+  da câmera; a poeira espalha pra frente); o clarão de um tiro no chão é curto demais pra acendê-la.
+- **A luz das explosões, no jogo, à noite** (`poeira_noite_morte4`: a morte na hora em que a coluna passa colada, com
+  `-SceneLightsLog=1 -RmDustLog=1`): as luzes chegam ao campo (3 no quadro da morte; com o alcance × 3 do Fluxo, raio de
+  18–27 m e ~0,04–0,075 de irradiância a 6 m). O laranja não aparece porque a noite do `desert_night` é uma "lua clara"
+  quase tão forte quanto o sol: a exposição é 8,05e-5, contra 6,95e-5 de dia. Não é a compensação de exposição. Nem a
+  fumaça da própria explosão fica laranja, e a poeira acompanha.
+  - No laboratório, com uma luz de fogo forte (raio de 30 m), a poeira em volume acende laranja do lado do fogo
+    (`captures/fxlab/tread_vol/poeira_volume_noite_fogo.mp4`).
+  - A saída é decisão de visual, e o Fluxo leva ao Felipe como A/B: fogo mais forte na fumaça só de noite, ou uma noite
+    mais escura (a receita do Look).
+  - **A prova no jogo** (`poeira_noite_morte5`, a coluna a ~1,8 m da borda da carcaça já em fogo, 2–2,75 s depois da
+    morte; a luz da carcaça acende 0,8 s depois da morte desde 17/10): a razão vermelho ÷ azul da poeira em volume é
+    0,539 perto da carcaça contra 0,444 longe, **+21 % mais quente** perto do fogo. Nos cartões é 0,544 contra 0,522
+    (+4 %). A luz pega, mas fraca no olho com a lua clara.
+- **A nitidez no jogo** (17/10 de manhã): o Fluxo passou a marcha da poeira pra resolução de tela, dentro da composição,
+  só onde o raio cruza a caixa dela. Os gomos e a borda dos bolos aparecem como na resolução inteira, por +0,1 ms
+  (`-RmDustFull=0` volta a meia). As provas regravadas com ela são as que foram ao Felipe:
+  `captures/game/poeira_volume_jogo_sombra_wf_v2.mp4` (de dia, na sombra da War Factory) e
+  `captures/game/poeira_volume_jogo_noite_fogo_v2.mp4` (de noite, colada na carcaça acesa: +20 % mais quente perto do
+  fogo no volume, contra +4 % nos cartões).
+  - De quebra, o teste achou um defeito do jogo: a carcaça só pegava fogo quando a morte vinha pelo acerto marcado
+    (consertado pelo Fluxo e pelo Jogo, compilação 43). A luz da carcaça (1,5e5 cd, raio de 7 m, ~1 m acima do casco) é
+    pequena de propósito: a 4,5 m chega ~1/20 do que chega no chão colado.
+- **A nitidez, o pacote (17/10 à tarde; o Felipe: "ficou macio de mais"; estudo e revisão em workflow, scripts em
+  `scratchpad/nitidez`).** Cinco perdas, medidas na CPU e confirmadas no lab, na mesma história:
+  - **A densidade era ρ, e a folha foi cozida com ρ².** O Principled Volume do Blender multiplica a grade de novo.
+    - Com ρ² e a gravação inteira de 0,05 m, o volume bate com o alfa das folhas sem fator nenhum: τ 0,94–1,01,
+      cobertura 1,00 (`calib_vol.py`).
+    - O 0,62 de 16/10 remendava o ρ linear com a média 2×2×2. A média tirava ~33 % da banda de 1–2 px e o pico caía
+      37–42 %.
+  - **O céu curto:** cada amostra soma a poeira dos primeiros 0,5 m acima. As células de 0,5 m não enxergavam o gomo, e
+    a reentrância embaixo do bolo não escurecia.
+  - **A areia tapada pela poeira de baixo:** o rebote do chão passa pela poeira embaixo (`TauDown`).
+  - **A tremida da marcha** se perdia depois de saltar um vazio: degraus de 0,125 m presos aos planos dos tijolos.
+    Agora é a marcha estratificada, no jogo (Fluxo) e na vista do lab. Cada amostra cobre um trecho, sem viés, e o
+    último trecho fica na frente do chão.
+  - **As oitavas exponenciais** (T^(a^i), Wrenninge 2013 e a VolumetricCloud do UE) dão +15 % de detalhe a mais, mas a
+    poeira teria uma conta de luz diferente da fumaça das explosões, no mesmo quadro. Ficam na chave
+    (`-RmDustOctExp`, `rts.DustField.DebugOctExp`); o padrão é o lerp de sempre (a variante A). É decisão do Felipe.
+  - **O resultado**, de perto (câmera a 35 m, 4 tempos, bandas DoG contra os cartões, `nit5_cmp.jpg`):
+    - normalizado pela média: volume de antes 0,87× (1–2 px) e 0,73× (2–4 px); A 1,06× e 1,22×; B 1,15× e 1,42×;
+    - em valor absoluto, com a mesma máscara pra todas: antes 0,31× e 0,45×; A 0,72× e 0,92×; B 0,83× e 1,06×.
+    - Os cartões continuam mais claros (poeira÷chão p50 3,2 contra 2,2). O tom de A é o do volume aprovado (2,24 contra
+      2,35).
+  - **O movimento** (16 quadros seguidos, `nitidez/cint.py`): a fina pisca 1,2× a grossa, na mesma proporção do
+    detalhe que ganhou (por detalhe, 4,7 contra 5,0). Não serrilha.
+  - **O custo** (passes do campo, 40 tanques, 1080p): a gravação fina +4,1 ms, a de 0,1 m +3,7 ms. A fina custa
+    +0,4 ms no pior caso, pelo cache.
+  - **Os presets:** a Alta do jogo é o nível 3 do motor e o corte era ≥ 3, então a Alta pagava o Ultra. Agora o Ultra
+    é o nível 4.
+    - Cada preset tem a sua gravação: a fina de 0,05 m no Ultra; a grossa de 0,1 m com a média de ρ² na Alta
+      (`build_dust_coarse.py`).
+    - A média de ρ elevada depois perdia 18–31 % da massa com a idade (Jensen). A média de ρ² fecha em 1,000.
+    - As duas vão comprimidas (zlib): 42 MB → 1,8 MB e 0,3 MB no disco.
+- **A chave:** `rts.TreadDust.Path` 0 = os cartões da v26 (padrão), 1 = o volume (os cartões e a sombra deitada somem).
+  O perfil `tread_v29.json` é a v26 + `"volume"` (densidade 0,62, a conta velha); o de hoje é o `tread_v31.json` e o
+  `Resources/tread.json` (densidade 1,0). No FXLab, `rts.DustField.Debug` 1–5 marcha o campo sozinho (só pra
+  conferir forma e luz; a entrega é no raymarch do Fluxo, no jogo).
+- **A ordem:** o Fluxo integra no `MarchJoint` (a densidade da poeira entra também na marcha até o sol do mapa de sombra
+  das explosões: a poeira faz sombra no chão e nos tanques) → provas no jogo, ampliadas (na sombra de prédio, ao lado
+  de explosão, de noite, 40 tanques) → o Felipe aprova → só então os cartões e as gambiarras de sombra saem.
+
+---
+
 # Plano final: a poeira das lagartas e das rodas (versão EmberGen e plano B), calibrada pela r1_raid_slabs
+
 
 **Fontes, abreviadas em cada número**
 - **[r1]**: medi agora na `r1_raid_slabs_gemini.webp` (1024×572, imagem nativa). O recorte do Felipe é a mesma imagem ampliada 2,34× (x 0–513, y 257–572, correlação 0,98), então meço na nativa.
