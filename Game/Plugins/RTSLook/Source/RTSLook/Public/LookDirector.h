@@ -63,6 +63,7 @@ private:
 	void ApplyFog();
 	void ApplyPost();
 	void ApplyWater();
+	void ApplyGround();
 	void ApplyClouds();
 	void UpdateFocus(float FocusDistanceCm);
 	void UpdateTilt(float TopElevationDeg);

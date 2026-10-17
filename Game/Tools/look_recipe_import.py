@@ -63,6 +63,10 @@ def build(R):
         put(atm, 'aerial_distance_scale', float(A['aerial_distance_scale']))
     if 'aerial_start_ratio' in A:
         put(atm, 'aerial_start_ratio', float(A['aerial_start_ratio']))
+    if 'sky_luminance_factor' in A:
+        put(atm, 'sky_luminance_factor', lin(A['sky_luminance_factor']))
+    if 'height_fog_contribution' in A:
+        put(atm, 'height_fog_contribution', float(A['height_fog_contribution']))
     K = R.get('skylight', {})
     put(sky, 'intensity', float(K.get('intensity', 1.0)))
     if 'color' in K:
@@ -71,6 +75,9 @@ def build(R):
     put(fog, 'density', float(F.get('density', 0.0)))
     put(fog, 'falloff', float(F.get('falloff', 0.2)))
     put(fog, 'start_ratio', float(F.get('start_ratio', 0.75)))
+    put(fog, 'max_opacity', float(F.get('max_opacity', 1.0)))
+    if 'sky_ambient_scale' in F:
+        put(fog, 'sky_ambient_scale', lin(F['sky_ambient_scale']))
     V = F.get('volumetric')
     put(fog, 'volumetric', bool(V))
     if V:
@@ -101,7 +108,8 @@ def build(R):
     W = R.get('world', {})
     if 'dust' in W:
         put(world, 'dust_color', lin(W['dust']))
-    for k, f in (('unit_dust_top', 'unit_dust_top'), ('unit_dust_low', 'unit_dust_low'), ('unit_dust_height', 'unit_dust_height')):
+    for k, f in (('unit_dust_top', 'unit_dust_top'), ('unit_dust_low', 'unit_dust_low'), ('unit_dust_height', 'unit_dust_height'),
+                 ('ground_sand_specular', 'ground_sand_specular')):
         if k in W:
             put(world, f, float(W[k]))
     # (a água entrou no plugin em 12/10: com o binário antigo, sem a estrutura, a receita segue sem ela)
@@ -143,6 +151,7 @@ def build(R):
     Cl = R.get('clouds')
     if Cl and clouds is not None:
         put(clouds, 'enable', bool(Cl.get('enable', True)))
+        # (a nuvem fica fora da captura da luz do céu por padrão, bInSkyCapture = false no plugin: o nome não passava pelo Python)
         if 'material' in Cl:
             put(clouds, 'material', str(Cl['material']))
         for k in ('bottom_km', 'height_km', 'tracing_max_km', 'view_sample_scale', 'shadow_sample_scale',

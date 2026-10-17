@@ -804,3 +804,192 @@ E mais: tudo pela **elevação do topo da tela** (o campo de visão abre ao deit
   - olhando pro sol: estourado ≤ 3%;
   - no vídeo da descida, o brilho da areia reto;
   - de cima, só o terço de cima pode mudar, dentro das faixas da aprovada.
+
+### 11.4 O que a madrugada de 16/10 mediu (o "uma luz só", cena `uma_luz`: de cima e deitada em cada receita)
+
+- **A luz ambiente:** a luz do céu do `World_TestSalt2` está em captura em tempo real (`real_time_capture=True`, posta pelo WorldForge).
+  - A nuvem passou a ficar fora da captura (`bInSkyCapture`, padrão false no plugin).
+  - O brilho do céu (`SkyLuminanceFactor`) e a contribuição na névoa (`HeightFogContribution`) entraram como campos da atmosfera.
+- **O passo 0, deitada olhando pro sol** (a aprovada + nuvem, nada do tilt):
+
+  | Variante | Estourado |
+  |---|---|
+  | Base | 32% |
+  | Volumétrica a 80 m | 1% (a poeira acesa de frente pro sol a 250 m era o estouro) |
+  | Contraste 1,0 | 0% |
+  | Sem a névoa de altura | 0%, mas o céu marrom-escuro |
+  | Aérea ×1 | 66% |
+
+- **Sem nada do tilt** (a luz_1), a areia é uma só:
+
+  | | De cima | Deitada |
+  |---|---|---|
+  | Areia | 0,68 / matiz 28 / sat 0,45 (= a aprovada) | 0,81 / 32 / 0,34 |
+  | Céu | — | 1% estourado, mas um véu bege sem nuvem |
+
+- **O que apaga a nuvem e o horizonte:** a perspectiva aérea ×40 da aprovada (a nuvem a 3–7 km vira 120–280 km de ar). Com ×1 a nuvem aparece, mas o céu fica claro demais (0,86–0,90, 27–60% estourado; o alvo é 0,58–0,66).
+- **A ARMADILHA DE MEDIDA:** na troca de receitas a vista de cima escurecia a cada vez que a câmera deitava (0,68 → 0,57), seja qual fosse a receita.
+  - Os controles: só de cima fica 0,68 nas 10 fotos; sem nuvem, 0,68 nas 5 voltas; com a nuvem mas sem a sombra dela no ar, 0,68.
+  - **A causa é a sombra da nuvem no ar** (`shadow_on_atmosphere` + o mapa de sombra das nuvens). A nuvem some quando a câmera sobe e o mapa velho continua escurecendo o ar sobre o chão, ampliado pelo ×40.
+  - É também um defeito de jogo: o jogador que deita e volta veria o mundo mais escuro.
+  - As conclusões de "a vista de cima mudou" nas rodadas 1–3 (luz_2 a luz_15) foram contaminadas por isso e foram refeitas sem a sombra no ar (luz_a..e).
+
+### 11.5 Onde a noite de 16/10 parou (13 rodadas do "uma luz só")
+
+- **O que funcionou e fica:**
+  - nada de ajuste só da câmera deitada;
+  - a aérea ×1;
+  - a volumétrica a 250 m com espalhamento neutro (g 0);
+  - a névoa 0,05;
+  - a nuvem sempre ligada, com a sombra no ar e fora da captura;
+  - a luz do céu ×1,6 (6,19 → 9,9), porque a nuvem sempre lá escurece o céu que ilumina o chão.
+- **O resultado:** a vista de cima fica na aprovada (areia 0,66–0,68/27/0,40–0,41, terço de cima 0,68–0,70 contra 0,72) e a areia é a mesma nas duas vistas.
+- **A nuvem:**
+  - na 3–7 km, quebrada (X1), sai pálida e com 13% estourado;
+  - na 1,8 km, cobertura 0 e densa (Y3/Y4), dá 2% estourado, mas o céu vira um teto uniforme e sem drama.
+- **O que não se consegue com os escalares do material da Epic:** as massas escuras com borda dourada e os buracos de céu azul-acinzentado do alvo.
+- **O rumo a decidir com o Felipe:**
+  - (a) fazer a nossa nuvem, a forma e o mapa de cobertura, pra essa faixa baixa do céu;
+  - (b) céu fotográfico de hora dourada (HDRI CC0) pra mapa de sol parado. A luz do céu sai da mesma foto, e é o caminho comum nos AAA de hora fixa.
+- **As receitas:** `luz_w3`, `luz_x1`, `luz_y3` em `Game/Tools/look_recipes/`; a cena `uma_luz`.
+
+### 11.6 O céu deitado claro e bege (17/10, madrugada)
+
+O Felipe, sobre a X1: "o céu tá muito claro, só deixa um céu mais azul normal". E antes: "nosso mapa é golden hour com névoa".
+
+- **O que não move o céu:**
+  - o teto da névoa (`FogMaxOpacity` 10–30%): sem efeito visível, porque o véu do céu é a névoa volumétrica (250 m), que ignora o teto;
+  - o brilho do céu azulado (`SkyLuminanceFactor`) e a névoa menos tingida pelo céu (`HeightFogContribution`): mudam a vista de cima pela captura em tempo real da luz do céu (a areia fica mais vermelha).
+- **A camada de poeira rasa e densa, com a MESMA coluna** (densidade × k, queda × k):
+  - de cima a câmera atravessa a coluna inteira e o véu aprovado fica;
+  - deitada, o olho a ~4 m sai da camada logo e o céu limpa.
+
+  | Variante | De cima: areia | Terço de cima | Deitada: céu p50 (p5–p95), estourado |
+  |---|---|---|---|
+  | X1 | 0,65/26/0,41 | 0,69 | 0,80 (0,59–0,96), 13% |
+  | R6 (k 6) | 0,65/26/0,41 | 0,69 | 0,70 (0,43–0,97), 14% |
+  | R6M (R6 + Mie 0,012) | 0,67/27/0,42 | 0,73 | 0,67 (0,34–0,98), 16% |
+  | R10 (k 10) | 0,64/26/0,41 | 0,67 | 0,65 (0,27–0,98), 17% |
+  | Gemini (road, r1) | — | — | 0,61–0,66 (0,34–0,86), 0–2% |
+
+  O brilho e o contraste do céu chegam no alvo. O véu "fica lá" no horizonte, como o Felipe descreveu no game shot.
+- **O que falta é a cor.** O topo do céu (as 120 linhas de cima, mais nuvem que céu) mede:
+
+  | | RGB | Pixels azulados |
+  |---|---|---|
+  | Gemini | [158,158,155] a [192,183,174] | 15–38% |
+  | Nosso | [208,180,157] | 2% |
+
+  O bege vem de três fontes:
+  - o ganho quente do sol na nuvem (`scattered_luminance_scale` 1,6/1,4/1,2, de uma volta antiga);
+  - a poeira do alto colorida (a cor do Mie 1/0,8/0,58);
+  - o Mie 3× acima do padrão.
+
+  As rodadas C e D (`rasa_c*`, `rasa_d*`) testam:
+  - a nuvem na cor física;
+  - o Mie neutro e no padrão;
+  - a base da nuvem escura (oclusão da luz do céu 0,85);
+  - menos cobertura de nuvem.
+- **O que as rodadas C e D mediram:**
+
+  | Variante | De cima: areia | Terço de cima | Deitada: céu p50, estourado | Topo do céu (RGB, pixels azulados) |
+  |---|---|---|---|---|
+  | R6M | 0,66/27/0,41 | 0,73 | 0,73, 14% | [202,173,152], 1% |
+  | C1: nuvem na cor física | 0,67/26/0,41 | 0,72 | 0,69, 10% | [183,160,145], 2% |
+  | C3: + Mie neutro 0,004 | 0,68/27/0,42 | 0,73 | 0,67, 11% | [189,167,152], 3% |
+  | D1: base escura 0,85 | 0,67/27/0,42 | 0,73 | 0,70, 10% | [183,161,146], 1% |
+  | D4: D1 + menos nuvem | 0,68/27/0,40 | 0,74 | 0,76, 15% | [199,188,177], 5% |
+
+  - A vista de cima fica na aprovada em todas.
+  - O ganho quente da nuvem era o maior pedaço do bege.
+  - A base escura não muda nada.
+  - Menos nuvem dá o "céu azul normal" a olho, mas fica mais claro.
+  - O mesmo controle (C3) mede o céu 0,67 numa rodada e 0,71 na outra: a nuvem anda com o tempo. Diferença de céu abaixo de ~0,04 é ruído.
+- **O clarão em volta do sol** (a faixa do meio, 10–20° de altura) é o que estoura:
+
+  | | Clarão (centro) | Areia deitada |
+  |---|---|---|
+  | Nosso | 0,93 [248,234,220] | 0,83, desbotada pelo brilho (o "piso liso") |
+  | Gemini | 0,67 | 0,68 [215,168,116] |
+
+  No Gemini, a nuvem grossa na frente do sol fica escura e só a borda brilha. A nossa é fina e acende pra frente: a fase do material é g 0,8.
+- **O sol do mapa a 8° chega na areia como (72 323, 31 702, 8 516) lux:** a transmitância de 8° vezes o 4 700 K. A câmera (5 600 K e os ganhos) é que devolve a areia dourada.
+- **Os padrões do material de nuvem da Epic** (`m_SimpleVolumetricCloud_Inst`, lidos no editor):
+  - cobertura −0,2;
+  - densidade 0,008;
+  - albedo 0,98;
+  - `Phase_Controls` (0,8; 0,167; 0,575);
+  - `Multiscatter_Controls` (0,667; 0,25; 0,18).
+
+  Contra os padrões, a nossa nuvem é 6× mais densa e cinza (albedo 0,55). E `MultiScatteringContribution` **não existe** no material: a chave da receita não fazia nada.
+- **A rodada E:** o céu pintado pelo `SkyLuminanceFactor`, com a cor e a força da luz do céu divididas pelo mesmo fator. A captura da luz do céu entrega ao chão a mesma luz ambiente; só os pixels de céu mudam.
+- **O que a rodada E mostrou:** o céu pintado (E1, E2) quase não muda a medida, porque a tela deitada é quase toda nuvem e a nuvem não recebe o fator. Com menos nuvem (E3), o céu limpo sai quase branco (0,86, 29% estourado). A nuvem no padrão da Epic (E4) muda a vista de cima (0,73/29/0,37): fora.
+- **O diagnóstico da areia "piso liso"** (17/10, a C3 com `ShowFlag.Specular 0`, com e sem a névoa de altura):
+
+  | | De cima | Deitada: areia | Céu p50 | Centro do céu | Estourado |
+  |---|---|---|---|---|---|
+  | C3 normal | 0,67/27/0,41 | 0,83/32/0,31 [242,206,166] | 0,71 | 0,93 | 10% |
+  | C3 sem especular | 0,63/26/0,46 | 0,61/25/0,50 [205,146,103] | 0,70 | 0,93 | 10% |
+  | C3 sem especular e sem névoa | 0,63/26/0,47 | 0,61/26/0,50 | 0,55 | 0,94 | 10% |
+  | Gemini r1 | — | 0,68/32/0,46 [215,168,116] | 0,66 | 0,67 | 2% |
+
+  - **O "piso liso" é todo do especular:** o reflexo rasante do sol baixo na areia (+0,22 de brilho, −0,19 de saturação). Sem ele, a areia deitada é dourada como no Gemini. A névoa não mexe na areia.
+  - **A névoa é o véu do céu** (0,55 → 0,70). A camada 10× rasa (C4) deixa o céu em 0,62, a medida do alvo.
+  - **O clarão do centro e o estouro são as nuvens finas acesas pelo sol**, com ou sem névoa.
+- **A rodada F (no Salt2 remontado às 04:07, com a areia áspera 0,95 do code_v3):**
+
+  | Variante | De cima: areia | Terço de cima | Deitada: areia | Céu p50, estourado |
+  |---|---|---|---|---|
+  | C4 (camada 10× rasa) | 0,66/27/0,42 | 0,69 | 0,76/30/0,38 | 0,59, 10% |
+  | F2: luz do sol na nuvem 0,5 | 0,66/27/0,42 | 0,69 | 0,76 | 0,59, 4% |
+  | F3: fase da nuvem g 0,8 → 0,6 | 0,66/27/0,42 | 0,69 | 0,76 | 0,60, 4% |
+
+  - A fase menor é a saída mais física pro clarão: o espalhamento múltiplo dentro da nuvem baixa a anisotropia efetiva (as oitavas do Wrenninge). A F2 só tira energia.
+  - Na 1ª tentativa a nuvem começou sem aparecer: o material ainda compilando depois da troca de binários. Daí pra frente, toda rodada leva uma receita de aquecimento antes.
+  - O 1º teste no mapa recém-montado caiu no renderizador (a 1ª abertura monta os campos de distância das lajes). A 2ª abertura rodou limpa.
+- **A areia "piso liso":**
+  - Só a aspereza 0,95 tira metade do brilho: 0,83 → 0,76 no mapa, e 0,74 com `r.Roughness.Min 0.95`; o alvo é o Gemini, 0,68.
+  - O resto vem do Specular da areia ≈ 0,12. A mistura medida entre o normal e o sem-especular dá a fração; a F_Schlick dá o valor.
+  - Feito do lado do Look: o 4º dado do MF (`look_mf.py`, chave `SPEC_READY`, saída `Sout`, entrada `SandSpec`) e o `World.ground_sand_specular` da receita, que põe o 'SandSpecular' no Landscape em jogo.
+  - Pedido ao WorldForge em 17/10 04:3x.
+- **A rodada G (o azul):**
+
+  | Variante | Deitada: céu p50, estourado | Topo do céu | Pixels azulados | De cima |
+  |---|---|---|---|---|
+  | G1: F3 + menos nuvem (−0,12) | 0,64, 6% | [175,168,161] | 18% | 0,67/27/0,42, terço 0,71 |
+  | Gemini r1 | 0,66, 2% | [192,183,174] | 15% | — |
+
+  - A G1 é a candidata (`rasa_g1`).
+  - A nuvem anda com o vento: no ciclo, cada receita pega um céu diferente (a G2 e a G3 caíram num céu fechado). Comparação fina de nuvem precisa de rodadas separadas ou do vídeo.
+  - As variantes do especular da areia sobre a G1: `uma_g1_s50/s20/s12/s06`.
+- **A areia "piso liso", resolvida no jogo** (`uma_g1_s*`, World_TestSalt2 remontado com o SandSpecular às 04:49):
+
+  | Specular da areia | Deitada | De cima |
+  |---|---|---|
+  | 0,5 | 0,76/31/0,37 | 0,67/27/0,42 |
+  | 0,2 | 0,73 | — |
+  | 0,12 | 0,69/28/0,44 | 0,65/27/0,45 |
+  | 0,06 | 0,67/28/0,46 | — |
+  | Alvo | Gemini 0,68/32/0,46 | aprovada 0,68/28/0,45 |
+
+  - **Fica 0,12**, sem compensar a exposição. Com +0,15 EV, a vista de cima volta a 0,68, mas a curva do filme tira a saturação: 0,42, e a deitada sobe pra 0,73.
+  - **O "quadro mais liso de perto"** (o alarme do WorldForge e do Fluxo, vila_rua_perto) não é regressão. Na mesma cena e no mesmo mapa a areia mede 5,6 às 02:28 e 5,4–5,5 depois; a rodada das 03:05 (9,1) foi a que fugiu do padrão. O especular (0,5 ou 0,12) e a aspereza (`r.Roughness.Max 0.7`) não mudam a areia de perto.
+- **A faixa branca do horizonte, olhando pro sol:**
+
+  | | Faixa do horizonte |
+  |---|---|
+  | Nossa | 0,81, sat 0,26 |
+  | Gemini | 0,60–0,63, sat 0,43 |
+
+  - **O que não é:** a névoa de longe. A cor dela (a contribuição do céu, `Fog.SkyAmbientScale`, campo novo do Look) quase não muda a faixa. Nem a espessura da camada: a 6× até clareia, 0,86.
+  - **O que é:** a volumétrica do foco (51 m) até 250 m, na altura do olho, dentro da camada rasa e densa, saturada e acesa de frente pelo sol.
+  - **A volumétrica até 100 m (`uma_i1`):** a faixa vai a 0,76 e a vista de cima não muda (no RTS a volumétrica começa no foco, ~165 m). O "muro branco" na descida da câmera (a partida aos 5 s, terço de cima 0,76) some: 0,48.
+  - **O resto da diferença pro Gemini:** lá o sol está atrás da nuvem e a poeira fica na sombra; aqui o sol aparece.
+- **A candidata:** `uma_i1`, que soma:
+  - a camada de poeira 10× rasa;
+  - a fase da nuvem g 0,6;
+  - a cobertura de nuvem −0,12;
+  - o Specular da areia 0,12;
+  - a volumétrica até 100 m.
+
+  Vídeos em `captures/game/v4i_*`.

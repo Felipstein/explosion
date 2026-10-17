@@ -307,3 +307,53 @@ A MF tem a entrada `Surf` (o peso do asfalto): no asfalto o escuro é quase pret
 - fotos com a câmera girada (o sol aparece no lugar errado);
 - uma foto travada segurando a placa (agora toda cadeia de fotos usa um vigia que mata pelo PID se o log parar 120 s);
 - o jogo quebrando na abertura enquanto outra sessão trocava o shader.
+
+## 9. O céu, a areia e a descida com a câmera deitada: "uma luz só" (17/10, aprovados)
+
+O Felipe:
+- o céu: "pro momento tá perfeito";
+- a areia: "tá ótimo, perfeito, pra uma primeira versão beta, aprovado";
+- a descida: "tá perfeito também, parabéns".
+
+**A regra:** o mesmo mundo e a mesma câmera de cima e deitada. Nada liga só porque a câmera deitou (a Y de 16/10 tinha exposição e cor só do tilt e avermelhava a areia). O estudo, as 13 rodadas e todos os números estão em `docs/CEU_E_NUVENS.md` §11.4–11.6.
+
+**A receita:** `Game/Tools/look_recipes/uma_i1.json`, a cadeia X1 → R6M → C3 → C4 → F3 → G1 → s12 → I1. O que ela tem, sobre a desert_golden_dust:
+- **A nuvem fica sempre ligada,** com a sombra no ar e o mapa de sombra das nuvens (`enable_top_deg` −90). Ligando só ao deitar, o mapa de sombra ficava velho e a vista de cima escurecia a cada volta (0,68 → 0,57).
+- **A atmosfera:**
+  - a perspectiva aérea ×1 (a ×40 antiga apagava a nuvem);
+  - o Mie neutro (1/1/1) no 0,004 de padrão;
+  - a nuvem na cor física (`scattered_luminance_scale` 1/1/1; o 1,6/1,4/1,2 antigo era o bege).
+- **A luz do céu ×1,6 (9,904):** a nuvem sempre lá escurece o céu que acende o chão.
+- **A poeira numa camada 10× rasa com a mesma coluna:** névoa 0,5, queda 2,5. De cima a câmera atravessa a coluna inteira (o véu aprovado fica); deitado, o olho a ~4 m sai da camada logo e o céu limpa.
+- **O clarão da nuvem na frente do sol:** a fase da nuvem g 0,8 → 0,6 (`Phase_Controls` 0,6/0,1667/0,575). O espalhamento múltiplo baixa a anisotropia efetiva. O estouro cai de 10% pra 4%.
+- **Menos nuvem:** cobertura −0,05 → −0,12, com o azul entre as nuvens (18% dos pixels do topo contra 15% no Gemini).
+- **A areia ("piso liso"):** a aspereza mínima 0,95 na areia e na terra (o code_v3 do `look_mf.py`) e o Specular 0,12 (`world.ground_sand_specular`).
+  - O especular vai no parâmetro SandSpecular do material do chão: o WorldForge liga a saída `Sout` no pino Specular, com `SPEC_READY`, e o Look põe o valor em jogo, sem remontar.
+  - Abaixo de 0,25, a Unreal trata o F0 < 2% como a sombra dos grãos (BRDF.ush).
+  - O asfalto fica no 0,5.
+- **A volumétrica até 100 m:** de 51 m (o foco deitado) até 250 m, a camada rasa na altura do olho saturava, acesa de frente pelo sol: o "muro branco" da descida. No RTS ela começa no foco (~165 m), então de cima nada muda.
+
+**Medido** (a cena `uma_luz`, com as duas câmeras):
+
+| | Nosso | Alvo |
+|---|---|---|
+| De cima: areia | 0,65/27/0,45 | aprovada 0,68/28/0,45 |
+| De cima: terço de cima | 0,68 | aprovada 0,72 |
+| Deitada: céu | 0,64, 6% estourado | Gemini 0,66, 2% |
+| Deitada: areia | 0,69/28/0,44 | Gemini 0,68/32/0,46 |
+
+**O que ficou pra depois:**
+- o sol mais amarelo, os raios saindo por trás das nuvens e o disco redondo sem aparecer através da nuvem. O Felipe: "deixa assim por enquanto".
+- a faixa do horizonte deitada, 0,76 contra 0,61 no Gemini (lá o sol está atrás da nuvem).
+
+**O que não funcionou** (não repetir):
+- o teto da névoa (`FogMaxOpacity`): a volumétrica ignora;
+- o céu pintado (`SkyLuminanceFactor`): a tela deitada é quase toda nuvem, e a nuvem não recebe o fator;
+- a cor da névoa de longe (`Fog.SkyAmbientScale`, o campo existe): não mexe na faixa;
+- a nuvem no padrão da Epic: muda a vista de cima;
+- compensar a exposição: a curva do filme tira a saturação.
+
+**Como medir:**
+- o script da folha é `sheet_uma_luz.py` (o céu nas 315 linhas de cima, a areia em caixas fixas, o Gemini embaixo);
+- toda rodada leva uma receita de aquecimento: na 1ª foto a nuvem pode estar compilando;
+- a nuvem anda com o vento, então diferença de céu menor que ~0,04 entre as receitas de um ciclo é ruído.

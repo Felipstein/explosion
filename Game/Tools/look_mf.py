@@ -187,6 +187,10 @@ if (V3On > 0.5) {
     float stirOut = saturate(stir) * (1.0 - band) * wc;
     bc *= lerp(float3(1.0, 1.0, 1.0), float3(0.95, 0.93, 0.90), stirOut * 0.6);
     rough = saturate(rough + 0.06 * stirOut);
+    // (17/10, o Felipe: "deita e a areia vira piso liso, o sol reflete tudo") areia e terra secas são quase totalmente ásperas
+    // (~0,95–1,0): com a aspereza da textura escaneada, o Fresnel rasante contra o sol baixo virava brilho de piso. Vale em
+    // qualquer ângulo (de cima o reflexo do sol não vem pra câmera); o asfalto (Surf) fica com a dele.
+    rough = lerp(max(rough, 0.95), rough, saturate(Surf));
     float sunlit = RipLit;
     if (UseSunLit > 0.5 && wc > 0.001) {
         float2 sl = (SunLitT.Sample(SunLitTSampler, uvD).rg * wD + SunLitMidT.Sample(SunLitMidTSampler, uvM).rg * wMc) / wc;
@@ -225,10 +229,26 @@ V3_RUBBER = r"""
 """
 
 
+# (17/10) o especular da areia, o 4º dado. A câmera deitada contra o sol baixo via a areia como "piso liso": o reflexo
+# rasante do sol. Medido no jogo (docs/CEU_E_NUVENS.md §11.6): sem especular a areia deitada vai de 0,83/32/0,31 (desbotada)
+# a 0,61/25/0,50 (dourada; o Gemini 0,68/32/0,46), e só a aspereza 0,95 tira metade (0,74). Pela GGX da Unreal, com o sol e o
+# olho rasantes, o Fresnel (~0,4) e a visibilidade deixam o reflexo ~2× o difuso mesmo na aspereza 1. A areia é um meio de
+# grãos que faz sombra no próprio brilho: a Unreal diz isso com o Specular baixo (F0 = 0,08·Specular; abaixo de 2% o F_Schlick
+# multiplica o Fresnel por saturate(50·F0), "considered to be shadowing", BRDF.ush). Areia e terra no SandSpec (o parâmetro
+# 'SandSpecular' do material, que a receita do Look pode trocar em jogo, World.ground_sand_specular); o asfalto (Surf) no 0,5
+# padrão. SPEC_READY = True só depois que o WorldForge puser a entrada 'SandSpec' e a saída 'Sout' (ligada no pino Specular).
+SPEC_READY = False
+V3_SPEC = 'Sout = lerp(SandSpec, 0.5, saturate(Surf));'
+
+
 def code_v3():
     """O CODE com a v3 (a normal de iluminação). As entradas novas: SunLitT, SunLitMidT, UseSunLit, RipLit, Lt, V3On (1); a
-    saída nova: AOout. Com RUBBER_READY, mais a entrada UseRubber."""
+    saída nova: AOout. Com RUBBER_READY, mais a entrada UseRubber. Com SPEC_READY, mais a entrada SandSpec e a saída Sout."""
     c = CODE
+    if SPEC_READY:
+        head = 'float3 bc = BC; float3 nT = N; float rough = Rg;'
+        assert c.count(head) == 1
+        c = c.replace(head, head + ' ' + V3_SPEC)
     for old, new in (V3_SKIP_RELIEF_NORMAL, V3_SKIP_VIS_COLOR, V3_RELIEF_MIP):
         assert c.count(old) == 1, old
         c = c.replace(old, new)

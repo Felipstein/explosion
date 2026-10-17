@@ -18,6 +18,7 @@
 #include "Engine/SkyLight.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "LandscapeProxy.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/PrimitiveComponent.h"
@@ -128,6 +129,7 @@ void ALookDirector::ApplyRecipe()
 	ApplyFog();
 	ApplyPost();
 	ApplyWater();
+	ApplyGround();
 	ApplyPreset(PresetLevel);
 	LastFocusCm = -1.0f;
 	LastAerialScale = -1.0f;
@@ -191,6 +193,8 @@ void ALookDirector::ApplyAtmosphere()
 	Sky->SetMieExponentialDistribution(A.MieExponentialDistribution);
 	Sky->SetGroundAlbedo(A.GroundAlbedo);
 	Sky->SetAerialPespectiveViewDistanceScale(A.AerialDistanceScale);     // (o nome tem o erro de digitação da Unreal)
+	Sky->SetSkyLuminanceFactor(A.SkyLuminanceFactor);
+	Sky->SetHeightFogContribution(A.HeightFogContribution);
 }
 
 void ALookDirector::ApplySkyLight()
@@ -239,6 +243,8 @@ void ALookDirector::ApplyFog()
 	// (14/10) o corte: além dele a névoa de altura não entra, e o céu e as nuvens da câmera deitada saem limpos dela;
 	// a câmera normal só vê chão a 60–250 m (docs/CEU_E_NUVENS.md §8.2)
 	Fog->SetFogCutoffDistance(Recipe->Sky.FogCutoffCm);
+	Fog->SetFogMaxOpacity(F.MaxOpacity);
+	Fog->SetSkyAtmosphereAmbientContributionColorScale(F.SkyAmbientScale);
 }
 
 void ALookDirector::ApplyPost()
@@ -344,6 +350,24 @@ void ALookDirector::ApplyWater()
 	UE_LOG(LogRTSLook, Log, TEXT("a água do mapa: %d materiais com a cor da receita"), N);
 }
 
+void ALookDirector::ApplyGround()
+{
+	// o especular da areia do chão (o 'SandSpecular' do material do WorldForge); sem o parâmetro no material, não faz nada
+	const float V = Recipe->World.GroundSandSpecular;
+	UWorld* World = GetWorld();
+	if (V < 0.0f || !World)
+	{
+		return;
+	}
+	int32 N = 0;
+	for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+	{
+		It->SetLandscapeMaterialScalarParameterValue(TEXT("SandSpecular"), V);
+		++N;
+	}
+	UE_LOG(LogRTSLook, Log, TEXT("o especular da areia do chão: %.3f em %d pedaços do Landscape"), V, N);
+}
+
 void ALookDirector::ApplyPreset(int32 Level)
 {
 	PresetLevel = FMath::Clamp(Level, 1, 4);
@@ -403,6 +427,7 @@ void ALookDirector::ApplyClouds()
 			return;
 		}
 	}
+	Cloud->SetVisibleInRealTimeSkyCaptures(C.bInSkyCapture);
 	Cloud->SetLayerBottomAltitude(C.BottomKm);
 	Cloud->SetLayerHeight(C.HeightKm);
 	Cloud->SetTracingMaxDistance(C.TracingMaxKm);

@@ -9,5 +9,7 @@ public class RTSLook : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
+		// (17/10) o especular da areia vai pro material do Landscape (ALandscapeProxy)
+		PrivateDependencyModuleNames.AddRange(new string[] { "Landscape" });
 	}
 }

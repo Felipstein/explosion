@@ -50,6 +50,12 @@ struct FLookAtmosphere
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float AerialDistanceScale = 1.0f;
 	/** O começo da perspectiva aérea em proporção da distância da câmera ao foco (0 = não mexe). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float AerialStartRatio = 0.0f;
+	/** (16/10, "uma luz só") o brilho e a cor dos pixels de céu (SkyLuminanceFactor da Unreal): só o céu, igual em qualquer
+	 *  ângulo; a areia, as unidades e as explosões não mudam (SkyAtmosphere.usf). Também entra na luz distante do céu (a névoa
+	 *  e a captura): medir a areia junto. 1 = a física. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) FLinearColor SkyLuminanceFactor = FLinearColor(1.0f, 1.0f, 1.0f, 1.0f);
+	/** Quanto a luz do céu e do sol na atmosfera tinge a névoa de altura (HeightFogContribution; 1 = a física). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) float HeightFogContribution = 1.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -77,6 +83,14 @@ struct FLookFog
 	/** Até onde a névoa volumétrica vai (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float VolumetricDistance = 6000.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float VolumetricStartRatio = 0.75f;
+	/** (16/10, "uma luz só"; o Felipe: "o céu sumiu a cor, sumiu as nuvens") o teto da névoa de altura (FogMaxOpacity): o véu
+	 *  do céu e do horizonte com a câmera deitada para aqui; de cima a névoa (60–250 m) fica abaixo dele e não muda (medir). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) float MaxOpacity = 1.0f;
+	/** (17/10, a faixa branca no horizonte da câmera deitada) a cor da névoa de altura além da volumétrica: a Unreal acende
+	 *  essa névoa só com a luz ambiente do céu (SkyAtmosphereAmbientContributionColorScale, padrão branco), sem a cor da
+	 *  poeira; vista de lado ela satura no brilho do céu. Com a cor da poeira (o albedo da volumétrica) as duas névoas casam,
+	 *  como faz o r.SupportExpFogMatchesVolumetricFog do projeto. Branco = o padrão da Unreal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) FLinearColor SkyAmbientScale = FLinearColor::White;
 };
 
 /** O pós: exposição travada (EV100 fixo, mínimo = máximo), a curva e a cor. */
@@ -117,6 +131,10 @@ struct FLookWorld
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float UnitDustTop = 0.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float UnitDustLow = 0.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float UnitDustHeight = 1.2f;
+	/** (17/10, o "piso liso" da câmera deitada) o Specular da areia e da terra do chão: o parâmetro 'SandSpecular' do
+	 *  material do mapa (o 4º dado do MF do chão; o asfalto fica no dele). Abaixo de 0,25 a Unreal trata o F0 < 2% como
+	 *  sombra (BRDF.ush, F_Schlick: saturate(50·F0)), a sombra dos grãos no próprio brilho. −1 = o do material. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) float GroundSandSpecular = -1.0f;
 };
 
 /** A água do mapa (os controles do M_Ocean_* do WorldForge): a cor própria do corpo d'água e o peso do reflexo do
@@ -190,6 +208,9 @@ struct FLookClouds
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bEnable = false;
+	/** (16/10, "uma luz só") a nuvem entra na captura da luz do céu em tempo real (o WorldForge liga a captura em tempo real):
+	 *  como ela só liga com a câmera deitada, a luz ambiente mudava ao deitar. false = fora da captura. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) bool bInSkyCapture = false;
 	/** O material (caminho do asset); vazio = o m_SimpleVolumetricCloud da Unreal. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) FString Material;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float BottomKm = 3.5f;
