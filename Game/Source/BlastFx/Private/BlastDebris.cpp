@@ -4,6 +4,11 @@
 #include "Misc/Parse.h"
 
 #include "BlastFxGround.h"
+#include "BlastRaymarch.h"
+#include "Components/PointLightComponent.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "EngineUtils.h"
 #include "Components/SceneComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/World.h"
@@ -47,6 +52,9 @@ namespace
 	// a fumaça sobe devagar (quente e leve) e engorda; a massa por metro fica,
 	// então a opacidade cai com a largura
 	constexpr float TrailRise = 0.35f, TrailEmitM = 0.12f;
+	// o vento da fumaça parada (16/10; o jogo ainda não tem vento: fixo, uma brisa de ~0,8 m/s, como o vento do ZH que
+	// deita as colunas de fumaça das carcaças sempre pro mesmo lado da tela)
+	const FVector SmokeWind(0.55, -0.55, 0.0);
 	// Desempenho (07/10): os rastros chegavam a ~15 mil vértices refeitos a cada
 	// quadro (um ponto a cada 12 cm de voo). Cada rastro é reamostrado em
 	// TrailSamples pontos ao longo do comprimento, e as cabeças e faíscas têm
@@ -62,6 +70,27 @@ namespace
 	}
 
 	FVector ToM(const FVector& Cm) { return Cm / 100.0; }
+	// o rumo pro sol (o sol mais forte do mapa, uma vez por mundo): o brilho dos cacos de vidro
+	FVector SunDirOf(const UWorld* World)
+	{
+		static TWeakObjectPtr<const UWorld> Cached;
+		static FVector Dir = FVector(0.3, 0.3, 0.9).GetSafeNormal();
+		if (Cached.Get() != World && World)
+		{
+			Cached = World;
+			float Best = -1.0f;
+			for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+			{
+				const UDirectionalLightComponent* L = Cast<UDirectionalLightComponent>(It->GetLightComponent());
+				if (L && L->IsVisible() && L->Intensity > Best)
+				{
+					Best = L->Intensity;
+					Dir = -L->GetDirection();
+				}
+			}
+		}
+		return Dir;
+	}
 	FVector ToCm(const FVector& M) { return M * 100.0; }
 
 	FVector CameraM(const UWorld* World)
@@ -160,6 +189,1100 @@ int32 ABlastDebris::AddFollowTrail(float Width0M, float GrowthMps, float LifeS, 
 	return NewTrail(Width0M, GrowthMps, LifeS, Albedo, GlowS, Opacity0);
 }
 
+// =============================================================================
+// o tiro (14/10, a v3). Números de partida, a conferir contra a arte 4.2 e os game shots no jogo (o estudo de AAA
+// desta noite: docs/TIRO_E_ACERTO.md). Tamanhos em metros, velocidades em m/s, a luz em candelas.
+
+void ABlastDebris::EnsureLight(const FLinearColor& Color, float RadiusCm)
+{
+	if (!Light)
+	{
+		Light = NewObject<UPointLightComponent>(this, TEXT("ShotLight"));
+		Light->SetupAttachment(PlateMesh);
+		Light->SetMobility(EComponentMobility::Movable);
+		Light->SetCastShadows(false);              // curta e pequena: sombra custaria mais que ela inteira
+		Light->SetIntensityUnits(ELightUnits::Candelas);
+		Light->SetUseInverseSquaredFalloff(true);
+		Light->RegisterComponent();
+	}
+	Light->SetLightColor(Color);
+	Light->SetAttenuationRadius(RadiusCm);
+	Light->SetIntensity(0.0f);
+	LightAge = 0.0f;
+}
+
+void ABlastDebris::UpdateLight(float Dt)
+{
+	if (!Light || LightPeak <= 0.0f)
+	{
+		return;
+	}
+	LightAge += Dt;
+	float I = 0.0f;
+	if (T < FireUntil)
+	{
+		// o fogo da carcaça: a luz laranja tremendo (duas senoides fora de fase) e apagando nos últimos 3 s
+		const float Fade = FMath::Clamp((FireUntil - T) / 3.0f, 0.0f, 1.0f);
+		// (17/10) com a coluna em volume, a pulsação da chama de ~2 m: f ≈ 1,5/√D (~1,0 Hz no anel da torre, ~1,7 Hz nas
+		// aberturas; docs/ESTUDO_CARCACA.md), não as senoides rápidas de antes
+		const float Flicker = bWreckFlames ? 0.75f + 0.15f * FMath::Sin(T * 13.0f) + 0.1f * FMath::Sin(T * 31.0f + 1.7f)
+			: 0.78f + 0.14f * FMath::Sin(T * 6.28f) + 0.08f * FMath::Sin(T * 10.7f + 1.7f);
+		Light->SetWorldLocation(ToCm(FirePos + FVector(0.0f, 0.0f, 1.0f)));
+		Light->SetIntensity(LightPeak * Flicker * Fade * ExpoComp);
+		Light->SetVisibility(true);
+		LightAge = 0.0f;
+		return;
+	}
+	if (ArcLightUntil > 0.0f)
+	{
+		// o arco temporizado: a luz azul-branca piscando pelo quadro (0,35–1,0, 12% apagada), e apaga de vez no fim (o
+		// religador abre)
+		if (T < ArcLightUntil)
+		{
+			Light->SetWorldLocation(ToCm(LightAt));
+			Light->SetIntensity(FMath::FRand() < 0.12f ? 0.0f : LightPeak * FMath::FRandRange(0.35f, 1.0f) * ExpoComp);
+			Light->SetVisibility(true);
+			LightAge = 0.0f;
+			return;
+		}
+		ArcLightUntil = -1.0f;
+		LightPeak = 0.0f;
+		Light->SetIntensity(0.0f);
+		return;
+	}
+	if (BlinkUntil > 0.0f)
+	{
+		// o pisca-alerta: 1,5 Hz (90 por minuto), meio ciclo aceso; no fim apaga de vez (sem a queda do clarão)
+		if (T < BlinkUntil)
+		{
+			Light->SetWorldLocation(ToCm(LightAt));
+			Light->SetIntensity(FMath::Fmod(T * 1.5f, 1.0f) < 0.5f ? LightPeak * ExpoComp : 0.0f);
+			Light->SetVisibility(true);
+			LightAge = 0.0f;
+			return;
+		}
+		BlinkUntil = -1.0f;
+		LightPeak = 0.0f;
+		Light->SetIntensity(0.0f);
+		return;
+	}
+	if (bLightHold)
+	{
+		// o míssil: acesa enquanto o motor queima, presa atrás do bocal (o diretor move a cada quadro)
+		Light->SetWorldLocation(ToCm(LightAt));
+		Light->SetIntensity(LightPeak * ExpoComp);
+		Light->SetVisibility(true);
+		LightAge = 0.0f;
+		return;
+	}
+	if (Comets.IsValidIndex(LightFollow) && Comets[LightFollow].Age < Comets[LightFollow].Burn)
+	{
+		// o projétil: acesa enquanto voa, junto da cabeça
+		I = LightPeak;
+		Light->SetWorldLocation(ToCm(Comets[LightFollow].P));
+		LightAge = 0.0f;
+	}
+	else
+	{
+		if (Comets.IsValidIndex(LightFollow))
+		{
+			LightTau = 0.03f;                       // chegou: apaga depressa
+			LightAt = Comets[LightFollow].P;
+			LightFollow = -1;
+		}
+		I = LightPeak * FMath::Exp(-LightAge / FMath::Max(LightTau, 0.005f));
+		Light->SetWorldLocation(ToCm(LightAt));
+	}
+	if (I < 0.01f * LightPeak && LightFollow < 0)
+	{
+		LightPeak = 0.0f;
+		I = 0.0f;
+	}
+	Light->SetIntensity(I * ExpoComp);
+	Light->SetVisibility(I > 0.0f);
+}
+
+void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, const FVector& ShellDir, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
+	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
+	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	BallScale = 1.0f;                               // as faíscas brancas-amarelas da arte, não as laranja da morte
+	BuildShapes();
+	const FVector O = ToM(PointCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector N = Normal.GetSafeNormal();
+	const FVector D = ShellDir.GetSafeNormal();
+	// o leque sai pro lado do ricochete (o projétil refletido na blindagem), aberto pra fora da chapa
+	const FVector R = (D - 2.0f * FVector::DotProduct(D, N) * N).GetSafeNormal();
+	const FVector Axis = (R * 0.5f + N * 0.35f + FVector(0.0f, 0.0f, 0.5f)).GetSafeNormal();   // (16/10: sobe como na 4.2)
+	// o clarão no metal: o miolo branco (0–50 ms, 0,15–0,25 do tanque) e o brilho branco-amarelo que fica (até ~0,3 s,
+	// ~0,5 do tanque: menor que o do ZH pra não tapar unidade)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.15f;
+		S.Life = 0.05f;
+		S.Size = 0.8f;
+		S.Bright = 1.0f;
+		S.bRound = true;
+	}
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.3f;
+		S.Life = 0.3f;
+		S.Size = 0.9f;                              // (a 1,3 crescendo 3 m/s era uma bola de névoa branca de ~5 m)
+		S.Grow = 1.5f;
+		S.Bright = 0.6f;
+		S.Color = FLinearColor(1.0f, 0.8f, 0.45f, 1.0f);
+		S.bRound = true;
+	}
+	// os riscos do leque (a arte: dezenas de riscos brancos-amarelos de 1–3 m até ~1 tanque, em ~90°)
+	// (16/10, contra a arte 4.2 no jogo: com 8–14 cm de largura e todos iguais, saindo de um ponto, eram barras brancas
+	// numa estrela desenhada; a arte tem riscos finos e variados, pontinhos, esfriando pro laranja)
+	const int32 Spikes = FMath::Max(16, FMath::RoundToInt(110 * Keep));
+	for (int32 i = 0; i < Spikes; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.05f + Rand.VRand() * Rand.FRandRange(0.0f, 0.15f);
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(48.0f)) * Rand.FRandRange(15.0f, 35.0f);
+		S.Life = Rand.FRandRange(0.12f, 0.45f);
+		S.Size = Rand.FRandRange(0.012f, 0.025f);
+		S.Bright = Rand.FRandRange(0.4f, 1.0f);
+		S.Drag = G / FMath::Square(22.0f);
+		S.MinPxK = 0.0004f;                         // ≥ 1,5–2 px a qualquer distância
+		S.StreakT = Rand.FRandRange(1.0f / 30.0f, 1.0f / 10.0f);   // do pontinho ao risco de ~3 m
+		S.bBounce = true;
+		S.bCool = true;
+		S.Color = FLinearColor(1.0f, 0.82f, 0.5f, 1.0f);   // amarelo-branco quente (a arte), não o branco puro
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// as fagulhas que caem piscando depois
+	const int32 Embers = FMath::RoundToInt(30 * Keep);
+	for (int32 i = 0; i < Embers; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.bEmber = true;
+		S.P = O + N * 0.05f;
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(70.0f)) * Rand.FRandRange(3.0f, 10.0f);
+		S.Life = Rand.FRandRange(0.6f, 1.6f);
+		S.Size = Rand.FRandRange(0.04f, 0.07f);
+		S.Bright = Rand.FRandRange(0.12f, 0.25f);
+		S.Drag = G / FMath::Square(6.0f);
+		S.Lift = 0.3f;
+		S.Age = -Rand.FRandRange(0.0f, 0.08f);
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// lascas: tinta, terra e metal (a arte: pedacinhos caindo embaixo do tanque)
+	const int32 Chips = FMath::Max(2, FMath::RoundToInt(6 * Keep));
+	for (int32 i = 0; i < Chips; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + N * 0.1f;
+		P.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(55.0f)) * Rand.FRandRange(5.0f, 12.0f);
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(10.0f, 25.0f);
+		P.Size = Rand.FRandRange(0.15f, 0.25f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	BuildPlateSection();
+	// a luz: a do ZH (255, 255, 128), raio ~1 tanque, cai em ~0,35 s
+	EnsureLight(FLinearColor(1.0f, 0.78f, 0.45f), 800.0f);
+	LightAt = O + N * 0.6f;
+	LightPeak = 6.0e5f;                             // na referência (~1,9·10⁵ no jogo; a 8·10⁵ sem compensar lavava o casco de branco)
+	LightTau = 0.12f;
+	SetLifeSpan(20.0f);
+}
+
+void ABlastDebris::StartMuzzle(const FVector& MuzzleCm, const FVector& Dir, int32 Seed)
+{
+	// (16/10) a bola secundária agora é do raymarch (UBlastFxDirector::MuzzleBlast): fogo de verdade, que também tapa o
+	// que está atrás; a aditiva fica só pro teste (-ShotFxAdditiveBall=1)
+	static const bool bAdditiveFireball = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("ShotFxAdditiveBall="), V); return V != 0; }();
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(MuzzleCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector D = Dir.GetSafeNormal();
+	const FVector Side = FVector::CrossProduct(D, FVector::UpVector).GetSafeNormal();
+	auto Flash = [&](const FVector& At, float SizeM, float Life, bool bHot)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = At;
+		S.Size = SizeM;
+		S.Life = Life;
+		// o miolo branco-quente; as línguas laranja. Na exposição de referência (16/10, a compensação): 0,25 = os 0,08 que
+		// liam laranja no jogo sem compensar (a 1,0 e a 0,25 sem compensar estouravam em branco)
+		S.Bright = bHot ? 1.0f : 0.25f;
+		S.bEmber = !bHot;                           // as línguas de fora laranja, o miolo branco-amarelo
+		S.bRound = true;
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	};
+	// o miolo e as línguas de fogo à frente da boca, menores e mais curtas pra longe; os jatos do freio de boca pros lados
+	Flash(O + D * 0.3f, 1.0f, 0.066f, true);       // (16/10: a 0,7 m sumia na câmera de jogo de 67 m; a estrela da arte GPT é ~a frente da torre)
+	Flash(O + D * 1.0f, 0.6f, 0.07f, false);
+	Flash(O + D * 1.7f, 0.45f, 0.06f, false);
+	Flash(O + D * 2.4f, 0.3f, 0.05f, false);
+	Flash(O + D * 0.2f + Side * 0.5f, 0.32f, 0.05f, false);
+	Flash(O + D * 0.2f - Side * 0.5f, 0.32f, 0.05f, false);
+	// a bola secundária: o gás que reacende no ar à frente (15–150 ms, pico ~50 ms; ~0,5–0,75 do tanque, menor que os
+	// 7–13 m do infravermelho, pela leitura; o estudo: docs/TIRO_E_ACERTO.md), laranja escurecendo; em 1 de 4 tiros, fraca
+	if (bAdditiveFireball)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + D * 2.2f;
+		S.Size = 0.6f;
+		S.Grow = 14.0f;                             // 0,6 → ~2,7 m de meia largura em 0,15 s
+		S.Life = 0.15f;
+		S.Age = -0.015f;
+		S.Bright = Rand.FRand() < 0.25f ? 0.025f : 0.05f;  // laranja (a 0,8 e a 0,12 ainda eram uma bola creme)
+		S.Color = FLinearColor(1.0f, 0.45f, 0.12f, 1.0f);
+		S.bRound = true;
+	}
+	// riscos à frente, num cone estreito (os grãos de pólvora acesos)
+	for (int32 i = 0; i < 8; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + D * 0.3f;
+		S.V = Rand.VRandCone(D, FMath::DegreesToRadians(12.0f)) * Rand.FRandRange(40.0f, 80.0f);
+		S.Life = Rand.FRandRange(0.04f, 0.08f);
+		S.Size = Rand.FRandRange(0.012f, 0.02f);
+		S.Bright = Rand.FRandRange(0.3f, 0.6f);
+		S.Drag = G / FMath::Square(25.0f);
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// a luz: a 1,5·10⁶ cd e 12 m lavava o chão de branco de dia; o ZH usa raio de 3,9 m, o WoT 1,5–8
+	EnsureLight(FLinearColor(1.0f, 0.7f, 0.4f), 900.0f);
+	LightAt = O + D * 1.0f;
+	LightPeak = 2.5e5f;                             // a 6·10⁵ ainda lavava o chão de creme em volta da boca
+	LightTau = 0.035f;
+	SetLifeSpan(5.0f);
+}
+
+int32 ABlastDebris::StartSmoke(float Width0M, float GrowthMps, float LifeS, float Albedo, float Opacity0, float RiseMps)
+{
+	if (!Shapes.Num())
+	{
+		Rand.Initialize(int32(GetUniqueID()));
+		BuildShapes();
+	}
+	const int32 Trail = NewTrail(Width0M, GrowthMps, LifeS, Albedo, 0.0f, Opacity0);
+	Trails[Trail].Rise = RiseMps;
+	Trails[Trail].Wind = SmokeWind;
+	Trails[Trail].bEmitting = false;                // até o diretor pôr a cabeça
+	bTrailsDone = false;
+	SetActorTickEnabled(true);
+	SetLifeSpan(0.0f);                              // vive enquanto o tanque estiver ferido; o diretor encerra
+	return Trail;
+}
+
+void ABlastDebris::StartFlameJet(const FVector& PointCm, int32 Seed)
+{
+	// o jato de chama pelo anel da torre (WoT/War Thunder: a chama focada saindo; aqui 0,3–0,5 s): bolas laranja que
+	// sobem e crescem, fagulhas, e a luz laranja que cai em ~0,4 s
+	Rand.Initialize(Seed);
+	if (!Shapes.Num())
+	{
+		BuildShapes();
+	}
+	const FVector O = ToM(PointCm);
+	for (int32 i = 0; i < 5; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + FVector(Rand.FRandRange(-0.3f, 0.3f), Rand.FRandRange(-0.3f, 0.3f), 0.2f * i);
+		S.V = FVector(Rand.FRandRange(-0.6f, 0.6f), Rand.FRandRange(-0.6f, 0.6f), Rand.FRandRange(4.0f, 7.0f));
+		S.Size = Rand.FRandRange(0.35f, 0.55f);
+		S.Grow = 1.5f;
+		S.Life = Rand.FRandRange(0.3f, 0.5f);
+		S.Age = -0.05f * i;
+		S.Bright = 0.1f;                            // laranja (na referência; sem compensar, 0,18 e 0,05 estouravam em branco)
+		S.Lift = 1.0f;
+		S.bRound = true;
+		S.Color = FLinearColor(1.0f, 0.42f, 0.1f, 1.0f);
+	}
+	for (int32 i = 0; i < 20; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.bEmber = true;
+		S.P = O;
+		S.V = Rand.VRandCone(FVector::UpVector, FMath::DegreesToRadians(35.0f)) * Rand.FRandRange(3.0f, 9.0f);
+		S.Life = Rand.FRandRange(0.6f, 1.4f);
+		S.Size = Rand.FRandRange(0.03f, 0.06f);
+		S.Bright = Rand.FRandRange(0.12f, 0.25f);
+		S.Drag = G / FMath::Square(6.0f);
+		S.Lift = 0.3f;
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	bGlowsDone = false;
+	EnsureLight(FLinearColor(1.0f, 0.55f, 0.2f), 900.0f);
+	LightAt = O + FVector(0.0f, 0.0f, 1.0f);
+	LightPeak = 6.0e5f;
+	LightTau = 0.15f;
+	LightAge = 0.0f;
+	SetActorTickEnabled(true);
+}
+
+void ABlastDebris::StartDirt(const FVector& PointCm, const FVector& AwayDir, int32 Seed)
+{
+	// o jato de terra da 4.1: torrões escuros subindo num cone de ~30° inclinado pra longe do atirador, 6–15 m/s
+	// (sobem 2–10 m e caem em ~1–2 s), que ficam na areia em volta da cratera
+	Rand.Initialize(Seed);
+	if (!Shapes.Num())
+	{
+		BuildShapes();
+	}
+	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
+	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
+	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	const FVector O = ToM(PointCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector Axis = (FVector::UpVector * 0.85f + AwayDir.GetSafeNormal2D() * 0.45f).GetSafeNormal();
+	const int32 Count = FMath::Max(8, FMath::RoundToInt(28 * Keep));
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + FVector(Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(0.05f, 0.3f));
+		P.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(32.0f)) * Rand.FRandRange(6.0f, 15.0f);
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(8.0f, 20.0f);
+		P.Size = Rand.FRandRange(0.08f, 0.22f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	bPlatesSettled = false;
+	BuildPlateSection();
+	SetActorTickEnabled(true);
+	SetLifeSpan(12.0f);
+}
+
+void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& AwayDir, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
+	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
+	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	const FVector O = ToM(PointCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector F = AwayDir.GetSafeNormal2D();
+	// o clarão: a bola de fogo de 1–2,5 kg de TNT tem 1,8–2,7 m e dura < 1 ms (OSTI 1469550); esticado a 2 quadros
+	// (o fórum RealtimeVFX: clarão de 2–3 quadros), branco-amarelo, e um brilho laranja que fica até ~0,1 s
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + FVector(0.0f, 0.0f, 0.6f);
+		S.Life = 0.066f;
+		S.Size = 1.25f;
+		S.Bright = 1.0f;
+		S.Color = FLinearColor(1.0f, 0.86f, 0.62f, 1.0f);
+		S.bRound = true;
+	}
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + FVector(0.0f, 0.0f, 0.8f);
+		S.Life = 0.12f;
+		S.Size = 1.0f;
+		S.Grow = 4.0f;
+		S.Bright = 0.35f;
+		S.Color = FLinearColor(1.0f, 0.55f, 0.2f, 1.0f);
+		S.bRound = true;
+	}
+	// as faíscas: 25–40 num cone de ~60° em volta da vertical puxado pra frente, 0,15–0,35 s (o estudo)
+	const FVector SparkAxis = (FVector::UpVector * 0.8f + F * 0.45f).GetSafeNormal();
+	const int32 Spikes = FMath::Max(8, FMath::RoundToInt(32 * Keep));
+	for (int32 i = 0; i < Spikes; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + FVector(0.0f, 0.0f, 0.2f) + Rand.VRand() * Rand.FRandRange(0.0f, 0.3f);
+		S.V = Rand.VRandCone(SparkAxis, FMath::DegreesToRadians(60.0f)) * Rand.FRandRange(10.0f, 24.0f);
+		S.Life = Rand.FRandRange(0.15f, 0.35f);
+		S.Size = Rand.FRandRange(0.012f, 0.022f);
+		S.Bright = Rand.FRandRange(0.4f, 0.9f);
+		S.Drag = G / FMath::Square(20.0f);
+		S.MinPxK = 0.0004f;
+		S.StreakT = Rand.FRandRange(1.0f / 30.0f, 1.0f / 12.0f);
+		S.bCool = true;
+		S.Color = FLinearColor(1.0f, 0.8f, 0.5f, 1.0f);
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// o jato de terra (v7, 16/10; a arte 4.1): a terra lançada é balística (grãos e torrões a 13–22 m/s, que o gás não
+	// carrega: a gravação da coluna saía uma bola marrom), num leque estreito (±20°) inclinado 15° pra longe do atirador,
+	// até ~10 m. Os riscos escuros da 4.1 são o borrão do voo: o rastro só enquanto sobe rápido (0,35 s) e curto, reto,
+	// sumindo antes de virar arco (os rastros longos de antes viravam fios arqueados, "cabelo", e se acumulavam nos tiros
+	// seguidos). A cabeça é preta (somada não aparece): só o rastro, escuro (albedo 0,12 × o tom da terra do diretor)
+	const FVector JetAxis = (FVector::UpVector * FMath::Cos(FMath::DegreesToRadians(15.0f)) + F * FMath::Sin(FMath::DegreesToRadians(15.0f))).GetSafeNormal();
+	// (v7b, chao_v7: os riscos saíam um feixe estreito de linhas duras, uma "vassoura"; a 4.1 é um leque largo e macio
+	// que sobe ~10 m: mais aberto, mais alto, mais finos e ralos, engordando no voo)
+	const int32 Sprays = FMath::Max(8, FMath::RoundToInt(40 * Keep));
+	for (int32 i = 0; i < Sprays; ++i)
+	{
+		FComet& C = Comets.AddDefaulted_GetRef();
+		C.P = O + FVector(Rand.FRandRange(-0.3f, 0.3f), Rand.FRandRange(-0.3f, 0.3f), Rand.FRandRange(0.1f, 0.4f));
+		C.V = Rand.VRandCone(JetAxis, FMath::DegreesToRadians(28.0f)) * Rand.FRandRange(12.0f, 20.0f);   // (17/10, a "capadinha": ~0,7 da altura)
+		C.Burn = Rand.FRandRange(0.3f, 0.55f);
+		C.HeadM = 0.05f;
+		C.Color = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		C.Trail = NewTrail(Rand.FRandRange(0.08f, 0.14f), 1.6f, 0.3f, 0.12f, 0.0f, Rand.FRandRange(0.35f, 0.55f));
+	}
+	// os torrões: 45 de 12–45 cm (de cima, 4–14 px) no mesmo leque, mais uns largos e lentos; escuros (a areia de baixo,
+	// úmida); caem em 1–3 s e ficam
+	PlateTint = FLinearColor(0.07f, 0.055f, 0.04f, 1.0f);
+	PlateRoughNow = 0.95f;
+	const int32 Clods = FMath::Max(10, FMath::RoundToInt(45 * Keep));
+	for (int32 i = 0; i < Clods; ++i)
+	{
+		const bool bWide = i % 4 == 0;
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + FVector(Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(0.05f, 0.3f));
+		P.V = Rand.VRandCone(JetAxis, FMath::DegreesToRadians(bWide ? 45.0f : 22.0f)) * (bWide ? Rand.FRandRange(4.5f, 8.5f) : Rand.FRandRange(8.5f, 17.0f));
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(8.0f, 20.0f);
+		P.Size = Rand.FRandRange(0.12f, 0.45f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	BuildPlateSection();
+	// a luz: a do WoT pro HE na areia (raio 2 → 10 m, apagada em 0,22 s, laranja → pêssego → laranja-escuro); aqui
+	// laranja, 9 m, caindo em ~0,08 s (1/e), na exposição de referência dos destroços
+	EnsureLight(FLinearColor(1.0f, 0.55f, 0.25f), 900.0f);
+	LightAt = O + FVector(0.0f, 0.0f, 1.0f);
+	LightPeak = 4.0e5f;
+	LightTau = 0.08f;
+	SetActorTickEnabled(true);
+	SetLifeSpan(12.0f);
+}
+
+void ABlastDebris::StartMissile(const FVector& PosCm, const FVector& Dir, int32 Seed, bool bSmokeTrail)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector P = ToM(PosCm);
+	const FVector D = Dir.GetSafeNormal();
+	MissileT0 = T;
+	// a chama: o miolo branco de ~0,35 m (nunca menos de ~3 px), a língua (1; 0,7; 0,35) de ~2 m atrás do bocal e o halo
+	// fraco de ~2 m (o brilho de ponta do MissileExhaust do ZH); refeitos a cada quadro pelo diretor
+	const float Sizes[3] = { 0.35f, 0.22f, 1.1f };
+	const float Brights[3] = { 1.0f, 0.5f, 0.1f };
+	const FLinearColor Cols[3] = { FLinearColor(1.0f, 0.95f, 0.85f, 1.0f), FLinearColor(1.0f, 0.7f, 0.35f, 1.0f), FLinearColor(1.0f, 0.75f, 0.45f, 1.0f) };
+	for (int32 k = 0; k < 3; ++k)
+	{
+		MissileSpark[k] = Sparks.Num();
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = P - D * 0.3f;
+		S.V = k == 1 ? -D * 60.0f : FVector::ZeroVector;   // a língua: o risco de ~2 m (60 m/s × 1/30 s)
+		S.Life = 1.0e4f;                                   // até o fim do míssil (EndMissile)
+		S.Size = Sizes[k];
+		S.Bright = Brights[k];
+		S.Color = Cols[k];
+		S.bRound = k != 1;
+		S.bPinned = true;
+		S.MinPxK = k == 0 ? 0.00075f : 0.0f;
+		S.StreakT = 1.0f / 30.0f;
+	}
+	// os rastros: o sopro grosso só nos primeiros 0,15 s (1,0 m, engorda 2 m/s, 1,2 s, opacidade 0,6) e o fio de cruzeiro
+	// (0,5 m, engorda 1,2 m/s, 1,4 s, albedo 0,8, opacidade 0,5): 1,4 s limpa o céu entre as rajadas (o ciclo da torre é
+	// 2,75 s); o fogo do gás só nos ~2–3 m de trás (τ 0,025 s a ~100 m/s; com os 0,25 s dos destroços, 25 m de fita acesa)
+	// (16/10) sem as fitas quando o jogo desenha a fumaça simulada do rastro (RTSMissileSmoke, a pedido do Felipe: "fumaça e
+	// não borrões brancos"; UBlastFxDirector::SetExternalMissileSmoke)
+	if (bSmokeTrail)
+	{
+		MissileTrail[0] = NewTrail(1.0f, 2.0f, 1.2f, 0.8f, 0.0f, 0.6f);
+		MissileTrail[1] = NewTrail(0.5f, 1.2f, 1.4f, 0.8f, 10.0f, 0.5f);
+		Trails[MissileTrail[1]].GlowTau = 0.025f;
+	}
+	for (int32 k = 0; k < 2 && bSmokeTrail; ++k)
+	{
+		Trails[MissileTrail[k]].Rise = 0.3f;
+		Trails[MissileTrail[k]].Wind = SmokeWind;
+		SetTrailHead(MissileTrail[k], PosCm, true);
+	}
+	EnsureLight(FLinearColor(1.0f, 0.75f, 0.45f), 550.0f);
+	LightPeak = 1.5e5f;
+	LightAt = P - D * 0.5f;
+	bLightHold = true;
+	bGlowsDone = false;
+	bTrailsDone = false;
+	SetActorTickEnabled(true);
+	SetLifeSpan(0.0f);
+}
+
+void ABlastDebris::UpdateMissile(const FVector& PosCm, const FVector& Dir)
+{
+	if (MissileT0 < 0.0f)
+	{
+		return;
+	}
+	const FVector P = ToM(PosCm);
+	const FVector D = Dir.GetSafeNormal();
+	const float Age = T - MissileT0;
+	// a chama treme ±20% (est., 20–30 Hz) e nasce nos primeiros 2 quadros
+	const float Flick = (0.8f + 0.2f * FMath::Sin(T * 151.0f + 1.3f) * FMath::Sin(T * 97.0f)) * FMath::Clamp(Age / 0.066f, 0.3f, 1.0f);
+	const float Base[3] = { 1.0f, 0.5f, 0.1f };
+	const FVector At[3] = { P - D * 0.25f, P - D * 1.2f, P - D * 0.5f };
+	for (int32 k = 0; k < 3; ++k)
+	{
+		if (Sparks.IsValidIndex(MissileSpark[k]))
+		{
+			FSpark& S = Sparks[MissileSpark[k]];
+			S.P = At[k];
+			if (k == 1)
+			{
+				S.V = -D * 60.0f;
+			}
+			S.Bright = Base[k] * Flick;
+		}
+	}
+	SetTrailHead(MissileTrail[0], ToCm(P - D * 0.6f), Age < 0.15f);
+	SetTrailHead(MissileTrail[1], ToCm(P - D * 0.6f), true);
+	LightAt = P - D * 0.5f;
+	bGlowsDone = false;
+}
+
+void ABlastDebris::EndMissile()
+{
+	if (MissileT0 < 0.0f)
+	{
+		return;
+	}
+	MissileT0 = -1.0f;
+	for (int32 k = 0; k < 3; ++k)
+	{
+		if (Sparks.IsValidIndex(MissileSpark[k]))
+		{
+			Sparks[MissileSpark[k]].Life = Sparks[MissileSpark[k]].Age;   // a chama apaga no quadro
+		}
+	}
+	for (int32 k = 0; k < 2; ++k)
+	{
+		if (Trails.IsValidIndex(MissileTrail[k]))
+		{
+			Trails[MissileTrail[k]].bEmitting = false;
+			Trails[MissileTrail[k]].GlowS = 0.0f;
+		}
+	}
+	bLightHold = false;
+	LightTau = 0.03f;                               // apaga depressa
+	LightAge = 0.0f;
+	SetLifeSpan(3.0f);
+}
+
+void ABlastDebris::StartLaunch(const FVector& MouthCm, const FVector& Dir, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(MouthCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector D = Dir.GetSafeNormal();
+	// o clarão branco-amarelo de ~1,2 m por 2 quadros e a língua de ~1,5 m à frente por 0,06 s (o estudo)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + D * 0.3f;
+		S.Life = 0.066f;
+		S.Size = 0.6f;
+		S.Bright = 1.0f;
+		S.Color = FLinearColor(1.0f, 0.92f, 0.75f, 1.0f);
+		S.bRound = true;
+	}
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + D * 1.2f;
+		S.Life = 0.06f;
+		S.Size = 0.5f;
+		S.Bright = 0.4f;
+		S.Color = FLinearColor(1.0f, 0.7f, 0.35f, 1.0f);
+		S.bRound = true;
+	}
+	// o jato de ré pela grelha de trás: 6–10 riscos laranja de 1,5–3 m por ~0,1 s
+	for (int32 i = 0; i < 8; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O - D * 0.4f;
+		S.V = Rand.VRandCone(-D, FMath::DegreesToRadians(14.0f)) * Rand.FRandRange(30.0f, 60.0f);
+		S.Life = Rand.FRandRange(0.08f, 0.12f);
+		S.Size = 0.03f;
+		S.Bright = 0.6f;
+		S.Color = FLinearColor(1.0f, 0.55f, 0.2f, 1.0f);
+		S.Lift = 1.0f;
+		S.StreakT = 1.0f / 20.0f;
+		S.MinPxK = 0.0004f;
+	}
+	// a tampa da caixa: 2–3 pedaços de 0,3–0,45 m a 8–15 m/s, girando (patente US5993921: quebra em pedaços previstos)
+	const FVector CapAxis = (D * 0.7f + FVector::UpVector * 0.5f).GetSafeNormal();
+	for (int32 i = 0; i < 3; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + D * 0.2f;
+		P.V = Rand.VRandCone(CapAxis, FMath::DegreesToRadians(35.0f)) * Rand.FRandRange(8.0f, 15.0f);
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(12.0f, 25.0f);
+		P.Size = Rand.FRandRange(0.3f, 0.45f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	BuildPlateSection();
+	// a luz: 6·10⁵–1·10⁶ cd, τ 60 ms, raio 8 m
+	EnsureLight(FLinearColor(1.0f, 0.8f, 0.55f), 800.0f);
+	LightAt = O + D * 0.5f;
+	LightPeak = 8.0e5f;
+	LightTau = 0.06f;
+	SetActorTickEnabled(true);
+	SetLifeSpan(8.0f);
+}
+
+void ABlastDebris::StartMissileHit(const FVector& PointCm, const FVector& Normal, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(PointCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector N = Normal.GetSafeNormal();
+	// o clarão branco-azulado de ~2,5 m por 2 quadros (a ogiva explode do lado de fora da blindagem) e o brilho laranja
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.3f;
+		S.Life = 0.066f;
+		S.Size = 1.25f;
+		S.Bright = 1.0f;
+		S.Color = FLinearColor(0.9f, 0.95f, 1.0f, 1.0f);
+		S.bRound = true;
+	}
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.5f;
+		S.Life = 0.15f;
+		S.Size = 1.0f;
+		S.Grow = 2.0f;
+		S.Bright = 0.35f;
+		S.Color = FLinearColor(1.0f, 0.6f, 0.25f, 1.0f);
+		S.bRound = true;
+	}
+	// as faíscas radiais (40–60, 0,2–0,5 s) e as fagulhas laranja (0,6–0,8 s)
+	const FVector Axis = (N * 0.7f + FVector::UpVector * 0.4f).GetSafeNormal();
+	for (int32 i = 0; i < 50; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + N * 0.1f + Rand.VRand() * Rand.FRandRange(0.0f, 0.3f);
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(75.0f)) * Rand.FRandRange(15.0f, 35.0f);
+		S.Life = Rand.FRandRange(0.2f, 0.5f);
+		S.Size = Rand.FRandRange(0.012f, 0.025f);
+		S.Bright = Rand.FRandRange(0.4f, 1.0f);
+		S.Drag = G / FMath::Square(22.0f);
+		S.MinPxK = 0.0004f;
+		S.StreakT = Rand.FRandRange(1.0f / 30.0f, 1.0f / 10.0f);
+		S.bBounce = true;
+		S.bCool = true;
+		S.Color = FLinearColor(1.0f, 0.85f, 0.55f, 1.0f);
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	for (int32 i = 0; i < 8; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.bEmber = true;
+		S.P = O + N * 0.1f;
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(70.0f)) * Rand.FRandRange(3.0f, 9.0f);
+		S.Life = Rand.FRandRange(0.6f, 0.8f);
+		S.Size = Rand.FRandRange(0.04f, 0.07f);
+		S.Bright = Rand.FRandRange(0.12f, 0.25f);
+		S.Drag = G / FMath::Square(6.0f);
+		S.Lift = 0.3f;
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// as lascas escuras (8–12 de 5–10 cm a 10–20 m/s)
+	for (int32 i = 0; i < 10; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + N * 0.1f;
+		P.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(60.0f)) * Rand.FRandRange(10.0f, 20.0f);
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(10.0f, 25.0f);
+		P.Size = Rand.FRandRange(0.05f, 0.1f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	BuildPlateSection();
+	// a luz: 6–8·10⁵ cd, τ 120 ms, raio 10 m
+	EnsureLight(FLinearColor(1.0f, 0.8f, 0.55f), 1000.0f);
+	LightAt = O + N * 0.6f;
+	LightPeak = 7.0e5f;
+	LightTau = 0.12f;
+	SetActorTickEnabled(true);
+	SetLifeSpan(20.0f);
+}
+
+void ABlastDebris::StartLaser(const FVector& FromCm, const FVector& ToCm, float LifeS)
+{
+	Rand.Initialize(1);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector A = ToM(FromCm), B = ToM(ToCm);
+	const float L = float(FVector::Dist(A, B));
+	// o risco vermelho fino de A a B: a faísca presa no meio, com a velocidade que estica o borrão até as pontas
+	FSpark& S = Sparks.AddDefaulted_GetRef();
+	S.P = 0.5f * (A + B);
+	S.V = (B - A).GetSafeNormal() * (L * 30.0f);
+	S.StreakT = 1.0f / 30.0f;
+	S.Life = LifeS;
+	S.Size = 0.02f;
+	S.Bright = 0.5f;
+	S.Color = FLinearColor(1.0f, 0.08f, 0.03f, 1.0f);
+	S.MinPxK = 0.0004f;
+	S.bPinned = true;
+	SetActorTickEnabled(true);
+	SetLifeSpan(LifeS + 1.0f);
+}
+
+void ABlastDebris::StartGlass(const FVector& CenterCm, const FVector& OutDir, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(CenterCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector Out = OutDir.GetSafeNormal();
+	// os cacos que piscam: 120 por janela no voo (0,4–0,9 s), 1–2 m/s pra fora e pra baixo, a normal sorteada girando 6–20
+	// rad/s; no mínimo ~2 px; o branco do sol
+	for (int32 i = 0; i < 120; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + FVector(Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.2f, 0.2f));
+		S.V = (Out * Rand.FRandRange(0.5f, 2.0f) + Rand.VRand() * 0.6f) + FVector(0.0f, 0.0f, Rand.FRandRange(0.0f, 1.0f));
+		S.Life = Rand.FRandRange(0.4f, 0.9f);
+		S.Size = 0.01f;
+		S.MinPxK = 0.0006f;
+		S.Bright = 1.0f;
+		S.Color = FLinearColor(0.95f, 0.98f, 1.0f, 1.0f);
+		S.bRound = true;
+		S.bGlint = true;
+		S.GlintN = Rand.VRand();
+		S.GlintSpin = Rand.VRand() * Rand.FRandRange(6.0f, 20.0f);
+		S.Drag = G / FMath::Square(8.0f);
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// os blocos de cubos ainda grudados (20–40 de 3–10 cm, 1–2,5 m/s), verde-claros e lisos
+	for (int32 i = 0; i < 24; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + FVector(Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.2f, 0.2f));
+		P.V = Out * Rand.FRandRange(1.0f, 2.5f) + Rand.VRand() * 0.5f;
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(4.0f, 12.0f);
+		P.Size = Rand.FRandRange(0.03f, 0.1f);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	PlateTint = FLinearColor(0.55f, 0.66f, 0.64f, 1.0f);
+	PlateRoughNow = 0.08f;
+	BuildPlateSection();
+	SetActorTickEnabled(true);
+	SetLifeSpan(15.0f);
+}
+
+void ABlastDebris::StartChips(const FVector& Cm, const FVector& Dir, int32 Count, float SizeMin, float SizeMax, float SpeedMin, float SpeedMax, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(Cm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector Axis = (Dir.GetSafeNormal() + FVector(0.0f, 0.0f, 0.6f)).GetSafeNormal();
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + Rand.VRand() * 0.15f;
+		P.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(45.0f)) * Rand.FRandRange(SpeedMin, SpeedMax);
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(6.0f, 18.0f);
+		P.Size = Rand.FRandRange(SizeMin, SizeMax);
+		P.Shape = Rand.RandRange(0, NumShapes - 1);
+	}
+	BuildPlateSection();
+	SetActorTickEnabled(true);
+	SetLifeSpan(15.0f);
+}
+
+void ABlastDebris::StartScrape(const FVector& Cm, const FVector& Dir, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(Cm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	// aço contra aço dá pouca faísca abaixo de ~6 m/s (van Wingerden 2019): 5–12 de 0,1–0,3 s, laranja, fracas de dia
+	const int32 Count = 5 + Rand.RandRange(0, 7);
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O + Rand.VRand() * 0.3f;
+		S.V = Rand.VRandCone((Dir.GetSafeNormal() + FVector(0.0f, 0.0f, 0.3f)).GetSafeNormal(), FMath::DegreesToRadians(35.0f)) * Rand.FRandRange(4.0f, 9.0f);
+		S.Life = Rand.FRandRange(0.1f, 0.3f);
+		S.Size = Rand.FRandRange(0.01f, 0.018f);
+		S.MinPxK = 0.0004f;
+		S.Bright = Rand.FRandRange(0.3f, 0.6f);
+		S.bCool = true;
+		S.Color = FLinearColor(1.0f, 0.7f, 0.35f, 1.0f);
+		S.StreakT = 1.0f / 20.0f;
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	SetActorTickEnabled(true);
+	SetLifeSpan(5.0f);
+}
+
+void ABlastDebris::StartBlink(const FVector& Cm, float DurationS)
+{
+	EnsureLight(FLinearColor(1.0f, 0.55f, 0.1f), 250.0f);
+	LightAt = ToM(Cm);
+	LightPeak = 3.0e3f;
+	BlinkUntil = T + DurationS;
+	SetActorTickEnabled(true);
+	SetLifeSpan(DurationS + 1.0f);
+}
+
+FVector ABlastDebris::ArcGroundPoint(const FArc& Ac)
+{
+	const float A = Rand.FRandRange(0.0f, 2.0f * PI), R = Ac.JumpR * Rand.FRandRange(0.5f, 1.0f);
+	return FVector(Ac.Anchor.X + R * FMath::Cos(A), Ac.Anchor.Y + R * FMath::Sin(A), Ac.GroundZ + 0.02f);
+}
+
+void ABlastDebris::StartArc(const FVector& PointCm, int32 Kind, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(PointCm);
+	const float Ground = float(BlastFxGround::HeightAtCached(GetWorld(), PointCm.X, PointCm.Y) / 100.0);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = Ground;
+	const bool bAir = Kind == 0, bTimed = Kind == 2;
+	const FVector Anchor = bAir ? O : FVector(O.X, O.Y, FMath::Max(float(O.Z), Ground + 0.05f));
+	// os arcos: no ar, 1–2 entre as pontas (0,1–0,6 m); no chão, da ponta do fio até a areia (o rápido: 1–2 de 0,2–0,6 m;
+	// o temporizado: 2 que pulam, 0,3–1,5 m). O disparo rápido do religador corta em ~46 ms: 3–4 quadros
+	const int32 Count = bTimed ? 2 : 1 + Rand.RandRange(0, 1);
+	float LongestLife = 0.0f;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FArc& Ac = Arcs.AddDefaulted_GetRef();
+		Ac.Seed = Rand.RandRange(0, 1 << 20);
+		Ac.Anchor = Anchor;
+		Ac.GroundZ = Ground;
+		Ac.Amp = Rand.FRandRange(0.12f, 0.2f);
+		Ac.Halo = Rand.FRandRange(0.12f, 0.2f);
+		if (bAir)
+		{
+			const FVector D = Rand.VRand();
+			const float L = Rand.FRandRange(0.1f, 0.6f);
+			Ac.A = O - D * (0.5f * L);
+			Ac.B = O + D * (0.5f * L);
+			Ac.Life = Rand.FRandRange(0.05f, 0.07f);
+		}
+		else
+		{
+			Ac.A = Anchor;
+			Ac.JumpR = bTimed ? Rand.FRandRange(0.3f, 1.5f) : Rand.FRandRange(0.2f, 0.6f);
+			Ac.B = ArcGroundPoint(Ac);
+			Ac.Life = bTimed ? Rand.FRandRange(0.6f, 1.0f) : Rand.FRandRange(0.05f, 0.07f);
+			Ac.NextJump = bTimed ? Rand.FRandRange(0.1f, 0.2f) : 1.0e9f;
+		}
+		LongestLife = FMath::Max(LongestLife, Ac.Life);
+	}
+	// as gotas de metal: alumínio de ~1,5 mm queimando e cobre fundido, branco-amarelas esfriando pro laranja, gravidade
+	// cheia, quicam. O rápido: 40–80 de uma vez; o temporizado: ~30/s pela vida, nascendo nos pés do arco
+	const int32 Drops = bTimed ? FMath::RoundToInt(30.0f * LongestLife) : 40 + Rand.RandRange(0, 40);
+	for (int32 i = 0; i < Drops; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		if (bTimed)
+		{
+			const float A = Rand.FRandRange(0.0f, 2.0f * PI), R = Rand.FRandRange(0.0f, 1.0f);
+			S.P = FVector(Anchor.X + R * FMath::Cos(A), Anchor.Y + R * FMath::Sin(A), Ground + 0.05f);
+			S.Age = -Rand.FRandRange(0.0f, LongestLife);
+			S.V = Rand.VRandCone(FVector::UpVector, FMath::DegreesToRadians(60.0f)) * Rand.FRandRange(2.0f, 5.0f);
+		}
+		else
+		{
+			S.P = Anchor + Rand.VRand() * 0.1f;
+			const FVector Axis = bAir ? FVector(0.0f, 0.0f, 0.3f) + Rand.VRand() : FVector::UpVector;
+			S.V = (bAir ? Axis.GetSafeNormal() : Rand.VRandCone(Axis, FMath::DegreesToRadians(70.0f))) * Rand.FRandRange(3.0f, 8.0f);
+		}
+		S.Life = Rand.FRandRange(0.6f, 1.5f);
+		S.Size = 0.008f;
+		S.MinPxK = 0.0005f;
+		S.Bright = Rand.FRandRange(0.6f, 1.0f);
+		// (17/10, o Felipe: "uns toques de azuis igual um choque") ~40% das faíscas azul-brancas (o arco aceso nelas), o resto o
+		// metal derretido
+		S.Color = Rand.FRand() < 0.4f ? FLinearColor(0.6f, 0.8f, 1.0f, 1.0f) : FLinearColor(1.0f, 0.85f, 0.5f, 1.0f);
+		S.bCool = true;
+		S.bBounce = true;
+		S.Drag = G / FMath::Square(14.0f);
+		S.StreakT = 1.0f / 30.0f;
+		S.Seed = Rand.FRandRange(0.0f, 100.0f);
+	}
+	// a ponta do fio incandescente por ~0,8 s depois de cada arco
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = Anchor;
+		S.V = FVector(0.0f, 0.0f, 0.01f);
+		S.Life = LongestLife + 0.8f;
+		S.Size = 0.025f;
+		S.Bright = 0.5f;
+		S.Color = FLinearColor(1.0f, 0.55f, 0.2f, 1.0f);
+		S.bRound = true;
+		S.bCool = true;
+		S.bPinned = true;
+	}
+	// as lascas do isolador (porcelana branca) quando o fio arrebenta no ar
+	if (bAir)
+	{
+		for (int32 i = 0; i < 8; ++i)
+		{
+			FPlate& P = Plates.AddDefaulted_GetRef();
+			P.P = O + Rand.VRand() * 0.15f;
+			P.V = Rand.VRand() * Rand.FRandRange(2.0f, 5.0f);
+			P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+			P.Spin = Rand.VRand() * Rand.FRandRange(6.0f, 18.0f);
+			P.Size = Rand.FRandRange(0.03f, 0.08f);
+			P.Shape = Rand.RandRange(0, NumShapes - 1);
+		}
+		BuildPlateSection();
+	}
+	// a luz: azul-branca, no clarão 0,5–1× o sol a 3 m por 1–2 quadros; no temporizado 0,15–0,4× piscando
+	EnsureLight(FLinearColor(0.5f, 0.68f, 1.0f), 1000.0f);   // (17/10) mais azul, o choque
+	LightAt = Anchor;
+	if (bTimed)
+	{
+		LightPeak = 2.5e5f;
+		ArcLightUntil = T + LongestLife;
+	}
+	else
+	{
+		LightPeak = 6.0e5f;
+		LightTau = 0.03f;
+	}
+	SetActorTickEnabled(true);
+	SetLifeSpan(6.0f);
+}
+
+void ABlastDebris::StartWreckFire(float DurationS, bool bFlames)
+{
+	bWreckFlames = bFlames;
+	if (!Shapes.Num())
+	{
+		Rand.Initialize(int32(GetUniqueID()));
+		BuildShapes();
+	}
+	FireUntil = T + DurationS;
+	FireAcc = 0.0f;
+	EnsureLight(FLinearColor(1.0f, 0.5f, 0.18f), 700.0f);
+	LightPeak = 1.5e5f;
+	LightTau = 0.3f;
+	bGlowsDone = false;
+	SetActorTickEnabled(true);
+	SetLifeSpan(0.0f);
+}
+
+void ABlastDebris::UpdateWreckFire(float Dt)
+{
+	if (T >= FireUntil || !bWreckFlames)
+	{
+		return;
+	}
+	// ~9 chamas por segundo, menos no fim; cada uma sobe 1–2 m/s, cresce e some em 0,5–0,8 s (as línguas de fogo
+	// saindo do anel da torre e da escotilha)
+	const float Fade = FMath::Clamp((FireUntil - T) / 3.0f, 0.0f, 1.0f);
+	FireAcc += Dt * 9.0f * Fade;
+	while (FireAcc >= 1.0f)
+	{
+		FireAcc -= 1.0f;
+		int32 Slot = INDEX_NONE;
+		for (const int32 K : FireSlots)
+		{
+			if (Sparks.IsValidIndex(K) && Sparks[K].Age > Sparks[K].Life)
+			{
+				Slot = K;
+				break;
+			}
+		}
+		if (Slot == INDEX_NONE)
+		{
+			if (FireSlots.Num() >= 14)
+			{
+				continue;
+			}
+			Slot = Sparks.AddDefaulted();
+			FireSlots.Add(Slot);
+		}
+		FSpark& S = Sparks[Slot];
+		S = FSpark();
+		S.P = FirePos + FVector(Rand.FRandRange(-0.45f, 0.45f), Rand.FRandRange(-0.45f, 0.45f), Rand.FRandRange(0.0f, 0.2f));
+		S.V = FVector(Rand.FRandRange(-0.3f, 0.3f), Rand.FRandRange(-0.3f, 0.3f), Rand.FRandRange(1.0f, 2.0f));
+		S.Size = Rand.FRandRange(0.22f, 0.38f);
+		S.Grow = 0.5f;
+		S.Life = Rand.FRandRange(0.5f, 0.8f);
+		S.Bright = Rand.FRandRange(0.08f, 0.15f);    // laranja sobre o casco escuro (na referência; sem compensar, 0,05 já era branco)
+		S.Lift = 1.0f;
+		S.bRound = true;
+		S.Color = FLinearColor(1.0f, 0.38f, 0.08f, 1.0f);
+	}
+}
+
+void ABlastDebris::StartTracer(const FVector& FromCm, const FVector& ToCm, float SpeedCmPerS, int32 Seed)
+{
+	Rand.Initialize(Seed);
+	BuildShapes();
+	const FVector A = ToM(FromCm), B = ToM(ToCm);
+	const float Dist = float(FVector::Dist(A, B));
+	const float Speed = FMath::Max(SpeedCmPerS * 0.01f, 1.0f);
+	FComet& C = Comets.AddDefaulted_GetRef();
+	C.P = A;
+	C.V = (B - A) / FMath::Max(Dist / Speed, 0.01f);
+	C.Burn = Dist / Speed;
+	C.bStraight = true;
+	C.HeadM = 0.35f;
+	// o traçante laranja curto dos game shots (16/10, fx_disparo_v6: a cabeça a (1; 0,55; 0,25) somada à areia saía um
+	// ponto branco, e o rastro aceso de 0,12 s a 105 m/s era uma linha branca de ~12 m)
+	C.Color = FLinearColor(0.6f, 0.24f, 0.05f, 1.0f);
+	// o risco: uma faísca na mesma velocidade, sem gravidade nem arrasto, esticada pelo borrão de 1/30 s (≈ 3,5 m a
+	// 105 m/s, o que os jogos usam: 1/60–1/30 s de voo) e com ≥ 3 px de espessura; um rastro de 0,3 s a 105 m/s seria
+	// uma linha de 30 m ("raio laser", reprovado)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = A;
+		S.V = C.V;
+		S.Life = C.Burn;
+		S.Size = 0.06f;
+		S.Bright = 0.4f;                            // o risco laranja saturado ~1,5–2× a areia na tela (a 0,15 e (1; 0,62; 0,3) era creme)
+		S.Lift = 1.0f;                              // sem gravidade
+		S.MinPxK = 0.00075f;
+		S.Color = FLinearColor(1.0f, 0.4f, 0.1f, 1.0f);
+		S.bTrail = true;
+	}
+	// a fumacinha do traçante: curta e fraca, só o rastro quente logo atrás
+	C.Trail = NewTrail(0.08f, 0.3f, 0.08f, 0.6f, 0.0f, 0.12f);   // sem fogo no rastro (era a linha branca)
+	EnsureLight(FLinearColor(1.0f, 0.6f, 0.3f), 700.0f);
+	LightFollow = 0;
+	LightAt = B;
+	LightPeak = 2.0e5f;
+	LightTau = 1.0f;
+	SetLifeSpan(5.0f);
+}
+
 float ABlastDebris::SparkScaleNow() const
 {
 	return BallScale > 0.0f ? FMath::Clamp(BallScale, 0.2f, 1.0f) : SparkScaleCfg();
@@ -212,6 +1335,11 @@ void ABlastDebris::SetTrailHead(int32 Trail, const FVector& HeadCm, bool bEmitti
 	{
 		Trails[Trail].Head = ToM(HeadCm);
 		Trails[Trail].bEmitting = bEmitting;
+		if (bEmitting && bTrailsDone)
+		{
+			bTrailsDone = false;                    // a fumaça do ferido volta a soltar: o tique religa
+			SetActorTickEnabled(true);
+		}
 	}
 }
 
@@ -224,12 +1352,15 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 	// nascimento: nada some no meio. A silhueta fica (a bola, a torre e o rastro dela).
 	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
 	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
-	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	const float Keep = (Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f)) * FMath::Clamp(DetailK, 0.1f, 1.0f);
 	const int32 PlateCount = FMath::Max(4, FMath::RoundToInt(NumPlates * Keep));
 	const int32 CometCount = FMath::Max(2, FMath::RoundToInt(NumComets * Keep));
 	const int32 EmberCount = FMath::RoundToInt(NumEmbers * Keep);
 	BuildShapes();
 	const FVector O = ToM(OriginCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
 	for (int32 i = 0; i < PlateCount; ++i)
 	{
 		FPlate& P = Plates.AddDefaulted_GetRef();
@@ -293,7 +1424,18 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 		S.Seed = Rand.FRandRange(0.0f, 100.0f);
 	}
 
+	BuildPlateSection();
+	SetLifeSpan(120.0f);
+}
+
+void ABlastDebris::BuildPlateSection()
+{
 	// as malhas: as chapas têm topologia fixa (criadas uma vez, só os vértices mudam)
+	if (!Plates.Num())
+	{
+		bPlatesSettled = true;
+		return;
+	}
 	TArray<FVector> V, N;
 	TArray<int32> Tri;
 	for (const FPlate& P : Plates)
@@ -314,15 +1456,34 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 	{
 		PlateMesh->SetMaterial(0, Base);
 	}
-	PlateMesh->SetCustomPrimitiveDataVector4(0, FVector4(PlateColor.R, PlateColor.G, PlateColor.B, PlateRough));
-	PlateMesh->SetCustomPrimitiveDataFloat(4, PlateMetal);
+	const FLinearColor Pc = PlateTint.R >= 0.0f ? PlateTint : PlateColor;
+	PlateMesh->SetCustomPrimitiveDataVector4(0, FVector4(Pc.R, Pc.G, Pc.B, PlateRoughNow >= 0.0f ? PlateRoughNow : PlateRough));
+	PlateMesh->SetCustomPrimitiveDataFloat(4, PlateTint.R >= 0.0f ? 0.0f : PlateMetal);
 	UpdatePlates();
-	SetLifeSpan(120.0f);
 }
 
 void ABlastDebris::Integrate(float Dt)
 {
 	const UWorld* W = GetWorld();
+	if (bHasOrigin && GroundRefM < -1.0e8f)
+	{
+		GroundRefM = float(BlastFxGround::HeightAtCached(W, OriginM.X * 100.0, OriginM.Y * 100.0) / 100.0);
+	}
+	auto FloorAt = [this, W](const FVector& P) -> float
+	{
+		return bHasOrigin && FVector::DistSquared2D(P, OriginM) < 36.0 ? GroundRefM
+			: float(BlastFxGround::HeightAtCached(W, P.X * 100.0, P.Y * 100.0) / 100.0);
+	};
+	for (FArc& Ac : Arcs)
+	{
+		Ac.Age += Dt;
+		if (Ac.Age <= Ac.Life && Ac.Age >= Ac.NextJump)
+		{
+			// o arco pula pela areia (o pé queima o ponto e acha outro): a cada 0,1–0,2 s
+			Ac.B = ArcGroundPoint(Ac);
+			Ac.NextJump += Rand.FRandRange(0.1f, 0.2f);
+		}
+	}
 	for (FPlate& P : Plates)
 	{
 		if (P.bRest)
@@ -336,7 +1497,7 @@ void ABlastDebris::Integrate(float Dt)
 		{
 			P.Q = FQuat(P.Spin.GetSafeNormal(), SpinRad) * P.Q;
 		}
-		const float Floor = float(BlastFxGround::HeightAtCached(W, P.P.X * 100.0, P.P.Y * 100.0) / 100.0) + PlateThickM;
+		const float Floor = FloorAt(P.P) + PlateThickM;
 		if (P.P.Z < Floor && P.V.Z < 0.0f)
 		{
 			P.P.Z = Floor;
@@ -362,11 +1523,15 @@ void ABlastDebris::Integrate(float Dt)
 	{
 		C.Age += Dt;
 		const bool bBurning = C.Age < C.Burn;
-		if (bBurning)
+		if (bBurning && C.bStraight)
+		{
+			C.P += C.V * Dt;
+		}
+		else if (bBurning)
 		{
 			C.V += (FVector(0.0f, 0.0f, -G) - CometDrag * C.V.Size() * C.V) * Dt;
 			C.P += C.V * Dt;
-			const float Floor = float(BlastFxGround::HeightAtCached(W, C.P.X * 100.0, C.P.Y * 100.0) / 100.0) + 0.05f;
+			const float Floor = FloorAt(C.P) + 0.05f;
 			if (C.P.Z < Floor)
 			{
 				C.P.Z = Floor;
@@ -383,15 +1548,45 @@ void ABlastDebris::Integrate(float Dt)
 		{
 			continue;
 		}
+		if (S.bGlint && !S.GlintSpin.IsNearlyZero())
+		{
+			S.GlintN = FQuat(S.GlintSpin.GetSafeNormal(), S.GlintSpin.Size() * Dt).RotateVector(S.GlintN);
+		}
+		if (S.bPinned)
+		{
+			continue;                               // a chama e o laser: o ponto vem de fora, a velocidade só desenha o risco
+		}
 		S.V += (FVector(0.0f, 0.0f, -G * (1.0f - S.Lift)) - S.Drag * S.V.Size() * S.V) * Dt;
 		S.P += S.V * Dt;
-		const float Floor = float(BlastFxGround::HeightAtCached(W, S.P.X * 100.0, S.P.Y * 100.0) / 100.0) + 0.03f;
+		const float Floor = FloorAt(S.P) + 0.03f;
 		if (S.P.Z < Floor)
 		{
-			// no chão: a fagulha fica e apaga em ~0.3 s; o espinho morre
 			S.P.Z = Floor;
-			S.V = FVector::ZeroVector;
-			S.Life = FMath::Min(S.Life, S.Age + (S.bEmber ? 0.3f : 0.0f));
+			if (S.bBounce && S.V.Z < 0.0f && S.V.Size() > 4.0f)
+			{
+				// o quique do metal quente na areia (a Epic: quique 0,4, atrito ~0,2): corre rasante e perde força; e
+				// esfria: no chão é uma fagulha laranja, não um grão branco (16/10)
+				S.V = FVector(S.V.X * 0.75f, S.V.Y * 0.75f, -S.V.Z * 0.4f);
+				S.Bright *= 0.4f;
+			}
+			else
+			{
+				// no chão: a fagulha fica e apaga em ~0.3 s; o espinho morre
+				S.V = FVector::ZeroVector;
+				if (S.bGlint)
+				{
+					// o caco de vidro fica no chão ~2,5 s (deitado, só pisca quando o reflexo bate na câmera)
+					if (!S.GlintSpin.IsZero())
+					{
+						S.GlintSpin = FVector::ZeroVector;
+						S.Life = S.Age + 2.5f;
+					}
+				}
+				else
+				{
+					S.Life = FMath::Min(S.Life, S.Age + (S.bEmber ? 0.3f : 0.0f));
+				}
+			}
 		}
 	}
 	for (FTrail& Tr : Trails)
@@ -400,7 +1595,9 @@ void ABlastDebris::Integrate(float Dt)
 		for (FTrailPoint& Pt : Tr.Points)
 		{
 			Pt.Age += Dt;
-			Pt.P.Z += TrailRise * Dt;
+			Pt.P.Z += (Tr.Rise >= 0.0f ? Tr.Rise : TrailRise) * Dt;
+			// o vento empurra mais o que já subiu (rente ao casco o ar é parado): a coluna deita e se abre
+			Pt.P += Tr.Wind * (Dt * FMath::Min(Pt.Age / 1.5f, 1.0f));
 		}
 		Tr.Points.RemoveAll([&Tr](const FTrailPoint& Pt) { return Pt.Age > Tr.Life; });
 		if (Tr.bEmitting)
@@ -468,18 +1665,19 @@ void ABlastDebris::UpdateGlows(const FVector& CamM)
 			Collapsed(C.P);
 			continue;
 		}
-		// apaga no último terço da queima
-		const float Fade = 1.0f - FMath::SmoothStep(0.65f * C.Burn, C.Burn, C.Age);
+		// apaga no último terço da queima (o projétil só no fim do voo, quando chega)
+		const float Fade = 1.0f - FMath::SmoothStep((C.bStraight ? 0.92f : 0.65f) * C.Burn, C.Burn, C.Age);
+		const float HeadM = C.HeadM > 0.0f ? C.HeadM : CometHeadM;
 		const FVector ToCam = (CamM - C.P).GetSafeNormal();
-		const FVector Right = FVector::CrossProduct(ToCam, FVector::UpVector).GetSafeNormal() * (0.5f * CometHeadM);
-		const FVector Up = FVector::CrossProduct(Right, ToCam).GetSafeNormal() * (0.5f * CometHeadM);
+		const FVector Right = FVector::CrossProduct(ToCam, FVector::UpVector).GetSafeNormal() * (0.5f * HeadM);
+		const FVector Up = FVector::CrossProduct(Right, ToCam).GetSafeNormal() * (0.5f * HeadM);
 		for (int32 k = 0; k < 4; ++k)
 		{
 			const float Sx = (k == 1 || k == 2) ? 1.0f : -1.0f, Sy = k >= 2 ? 1.0f : -1.0f;
 			V.Add(ToCm(C.P + Right * Sx + Up * Sy));
 			N.Add(ToCam);
 			UV.Add(FVector2D(0.5f + 0.5f * Sx, 0.5f + 0.5f * Sy));
-			Col.Add(FMath::Lerp(EmberColor, CometHeadColor, SparkScaleNow()) * Fade);   // com a bola menor, laranja (a referência da torre voando: pedaços em chamas)            // o brilho absoluto vem do material (Intensity: a cor do vértice é de 8 bits)
+			Col.Add((C.Color.A >= 0.0f ? FLinearColor(C.Color.R, C.Color.G, C.Color.B, 1.0f) : FMath::Lerp(EmberColor, CometHeadColor, SparkScaleNow())) * Fade);   // com a bola menor, laranja (a referência da torre voando: pedaços em chamas)            // o brilho absoluto vem do material (Intensity: a cor do vértice é de 8 bits)
 		}
 	}
 	// faíscas: o quad esticado ao longo da velocidade (o borrão de ~1/30 s que o
@@ -493,32 +1691,153 @@ void ABlastDebris::UpdateGlows(const FVector& CamM)
 			continue;
 		}
 		float Glow = S.Bright * (1.0f - FMath::SmoothStep(0.6f * S.Life, S.Life, S.Age));
+		if (S.bCool)
+		{
+			// esfriando, o metal escurece junto (o brilho do corpo negro cai muito mais rápido que a cor muda): o risco
+			// branco-amarelo no começo, laranja apagado no fim, como na 4.2 (16/10: brancos do começo ao fim)
+			Glow *= 1.0f - 0.75f * FMath::Clamp(S.Age / FMath::Max(S.Life, 0.01f), 0.0f, 1.0f);
+		}
+		if (S.bGlint)
+		{
+			// o reflexo do vidro, pela meia-direção entre o sol e a câmera. O real é estreito (1–2°) mas são milhares de
+			// cubos; com 120 por janela o lóbulo vai a ~7° (cos^100): ~12% dos cacos que giram cruzam o reflexo, cada um
+			// por ~1 quadro (cos^400 dava ~2 piscadas por janela)
+			const FVector H = (SunDirOf(GetWorld()) + (CamM - S.P).GetSafeNormal()).GetSafeNormal();
+			Glow *= FMath::Pow(FMath::Max(float(FVector::DotProduct(S.GlintN, H)), 0.0f), 100.0f);
+		}
 		if (S.bEmber)
 		{
-			Glow *= 0.6f + 0.4f * FMath::Sin(S.Age * 25.0f + S.Seed);     // pisca
+			// pisca; e no jogo mais fraca que no BlastLab (16/10, a morte de perto: somadas à areia clara do mapa saíam
+			// riscos brancos caindo como chuva; na aprovada de 13/10 as fagulhas são pontos laranja). -DebrisEmberGlow= testa
+			static const float EmberK = [] { float V = 1.0f; FParse::Value(FCommandLine::Get(), TEXT("DebrisEmberGlow="), V); return V; }();
+			Glow *= (0.6f + 0.4f * FMath::Sin(S.Age * 25.0f + S.Seed)) * EmberK;
 		}
 		const FVector ToCam = (CamM - S.P).GetSafeNormal();
 		FVector Along = S.V - ToCam * FVector::DotProduct(S.V, ToCam);   // a velocidade vista da câmera
-		const float Streak = 0.5f * Along.Size() * (1.0f / 30.0f);
+		const float Streak = 0.5f * Along.Size() * S.StreakT;
 		Along = Along.IsNearlyZero() ? FVector::CrossProduct(ToCam, FVector::UpVector).GetSafeNormal() : Along.GetSafeNormal();
-		const FVector Across = FVector::CrossProduct(ToCam, Along).GetSafeNormal() * S.Size;
-		const FVector Len = Along * (S.Size + Streak);
+		float SizeNow = S.Size + S.Grow * FMath::Max(S.Age, 0.0f);
+		if (S.MinPxK > 0.0f)
+		{
+			// espessura mínima na tela (a câmera do jogo: ~20 px por metro a 100 m, 50° de campo; 0,00075 ≈ 3 px)
+			SizeNow = FMath::Max(SizeNow, S.MinPxK * float(FVector::Dist(CamM, S.P)));
+		}
+		const FVector Across = FVector::CrossProduct(ToCam, Along).GetSafeNormal() * SizeNow;
+		const FVector Len = Along * (SizeNow + Streak);
+		// o borrão centrado no ponto (as faíscas) ou todo atrás dele (o traçante: centrado, metade do risco ia à frente da
+		// cabeça, 16/10)
+		const FVector Mid = S.bTrail ? S.P - Along * Streak : S.P;
 		for (int32 k = 0; k < 4; ++k)
 		{
 			const float Sx = (k == 1 || k == 2) ? 1.0f : -1.0f, Sy = k >= 2 ? 1.0f : -1.0f;
-			V.Add(ToCm(S.P + Len * Sx + Across * Sy));
+			V.Add(ToCm(Mid + Len * Sx + Across * Sy));
 			N.Add(ToCam);
-			// u fixo no meio: o perfil do material só varia na largura (risco inteiro, não um ponto)
-			UV.Add(FVector2D(0.5f, 0.5f + 0.5f * Sy));
-			Col.Add((S.bEmber ? EmberColor : FMath::Lerp(EmberColor, SpikeColor, SparkScaleNow())) * FMath::Clamp(Glow, 0.0f, 1.0f));
+			// u fixo no meio: o perfil do material só varia na largura (risco inteiro, não um ponto); o clarão redondo
+			// varia nos dois (como a cabeça do cometa)
+			UV.Add(S.bRound ? FVector2D(0.5f + 0.5f * Sx, 0.5f + 0.5f * Sy) : FVector2D(0.5f, 0.5f + 0.5f * Sy));
+			FLinearColor Base = S.Color.A >= 0.0f ? FLinearColor(S.Color.R, S.Color.G, S.Color.B, 1.0f)
+				: (S.bEmber ? EmberColor : FMath::Lerp(EmberColor, SpikeColor, SparkScaleNow()));
+			if (S.bCool)
+			{
+				Base = FMath::Lerp(Base, EmberColor, FMath::Clamp(S.Age / FMath::Max(S.Life, 0.01f), 0.0f, 1.0f));
+			}
+			Col.Add(Base * FMath::Clamp(Glow, 0.0f, 1.0f));
+		}
+	}
+	// os arcos: a fita em zigue-zague refeita todo quadro (o ponto médio deslocado, 4 níveis = 17 pontos, a amplitude
+	// caindo pela metade por nível), o núcleo branco-azulado e o halo azul-violeta (as bandas do nitrogênio) a ~20%, e um
+	// ramo de 1–2 quadros às vezes. Quantidade fixa de quads por arco (a seção só é refeita quando muda o número)
+	for (const FArc& Ac : Arcs)
+	{
+		constexpr int32 NPts = 17, NBr = 9;
+		const bool bOn = Ac.Age >= 0.0f && Ac.Age <= Ac.Life;
+		// o piscar da rede (120 Hz) amostrado pelo quadro: 0,35–1,0, 12% dos quadros apagado, 1 em 8 com o verde do cobre
+		FRandomStream Fr(Ac.Seed + int32(T * 240.0f));
+		const float Flick = Fr.FRand() < 0.12f ? 0.0f : Fr.FRandRange(0.35f, 1.0f);
+		const bool bGreen = Fr.FRand() < 0.125f;
+		const bool bBranch = Fr.FRand() < 0.35f;
+		FVector Pts[NPts], Br[NBr];
+		Pts[0] = Ac.A;
+		Pts[NPts - 1] = Ac.B;
+		const float Len = float(FVector::Dist(Ac.A, Ac.B));
+		const FVector Dir = (Ac.B - Ac.A).GetSafeNormal();
+		float Amp = Ac.Amp * Len;
+		for (int32 Step = (NPts - 1) / 2; Step >= 1; Step /= 2, Amp *= 0.5f)
+		{
+			for (int32 i = Step; i < NPts - 1; i += 2 * Step)
+			{
+				FVector Off = Fr.VRand();
+				Off -= Dir * FVector::DotProduct(Off, Dir);
+				Pts[i] = 0.5f * (Pts[i - Step] + Pts[i + Step]) + Off * Amp;
+			}
+		}
+		// o ramo: de um ponto do meio, 30% do comprimento, desviado até 60°, 3 níveis
+		const FVector BrDir = (Dir + Fr.VRand() * 1.2f).GetSafeNormal();
+		Br[0] = Pts[3 + Fr.RandRange(0, 10)];
+		Br[NBr - 1] = Br[0] + BrDir * (0.3f * Len);
+		Amp = Ac.Amp * 0.3f * Len;
+		for (int32 Step = (NBr - 1) / 2; Step >= 1; Step /= 2, Amp *= 0.5f)
+		{
+			for (int32 i = Step; i < NBr - 1; i += 2 * Step)
+			{
+				FVector Off = Fr.VRand();
+				Off -= BrDir * FVector::DotProduct(Off, BrDir);
+				Br[i] = 0.5f * (Br[i - Step] + Br[i + Step]) + Off * Amp;
+			}
+		}
+		// (17/10, o Felipe: "toques de azuis igual um choque") o miolo branco-azulado e o halo azul-violeta mais forte
+		const FLinearColor CoreCol = (bGreen ? FLinearColor(0.7f, 1.0f, 0.75f, 1.0f) : FLinearColor(0.72f, 0.86f, 1.0f, 1.0f)) * Flick;
+		const FLinearColor HaloCol = FLinearColor(0.35f, 0.45f, 1.0f, 1.0f) * (0.35f * Flick);
+		auto Seg = [&](const FVector& P0, const FVector& P1, float Half, const FLinearColor& Cl, bool bShow)
+		{
+			if (!bShow)
+			{
+				Collapsed(P0);
+				return;
+			}
+			const FVector Mid = 0.5f * (P0 + P1);
+			const FVector ToCam = (CamM - Mid).GetSafeNormal();
+			FVector Along = P1 - P0;
+			Along -= ToCam * FVector::DotProduct(Along, ToCam);
+			Along = Along.IsNearlyZero() ? FVector::CrossProduct(ToCam, FVector::UpVector).GetSafeNormal() : Along.GetSafeNormal();
+			// no mínimo ~2 px de largura (a câmera do jogo: 0,0005 × a distância)
+			const float W = FMath::Max(Half, 0.0005f * float(FVector::Dist(CamM, Mid)));
+			const FVector Across = FVector::CrossProduct(ToCam, Along).GetSafeNormal() * W;
+			const FVector Ext = Along * (0.5f * W);     // as juntas se sobrepõem (sem frestas no zigue-zague)
+			const FVector Q[4] = { P0 - Ext - Across, P1 + Ext - Across, P1 + Ext + Across, P0 - Ext + Across };
+			for (int32 k = 0; k < 4; ++k)
+			{
+				V.Add(ToCm(Q[k]));
+				N.Add(ToCam);
+				UV.Add(FVector2D(0.5f, k >= 2 ? 1.0f : 0.0f));
+				Col.Add(Cl);
+			}
+		};
+		for (int32 i = 0; i < NPts - 1; ++i)
+		{
+			Seg(Pts[i], Pts[i + 1], Ac.Halo, HaloCol, bOn);
+		}
+		for (int32 i = 0; i < NPts - 1; ++i)
+		{
+			Seg(Pts[i], Pts[i + 1], Ac.Core, CoreCol, bOn);
+		}
+		for (int32 i = 0; i < NBr - 1; ++i)
+		{
+			Seg(Br[i], Br[i + 1], 0.6f * Ac.Halo, HaloCol, bOn && bBranch);
+		}
+		for (int32 i = 0; i < NBr - 1; ++i)
+		{
+			Seg(Br[i], Br[i + 1], 0.7f * Ac.Core, CoreCol * 0.7f, bOn && bBranch);
 		}
 	}
 	if (V.Num() == GlowVerts)
 	{
-		GlowMesh->UpdateMeshSection_LinearColor(0, V, N, UV, Col, TArray<FProcMeshTangent>());
+		// sem a conversão sRGB, como na criação (16/10: o padrão da atualização na Unreal 5.8 é converter, e do 2º quadro
+		// em diante as cores saíam clareadas: o laranja 0,5 virava 0,73, faíscas creme; ProceduralMeshComponent.h)
+		GlowMesh->UpdateMeshSection_LinearColor(0, V, N, UV, Col, TArray<FProcMeshTangent>(), false);
 		return;
 	}
-	for (int32 q = 0; q < NumQuads; ++q)
+	for (int32 q = 0; q < V.Num() / 4; ++q)
 	{
 		const int32 B = 4 * q;
 		Tri.Append({ B, B + 1, B + 2, B, B + 2, B + 3 });
@@ -594,12 +1913,15 @@ void ABlastDebris::UpdateTrails(const FVector& CamM)
 				Side = FVector::CrossProduct(FVector::UpVector, ToCam).GetSafeNormal();
 			}
 			const float Width = Tr.Width0 + Tr.Growth * Pt.Age;
-			// a massa por metro fica: opacidade ~ largura inicial / largura; some no fim da vida
-			const float Opacity = Tr.Opacity0 * FMath::Clamp((Tr.Width0 + 0.25f) / (Width + 0.25f), 0.0f, 1.0f)
+			// a massa por metro fica: opacidade ~ largura inicial / largura; some no fim da vida. A fumaça parada (o tanque
+			// ferido, a carcaça) afina pela raiz (16/10, fx_acerto_v9: a coluna de fonte parada é fumaça cada vez mais velha
+			// a cada metro, e com a regra do rastro de peça voando ela sumia em ~1 m; a de cabeça girando aparecia)
+			const float Thin = FMath::Clamp((Tr.Width0 + 0.25f) / (Width + 0.25f), 0.0f, 1.0f);
+			const float Opacity = Tr.Opacity0 * (Tr.Rise >= 0.0f ? FMath::Sqrt(Thin) : Thin)
 				* (1.0f - FMath::SmoothStep(0.55f * Tr.Life, Tr.Life, Pt.Age))
 				* FMath::SmoothStep(0.0f, 0.04f, Pt.Age + (i == TrailSamples - 1 ? 0.0f : 0.02f));
 			// fogo: o gás logo atrás da peça ainda brilha (some em ~0.25 s de idade)
-			const float Glow = Tr.GlowS > 0.0f && Tr.Age < Tr.GlowS ? FMath::Exp(-Pt.Age / 0.25f) * (1.0f - FMath::SmoothStep(0.6f * Tr.GlowS, Tr.GlowS, Tr.Age)) : 0.0f;
+			const float Glow = Tr.GlowS > 0.0f && Tr.Age < Tr.GlowS ? FMath::Exp(-Pt.Age / FMath::Max(Tr.GlowTau, 0.005f)) * (1.0f - FMath::SmoothStep(0.6f * Tr.GlowS, Tr.GlowS, Tr.Age)) : 0.0f;
 			const FLinearColor C(Opacity, Glow, Tr.Albedo, Tr.Seed);
 			for (int32 k = 0; k < 3; ++k)
 			{
@@ -611,10 +1933,15 @@ void ABlastDebris::UpdateTrails(const FVector& CamM)
 			}
 		}
 	}
-	// A fita é refeita a cada quadro (já pequena: TrailSamples pontos por rastro).
-	// Só atualizar os vértices (UpdateMeshSection) mudava a luz dela: o rastro
-	// escuro da torre saía como um tubo creme aceso (A/B de 07/10, rodadas
-	// ab_close_final × ab_close_rebuild). Nas cabeças, que não recebem luz, vale
+	// Com o mesmo número de vértices, só atualizar (16/10, o custo de processador: recriar refazia a caixa, a colisão e
+	// o desenho a cada quadro). O A/B de 07/10 (o rastro escuro da torre virava um tubo creme aceso só atualizando) era
+	// a conversão sRGB: a atualização da Unreal 5.8 converte por padrão e a criação não (ProceduralMeshComponent.h);
+	// aqui as duas vão sem converter
+	if (V.Num() && V.Num() == TrailVerts)
+	{
+		TrailMesh->UpdateMeshSection_LinearColor(0, V, N, UV, Col, TArray<FProcMeshTangent>(), false);
+		return;
+	}
 	for (int32 t = 0; t < Trails.Num(); ++t)
 	{
 		for (int32 i = 1; i < TrailSamples; ++i)
@@ -631,10 +1958,25 @@ void ABlastDebris::UpdateTrails(const FVector& CamM)
 	if (Tri.Num())
 	{
 		TrailMesh->CreateMeshSection_LinearColor(0, V, Tri, N, UV, Col, TArray<FProcMeshTangent>(), false);
+		TrailVerts = V.Num();
+		static const bool bLog = [] { int32 Lv = 0; FParse::Value(FCommandLine::Get(), TEXT("ShotFxLog="), Lv); return Lv != 0; }();
+		if (bLog && Trails.Num() && Trails[0].Rise >= 0.0f && FMath::Fmod(T, 2.0f) < 0.034f)
+		{
+			FBox B(V);
+			float MaxOp = 0.0f;
+			for (const FLinearColor& Cc : Col)
+			{
+				MaxOp = FMath::Max(MaxOp, Cc.R);
+			}
+			UE_LOG(LogTemp, Display, TEXT("BlastFx fumaça: %s %d vértices, caixa %s .. %s, opacidade máx %.2f, material %s, visível %d"),
+				*GetName(), V.Num(), *B.Min.ToString(), *B.Max.ToString(), MaxOp,
+				TrailMesh->GetMaterial(0) ? *TrailMesh->GetMaterial(0)->GetName() : TEXT("-"), TrailMesh->IsVisible() ? 1 : 0);
+		}
 	}
 	else
 	{
 		TrailMesh->ClearMeshSection(0);
+		TrailVerts = -1;
 	}
 }
 
@@ -650,12 +1992,9 @@ void ABlastDebris::Tick(float DeltaSeconds)
 		UMaterialInterface* GlowBase = LoadObject<UMaterialInterface>(nullptr, GlowPath);
 		static const float GlowCfg = [] { float V = -1.0f; FParse::Value(FCommandLine::Get(), TEXT("DebrisGlow="), V); return V; }();
 		const float Glow = GlowCfg >= 0.0f ? GlowCfg : GlowScale;
-		UMaterialInstanceDynamic* GM = GlowBase && Glow != 1.0f ? UMaterialInstanceDynamic::Create(GlowBase, this) : nullptr;
-		if (GM)
-		{
-			GM->SetScalarParameterValue(TEXT("Intensity"), 2.0e5f * Glow);
-		}
-		GlowMesh->SetMaterial(0, GM ? GM : GlowBase);
+		GlowMID = GlowBase ? UMaterialInstanceDynamic::Create(GlowBase, this) : nullptr;
+		GlowNow = Glow;
+		GlowMesh->SetMaterial(0, GlowMID ? GlowMID.Get() : GlowBase);
 		// os rastros com a cor da fuligem da explosão (-RmSoot=r,g,b,albedo, 13/10): eram riscos brancos contra a nuvem
 		// marrom, outra fumaça na mesma cena
 		UMaterialInterface* TrailBase = LoadObject<UMaterialInterface>(nullptr, TrailPath);
@@ -675,6 +2014,35 @@ void ABlastDebris::Tick(float DeltaSeconds)
 		{
 			M->SetVectorParameterValue(TEXT("SmokeTint"), SootTint);
 			TrailMesh->SetMaterial(0, M);
+			TrailMID = M;
+		}
+		ExpoApplied = -1.0f;
+		// diagnóstico (-ShotFxTrailMat=1): a fita num material sólido, pra separar "não tem malha" de "o material some"
+		static const bool bSolidTrail = [] { int32 Sv = 0; FParse::Value(FCommandLine::Get(), TEXT("ShotFxTrailMat="), Sv); return Sv != 0; }();
+		if (bSolidTrail)
+		{
+			TrailMesh->SetMaterial(0, LoadObject<UMaterialInterface>(nullptr, BasePath));
+		}
+	}
+	// O brilho compensado pela exposição (16/10; a regra do raymarch de 11/10, BlastRaymarch.cpp): os números dos
+	// destroços valem na exposição da maquete do deserto onde a morte de tanque foi aprovada (EV100 13,55 travado, a
+	// receita desert_golden_hour: 1/(1,2·2^13,55) = 6,95·10⁻⁵). No jogo a câmera estava 3,2× mais aberta (2,2·10⁻⁴ no
+	// World_TestSalt2) e tudo o que soma luz saía branco: faíscas, chamas, o clarão, as luzes no chão.
+	{
+		static const float RefExpo = [] { float V = 6.95e-5f; FParse::Value(FCommandLine::Get(), TEXT("DebrisRefExpo="), V); return V; }();
+		const float E = BlastRaymarch::LastViewExposure();
+		ExpoComp = E > 0.0f && RefExpo > 0.0f ? FMath::Clamp(RefExpo / E, 1.0f / 16.0f, 4.0f) : 1.0f;
+		if (ExpoApplied < 0.0f || FMath::Abs(ExpoComp / ExpoApplied - 1.0f) > 0.03f)
+		{
+			ExpoApplied = ExpoComp;
+			if (GlowMID)
+			{
+				GlowMID->SetScalarParameterValue(TEXT("Intensity"), 2.0e5f * GlowNow * ExpoComp);
+			}
+			if (TrailMID)
+			{
+				TrailMID->SetScalarParameterValue(TEXT("FlameLum"), 3.0e4f * ExpoComp);
+			}
 		}
 	}
 	// Cada parte só vai pra placa enquanto muda (14/10, otimização sem mudar a imagem). Antes as 32 chapas deitadas
@@ -684,9 +2052,18 @@ void ABlastDebris::Tick(float DeltaSeconds)
 	{
 		T += Dt;
 		UpdateFollows(Dt);
-		Integrate(Dt);
+		UpdateWreckFire(Dt);
+		{
+			CSV_SCOPED_TIMING_STAT(BlastFxDebris, Integrate);   // (16/10, o custo de processador do tiro: medir por parte)
+			Integrate(Dt);
+		}
+		{
+			CSV_SCOPED_TIMING_STAT(BlastFxDebris, Light);
+			UpdateLight(Dt);
+		}
 		if (!bPlatesSettled)
 		{
+			CSV_SCOPED_TIMING_STAT(BlastFxDebris, Plates);
 			UpdatePlates();
 			bPlatesSettled = !Plates.ContainsByPredicate([](const FPlate& P) { return !P.bRest; });
 		}
@@ -694,17 +2071,24 @@ void ABlastDebris::Tick(float DeltaSeconds)
 	const FVector Cam = CameraM(GetWorld());
 	if (!bGlowsDone)
 	{
+		CSV_SCOPED_TIMING_STAT(BlastFxDebris, Glows);
 		UpdateGlows(Cam);
 		bGlowsDone = !Comets.ContainsByPredicate([](const FComet& C) { return C.Age < C.Burn; })
+			&& !Arcs.ContainsByPredicate([](const FArc& Ac) { return Ac.Age <= Ac.Life; })
 			&& !Sparks.ContainsByPredicate([](const FSpark& S) { return S.Age <= S.Life; });
 	}
 	if (!bTrailsDone)
 	{
+		CSV_SCOPED_TIMING_STAT(BlastFxDebris, Trails);
 		UpdateTrails(Cam);
 		bTrailsDone = !Trails.ContainsByPredicate([](const FTrail& Tr) { return Tr.bEmitting || Tr.Points.Num() > 0; })
 			&& !Follows.ContainsByPredicate([](const FFollow& F) { return !F.bDone; });
 	}
-	if (bPlatesSettled && bGlowsDone && bTrailsDone)
+	if (T < FireUntil)
+	{
+		bGlowsDone = false;                         // o fogo da carcaça segue soltando chamas
+	}
+	if (bPlatesSettled && bGlowsDone && bTrailsDone && LightPeak <= 0.0f && T >= FireUntil && T >= BlinkUntil)
 	{
 		SetActorTickEnabled(false);
 	}

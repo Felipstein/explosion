@@ -30,7 +30,56 @@ def latest():
     return max(files, key=os.path.getmtime)
 
 
+PASSES = ['GPU/BlastRmLight', 'GPU/BlastRmShadow', 'GPU/BlastRmMarch', 'GPU/BlastRmTemporal', 'GPU/BlastRmComposite', 'GPUTime', 'FrameTime']
+
+
+def load(path):
+    with open(path, newline='', encoding='utf-8', errors='replace') as f:
+        rows = list(csv.reader(f))
+    hk = max(k for k, r in enumerate(rows) if 'FrameTime' in r)
+    head = rows[hk]
+    data = [r + [''] * (len(head) - len(r)) for r in rows[1:hk] if not (r and r[0].startswith('['))]
+    col = {h: i for i, h in enumerate(head)}
+    ev = col.get('EVENTS', col.get('events'))
+    deaths = [k for k, r in enumerate(data) if ev is not None and 'TankDeath' in r[ev]]
+
+    def series(h):
+        if h not in col:
+            return None
+        out = []
+        for r in data:
+            try:
+                out.append(float(r[col[h]]) if r[col[h]] != '' else 0.0)
+            except ValueError:
+                out.append(0.0)
+        return np.array(out)
+    return deaths, series
+
+
+def compare(paths):
+    """--compare a.csv b.csv ...: os passes do raymarch na janela das mortes, um perfil por coluna (média / p95)."""
+    print(f'{"passe (média / p95, ms)":28s}' + ''.join(f'{os.path.basename(os.path.dirname(p)) or os.path.basename(p):>22s}' for p in paths))
+    loaded = [load(p) for p in paths]
+    for h in PASSES + ['RmTotal']:
+        line = f'{h:28s}'
+        for deaths, series in loaded:
+            if not deaths:
+                line += f'{"sem mortes":>22s}'
+                continue
+            win = slice(deaths[0], deaths[0] + WINDOW)
+            if h == 'RmTotal':
+                parts = [series(x) for x in PASSES[:5] if series(x) is not None]
+                s = np.sum(parts, axis=0) if parts else None
+            else:
+                s = series(h)
+            line += f'{"—":>22s}' if s is None else f'{s[win].mean():10.2f} /{np.percentile(s[win], 95):7.2f}    '
+        print(line)
+
+
 def main():
+    if '--compare' in sys.argv:
+        compare([a for a in sys.argv[1:] if a.endswith('.csv')])
+        return
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     top = int(sys.argv[sys.argv.index('--top') + 1]) if '--top' in sys.argv else 25
     path = next((a for a in args if a.endswith('.csv')), None) or latest()

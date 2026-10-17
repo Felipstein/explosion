@@ -24,7 +24,7 @@ Mantaflow (density, flame, temperature, velocity; o calor dele vai a ~1, com os
 fatores do convert_pyro_vdb.py pra ele: calor × 0.30 + chama × 1.3).
 
 Rodar (no Python do Blender, que traz openvdb e numpy):
-  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem] [fumaca|poeira] [loop|-] [fator_temperatura] [chama_em_fuligem] [recorte_voxels] [desfaz_no_alto] [loop_início_s loop_duração_s loop_emenda_s] [bx,by,dydz,dxdz,fica]
+  blender -b --factory-startup -P BlastLab/Tools/build_raymarch_vdb.py -- <pasta_vdb> <nome> [res] [domínio_m] [quadros] [qps] [fator_calor] [fator_fuligem] [fumaca|poeira] [loop|-] [fator_temperatura] [chama_em_fuligem] [recorte_voxels] [desfaz_no_alto] [loop_início_s loop_duração_s loop_emenda_s] [bx,by,dydz,dxdz,fica] [gama_densidade]
 (a pasta do Mantaflow é a cache/data dele). Sai em BlastLab/Intermediate/Raymarch/<nome>.brm2 (em blocos,
 brm2.py; a densa intermediária .bin é apagada no fim).
 """
@@ -82,6 +82,10 @@ LOOP_WIN = tuple(float(a) for a in argv[14:17]) if len(argv) > 16 else (0.0, 0.0
 # coluna (o vento da simulação: a Smoke Plume da JangaFX tomba ~52°) fica só na fração 'fica'. Cada camada de altura
 # z anda −(base + (1 − fica)·inclinação·z) na horizontal (interpolado entre voxels)
 DESKEW = tuple(float(a) for a in argv[17].split(',')) if len(argv) > 17 else None
+# a curva da densidade (17/10, a carcaça simulada no Mantaflow): densidade^gama antes do fator. Linear, o miolo da coluna
+# virava parede opaca e a fumaça rala de cima e das bordas sumia na erosão (uma "corda" escura de 24 m); com gama < 1 a
+# parte rala sobe e o miolo alivia (densa embaixo, translúcida em cima, como nos alvos). 1 = linear (as de sempre)
+DENSITY_GAMMA = float(argv[18]) if len(argv) > 18 else 1.0
 if LOOP:
     CURVE = 1.0
 TOOLS = os.path.dirname(os.path.abspath(__file__))
@@ -227,6 +231,8 @@ def main():
                 continue
             a = np.zeros(dims, dtype=np.float32)
             g[name].copyToArray(a, ijk=tuple(lo))
+            if name == 'density' and DENSITY_GAMMA != 1.0:
+                a = np.power(np.maximum(a, 0.0), DENSITY_GAMMA).astype(np.float32)
             out.append(cube(a))
         vel = None
         if len(vel_names) == 1 and g['velocity'] is not None:

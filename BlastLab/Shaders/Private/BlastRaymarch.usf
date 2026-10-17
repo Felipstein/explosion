@@ -359,7 +359,11 @@ float BoxFade(float3 Vb)
 {
 	const float Top = smoothstep(0.0, GRes * 0.2, GRes - Vb.z);
 	const float Side = smoothstep(0.0, 5.0 * GRes / 96.0, min(min(Vb.x, GRes - Vb.x), min(Vb.y, GRes - Vb.y)));
-	return Top * Side;
+	// e redondo no chão (16/10, no jogo: a saia de areia da morte de tanque chegava na borda da caixa e, com a câmera
+	// girada 45°, o corte reto virava um losango claro em volta da carcaça): a areia some num círculo a partir de 72%
+	// do meio-domínio, antes das quinas
+	const float R = length(Vb.xy - 0.5 * GRes) / (0.5 * GRes);
+	return Top * Side * (1.0 - smoothstep(0.72, 0.98, R));
 }
 
 // velocidade (m/s, local) no voxel da gravação: bilinear na fatia z mais próxima

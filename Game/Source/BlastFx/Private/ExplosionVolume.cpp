@@ -1,4 +1,4 @@
-// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
+﻿// Cópia do BlastLab (commit a14c45a, 10/10/2026): a ponte até o plugin comum que a sessão do
 // BlastLab vai fazer (docs/BASE_JOGAVEL.md). A original continua sendo a referência: mudanças
 // de aparência nascem lá e são trazidas pra cá.
 #include "ExplosionVolume.h"
@@ -305,6 +305,10 @@ void AExplosionVolume::OnConstruction(const FTransform& Transform)
 
 bool AExplosionVolume::IsFinished() const
 {
+	if (HoldAge > 0.0f)
+	{
+		return Age > HoldAge;
+	}
 	if (LoopPeriod > 0.0f)
 	{
 		return Age > LoopLife;

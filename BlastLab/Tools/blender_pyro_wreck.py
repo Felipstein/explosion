@@ -1,18 +1,23 @@
-"""Fogo da carcaça do tanque (contínuo, pra tocar em loop) no Mantaflow do Blender.
+"""A carcaça de tanque queimando, simulada no Mantaflow do Blender (17/10 madrugada, o item 9 da fila; docs/ESTUDO_CARCACA.md).
 
 Uso:
-    blender -b --factory-startup -P blender_pyro_wreck.py -- <saida_dir> [resolucao] [quadros]
+    blender -b --factory-startup -P blender_pyro_wreck.py -- <saida_dir> [chave=valor ...]
 
-O vídeo-alvo, de 1,3 a 4 s, mostra a base do tanque com fogo forte e brilhante
-(bolas de fogo rolando do casco, ~0,6 × 0,7 tanque) que liga a coluna preta ao
-casco. A bola da explosão é outra fonte (EmberGen); isto é só o que fica
-queimando. O conversor (convert_pyro_vdb.py ... loop) recorta uma janela e
-emenda o fim no começo.
+O fenômeno (docs/ESTUDO_CARCACA.md, com as fontes): o diesel, o hidráulico e a borracha queimando no anel da torre
+(arrancada) e na grade do motor, 5–15 MW [E]; chama de 1,5–3 m nos alvos (Heskestad dá até ~4–5 m no pico), pulsando a
+~1 Hz (f ≈ 1,5/√D); a fumaça preta de fuligem (albedo ~0,2–0,3) subindo a ~6 m/s, densa nos primeiros metros e rala
+acima. Nos alvos o ar está quase parado: a simulação é sem vento, e a inclinação (10–25°) entra na conversão
+(build_raymarch_vdb.py, o cisalhamento por altura) e o rumo no jogo (o giro da instância pro vento do mapa).
 
-Cena: casco de 7,9 × 3,6 × 1,6 m como obstáculo; combustível contínuo no
-convés (escotilha aberta) e dois respiros que pulsam em tempos sorteados
-(as "bolas" do vídeo); chão fechado; domínio de 8 × 8 × 12 m.
+A cena (metros, Z pra cima, chão fechado em z = 0, o casco no meio):
+- CASCO: um bloco de 8,1 × 3,8 × 1,8 m como obstáculo (a fumaça contorna, a chama sai de cima);
+- ANEL: 'anel_n' fontes num disco de 1,1 m no teto (o buraco da torre, ~70% do combustível);
+- MOTOR: 'motor_n' fontes na grade de trás (1,5 × 1 m, ~30%);
+- cada fonte com o combustível sorteado a cada 0,3–0,6 s (a chama não sai de um retângulo liso; 13/10: "retângulo").
+O combustível sobe nos primeiros 'subida_s' s e fica constante: a janela do loop (build_raymarch_vdb.py 'loop') sai do
+trecho estável. Cache OpenVDB (density, flame, temperature, velocity).
 """
+import math
 import os
 import random
 import sys
@@ -22,112 +27,133 @@ import bpy
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 OUT = os.path.abspath(argv[0])
-RES = int(argv[1]) if len(argv) > 1 else 128
-FRAMES = int(argv[2]) if len(argv) > 2 else 240
-FPS = 30
+PARAMS = {
+    'res': 160, 'segundos': 20.0, 'fps': 10,
+    'largura_x': 16.0, 'largura_y': 12.0, 'altura': 24.0,
+    'casco_x': 8.1, 'casco_y': 3.8, 'casco_z': 1.8,
+    'anel_r': 1.1, 'anel_n': 7, 'motor_n': 4, 'motor_x': 1.5, 'motor_y': 1.0,
+    'combustivel': 1.0, 'calor': 1.6, 'fumaca': 0.6, 'sobe': 2.0, 'subida_s': 2.0,
+    'queima': 0.75, 'fumaca_chama': 1.6, 'vort_chama': 0.5, 'ignicao': 1.25, 'temp_max': 2.0,
+    'alpha': 0.0, 'beta': 1.0, 'vort': 0.4, 'dissolve': 0,
+    'tempo': 3.6, 'semente': 5,
+}
+for a in argv[1:]:
+    k, v = a.split('=', 1)
+    PARAMS[k] = type(PARAMS[k])(float(v)) if k in PARAMS else float(v)
+P = PARAMS
 os.makedirs(OUT, exist_ok=True)
-random.seed(11)
 
 sc = bpy.context.scene
 for ob in list(bpy.data.objects):
     bpy.data.objects.remove(ob, do_unlink=True)
-sc.render.fps = FPS
-sc.frame_start, sc.frame_end = 1, FRAMES
+fps = int(P['fps'])
+frames = int(round(P['segundos'] * fps))
+sc.render.fps = fps
+sc.frame_start, sc.frame_end = 1, frames
 
 
-def box(name, size, loc):
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc)
-    ob = bpy.context.object
-    ob.name = name
-    ob.scale = size
-    bpy.ops.object.transform_apply(scale=True)
-    return ob
-
-
-def sphere(name, r, loc):
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=r, location=loc, segments=20, ring_count=10)
+def mesh(op, name, **kw):
+    op(**kw)
     ob = bpy.context.object
     ob.name = name
     return ob
 
 
-DOM = (8.0, 8.0, 12.0)
-dom = box('Domain', DOM, (0.0, 0.0, DOM[2] / 2))
+Wx, Wy, H = P['largura_x'], P['largura_y'], P['altura']
+dom = mesh(bpy.ops.mesh.primitive_cube_add, 'Domain', size=1.0, location=(0.0, 0.0, H / 2))
+dom.scale = (Wx, Wy, H)
+bpy.ops.object.transform_apply(scale=True)
 m = dom.modifiers.new('Fluid', 'FLUID')
 m.fluid_type = 'DOMAIN'
 d = m.domain_settings
 d.domain_type = 'GAS'
-d.resolution_max = RES
+d.resolution_max = int(P['res'])
 d.use_adaptive_domain = False
+d.time_scale = P['tempo']
 d.cfl_condition = 4.0
-d.timesteps_max = 8
+d.timesteps_max = 12
 d.timesteps_min = 2
 d.use_collision_border_bottom = True
 for side in ('front', 'back', 'left', 'right', 'top'):
     setattr(d, f'use_collision_border_{side}', False)
-d.alpha = 0.0
-d.beta = 3.0
-d.vorticity = 0.5
-d.use_dissolve_smoke = False
-d.burning_rate = 0.55   # chama mais alta: ~0,7 tanque (5,5 m) no vídeo
-d.flame_smoke = 1.3
-d.flame_vorticity = 0.6
-d.flame_ignition = 1.2
-d.flame_max_temp = 3.0
-d.flame_smoke_color = (0.02, 0.02, 0.02)
+d.alpha = P['alpha']
+d.beta = P['beta']
+d.vorticity = P['vort']
+d.burning_rate = P['queima']
+d.flame_smoke = P['fumaca_chama']
+d.flame_vorticity = P['vort_chama']
+d.flame_ignition = P['ignicao']
+d.flame_max_temp = P['temp_max']
+d.flame_smoke_color = (0.08, 0.08, 0.08)
+d.use_dissolve_smoke = P['dissolve'] > 0
+if P['dissolve'] > 0:
+    d.dissolve_speed = int(P['dissolve'])
+    d.use_dissolve_smoke_log = True
 d.cache_type = 'ALL'
 d.cache_data_format = 'OPENVDB'
+d.cache_noise_format = 'OPENVDB'
 d.openvdb_cache_compress_type = 'BLOSC'
 d.openvdb_data_depth = '16'
 d.cache_directory = os.path.join(OUT, 'cache')
 d.cache_frame_start = 1
-d.cache_frame_end = FRAMES
+d.cache_frame_end = frames
 
-hull = box('Hull', (7.9, 3.6, 1.6), (0.0, 0.0, 1.0))
-e = hull.modifiers.new('Fluid', 'FLUID')
-e.fluid_type = 'EFFECTOR'
-e.effector_settings.effector_type = 'COLLISION'
+# o casco (obstáculo)
+hull = mesh(bpy.ops.mesh.primitive_cube_add, 'Hull', size=1.0, location=(0.0, 0.0, P['casco_z'] / 2))
+hull.scale = (P['casco_x'], P['casco_y'], P['casco_z'])
+bpy.ops.object.transform_apply(scale=True)
+hm = hull.modifiers.new('Fluid', 'FLUID')
+hm.fluid_type = 'EFFECTOR'
+hm.effector_settings.effector_type = 'COLLISION'
+
+rnd = random.Random(int(P['semente']))
 
 
-def flow(ob, fuel, temp, vel_z, keys):
-    """keys: [(quadro, fator)] — o fluxo é animado em fuel/temperatura/densidade."""
-    mod = ob.modifiers.new('Fluid', 'FLUID')
+def fire_source(name, x, y, w, share):
+    """Uma boca de fogo em cima do casco: combustível e calor sorteados a cada 0,3–0,6 s, subindo nos primeiros s."""
+    b = mesh(bpy.ops.mesh.primitive_cube_add, name, size=1.0, location=(x, y, P['casco_z'] + 0.12))
+    b.scale = (w, w, 0.2)
+    bpy.ops.object.transform_apply(scale=True)
+    mod = b.modifiers.new('Fluid', 'FLUID')
     mod.fluid_type = 'FLOW'
     f = mod.flow_settings
     f.flow_type = 'BOTH'
     f.flow_behavior = 'INFLOW'
     f.flow_source = 'MESH'
-    f.surface_distance = 0.4
+    f.surface_distance = 0.15
     f.use_initial_velocity = True
-    f.velocity_coord = (0.0, 0.0, vel_z)
-    f.smoke_color = (0.03, 0.03, 0.03)
+    f.velocity_coord = (0.0, 0.0, P['sobe'])
+    f.smoke_color = (0.08, 0.08, 0.08)
     f.subframes = 1
-    for frame, k in keys:
-        f.fuel_amount = fuel * k
-        f.temperature = temp * k
-        f.density = 0.4 * k
+    t = 0.0
+    while t <= P['segundos'] + 0.5:
+        ramp = min(1.0, t / max(P['subida_s'], 0.01))
+        k = ramp * share * rnd.uniform(0.35, 1.0)
+        frame = 1 + int(round(t * fps))
+        f.fuel_amount = P['combustivel'] * k
+        f.temperature = P['calor'] * (0.5 + 0.5 * k / max(share, 1e-3))
+        f.density = P['fumaca'] * k
         for prop in ('fuel_amount', 'temperature', 'density'):
             f.keyframe_insert(prop, frame=frame)
+        t += rnd.uniform(0.3, 0.6)
 
 
-# a escotilha aberta: contínua, com uma oscilação lenta (a chama respira)
-hatch = box('Hatch', (3.0, 2.2, 0.3), (0.4, 0.0, 1.95))
-keys = [(f, 0.75 + 0.25 * random.random()) for f in range(1, FRAMES + 1, 6)]
-flow(hatch, fuel=3.0, temp=3.0, vel_z=4.5, keys=keys)
-# dois respiros (motor e torre arrancada) com bolas de fogo em tempos sorteados
-for i, loc in enumerate(((-2.6, 0.6, 1.9), (1.8, -0.9, 1.9))):
-    vent = sphere(f'Vent{i}', 0.9, loc)
-    keys, f = [(1, 0.0)], 4 + i * 7
-    while f < FRAMES:
-        keys += [(f, 0.0), (f + 1, 1.0), (f + 4, 1.0), (f + 6, 0.0)]
-        f += random.randint(14, 30)                      # uma bola a cada ~0,5–1 s
-    flow(vent, fuel=5.0, temp=3.5, vel_z=8.0, keys=keys)
+# o anel da torre: fontes num disco de anel_r (a torre foi arrancada), um pouco à frente do meio do casco
+n = int(P['anel_n'])
+for i in range(n):
+    a = 2 * math.pi * (i + rnd.uniform(-0.3, 0.3)) / n
+    r = P['anel_r'] * math.sqrt(rnd.uniform(0.1, 1.0))
+    fire_source(f'Ring{i}', 0.6 + r * math.cos(a), r * math.sin(a), 0.55, 0.7 * 7.0 / n)
+# a grade do motor, atrás
+for i in range(int(P['motor_n'])):
+    fire_source(f'Engine{i}', -P['casco_x'] / 2 + 1.2 + rnd.uniform(-0.5, 0.5) * P['motor_x'], rnd.uniform(-0.5, 0.5) * P['motor_y'] * 2,
+                0.45, 0.3 * 4.0 / max(int(P['motor_n']), 1))
 
 bpy.context.view_layer.objects.active = dom
 dom.select_set(True)
 t0 = time.time()
 with bpy.context.temp_override(object=dom, active_object=dom):
     bpy.ops.fluid.bake_all()
-size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(os.path.join(OUT, 'cache')) for f in fs)
-print(f'PYRO wreck res {RES} frames {FRAMES}: {(time.time() - t0) / 60:.1f} min, cache {size / 1e6:.0f} MB')
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'pyro.blend'))
+dt = time.time() - t0
+size = sum(os.path.getsize(os.path.join(r, n_)) for r, _, fs in os.walk(os.path.join(OUT, 'cache')) for n_ in fs)
+print(f'PYRO carcaca res {int(P["res"])} quadros {frames}: {dt / 60:.1f} min, cache {size / 1e6:.0f} MB, {P}')

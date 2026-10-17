@@ -31,6 +31,8 @@ class BLASTFX_API UBlastRaymarchSubsystem : public UTickableWorldSubsystem
 public:
 	/** Esta explosão é desenhada pelo raymarch (o volume da Unreal fica escondido). */
 	static bool Handles(const AExplosionVolume* E);
+	/** A duração (s da gravação) de uma gravação própria carregada (a poeira do tiro); 0 se não carregou. */
+	float SourceDuration(FName Source) const;
 
 
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;

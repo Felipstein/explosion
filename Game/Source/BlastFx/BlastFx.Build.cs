@@ -10,6 +10,6 @@ public class BlastFx : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "RTSShaders", "RenderCore", "RHI", "Renderer" });
 		// os destroços da morte de tanque (BlastDebris: malha procedural) e o chão deles (BlastFxGround: o Landscape), 14/10
-		PrivateDependencyModuleNames.AddRange(new string[] { "ProceduralMeshComponent", "Landscape" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ProceduralMeshComponent", "Landscape", "RTSSunShadow", "RTSDustField" });   // (16/10 noite: a consulta do mapa do sol pela CPU, a prova da sombra; a poeira em volume, que faz sombra no chão)
 	}
 }

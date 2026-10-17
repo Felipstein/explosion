@@ -23,6 +23,10 @@ struct FScreenPassTexture;
  */
 namespace BlastRaymarch
 {
+	/** A última exposição da vista (GetLastEyeAdaptationExposure, a do render do raymarch; 0 = ainda nenhuma): os destroços
+	 *  (BlastDebris) compensam o brilho por ela, como o raymarch compensa o fogo (16/10). */
+	RTSSHADERS_API float LastViewExposure();
+
 	/** Blocos esparsos (Tools/brm2.py): 8³ voxels por bloco, com 1 de borda no atlas. */
 	constexpr int32 Brick = 8;
 	constexpr int32 BrickA = Brick + 2;            // 10³ RGBA8 por bloco
@@ -77,6 +81,7 @@ namespace BlastRaymarch
 		FBakeRef Bake;
 		FVector FootCm = FVector::ZeroVector;
 		float Scale = 1.0f;
+		float YawRad = 0.0f;           // o rumo (giro em z, rad): a gravação direcional aponta pra onde o fenômeno aponta (16/10 noite)
 		float Frame = 0.0f;            // quadro contínuo da gravação
 		int32 Slot0 = 0, Slot1 = 0;    // onde os dois quadros em volta estão no pool
 		float Seed = 0.0f;
@@ -111,16 +116,21 @@ namespace BlastRaymarch
 	// e 16 empilhadas em z); os blocos de todas ficam num atlas só, do tamanho do
 	// pior caso (o quadro mais cheio das gravações carregadas × 32).
 	constexpr int32 SlotsY = 2;
-	constexpr int32 MaxSlots = 32;
+	// (17/10 tarde) 64 vagas pras 32 explosões; o atlas continua no tamanho do pior caso de 32 (AtlasSlotBudget): os quadros
+	// pequenos (o disparo, a areia) cabem de sobra, e o jogo tira os velhos quando os blocos não cabem
+	constexpr int32 MaxSlots = 64;
+	constexpr int32 AtlasSlotBudget = 32;
 	// 500³ RGBA8 = 500 MB (+ 108 MB da meia resolução) no máximo: a Carga Pesada do EmberGen
 	// (até 7 592 blocos por quadro) pediria 1,2 GB pro pior caso das 32 vagas cheias dela
 	constexpr int32 MaxAtlasBricksPerAxis = 50;
 	/** Blocos por eixo do atlas pro quadro mais cheio das gravações carregadas (o jogo e o render usam a mesma conta). */
 	inline int32 AtlasSide(int32 MaxBricks)
 	{
-		return FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * MaxSlots, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
+		return FMath::Clamp(FMath::CeilToInt32(FMath::Pow(float(FMath::Max(MaxBricks, 1)) * AtlasSlotBudget, 1.0f / 3.0f)), 4, MaxAtlasBricksPerAxis);
 	}
-	constexpr int32 MaxInstances = 16;
+	// (17/10 tarde, o Felipe: 6 tanques atirando, "some os tiros quando mais de 3 atira") cada tiro gasta 3–4 (o disparo, a
+	// areia do sopro, o tiro na areia e a cortina): 16 lotava com 4 tanques
+	constexpr int32 MaxInstances = 32;
 	// 12 (13/10): as bolas do fogo da carcaça no raymarch (-WreckRm=1) são ~10 ao mesmo tempo; com 4 a maioria ficava
 	// sem o sol de verdade (a transmitância do céu gravada) e saía com um contorno preto. 48³ × 4 B = 0,44 MB cada
 	constexpr int32 MaxLightCaches = 12;

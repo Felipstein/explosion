@@ -12,6 +12,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "BlastFxGround.h"
+#include "RTSDustField.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/DirectionalLight.h"
@@ -47,7 +48,9 @@ namespace
 	// as gravações próprias que carregaram (a morte de tanque, 13/10)
 	TSet<FName> GLoadedSources;
 	// as gravações próprias do jogo: a morte de tanque da v2 (BlastLab, 13/10: eg_tq_v2, Game/Intermediate/Raymarch)
-	const TCHAR* OwnBakes[] = { TEXT("eg_tq_v2") };
+	// e a poeira do tiro (14/10, a v3: a areia do sopro do disparo, da onda de choque e do tiro no chão; a DustImpact da
+	// JangaFX convertida em 96³, 40 m, 3 s)
+	const TCHAR* OwnBakes[] = { TEXT("eg_tq_v2"), TEXT("jg_dust_impact_96"), TEXT("eg_poeira3_96"), TEXT("jg_ground_96"), TEXT("sim_chao_anel"), TEXT("sim_chao_cortina"), TEXT("sim_boca"), TEXT("sim_carcaca") };   // (16/10: o anel e o jato do tiro na areia; o anel simulado, v7; a cortina de ejeção, v8)
 
 	/** DA_HeavyCharge_v<n> → n; as outras gravações (os corpos da EmberGen) ficam no volume da Unreal. */
 	int32 VariantOf(const AExplosionVolume* E)
@@ -175,10 +178,16 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	++TickCount;
-	FVector Eye = FVector::ZeroVector;
+	FVector Eye = FVector::ZeroVector, ViewFwd = FVector::ForwardVector;
+	double ViewHalf = PI;
+	bool bHaveView = false;
 	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController(); PC && PC->PlayerCameraManager)
 	{
 		Eye = PC->PlayerCameraManager->GetCameraLocation();
+		ViewFwd = PC->PlayerCameraManager->GetCameraRotation().Vector();
+		// a meia diagonal da vista (16:9: tan × 1,15)
+		ViewHalf = FMath::Atan(FMath::Tan(FMath::DegreesToRadians(0.5 * PC->PlayerCameraManager->GetFOVAngle())) * 1.15);
+		bHaveView = true;
 	}
 
 	// as explosões vivas, da mais perto pra mais longe
@@ -201,6 +210,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.Bake = Sources[L.Variant];
 		L.I.FootCm = E->GetActorLocation();
 		L.I.Scale = E->SizeScale;
+		L.I.YawRad = E->RaymarchYawRad;
 		L.I.Frame = L.I.Bake->FrameOfTime(E->BakeTime());
 		L.I.Seed = E->Seed;
 		L.I.Keep = E->Opacity;
@@ -211,6 +221,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.SkyGain = E->RaymarchSkyGain;
 		L.I.GroundAlbedo = E->RaymarchGround;
 		L.I.bNuclear = E->bNuclear;
+		L.I.EmitScale = E->RaymarchEmit;
 		// O clarão (10/10): a fase branca da bola real dura ~15–20 ms numa carga de
 		// 1–2 t, mas assim ele passava em 1 quadro (o Felipe: "mal vejo o branco");
 		// os artistas esticam pra 2–3 quadros até ~0.1 s (o Zero Hour, ~0.17 s): τ 100 ms (ele escolheu, 10/10)
@@ -232,7 +243,35 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: deformação ligada (t = %.2f s da gravação)"), E->BakeTime());
 		}
 		L.D2 = FVector::DistSquared(Eye, L.I.FootCm);
+		// (17/10 tarde) as fora da tela vão pro fim da fila (o render já não as desenha; aqui elas não tomam vaga nem quadro)
+		if (bHaveView)
+		{
+			const FVector C = L.I.FootCm + FVector(0.0, 0.0, 50.0 * L.I.Bake->Domain * L.I.Scale);
+			const FVector D = C - Eye;
+			const double Dist = D.Size(), R = 87.0 * L.I.Bake->Domain * L.I.Scale;
+			if (Dist > R && FMath::Acos(FMath::Clamp(FVector::DotProduct(D / Dist, ViewFwd), -1.0, 1.0)) > ViewHalf + FMath::Asin(FMath::Min(R / Dist, 1.0)))
+			{
+				L.D2 += 1e14;
+			}
+		}
 		Live.Add(MoveTemp(L));
+	}
+	// depuração (-ShotFxLog=1, 16/10, a moldura clara em volta da carcaça): as explosões vivas a cada 0,5 s
+	{
+		static const bool bLog = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("ShotFxLog="), V); return V != 0; }();
+		static double LastLog = 0.0;
+		const double Now = GetWorld()->GetTimeSeconds();
+		if (bLog && Now - LastLog > 0.5)
+		{
+			LastLog = Now;
+			for (TActorIterator<AExplosionVolume> It(GetWorld()); It; ++It)
+			{
+				const AExplosionVolume* E = *It;
+				UE_LOG(LogTemp, Display, TEXT("BlastFx vivas: %s fonte %s t %.2f (idade %.2f) opac %.2f escala %.2f pé %s acabou %d entra %d"), *E->GetName(),
+					*E->RaymarchSource.ToString(), E->BakeTime(), E->Age, E->Opacity, E->SizeScale, *E->GetActorLocation().ToString(),
+					E->IsFinished() ? 1 : 0, Live.ContainsByPredicate([E](const FLive& L) { return L.I.FootCm == E->GetActorLocation() && L.I.Keep == E->Opacity; }) ? 1 : 0);
+			}
+		}
 	}
 	Live.Sort([](const FLive& A, const FLive& B) { return A.D2 < B.D2; });
 	if (Live.Num() > MaxInstances)
@@ -325,13 +364,17 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 			List.Add(L.I);
 		}
 	}
-	if (List.IsEmpty() && bWasEmpty)
+	// a poeira das lagartas em volume (16/10 noite; RTSDustField, a Arte) também é desenhada pelo raymarch e faz sombra no
+	// chão por este mapa (no modo volume a Arte esconde a sombra própria dela): sem explosão, o passe e a sombra seguem
+	// rodando enquanto houver poeira
+	const bool bDust = RTSDustField::GetStats().X > 0;
+	if (List.IsEmpty() && !bDust && bWasEmpty)
 	{
 		return;
 	}
-	bWasEmpty = List.IsEmpty();
+	bWasEmpty = List.IsEmpty() && !bDust;
 	SubmitFog();
-	SubmitShadow(!List.IsEmpty());
+	SubmitShadow(!List.IsEmpty() || bDust);
 	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes, MaxBricks);
 }
 
@@ -371,6 +414,13 @@ void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
 			ShadowFunction = UMaterialInstanceDynamic::Create(Function, this);
 			ShadowFunction->SetTextureParameterValue(TEXT("Shadow"), ShadowTarget);
 			ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(0.0f, 0.0f, 1.0f, 0.0f));
+			// a sombra das nuvens (16/10, o ZH, pedido do Felipe pela sessão do Look): a força vem da receita do mapa
+			// (LookDirector, no MID deste sol); -CloudShadow= força pro teste
+			static const float CloudCfg = [] { float V = -1.0f; FParse::Value(FCommandLine::Get(), TEXT("CloudShadow="), V); return V; }();
+			if (CloudCfg >= 0.0f)
+			{
+				ShadowFunction->SetScalarParameterValue(TEXT("CloudShadowStrength"), CloudCfg);
+			}
 			Best->SetLightFunctionMaterial(ShadowFunction);
 			// sem isto o sol cai à metade além de 1 km da câmera (DisabledBrightness 0,5 e FadeDistance 1000 m, os
 			// padrões da Unreal pra light function; pesquisa de 13/10, LightComponent.cpp)
@@ -448,4 +498,15 @@ void UBlastRaymarchSubsystem::SubmitFog()
 		F.G = bVol ? C->VolumetricFogScatteringDistribution : 0.0f;
 	}
 	Extension->SetFog_GameThread(F);
+}
+
+float UBlastRaymarchSubsystem::SourceDuration(FName Source) const
+{
+	// a duração (s da gravação) de uma gravação própria: o diretor tira de cena a poeira do tiro quando ela acaba
+	const int32* S = SourceOf.Find(Source);
+	if (!S || !Sources.IsValidIndex(*S) || !Sources[*S])
+	{
+		return 0.0f;
+	}
+	return Sources[*S]->TimeOfFrame(float(Sources[*S]->Frames - 1));
 }

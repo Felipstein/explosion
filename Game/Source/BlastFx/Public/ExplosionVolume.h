@@ -98,6 +98,15 @@ public:
 	/** O relógio da gravação (0 = o do tamanho, SizeScale): a morte de tanque toca sem esticar. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float TimeScale = 0.0f;
+	/**
+	 * O segundo andamento (16/10, o disparo): depois de SlowAfterS s da gravação, ela toca a SlowTimeScale (0 = um
+	 * andamento só). A bola do disparo é a morte de tanque minúscula: o fogo precisa passar em ~0,1 s e a fumaça ficar
+	 * ~1,5 s; num relógio só, ou o fogo se arrastava ou a fumaça sumia em meio segundo.
+	 */
+	float SlowAfterS = 0.0f;
+	float SlowTimeScale = 0.0f;
+	/** A emissão no raymarch (1 = a da gravação; do BlastLab, 13/10). */
+	float RaymarchEmit = 1.0f;
 
 	/** Acende as luzes (fogo, clarão, ofuscamento). A poeira que acompanha uma explosão não tem luz própria. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
@@ -113,6 +122,8 @@ public:
 	 * negativo / W ≤ 0 = as globais.
 	 */
 	FName RaymarchSource;
+	/** O rumo da gravação no raymarch (rad, giro em z; 16/10 noite): o disparo pelo cano, o leque do tiro na areia. 0 = como foi gravada. */
+	float RaymarchYawRad = 0.0f;
 	FVector4f RaymarchSoot = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
 	FVector4f RaymarchDust = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
 	float RaymarchSunFull = -1.0f;
@@ -134,6 +145,8 @@ public:
 	float LoopPeriod = 0.0f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BlastLab")
 	float LoopLife = 0.0f;
+	/** (17/10) Viva até esta idade (s), qualquer que seja a gravação: a do raymarch em loop (a carcaça) não acaba sozinha. 0 = pela gravação. */
+	float HoldAge = 0.0f;
 
 	/**
 	 * O clarão da detonação (um fogo contínuo não tem): a luz curta que acende o
@@ -227,7 +240,12 @@ public:
 	/** Tempo da gravação que está sendo mostrado. */
 	float BakeTime() const
 	{
-		const float Raw = Age / FMath::Max(TimeScale > 0.0f ? TimeScale : SizeScale, 0.01f);
+		const float Ts = FMath::Max(TimeScale > 0.0f ? TimeScale : SizeScale, 0.01f);
+		float Raw = Age / Ts;
+		if (SlowAfterS > 0.0f && SlowTimeScale > 0.0f && Raw > SlowAfterS)
+		{
+			Raw = SlowAfterS + (Age - SlowAfterS * Ts) / SlowTimeScale;
+		}
 		return LoopPeriod > 0.0f ? FMath::Fmod(FMath::Max(Raw, 0.0f), LoopPeriod) : Raw;
 	}
 

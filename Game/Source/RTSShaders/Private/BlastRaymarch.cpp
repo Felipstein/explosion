@@ -2,11 +2,26 @@
 // a emissão compensada pela exposição): a ponte até o plugin comum. A original continua sendo a referência:
 // mudanças de aparência nascem lá e são trazidas pra cá.
 #include "BlastRaymarch.h"
+#include "RTSSceneLights.h"
+#include "RTSSunShadowRender.h"
+#include "RTSDustField.h"
+#include <atomic>
+
+namespace
+{
+	std::atomic<float> GLastViewExposure{ 0.0f };
+}
+
+float BlastRaymarch::LastViewExposure()
+{
+	return GLastViewExposure.load(std::memory_order_relaxed);
+}
 
 #include "DataDrivenShaderPlatformInfo.h"
 #include "Dom/JsonObject.h"
 #include "GlobalShader.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
@@ -28,6 +43,7 @@ DECLARE_GPU_STAT_NAMED(BlastRaymarch, TEXT("BlastRaymarch"));
 // cada passe no perfil (-csvGpuStats: GPU/BlastRmLight, ...), pra saber onde está o custo com muitas explosões (14/10)
 DECLARE_GPU_STAT_NAMED(BlastRmLight, TEXT("BlastRmLight"));
 DECLARE_GPU_STAT_NAMED(BlastRmShadow, TEXT("BlastRmShadow"));
+DECLARE_GPU_STAT_NAMED(BlastRmSunTiles, TEXT("BlastRmSunTiles"));
 DECLARE_GPU_STAT_NAMED(BlastRmMarch, TEXT("BlastRmMarch"));
 DECLARE_GPU_STAT_NAMED(BlastRmTemporal, TEXT("BlastRmTemporal"));
 DECLARE_GPU_STAT_NAMED(BlastRmComposite, TEXT("BlastRmComposite"));
@@ -287,6 +303,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(int32, DebugView)
 	SHADER_PARAMETER(int32, NumInstances)
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFoot, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstRot, [MaxInstances])   // cos, sin do rumo (16/10 noite)
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFrame, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstMisc, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstNoise, [MaxInstances])
@@ -298,6 +315,8 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER_ARRAY(FVector4f, InstBoxMax, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFirePos, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstFireCol, [MaxInstances])
+	SHADER_PARAMETER_ARRAY(FVector4f, InstLLPos, [MaxInstances * 4])   // as 4 luzes da cena de cada uma (m relativo à câmera, raio)
+	SHADER_PARAMETER_ARRAY(FVector4f, InstLLCol, [MaxInstances * 4])   // a cor × cd, nas unidades do WebGL (÷ LuxPerUnit)
 	SHADER_PARAMETER_ARRAY(FVector4f, InstLook, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstDetail, [MaxInstances])
 	SHADER_PARAMETER_ARRAY(FVector4f, InstRes, [MaxInstances])
@@ -336,7 +355,7 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, VolDepthIn)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, HistIn)
 	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, HistNearIn)
-	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float2>, PoolLC)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture3D<float4>, PoolLC)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolNearOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, VolDepthOut)
@@ -346,10 +365,23 @@ BEGIN_SHADER_PARAMETER_STRUCT(FBlastRaymarchParameters, )
 	SHADER_PARAMETER(float, HistValid)
 	SHADER_PARAMETER(float, HistAlpha)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, SceneColorOut)
-	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float2>, PoolLCOut)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D<float4>, PoolLCOut)
 	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float>, ShadowOut)   // a sombra da explosão no chão (MainShadowMap)
 	SHADER_PARAMETER(FVector4f, ShadowA)   // canto do mapa relativo à câmera (m) xy, texel (m), o chão relativo à câmera (m)
 	SHADER_PARAMETER(FVector4f, ShadowB)   // a direção pro sol, a resolução
+	// a sombra de uma fumaça na outra (fase 2, 16/10 noite): os ladrilhos no espaço do sol, um por explosão
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, SunTiles)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, SunTilesOut)
+	SHADER_PARAMETER_RDG_TEXTURE(Texture2D<float4>, SunTileParams)
+	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, SunTileParamsOut)
+	SHADER_PARAMETER(float, SunTilesOn)
+	SHADER_PARAMETER_STRUCT_INCLUDE(FRTSSunShadowParameters, SunShadow)   // a sombra do mapa (o mapa do sol comum, 16/10 noite)
+	SHADER_PARAMETER_STRUCT_INCLUDE(FRTSDustFieldParameters, Dust)        // a poeira das lagartas (o campo da Arte, 16/10 noite)
+	SHADER_PARAMETER(FVector4f, DustBoxMin)   // a caixa justa da poeira (m relativo à câmera)
+	SHADER_PARAMETER(FVector4f, DustBoxMax)
+	SHADER_PARAMETER(FVector4f, DustLook)     // o ganho do céu, o sol inteiro (0–1), o passo (m), ligada
+	SHADER_PARAMETER(float, DustFullRes)      // (17/10) 1 = a poeira marcha na composição, em resolução de tela
+	SHADER_PARAMETER(float, DustOctExp)       // (17/10) 1 = as oitavas da poeira com a transmitância exponencial (a Arte)
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearClamp)
 	SHADER_PARAMETER_SAMPLER(SamplerState, LinearWrap)
 END_SHADER_PARAMETER_STRUCT()
@@ -396,6 +428,7 @@ BLAST_RAYMARCH_SHADER(FBlastRaymarchMarchCS, "MainMarch")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchTemporalCS, "MainTemporal")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchCompositeCS, "MainComposite")
 BLAST_RAYMARCH_SHADER(FBlastRaymarchShadowMapCS, "MainShadowMap")
+BLAST_RAYMARCH_SHADER(FBlastRaymarchSunTilesCS, "MainSunTiles")
 
 namespace
 {
@@ -639,7 +672,12 @@ void FBlastRaymarchExtension::SubscribeToPostProcessingPass(EPostProcessingPass 
 	// -RmPass=1 volta pro lugar antigo (comparação).
 	static const bool bAfterTSR = ParamOr(TEXT("RmPass="), 0.0f) > 0.5f;
 	const EPostProcessingPass Where = bAfterTSR ? EPostProcessingPass::MotionBlur : EPostProcessingPass::AfterDOF;
-	if (Pass == Where && Instances.Num() && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
+	// a exposição da vista também sem explosão na tela: os destroços (o disparo, o traçante) se compensam por ela
+	if (Pass == Where && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
+	{
+		GLastViewExposure.store(View.GetLastEyeAdaptationExposure(), std::memory_order_relaxed);
+	}
+	if (Pass == Where && (Instances.Num() || RTSDustField::GetStats().X > 0) && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
 	{
 		InOutPassCallbacks.Add(FPostProcessingPassDelegate::CreateRaw(this, &FBlastRaymarchExtension::Render_RenderThread));
 	}
@@ -649,7 +687,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 {
 	const FScreenPassTexture SceneColor = FScreenPassTexture::CopyFromSlice(GraphBuilder, Inputs.GetInput(EPostProcessMaterialInput::SceneColor));
 	const FRDGTextureRef Depth = Inputs.SceneTextures.SceneTextures ? Inputs.SceneTextures.SceneTextures->GetParameters()->SceneDepthTexture : nullptr;
-	if (!Instances.Num() || !PoolPT.IsValid() || !AtlasA.IsValid() || !Noise.IsValid() || !Depth || !SceneColor.IsValid())
+	if ((!Instances.Num() && RTSDustField::GetStats().X <= 0) || !PoolPT.IsValid() || !AtlasA.IsValid() || !Noise.IsValid() || !Depth || !SceneColor.IsValid())
 	{
 		return SceneColor;
 	}
@@ -657,13 +695,24 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 
 	const FVector CamCm = View.ViewMatrices.GetViewOrigin();
 	auto Rel = [&](const FVector& Cm) { return FVector3f((Cm - CamCm) * 0.01); };
-	const FBakeData& B0 = *Instances[0].Bake;
-	static const int32 StepsCfg = int32(ParamOr(TEXT("RmSteps="), float(Steps)));
-	static const int32 LightCachesCfg = FMath::Clamp(int32(ParamOr(TEXT("RmLightCaches="), float(MaxLightCaches))), 0, MaxLightCaches);
+	// Os presets (14/10, medido no jogo com 11 mortes juntas, docs/OTIMIZACAO_EXPLOSOES.md): antes o raymarch era igual
+	// em todos (56 passos, meia resolução, 12 caches de luz). No Alta, 42 passos, marcha em 0,42 e 4 caches dão a mesma
+	// nuvem (recortes em tamanho real e a cintilação quadro a quadro iguais: 4,77 / 4,75 / 4,79) com o pior quadro do
+	// raymarch de ~22 → ~13 ms; o Ultra fica no máximo; Média e Baixa cortam mais (PCs fracos). As opções de linha de
+	// comando (-RmSteps=, -RmRes=, -RmLightCaches=) passam por cima, pros A/B.
+	struct FRmPreset { int32 Steps; float Res; int32 Caches; };
+	static const FRmPreset Presets[] = { { 24, 0.33f, 1 }, { 24, 0.33f, 1 }, { 32, 0.38f, 2 }, { 42, 0.42f, 4 }, { Steps, 0.5f, MaxLightCaches } };
+	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
+	const FRmPreset& Preset = Presets[FMath::Clamp(EffectsQuality ? EffectsQuality->GetInt() : 3, 0, 4)];
+	static const int32 StepsArg = int32(ParamOr(TEXT("RmSteps="), -1.0f));
+	static const int32 CachesArg = int32(ParamOr(TEXT("RmLightCaches="), -1.0f));
+	static const float ResArg = ParamOr(TEXT("RmRes="), -1.0f);
+	const int32 StepsCfg = StepsArg > 0 ? StepsArg : Preset.Steps;
+	const int32 LightCachesCfg = FMath::Clamp(CachesArg >= 0 ? CachesArg : Preset.Caches, 0, MaxLightCaches);
 	static const float MvScale = ParamOr(TEXT("RmMV="), 1.0f);
 	// a resolução da marcha em relação à tela (o WebGL marchava em meia) e o peso
 	// do quadro novo no acúmulo (1 = sem acúmulo)
-	static const float MarchRes = FMath::Clamp(ParamOr(TEXT("RmRes="), 0.5f), 0.25f, 1.0f);
+	const float MarchRes = FMath::Clamp(ResArg > 0.0f ? ResArg : Preset.Res, 0.25f, 1.0f);
 	static const float HistAlpha = FMath::Clamp(ParamOr(TEXT("RmTemporal="), 0.2f), 0.02f, 1.0f);
 
 	FBlastRaymarchParameters Base;
@@ -679,7 +728,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.Slots = float(MaxSlots);
 	Base.SlotsY = float(SlotsY);
 	Base.LCSlots = float(MaxLightCaches);
-	Base.VelMax = B0.VelMax;
+	Base.VelMax = Instances.Num() ? Instances[0].Bake->VelMax : 40.0f;
 	Base.SootExt = SootExt;
 	Base.DustExt = DustExt;
 	Base.SootAlbedo = SootAlbedo;
@@ -700,6 +749,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	static const float EmissionCfg = ParamOr(TEXT("RmEmission="), 1.0f);
 	static const float EmitExpoK = ParamOr(TEXT("RmEmitExpo="), 1.0f);
 	const float Exposure = View.GetLastEyeAdaptationExposure();
+	GLastViewExposure.store(Exposure, std::memory_order_relaxed);
 	const float EmitComp = Exposure > 0.0f && EmitExpoK > 0.0f ? FMath::Clamp(FMath::Pow(RefExposure / Exposure, EmitExpoK), 1.0f / 256.0f, 16.0f) : 1.0f;
 	if (FrameCounter % 120 == 0)
 	{
@@ -736,7 +786,14 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.GroundAlbedo = GroundCfg;
 	// a luz do fogo que a fumaça espalha é luz do próprio fogo: a mesma compensação da emissão (à noite, sem
 	// ela, a fumaça acesa por dentro estourava em creme mesmo com a emissão compensada; 11/10)
-	Base.FireGain = FireGain * EmitComp;
+	// (17/10, a pergunta da Arte: de noite a fumaça da própria morte ficava azul-cinza de lua) a luz do fogo na própria fumaça
+	// leva a compensação da emissão inteira; a lua não leva nenhuma. -RmFireLightExpo=k: o fogo na fumaça × EmitComp^k (1 = o
+	// de sempre, 0 = físico); pro A/B com o Felipe, o padrão não muda sem ele
+	static const float FireLightExpoK = ParamOr(TEXT("RmFireLightExpo="), 1.0f);
+	// -RmFireGain=x (17/10, o A/B da noite pro Felipe): o fogo na própria fumaça × x (a 0,25 de dia é a calibrada; acima ela
+	// ficou creme em 13/10; de noite, com a lua da receita quase tão forte quanto o sol, a fumaça da morte sai azul)
+	static const float FireGainCfg = ParamOr(TEXT("RmFireGain="), 1.0f);
+	Base.FireGain = FireGain * FireGainCfg * (FireLightExpoK == 1.0f ? EmitComp : FMath::Pow(EmitComp, FireLightExpoK));
 	Base.MsExt = MsExt;
 	Base.MsScatter = MsScatter;
 	Base.MsPhase = MsPhase;
@@ -749,6 +806,14 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.SunSteps = LightSteps;
 	Base.FireSteps = FireSteps;
 	Base.RadianceScale = LuxPerUnit;
+	// a sombra do mapa na fumaça (16/10 noite; a regra do CLAUDE.md, a fumaça recebe a sombra dos prédios, do relevo e das
+	// palmeiras): o mapa do sol comum (o plugin RTSSunShadow, da Arte). -RmSunShadow=0 desliga (o A/B)
+	RTSSunShadow::SetShaderParameters(Base.SunShadow, View.ViewMatrices.GetViewOrigin());
+	static const bool bSunShadow = ParamOr(TEXT("RmSunShadow="), 1.0f) > 0.5f;
+	if (!bSunShadow)
+	{
+		Base.SunShadow.RTSSunValid = 0.0f;
+	}
 	Base.FogA = FVector4f(Fog.bOn ? 1.0f : 0.0f, Fog.DensityPerM, Fog.FalloffPerM, Fog.StartM);
 	Base.FogB = FVector4f(Fog.Albedo, Fog.G);
 	Base.FogHeightRel = float((Fog.HeightCm - CamCm.Z) * 0.01);
@@ -797,6 +862,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	Base.Jitter = float(FrameCounter++ % 1024);
 
 	// as explosões: caixa justa, passos pelo tamanho na tela, cache de luz pras maiores
+	const TArray<RTSSceneLights::FLight>& SceneLights = RTSSceneLights::Get_RenderThread();
 	struct FVis { int32 Index; float Frac; };
 	float MaxFlash = 0.0f;
 	TArray<FVis> Vis;
@@ -834,7 +900,15 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		const float Pad = DetailAmp + Base.DetailAmp2 + 2.0f * B.Domain / B.Res + (WarpSlot >= 0 ? WarpMaxLocalM : 0.0f);
 		Local.Min = FVector3f::Max(DMin, Local.Min - Pad);
 		Local.Max = FVector3f::Min(DMax, Local.Max + Pad);
-		const FBox World(I.FootCm + FVector(Local.Min) * (I.Scale * 100.0), I.FootCm + FVector(Local.Max) * (I.Scale * 100.0));
+		// o rumo (16/10 noite): a caixa no mundo é a da caixa local girada
+		const float Cy = FMath::Cos(I.YawRad), Sy = FMath::Sin(I.YawRad);
+		auto Turn = [Cy, Sy](const FVector3f& P) { return FVector3f(Cy * P.X - Sy * P.Y, Sy * P.X + Cy * P.Y, P.Z); };
+		FBox3f Turned(ForceInit);
+		for (int32 c = 0; c < 8; ++c)
+		{
+			Turned += Turn(FVector3f((c & 1) ? Local.Max.X : Local.Min.X, (c & 2) ? Local.Max.Y : Local.Min.Y, (c & 4) ? Local.Max.Z : Local.Min.Z));
+		}
+		const FBox World(I.FootCm + FVector(Turned.Min) * (I.Scale * 100.0), I.FootCm + FVector(Turned.Max) * (I.Scale * 100.0));
 		const float Frac = ScreenFraction(View, World);
 		if (Frac <= 0.0f)
 		{
@@ -847,6 +921,7 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		const FVector3f LC = FMath::Lerp(B.LightCol[F0], B.LightCol[F1], A) * (I.Scale * I.Scale);
 		const FVector3f Foot = Rel(I.FootCm);
 		Base.InstFoot[N] = FVector4f(Foot, I.Scale);
+		Base.InstRot[N] = FVector4f(Cy, Sy, 0.0f, 0.0f);
 		Base.InstFrame[N] = FVector4f(float(I.Slot0), float(I.Slot1), A,
 			(B.TimeOfFrame(float(F1)) - B.TimeOfFrame(float(F0))) * (B.Res / B.Domain) * MvScale);
 		Base.InstMisc[N] = FVector4f(B.TimeOfFrame(I.Frame), I.Seed, I.Keep, float(S));
@@ -901,15 +976,114 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstLight[N] = FVector4f(-1.0f, I.Thickness, EmitGain * I.EmitScale, float(WarpSlot));
 		Base.InstBoxMin[N] = FVector4f(Rel(World.Min), 0.0f);
 		Base.InstBoxMax[N] = FVector4f(Rel(World.Max), 0.0f);
-		Base.InstFirePos[N] = FVector4f(Foot + LP * I.Scale, I.Flash);
+		Base.InstFirePos[N] = FVector4f(Foot + Turn(LP) * I.Scale, I.Flash);
 		MaxFlash = FMath::Max(MaxFlash, I.Flash);
 		Base.InstFireCol[N] = FVector4f(LC, 0.0f);
+		// as luzes da cena (16/10 noite, RTSSceneLights; a regra do CLAUDE.md: a fumaça é acesa pelo fogo, pelas explosões e
+		// pelas luzes perto): as 4 de maior I/d² até a caixa, fora as de dentro da própria caixa (a luz do próprio fogo já
+		// entra pela gravação). -RmLocalLights=0 desliga (o A/B)
+		{
+			static const bool bLocalLights = ParamOr(TEXT("RmLocalLights="), 1.0f) > 0.5f;
+			struct FPick { int32 Idx; float Score; };
+			TArray<FPick, TInlineAllocator<16>> Pick;
+			if (bLocalLights)
+			{
+				for (int32 k = 0; k < SceneLights.Num(); ++k)
+				{
+					const RTSSceneLights::FLight& Ls = SceneLights[k];
+					const FVector PosCm = Ls.PosM * 100.0;
+					if (World.IsInsideOrOn(PosCm))
+					{
+						continue;
+					}
+					const float D2 = FMath::Max(float(World.ComputeSquaredDistanceToPoint(PosCm) * 1e-4), 0.25f);
+					if (D2 >= Ls.RadiusM * Ls.RadiusM)
+					{
+						continue;
+					}
+					Pick.Add({ k, Ls.Candela.GetLuminance() / D2 });
+				}
+				Pick.Sort([](const FPick& A, const FPick& B) { return A.Score > B.Score; });
+			}
+			for (int32 s = 0; s < 4; ++s)
+			{
+				if (s < Pick.Num())
+				{
+					const RTSSceneLights::FLight& Ls = SceneLights[Pick[s].Idx];
+					Base.InstLLPos[N * 4 + s] = FVector4f(Rel(Ls.PosM * 100.0), Ls.RadiusM);
+					Base.InstLLCol[N * 4 + s] = FVector4f(Ls.Candela.R / LuxPerUnit, Ls.Candela.G / LuxPerUnit, Ls.Candela.B / LuxPerUnit, 0.0f);
+				}
+				else
+				{
+					Base.InstLLPos[N * 4 + s] = FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+					Base.InstLLCol[N * 4 + s] = FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+				}
+			}
+		}
 		Vis.Add({ N, Frac });
 		++N;
 	}
-	if (!N)
+	// a poeira das lagartas (16/10 noite; o campo da Arte, RTSDustField; a regra do CLAUDE.md, a poeira é volume na luz do
+	// mundo): os passes do campo sempre (sem poeira os parâmetros vêm válidos, com RTSDustValid 0), as 8 luzes da cena mais
+	// fortes, e a luz da poeira medida pela Arte na luz do jogo (o céu × 3,4, o sol × 0,27, o passo de 0,125 m;
+	// docs/POEIRA_DAS_LAGARTAS.md). -RmTreadDust=0 desliga (o -RmDust= já é a cor da poeira das explosões)
 	{
-		return SceneColor;
+		static const bool bDustOn = ParamOr(TEXT("RmTreadDust="), 1.0f) > 0.5f;
+		TArray<FRTSDustLight, TInlineAllocator<8>> DustLights;
+		{
+			TArray<TPair<float, int32>, TInlineAllocator<32>> Order;
+			for (int32 k = 0; k < SceneLights.Num(); ++k)
+			{
+				const float D2 = FMath::Max(float(FVector::DistSquared(SceneLights[k].PosM * 100.0, CamCm) * 1e-4), 1.0f);
+				Order.Add({ SceneLights[k].Candela.GetLuminance() / D2, k });
+			}
+			Order.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B) { return A.Key > B.Key; });
+			for (int32 k = 0; k < Order.Num() && k < 8; ++k)
+			{
+				const RTSSceneLights::FLight& Ls = SceneLights[Order[k].Value];
+				FRTSDustLight& D = DustLights.AddDefaulted_GetRef();
+				D.PosCamRelM = Rel(Ls.PosM * 100.0);
+				D.RadiusM = Ls.RadiusM;
+				D.Color = FVector3f(Ls.Candela.R, Ls.Candela.G, Ls.Candela.B) / LuxPerUnit;
+			}
+		}
+		FVector3f DustMin(0.0f), DustMax(0.0f);
+		// -RmDustLog=1 (17/10, a pergunta da Arte): a lista que vai pro campo, uma vez por segundo
+		static const bool bDustLog = ParamOr(TEXT("RmDustLog="), 0.0f) > 0.5f;
+		static double LastDustLog = 0.0;
+		if (bDustLog && FPlatformTime::Seconds() - LastDustLog >= 1.0)
+		{
+			LastDustLog = FPlatformTime::Seconds();
+			FString Txt;
+			for (const FRTSDustLight& D : DustLights)
+			{
+				Txt += FString::Printf(TEXT(" [rel (%.1f, %.1f, %.1f) m, raio %.1f m, cor (%.4f, %.4f, %.4f)]"), D.PosCamRelM.X, D.PosCamRelM.Y, D.PosCamRelM.Z, D.RadiusM,
+					D.Color.X, D.Color.Y, D.Color.Z);
+			}
+			UE_LOG(LogTemp, Display, TEXT("BlastRaymarch poeira: %d luzes de %d da cena;%s"), DustLights.Num(), SceneLights.Num(), *Txt);
+		}
+		const bool bDust = RTSDustField::AddPasses(GraphBuilder, View, DustLights, Base.Dust, DustMin, DustMax) && bDustOn;
+		if (!bDust)
+		{
+			Base.Dust.RTSDustValid = 0.0f;
+		}
+		Base.DustBoxMin = FVector4f(DustMin, 0.0f);
+		Base.DustBoxMax = FVector4f(DustMax, 0.0f);
+		// (17/10, a Arte: o A x B das oitavas da poeira) o céu e o sol cheio por linha de comando; o padrão é o de antes
+		static const float DustSky = ParamOr(TEXT("RmDustSky="), 3.4f);
+		static const float DustSunFull = ParamOr(TEXT("RmDustSunFull="), 0.27f);
+		Base.DustLook = FVector4f(DustSky, DustSunFull, 0.125f, bDust ? 1.0f : 0.0f);
+		// (17/10) a poeira em resolução de tela, na composição (a borda dos bolos; o A/B da WF): -RmDustFull=0 volta à marcha
+		// conjunta em meia resolução
+		static const bool bDustFull = ParamOr(TEXT("RmDustFull="), 1.0f) > 0.5f;
+		Base.DustFullRes = bDust && bDustFull ? 1.0f : 0.0f;
+		// (17/10, o pedido da Arte) -RmDustOctExp=1: as oitavas da poeira com exp(ln T·Ae) no lugar do lerp do WebGL
+		static const float DustOctExp = ParamOr(TEXT("RmDustOctExp="), 0.0f);
+		Base.DustOctExp = DustOctExp > 0.5f ? 1.0f : 0.0f;
+		if (!N && !bDust)
+		{
+			return SceneColor;
+		}
 	}
 	Base.NumInstances = N;
 	Vis.Sort([](const FVis& A, const FVis& B) { return A.Frac > B.Frac; });
@@ -951,8 +1125,19 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 	{
 		WarpT[w] = WarpTex[w] ? External(GraphBuilder, WarpTex[w], TEXT("BlastRaymarch.Warp")) : NoiseT;
 	}
-	FRDGTextureRef LC = GraphBuilder.CreateTexture(FRDGTextureDesc::Create3D(FIntVector(LCRes, LCRes, LCRes * MaxLightCaches), PF_G16R16F,
+	// o cache de luz: o sol e o fogo pela própria, o sol pelas outras e o chão embaixo à sombra de todas (fase 2)
+	FRDGTextureRef LC = GraphBuilder.CreateTexture(FRDGTextureDesc::Create3D(FIntVector(LCRes, LCRes, LCRes * MaxLightCaches), PF_FloatRGBA,
 		FClearValueBinding::White, TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.LightCache"));
+	// a sombra de uma fumaça na outra (fase 2, 16/10 noite; docs/ESTUDO_LUZ_NA_FUMACA.md, com a 2ª opinião): um ladrilho
+	// de 64² por explosão no espaço do sol (4 × 4 no atlas), a frente, o fundo e a espessura óptica no meio e no total
+	// (o Beer Shadow Map das nuvens da Unreal em dois trechos); a linha de parâmetros guarda onde cada um está
+	constexpr int32 SunTile = 64, SunTileCols = 4;
+	FRDGTextureRef SunTilesT = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(FIntPoint(SunTile * SunTileCols, SunTile * ((MaxInstances + SunTileCols - 1) / SunTileCols)),
+		PF_FloatRGBA, FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.SunTiles"));
+	FRDGTextureRef SunParamsT = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(FIntPoint(MaxInstances, 1), PF_A32B32G32R32F,
+		FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.SunTileParams"));
+	static const bool bSmokeShadow = ParamOr(TEXT("RmSmokeShadow="), 1.0f) > 0.5f;   // -RmSmokeShadow=0: o A/B
+	Base.SunTilesOn = bSmokeShadow && N > 0 ? 1.0f : 0.0f;
 	auto Common = [&](FBlastRaymarchParameters* P)
 	{
 		*P = Base;
@@ -968,7 +1153,29 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		P->Warp2 = WarpT[2];
 		P->Warp3 = WarpT[3];
 		P->SceneDepth = Depth;
+		P->SunTiles = SunTilesT;
+		P->SunTileParams = SunParamsT;
 	};
+
+	// 0) os ladrilhos da sombra no espaço do sol, antes do cache de luz (que lê os das outras explosões)
+	if (Base.SunTilesOn > 0.5f)
+	{
+		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmSunTiles, "BlastRmSunTiles");
+		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
+		Common(P);
+		P->SunTiles = nullptr;
+		P->SunTileParams = nullptr;
+		P->SunTilesOut = GraphBuilder.CreateUAV(SunTilesT);
+		P->SunTileParamsOut = GraphBuilder.CreateUAV(SunParamsT);
+		TShaderMapRef<FBlastRaymarchSunTilesCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch SunTiles"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
+			Shader, P, FComputeShaderUtils::GetGroupCount(FIntVector(SunTile, SunTile, N), FIntVector(8, 8, 1)));
+	}
+	else
+	{
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(SunTilesT), FVector4f(0.0f, 0.0f, 0.0f, 0.0f));
+		AddClearUAVPass(GraphBuilder, GraphBuilder.CreateUAV(SunParamsT), FVector4f(0.0f, 0.0f, 0.0f, 0.0f));
+	}
 
 	// 1) cache de luz das maiores na tela
 	{
