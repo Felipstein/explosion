@@ -993,3 +993,41 @@ O Felipe, sobre a X1: "o céu tá muito claro, só deixa um céu mais azul norma
   - a volumétrica até 100 m.
 
   Vídeos em `captures/game/v4i_*`.
+
+## 12. A névoa de guerra com a câmera deitada (17/10, reprovada por agora)
+
+**O problema.** O passe do jogo (RTSFogPass, o modelo do ZH) multiplica a tela inteira pelo nível de visão (visto 1, explorado 0,212, nunca visto 0) depois da névoa de altura e da volumétrica. De cima funciona. Deitado, todo o chão fora da visão vira um muro preto (modo preto) ou marrom (modo explorado) contra o céu, e a poeira dourada do horizonte some. Cenas: `uma_luz_fog_explored` e `uma_luz_fog_black`.
+
+**A pesquisa** (17/10, com fontes):
+
+| Jogo | Como mostra o fora da visão |
+|---|---|
+| C&C Zero Hour (código da EA) | Multiplica o terreno: FogAlpha 127 = o nosso 0,212. Sem horizonte. |
+| Beyond All Reason (código aberto) | Escurece o albedo antes da luz; a névoa de distância entra por cima, e o horizonte fica com névoa. |
+| Age of Empires IV (o guia de atmosfera) | Cor e gradação por mapa: FOW Midtone Tint cinza-azulado 8065737F; o nunca visto azul-marinho opaco FF081928. |
+| Wartorn (UE) | A própria névoa volumétrica, com a densidade pela máscara de visão. |
+| League of Legends (Riot) | Borda estreita e suave; o visto exatamente 1,0. |
+
+**As 3 versões testadas no jogo** (a CVar `rts.FogStyle`; o padrão 0 é o de hoje):
+1. **Sombra de nuvem.** O termo fow na `M_SmokeShadowLF` (a light function do sol: o sol some fora da visão e fica a luz do céu) e o pós `M_FowBlur` com o tom frio do AoE IV, que some com a distância.
+   - Medido: de cima 0,42; deitado 0,58.
+2. **Desfoque.** O pós com 12 amostras por nós da cena, nítido até 80 m, inteiro a 400 m.
+   - Medido: de cima 0,64 (lê fraco); deitado 0,63.
+3. **As duas.** A 1 de cima e o desfoque entrando com a câmera deitada (`SkyT`).
+
+**O nunca visto do modo preto tem de esconder o mapa.** Com o escuro a 0,45 apareciam o lago e o relevo. Ficou 0,06, e a névoa da distância só o clareia bem longe (haze³).
+
+**O Felipe, jogando (cena `fow_jogar`, F10):** "nenhum gostei não, pode deixar o default mesmo; futuramente a gente vê isso quando o jogo tiver mais otimizado e quase mais completo".
+- A partida estava a ~95 ms por quadro por causa do capim novo do WorldForge (o Jogo achou), o que atrapalhou a avaliação.
+
+**O que ficou no código, desligado:**
+- `ALookDirector::SetFogOfWar` (o jogo passa a textura de visão no RTSMatchSubsystem);
+- a CVar `rts.FogStyle` 0–3 (o RTSFogPass não multiplica com 1–3);
+- `World.fog_style` da receita (troca no ciclo de receitas);
+- o termo fow da `M_SmokeShadowLF` (FowOn 0);
+- `/RTSLook/Fow/M_FowBlur` (`Game/Tools/look_fow.py`).
+
+**Lições:**
+- O `SceneTextureLookup` dentro do Custom lia zero na 5.8; as amostras vão por nós SceneTexture com a UV deslocada.
+- A light function do sol é uma só (a do BlastFx): termo novo vai dentro dela.
+- Regerar a M_SmokeShadowLF no BlastLab quebra o link físico do jogo; religar na fila.

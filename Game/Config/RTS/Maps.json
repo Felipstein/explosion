@@ -38,7 +38,7 @@
 			"wind_yaw": -68,
 			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
 			"world_info": "Villages/World_TestSalt2.map.json",
-			"look_recipe": "desert_golden_dust",
+			"look_recipe": "uma_i1",
 			"skirmish_gap_m": 520,
 			"obstacle_meshes": [
 				"boulder",

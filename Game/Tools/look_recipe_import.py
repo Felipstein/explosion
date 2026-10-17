@@ -112,6 +112,8 @@ def build(R):
                  ('ground_sand_specular', 'ground_sand_specular')):
         if k in W:
             put(world, f, float(W[k]))
+    if 'fog_style' in W:      # (17/10) o estilo da névoa de guerra pro ciclo de receitas (rts.FogStyle)
+        put(world, 'fog_style', int(W['fog_style']))
     # (a água entrou no plugin em 12/10: com o binário antigo, sem a estrutura, a receita segue sem ela)
     water = unreal.LookWater() if hasattr(unreal, 'LookWater') else None
     Wt = R.get('water')

@@ -135,6 +135,9 @@ struct FLookWorld
 	 *  material do mapa (o 4º dado do MF do chão; o asfalto fica no dele). Abaixo de 0,25 a Unreal trata o F0 < 2% como
 	 *  sombra (BRDF.ush, F_Schlick: saturate(50·F0)), a sombra dos grãos no próprio brilho. −1 = o do material. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) float GroundSandSpecular = -1.0f;
+	/** (17/10) o estilo da névoa de guerra (a CVar rts.FogStyle: 0 o jogo, 1 a sombra, 2 o desfoque, 3 a sombra de cima e o
+	 *  desfoque ao deitar), pra comparar as versões no ciclo de receitas (-RTSLookCycle) numa abertura só. −1 = não mexe. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly) int32 FogStyle = -1;
 };
 
 /** A água do mapa (os controles do M_Ocean_* do WorldForge): a cor própria do corpo d'água e o peso do reflexo do

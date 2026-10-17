@@ -24,12 +24,37 @@
 #include "Components/PrimitiveComponent.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/Texture2D.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogRTSLook, Log, All);
 
 // (16/10) teste: as nuvens ligadas sempre (a vista acima das nuvens, com a câmera de teste da sessão do jogo)
 static TAutoConsoleVariable<int32> CVarCloudsAlways(TEXT("rts.Look.CloudsAlways"), 0,
 	TEXT("1 = as nuvens da receita ficam ligadas em qualquer inclinação (teste; o jogo normal liga só com a câmera deitada)."));
+
+// (17/10, a névoa de guerra com a câmera deitada) os dois testes do Felipe; o jogo lê a mesma CVar pra não multiplicar
+static TAutoConsoleVariable<int32> CVarFogStyle(TEXT("rts.FogStyle"), 0,
+	TEXT("A névoa de guerra: 0 = o passe do jogo (multiplica a tela, o ZH); 1 = a sombra de nuvem (o sol some fora da visão: o termo fow da light function do sol, mais o tom frio do AoE IV); 2 = o desfoque (o pós M_FowBlur do Look); 3 = a 1 de cima e o desfoque entrando ao deitar a câmera."),
+	ECVF_RenderThreadSafe);
+
+namespace
+{
+	// o que o jogo passou (ALookDirector::SetFogOfWar): a textura de visão e o retângulo do mapa
+	TWeakObjectPtr<UTexture2D> GFowVision;
+	FLinearColor GFowMapMinInvSize(0.0f, 0.0f, 0.0f, 0.0f);
+	FLinearColor GFowTexel(0.0f, 0.0f, 0.0f, 0.0f);
+	int32 GFowSerial = 0;
+}
+
+void ALookDirector::SetFogOfWar(UTexture2D* Vision, FVector2D MapMinCm, FVector2D MapSizeCm)
+{
+	GFowVision = Vision;
+	GFowMapMinInvSize = FLinearColor(float(MapMinCm.X), float(MapMinCm.Y),
+		MapSizeCm.X > 0.0 ? float(1.0 / MapSizeCm.X) : 0.0f, MapSizeCm.Y > 0.0 ? float(1.0 / MapSizeCm.Y) : 0.0f);
+	GFowTexel = Vision ? FLinearColor(1.0f / float(FMath::Max(Vision->GetSizeX(), 1)), 1.0f / float(FMath::Max(Vision->GetSizeY(), 1)), 0.0f, 0.0f)
+		: FLinearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	++GFowSerial;
+}
 
 ALookDirector::ALookDirector()
 {
@@ -130,6 +155,11 @@ void ALookDirector::ApplyRecipe()
 	ApplyPost();
 	ApplyWater();
 	ApplyGround();
+	if (Recipe->World.FogStyle >= 0)
+	{
+		CVarFogStyle->Set(Recipe->World.FogStyle, ECVF_SetByCode);
+		UE_LOG(LogRTSLook, Log, TEXT("a receita põe a névoa de guerra no estilo %d"), Recipe->World.FogStyle);
+	}
 	ApplyPreset(PresetLevel);
 	LastFocusCm = -1.0f;
 	LastAerialScale = -1.0f;
@@ -664,6 +694,80 @@ void ALookDirector::UpdateFocus(float FocusDistanceCm)
 	}
 }
 
+void ALookDirector::UpdateFogOfWar()
+{
+	UTexture2D* Vision = GFowVision.Get();
+	const int32 Style = Vision ? FMath::Clamp(CVarFogStyle.GetValueOnGameThread(), 0, 3) : 0;
+	// o raio do desfoque (fração da altura da tela): 0 na sombra, 0,006 no desfoque e, no 3, entrando com a câmera deitada
+	const float WantBlur = Style == 2 ? 0.006f : (Style == 3 ? 0.006f * SkyT : 0.0f);
+	// a função de luz do sol é do BlastFx e nasce depois do começo: quando ela troca, o termo vai de novo
+	UMaterialInstanceDynamic* SunMID = Sun ? Cast<UMaterialInstanceDynamic>(Sun->LightFunctionMaterial) : nullptr;
+	if (Style == FowStyleApplied && GFowSerial == FowSerialApplied && SunMID == FowSunMID.Get())
+	{
+		// só a câmera deitou ou levantou: o raio do desfoque acompanha
+		if (UMaterialInstanceDynamic* B = FowBlurMID.Get(); B && Style == 3 && FMath::Abs(WantBlur - FowBlurApplied) > 0.0002f)
+		{
+			B->SetScalarParameterValue(TEXT("BlurFrac"), WantBlur);
+			FowBlurApplied = WantBlur;
+		}
+		return;
+	}
+	FowStyleApplied = Style;
+	FowSerialApplied = GFowSerial;
+	FowSunMID = SunMID;
+	// 1: a sombra de nuvem (o termo fow da M_SmokeShadowLF: fora da visão o sol some e fica a luz do céu)
+	if (SunMID)
+	{
+		SunMID->SetScalarParameterValue(TEXT("FowOn"), Style == 1 || Style == 3 ? 1.0f : 0.0f);
+		if (Style == 1 || Style == 3)
+		{
+			SunMID->SetTextureParameterValue(TEXT("FogVision"), Vision);
+			SunMID->SetVectorParameterValue(TEXT("FowMapMinInvSize"), GFowMapMinInvSize);
+			SunMID->SetVectorParameterValue(TEXT("FowTexel"), GFowTexel);
+		}
+	}
+	// o pós do Look (vivo pela lista de blendables enquanto ligado), nos dois estilos: a gradação do fora da visão (a do
+	// AoE IV: um tom frio, menos saturação e mais escuro, sumindo com a névoa da distância pra o horizonte ficar com a
+	// poeira) e, no 2, o desfoque
+	FPostProcessSettings& S = Post->Settings;
+	UMaterialInstanceDynamic* Blur = FowBlurMID.Get();
+	if (Blur)
+	{
+		S.WeightedBlendables.Array.RemoveAll([Blur](const FWeightedBlendable& B) { return B.Object == Blur; });
+	}
+	if (Style >= 1)
+	{
+		if (!Blur)
+		{
+			if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, TEXT("/RTSLook/Fow/M_FowBlur.M_FowBlur")))
+			{
+				Blur = UMaterialInstanceDynamic::Create(M, this);
+				FowBlurMID = Blur;
+			}
+		}
+		if (Blur)
+		{
+			Blur->SetTextureParameterValue(TEXT("FogVision"), Vision);
+			Blur->SetVectorParameterValue(TEXT("FowMapMinInvSize"), GFowMapMinInvSize);
+			Blur->SetVectorParameterValue(TEXT("FowTexel"), GFowTexel);
+			// 1 e 3: a sombra de nuvem leva a gradação fria (o sol já saiu pela função de luz; no 3 o desfoque entra ao
+			// deitar); 2: o desfoque, mais escuro e menos saturado, sem tom
+			const bool bShade = Style != 2;
+			Blur->SetScalarParameterValue(TEXT("BlurFrac"), WantBlur);
+			FowBlurApplied = WantBlur;
+			Blur->SetScalarParameterValue(TEXT("UnseenDark"), bShade ? 0.8f : 0.7f);
+			// o nunca visto esconde o mapa (o preto do ZH; no passeio de 17/10 o 0,45 deixava ver o lago e o relevo)
+			Blur->SetScalarParameterValue(TEXT("NeverDark"), 0.06f);
+			Blur->SetScalarParameterValue(TEXT("UnseenDesat"), bShade ? 0.3f : 0.5f);
+			// o tom do fora da visão do AoE IV (FOW Midtone Tint 8065737F: 101/115/127 → 0,80/0,91/1,0)
+			Blur->SetVectorParameterValue(TEXT("Tint"), bShade ? FLinearColor(0.80f, 0.91f, 1.0f, 1.0f) : FLinearColor::White);
+			S.WeightedBlendables.Array.Add(FWeightedBlendable(1.0f, Blur));
+		}
+	}
+	UE_LOG(LogRTSLook, Log, TEXT("a névoa de guerra do Look: estilo %d (0 o jogo, 1 a sombra, 2 o desfoque, 3 os dois), visão %dx%d, função de luz do sol %s, desfoque %s"),
+		Style, Vision ? Vision->GetSizeX() : 0, Vision ? Vision->GetSizeY() : 0, SunMID ? TEXT("sim") : TEXT("não"), Blur ? TEXT("sim") : TEXT("não"));
+}
+
 void ALookDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -683,6 +787,7 @@ void ALookDirector::Tick(float DeltaSeconds)
 		bSunPlaced = true;
 		UpdateCloudSun();
 	}
+	UpdateFogOfWar();
 	{
 		// (16/10, o céu contra o gameplay_v3) -RTSLookCycle=a,b,c: as receitas em sequência na mesma partida, uma a cada
 		// -RTSLookCycleStepS (3 s) a partir de -RTSLookCycleStartS (1,5 s), pra fotografar várias na mesma pose numa rodada

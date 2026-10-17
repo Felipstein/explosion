@@ -1005,22 +1005,91 @@ SMOKE_SHADOW_HLSL = r'''
 // entre um plano e a luz, vista de cima. O pixel vai ao plano ao longo da luz e
 // a luz direta dele perde e^−τ.
 float3 P = WP / 100.0;
-float3 L = normalize(Light.xyz);
-if (Light.w < 0.5 || L.z < 0.05) return 1.0;
-float h = P.z - Map.w;
-float2 pp = P.xy - L.xy * (h / L.z);
-float2 uv = (pp - Map.xy) * Map.z;
-float edge = saturate(min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y)) * 20.0);
-float tau = Texture2DSampleLevel(Tex, TexSampler, uv, 0).r;
-// Só perto do chão (o chão, as unidades, os prédios baixos): o volume da
-// explosão já faz a própria sombra, e acima de ~10 m ela contaria duas vezes
-float nearGround = saturate((10.0 - h) / 5.0);
-return lerp(1.0, exp(-tau), edge * nearGround).xxx;
+float3 L = normalize(Light.xyz + float3(0.0, 0.0, 1e-6));
+float smoke = 1.0;
+if (Light.w > 0.5 && L.z >= 0.05)
+{
+	float h = P.z - Map.w;
+	float2 pp = P.xy - L.xy * (h / L.z);
+	float2 uv = (pp - Map.xy) * Map.z;
+	float edge = saturate(min(min(uv.x, uv.y), min(1.0 - uv.x, 1.0 - uv.y)) * 20.0);
+	float tau = Texture2DSampleLevel(Tex, TexSampler, uv, 0).r;
+	// Só perto do chão (o chão, as unidades, os prédios baixos): o volume da
+	// explosão já faz a própria sombra, e acima de ~10 m ela contaria duas vezes
+	float nearGround = saturate((10.0 - h) / 5.0);
+	smoke = lerp(1.0, exp(-tau), edge * nearGround);
+}
+// A sombra das nuvens (16/10, o Felipe pela sessão do Look: "como o Zero Hour"): uma mancha suave projetada no rumo do
+// sol, não a sombra física da nuvem da Unreal (com o sol baixo ela estica ~7× e escurece a tela). O ponto vai ao chão
+// ao longo do sol (cai igual no chão e no teto dos prédios), 2 oitavas de ruído de valor suave (a escala e 1/3 dela)
+// andando com o vento. Força 0 = nada muda (todas as cenas do BlastLab e o jogo sem a receita).
+float cloud = 1.0;
+if (CStrength > 0.0)
+{
+	float3 S = dot(CSun.xyz, CSun.xyz) > 1e-6 ? normalize(CSun.xyz) : L;
+	if (S.z > 0.02)
+	{
+		float2 q = (P.xy - P.z * (S.xy / S.z) - CWind.xy * Time) / max(CScale, 1.0);
+		float n = 0.0;
+		float amp = 0.65;
+		[unroll] for (int o = 0; o < 2; o++)
+		{
+			float2 i = floor(q);
+			float2 f = frac(q);
+			float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+			float a = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5453);
+			float b = frac(sin(dot(i + float2(1.0, 0.0), float2(127.1, 311.7))) * 43758.5453);
+			float c = frac(sin(dot(i + float2(0.0, 1.0), float2(127.1, 311.7))) * 43758.5453);
+			float d = frac(sin(dot(i + float2(1.0, 1.0), float2(127.1, 311.7))) * 43758.5453);
+			n += amp * lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
+			q = q * 3.0 + float2(17.3, 41.9);
+			amp = 0.35;
+		}
+		cloud = 1.0 - CStrength * smoothstep(CCover - CSoft, CCover + CSoft, n);
+	}
+}
+// A névoa de guerra como sombra de nuvem (17/10, o Felipe pela sessão do Look; o Gemini C): fora da visão o sol some e
+// fica a luz do céu, com a poeira e o céu por cima (a névoa de guerra na superfície e a névoa de distância depois, como no
+// Beyond All Reason). A textura de visão do jogo (sRGB: o nível linear da tela, 1 visto, 0,212 explorado, 0 nunca visto)
+// lida pelo retângulo do mapa com a B-spline cúbica do FogOfWar.usf; fora do mapa, o explorado. FowOn 0 = nada muda.
+float fow = 1.0;
+if (FowOn > 0.5)
+{
+	float2 uvM = (WP.xy - FMap.xy) * FMap.zw;
+	float2 inside = saturate(uvM);
+	float2 P2 = inside / max(FTex.xy, 1e-6) - 0.5;
+	float2 I2 = floor(P2);
+	float2 F = P2 - I2;
+	float2 F2 = F * F;
+	float2 F3 = F2 * F;
+	float2 W0 = (1.0 / 6.0) * (-F3 + 3.0 * F2 - 3.0 * F + 1.0);
+	float2 W1 = (1.0 / 6.0) * (3.0 * F3 - 6.0 * F2 + 4.0);
+	float2 W2 = (1.0 / 6.0) * (-3.0 * F3 + 3.0 * F2 + 3.0 * F + 1.0);
+	float2 W3 = (1.0 / 6.0) * F3;
+	float2 G0 = W0 + W1;
+	float2 G1 = W2 + W3;
+	float2 H0 = I2 - 1.0 + W1 / G0;
+	float2 H1 = I2 + 1.0 + W3 / G1;
+	float va = Texture2DSampleLevel(Vis, VisSampler, (float2(H0.x, H0.y) + 0.5) * FTex.xy, 0).r;
+	float vb = Texture2DSampleLevel(Vis, VisSampler, (float2(H1.x, H0.y) + 0.5) * FTex.xy, 0).r;
+	float vc = Texture2DSampleLevel(Vis, VisSampler, (float2(H0.x, H1.y) + 0.5) * FTex.xy, 0).r;
+	float vd = Texture2DSampleLevel(Vis, VisSampler, (float2(H1.x, H1.y) + 0.5) * FTex.xy, 0).r;
+	float v = saturate(G0.y * (G0.x * va + G1.x * vb) + G1.y * (G0.x * vc + G1.x * vd));
+	if (any(uvM != inside))
+	{
+		float2 edge = FMap.xy + inside / max(FMap.zw, 1e-9);
+		v = lerp(v, 0.212, saturate(length(WP.xy - edge) / 7500.0));
+	}
+	float seen = saturate((v - 0.212) / (1.0 - 0.212));
+	float known = saturate(v / 0.212);
+	fow = lerp(lerp(FNever, FUnseen, known), 1.0, seen);
+}
+return (smoke * cloud * fow).xxx;
 '''
 
 
 def smoke_shadow_function():
-    """Light function do sol e da lua: a sombra da fumaça das explosões no chão."""
+    """Light function do sol e da lua: a sombra da fumaça das explosões no chão e a das nuvens (16/10)."""
     m = new_material(SMOKE_SHADOW)
     m.set_editor_property('material_domain', unreal.MaterialDomain.MD_LIGHT_FUNCTION)
     E = lambda cls, x, y: mel.create_material_expression(m, cls, x, y)
@@ -1041,11 +1110,46 @@ def smoke_shadow_function():
     tex.set_editor_property('parameter_name', 'Shadow')
     tex.set_editor_property('texture', unreal.load_asset('/Engine/EngineResources/Black'))
     tex.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+    # a sombra das nuvens (16/10, o ZH; a sessão do Look põe os valores pela receita do mapa no MID do sol): os padrões
+    # não mudam nada (força 0)
+    tm = E(unreal.MaterialExpressionTime, -700, 280)
+    cloud_scalars = []
+    for k, (name, value) in enumerate((('CloudShadowStrength', 0.0), ('CloudShadowScaleM', 150.0),
+                                       ('CloudShadowCover', 0.55), ('CloudShadowSoft', 0.15))):
+        sp = E(unreal.MaterialExpressionScalarParameter, -700, 360 + 70 * k)
+        sp.set_editor_property('parameter_name', name)
+        sp.set_editor_property('default_value', value)
+        cloud_scalars.append(sp)
+    cwind = E(unreal.MaterialExpressionVectorParameter, -700, 650)
+    cwind.set_editor_property('parameter_name', 'CloudShadowWindMS')
+    cwind.set_editor_property('default_value', unreal.LinearColor(4.0, 2.0, 0.0, 0.0))
+    csun = E(unreal.MaterialExpressionVectorParameter, -700, 770)
+    csun.set_editor_property('parameter_name', 'CloudSunDir')
+    csun.set_editor_property('default_value', unreal.LinearColor(0.0, 0.0, 0.0, 0.0))   # zero = o rumo do ShadowLight
+    # a névoa de guerra como sombra de nuvem (17/10, a sessão do Look põe a textura de visão e os valores no MID do sol;
+    # rts.FogStyle 1): os padrões não mudam nada (FowOn 0)
+    fvis = E(unreal.MaterialExpressionTextureObjectParameter, -700, 890)
+    fvis.set_editor_property('parameter_name', 'FogVision')
+    fvis.set_editor_property('texture', unreal.load_asset('/Engine/EngineResources/WhiteSquareTexture'))
+    fvis.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_COLOR)
+    fmap = E(unreal.MaterialExpressionVectorParameter, -700, 1010)
+    fmap.set_editor_property('parameter_name', 'FowMapMinInvSize')
+    fmap.set_editor_property('default_value', unreal.LinearColor(0.0, 0.0, 1e-5, 1e-5))
+    ftex = E(unreal.MaterialExpressionVectorParameter, -700, 1130)
+    ftex.set_editor_property('parameter_name', 'FowTexel')
+    ftex.set_editor_property('default_value', unreal.LinearColor(1.0 / 256.0, 1.0 / 256.0, 0.0, 0.0))
+    fow_scalars = []
+    for k, (name, value) in enumerate((('FowOn', 0.0), ('UnseenSun', 0.0), ('NeverSun', 0.0))):
+        sp = E(unreal.MaterialExpressionScalarParameter, -700, 1250 + 70 * k)
+        sp.set_editor_property('parameter_name', name)
+        sp.set_editor_property('default_value', value)
+        fow_scalars.append(sp)
     c = E(unreal.MaterialExpressionCustom, -350, 0)
     c.set_editor_property('description', 'SmokeShadow')
     c.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
     inputs = []
-    for n in ('WP', 'Map', 'Light', 'Tex'):
+    for n in ('WP', 'Map', 'Light', 'Tex', 'Time', 'CStrength', 'CScale', 'CCover', 'CSoft', 'CWind', 'CSun',
+              'Vis', 'FMap', 'FTex', 'FowOn', 'FUnseen', 'FNever'):
         ci = unreal.CustomInput()
         ci.set_editor_property('input_name', n)
         inputs.append(ci)
@@ -1055,6 +1159,16 @@ def smoke_shadow_function():
     link(smap, 'RGBA', c, 'Map')          # o parâmetro de vetor sai RGB sem o pino RGBA
     link(slight, 'RGBA', c, 'Light')
     link(tex, '', c, 'Tex')
+    link(tm, '', c, 'Time')
+    for sp, pin in zip(cloud_scalars, ('CStrength', 'CScale', 'CCover', 'CSoft')):
+        link(sp, '', c, pin)
+    link(cwind, 'RGBA', c, 'CWind')
+    link(csun, 'RGBA', c, 'CSun')
+    link(fvis, '', c, 'Vis')
+    link(fmap, 'RGBA', c, 'FMap')
+    link(ftex, 'RGBA', c, 'FTex')
+    for sp, pin in zip(fow_scalars, ('FowOn', 'FUnseen', 'FNever')):
+        link(sp, '', c, pin)
     ok = mel.connect_material_property(c, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     if failed or not ok:
         raise RuntimeError('smoke shadow: failed links %s %s' % (failed, ok))

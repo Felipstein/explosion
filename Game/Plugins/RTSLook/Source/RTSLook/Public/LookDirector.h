@@ -21,7 +21,7 @@ class USkyLightComponent;
 class UExponentialHeightFogComponent;
 class UPostProcessComponent;
 class UVolumetricCloudComponent;
-class UMaterialInstanceDynamic;
+class UMaterialInstanceDynamic; class UTexture2D;
 
 UCLASS()
 class RTSLOOK_API ALookDirector : public AActor
@@ -50,6 +50,12 @@ public:
 	/** O sol do mapa (a sombra da fumaça das explosões entra como função de luz nele). */
 	UFUNCTION(BlueprintCallable, Category = "Look")
 	UDirectionalLightComponent* GetSun() const { return Sun; }
+
+	/** (17/10, a névoa de guerra com a câmera deitada; docs/CEU_E_NUVENS.md §12) o jogo passa a textura de visão (sRGB, o
+	 *  nível da tela por célula) e o retângulo do mapa (cm) quando a névoa liga; nulo = sem névoa. Com rts.FogStyle 1 (a
+	 *  sombra de nuvem: o sol some fora da visão, o termo fow da M_SmokeShadowLF) ou 2 (o desfoque, o pós M_FowBlur) o Look
+	 *  desenha a névoa e o passe do jogo (RTSFogPass) não multiplica; 0 = o passe do jogo, como antes. */
+	static void SetFogOfWar(UTexture2D* Vision, FVector2D MapMinCm, FVector2D MapSizeCm);
 
 protected:
 	virtual void BeginPlay() override;
@@ -96,6 +102,14 @@ private:
 	int8 CloudAbove = -1;
 	/** A água do mapa (os MIDs que a receita pinta) e o último estado da câmera deitada aplicado nela e na exposição. */
 	TArray<TWeakObjectPtr<UMaterialInstanceDynamic>> WaterMIDs;
+	/** A névoa de guerra do Look (rts.FogStyle): o MID do sol em que o termo fow foi posto, o pós do desfoque (vivo pela
+	 *  lista de blendables do Post) e o estado aplicado. */
+	void UpdateFogOfWar();
+	TWeakObjectPtr<UMaterialInstanceDynamic> FowSunMID;
+	TWeakObjectPtr<UMaterialInstanceDynamic> FowBlurMID;
+	int32 FowStyleApplied = 0;
+	int32 FowSerialApplied = 0;
+	float FowBlurApplied = -1.0f;
 	float LastTiltT = -1.0f;
 	float LastExpT = -1.0f;
 };
