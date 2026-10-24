@@ -47,6 +47,8 @@ Quando a poeira mudar no FXLab, a arte roda `FXLab/Tools/pack_tread_dust.py` de 
 | `Sand[0]`, `Sand[1]` | o peso da areia no **pé de trás** de cada lagarta, explicado abaixo |
 | `SandFront[0]`, `SandFront[1]` | o mesmo na **frente** de cada lagarta |
 | `bVisible` | falso sob a névoa de guerra: a poeira do inimigo escondido não aparece, como no Zero Hour |
+| `HalfLenM`, `HalfWidthM`, `HeightM`, `HullTopM`, `FrontalM2` | as caixas do veículo (o padrão é o tanque USA): o ar que ele empurra e a sombra dele na poeira |
+| `Wheel*`, `DustScale`, `DustAmount`, `TrailLenM` | (23/10) só o veículo de rodas, abaixo; zero = a lagarta |
 
 **A areia vem do `FRTSBakedMap::SurfaceAt`.** Com `S = SurfaceAt(ponto em cm)`, o peso é `1 − max(S.X asfalto, S.W molhado)`.
 - Sem a grade do mapa, `SurfaceAt` devolve zero, e o peso fica 1 (areia seca).
@@ -60,6 +62,28 @@ Quando a poeira mudar no FXLab, a arte roda `FXLab/Tools/pack_tread_dust.py` de 
   - para na hora no asfalto;
   - pinga menos de 1 s com a areia presa;
   - e a cortina para quando a frente da lagarta chega no asfalto.
+
+## As rodas (23/10, v4: o caminhão de suprimento e o lançador Tomahawk)
+
+O Felipe: "bem pouquinho, igual o game shot, porque é um caminhãozinho de roda". O veículo de rodas solta a **mesma nuvem aprovada do
+tanque** (a camada K2: a gravação, a luz, a sombra do mapa, o volume no Alta/Ultra, o sumiço), no mesmo campo, com a física do pneu:
+- **Onde:** da roda de trás de cada lado (o quarto de trás do pneu, `WheelRearXM − WheelRadiusM` a `WheelRearXM`; de ré, o da frente do
+  pneu da frente), no meio do pneu (`±WheelHalfGaugeM`, ± metade da meia largura). As camadas ao longo da lagarta (a cortina) não saem.
+- **Quando:** a mesma rampa do tanque, porque a física é a mesma: o pneu (raio 0,36 m) solta a areia da banda quando a borda passa de 1 g,
+  v = √(g·r) = 1,88 m/s, o mesmo raio da roda motriz do tanque. Na curva, cada lado anda `Speed ± YawRate·WheelHalfGaugeM`.
+- **Quanto:** o jogo preenche, pelo `Units.json` (o bloco `"wheels"` do visual):
+  - `DustScale` = o lado do puff × o do tanque: 0,65, a nuvem da picape contra a do tanque no game shot r1 (65 ÷ 100 px de altura);
+  - `DustAmount` = o A de cada puff × o do tanque (a profundidade óptica do miolo vai com A; a massa, com A·S²);
+  - `DustSpacing` = o espaçamento dos puffs × o do tanque: a mesma massa por metro em menos puffs, cada um mais denso (a picape da r1
+    tem os "bolos mais separados"; no ZH o RocketBuggyDust da roda sai a cada 2–5 quadros, o TrackDebrisDirt da lagarta a todo
+    quadro). A massa por metro é `DustAmount · DustScale² ÷ DustSpacing`. Sem a garra da lagarta (a terra que ela leva nas garras e
+    joga da roda motriz), sai só a areia presa nos vãos da banda do pneu: o volume dos vãos por metro andado, pneu (0,274 m de
+    largura × 2 cm × 40 % de vão) contra lagarta (0,64 m × 4 cm × 50 %), dá 0,17 da massa: 0,8 × 0,65² ÷ 2 = 0,17;
+  - `TrailLenM` = o comprimento do veículo (m): o denso (0,65) e o sumiço (1,6) do rastro vão em comprimentos dele (a picape da r1:
+    denso até 0,73 do comprimento dela).
+- **A sombra e o ar:** as caixas do veículo (`HalfLenM`, `HalfWidthM`, `HeightM`, `HullTopM`, `FrontalM2`) vêm das malhas; a sombra nos
+  cartões usa as duas caixas do tanque na escala dele.
+- O tanque não muda (sem `Wheel*`, a conta é a de antes, bit a bit). A ponte do jogo: `ARTSUnitActor::FillDustSource`.
 
 ## A sombra do cenário (14/10)
 
@@ -158,7 +182,8 @@ fogo e pelas explosões; um sistema só) vale pra poeira. Ela vira mais um meio 
   - `Resources/dust_kick_v2_r2.rtsdust`: a grossa, 0,1 m com a média de ρ² (a massa certa), 0,3 MB e 5 MB na placa, pra
     Alta. Sai da fina por `FXLab/Tools/build_dust_coarse.py`.
   - `dust_kick_v2.rtsdust` (0,1 m com a média de ρ, a de 16/10) não é mais usado.
-- **A chave:** `rts.TreadDust.Path` 0 = os cartões (padrão), 1 = o volume. No 1 os cartões e a sombra deitada somem.
+- **A chave:** `rts.TreadDust.Path` −1 = pelo preset (o padrão, ver abaixo), 0 = os cartões, 1 = o volume. No volume
+  os cartões e a sombra deitada somem.
   O ajuste fica no bloco `"volume"` do perfil: `density` 1,0, `kick` (a fina), `kickCoarse` (a grossa), `erode`,
   `detail`, `albedoMax`.
   - σ = 6·ρ²·density: as folhas aprovadas foram cozidas com ρ² (o Blender multiplica a grade de novo).
@@ -180,10 +205,16 @@ fogo e pelas explosões; um sistema só) vale pra poeira. Ela vira mais um meio 
     caso, pelo cache.
   - Alta: −0,8 ms contra os cartões (16/10).
   - No jogo (luz_prova_67, 3 tanques e 2 mortes): +0,4 ms em média.
-- **A luz, no raymarch** (os ajustes por instância das explosões, medidos na luz do jogo): céu × 3,4, sol 27 % inteiro,
+- **A luz, no raymarch** (os ajustes por instância das explosões, medidos na luz do jogo): céu × 3,84 (17/10: era 3,4; com o
+  céu curto e a areia tapada a sombra tinha escurecido 12 %, e 3,84 a devolve ao nível aprovado, calibrado no jogo), sol 27 % inteiro,
   o sol × MapV fora do lerp das oitavas; as 8 luzes mais fortes do `RTSSceneLights`.
-- **Ligado no jogo desde 16/10 à noite** (o Fluxo, no `MarchJoint`): `rts.TreadDust.Path=1`; `-RmTreadDust=0` tira a
-  poeira só do raymarch.
+- **Ligado de fábrica desde 17/10 à tarde, pelo preset** (`rts.TreadDust.Path` −1, o padrão):
+  - Alta e Ultra: o volume.
+  - Média e Baixa: os cartões (os presets aprovados de manhã: "Média e Baixa ficam nos cartões").
+  - 0 e 1 forçam os cartões ou o volume nos testes. Antes de 17/10 o padrão era 0, e o jogo mostrava só os cartões.
+  - `-RmTreadDust=0` tira a poeira só do raymarch.
+  - A luz é a variante A (`-RmDustOctExp=0`, o padrão); a B (`-RmDustOctExp=1 -RmDustSunFull=0.44`) é a escolha do
+    Felipe.
 
 ## A cor do chão (16/10)
 
@@ -230,6 +261,29 @@ Pedido do Felipe ("igual o BlastLab fez com a Carga Pesada: o míssil e o avião
   - o acerto no chão e o raspando (`GroundHit`, 0,25);
   - o acerto no casco (`ArmorHit`, 0,28);
   - a morte de tanque (0,55) e a de prédio, com a escala de cada uma.
+
+## A poeira dos acertos de míssil (23/10, a explosão com vida do jogo)
+
+Pedido do Felipe sobre os mísseis ("é spawnado ali e pronto, sem interação"). A areia que o acerto levanta mora aqui, no mesmo sistema
+da poeira das lagartas (volume no Alta/Ultra, cartões na Média/Baixa, a sombra do mapa, a cor do chão, as luzes e o empurrão).
+- **A chamada:** `AddImpactPuffs(Lista, Semente)`, com um `ARTSTreadDust::FImpactPuff` por puff: o ponto no chão (m), a velocidade de
+  saída (m/s), o lado do cartão (m), a vida (s), a massa, o atraso (s; o puff fica parado e invisível até nascer) e o tempo da gravação
+  ao nascer (s; < 0 = o `bakeStart` da camada).
+  - `Layer` 0 = a camada `"impact"` (freia em 0,5–1 m: o véu do choque, os pontinhos dos estilhaços, o respingo de um torrão, a batida e
+    o deslizar da torre solta); 1 = `"impact_surge"` (a onda de base de reserva do ataque, rola longe); 2 = `"impact_linger"` (23/10: a
+    poeira que fica do ataque, rola devagar, abre e envelhece a gravação 5× mais devagar).
+  - **A massa** (23/10, a areia do acerto): um acerto não tem os 10–20 cartões empilhados de cada ponto do rastro, então cada puff leva a
+    massa de vários. `Mass` é o A do cartão (1 = um cartão do rastro, até 16): no volume a extinção é linear (sem o corte em 1 dos cartões
+    das lagartas, que segue pra eles); nos cartões da Média a opacidade corta em 1 antes do andamento. `rts.TreadDust.ImpactGain` ×
+    a massa de todos os puffs de impacto, ao vivo.
+  - **O vento por camada** (23/10): `windGain` no perfil (0 = a de antes; a K2 aprovada fica com 0, idêntica); as três de impacto com 1.
+    `SetWind(graus, m/s)` passa o vento único do mapa (o jogo chama junto do `SetQuality`).
+  - As três camadas estão no `Resources/tread.json`; sem elas no perfil (o `pack_tread_dust.py` copia o perfil do FXLab), o código cria as
+    três com os mesmos números. O `Emit` dos veículos pula as três.
+  - A fonte dos puffs é a −1 (`ImpactSrcId`, nenhum veículo): a névoa de guerra, o teto do preset e o guarda de tijolos são de quem chama
+    (o jogo: `RTSHitLife.cpp`).
+  - O sorteio é à parte (`FRandomStream` pela semente): sem acerto, a poeira das lagartas fica igual, bit a bit.
+- `NumImpactCards()` conta os vivos; `BricksInUse()` dá os tijolos do campo no último quadro (0 nos cartões), pro guarda do jogo.
 
 ## Os presets
 

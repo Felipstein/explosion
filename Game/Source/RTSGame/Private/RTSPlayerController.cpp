@@ -11,6 +11,7 @@
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 #include "RTSCameraPawn.h"
+#include "RTSChat.h"
 #include "LookDirector.h"
 #include "EngineUtils.h"
 #include "RTSGameData.h"
@@ -38,6 +39,13 @@ namespace
 	constexpr float KeyboardZoomStepsPerSec = 6.0f;
 	constexpr float MarkerSeconds = 0.7f;
 	constexpr float PickHeightCm = 150.0f;
+	// (v4, 23/10) a linha dos dois botões (o acorde): o segundo botão ainda forma o acorde até 0,2 s depois do esquerdo (a
+	// caixa ainda não fez nada); soltar os dois tem 0,25 s de folga (a mão nunca solta no mesmo quadro: 1 a 5 quadros); a
+	// linha mede de 1 m até o teto do MoveValue (63 passos de 2 m)
+	constexpr double ChordPressGraceSeconds = 0.2;
+	constexpr double ChordReleaseGraceSeconds = 0.25;
+	constexpr float MinLineM = 1.0f;
+	constexpr float MaxLineM = 126.0f;
 
 	/** As teclas 1–9 (dentro de função: as FKey do InputCore são estáticas de outro módulo). */
 	const FKey& GroupKey(int32 K)
@@ -66,6 +74,10 @@ void ARTSPlayerController::BeginPlay()
 	if (ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(GetPawn()))
 	{
 		Cam->SetMenuMode(bMenu);
+	}
+	if (!bMenu)
+	{
+		RTSChat::Attach(this);   // (17/10) o chat da partida: o Enter abre a caixa (RTSChat.h)
 	}
 	// a primeira vez que o jogo abre num PC (14/10, o notebook do pai do Felipe): a Média, a que rodou bem na v1; depois,
 	// o que o jogador escolheu no Esc fica no GameUserSettings.ini e a Unreal já abre nele (o teste, com o -ExecCmds
@@ -98,24 +110,12 @@ ARTSHUD* ARTSPlayerController::GetRTSHUD() const
 	return Cast<ARTSHUD>(GetHUD());
 }
 
-bool ARTSPlayerController::IsFacingDragging(FVector2D& OutA, FVector2D& OutB) const
-{
-	float X = 0.0f;
-	float Y = 0.0f;
-	if (!bLeftDown || !bFacingDrag || !ReadMouse(X, Y))
-	{
-		return false;
-	}
-	OutA = LeftDownPos;
-	OutB = FVector2D(X, Y);
-	return FVector2D::Distance(OutA, OutB) > DragThresholdPx;
-}
-
 bool ARTSPlayerController::IsDragging(FVector2D& OutA, FVector2D& OutB) const
 {
 	float X = 0.0f;
 	float Y = 0.0f;
-	if (!bLeftDown || bFacingDrag || !ReadMouse(X, Y))
+	// (v4) o esquerdo arrastado é sempre a caixa (com tropa selecionada também); no acorde dos dois botões, não
+	if (!bLeftDown || LineChord != ELineChord::None || !ReadMouse(X, Y))
 	{
 		return false;
 	}
@@ -135,10 +135,68 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 	{
 		TickMatch(DeltaTime);
 	}
+	{
+		// (17/10) o teste do chat: o robô da LAN manda -RTSTestChat=<texto> (o _ vira espaço) uma vez, com 5 s de partida
+		static bool bTestChatSent = false;
+		FString Say;
+		const URTSMatchSubsystem* M = bMenu ? nullptr : Match();
+		if (!bTestChatSent && M && M->IsRunning() && M->MatchSeconds() > 5.0f && FParse::Value(FCommandLine::Get(), TEXT("-RTSTestChat="), Say))
+		{
+			bTestChatSent = true;
+			if (URTSNetSession* Net = GetGameInstance()->GetSubsystem<URTSNetSession>())
+			{
+				Net->SendChat(Say.Replace(TEXT("_"), TEXT(" ")), false);
+			}
+		}
+	}
+	// (14/10, a vista que deitava no chão por ~1 s quando um tanque explodia: era o tremor movendo a câmera inteira) o
+	// aviso, de guarda, quando a vista do jogo sai da câmera do jogador
+	if (!bMenu && PlayerCameraManager)
+	{
+		const ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(GetPawn());
+		const FVector ViewAt = PlayerCameraManager->GetCameraLocation();
+		const FRotator ViewRot = PlayerCameraManager->GetCameraRotation();
+		if (Cam && (GetViewTarget() != Cam || FVector::Dist(ViewAt, Cam->GetActorLocation()) > 2000.0))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("RTS vista fora da câmera: alvo %s, vista (%.0f, %.0f, %.0f) inclinação %.1f giro %.1f, câmera (%.0f, %.0f, %.0f) %s"),
+				*GetNameSafe(GetViewTarget()), ViewAt.X, ViewAt.Y, ViewAt.Z, ViewRot.Pitch, ViewRot.Yaw,
+				Cam->GetActorLocation().X, Cam->GetActorLocation().Y, Cam->GetActorLocation().Z, *Cam->GetActorRotation().ToString());
+		}
+	}
 	if (Selected.Num() != LoggedSelection)
 	{
 		UE_LOG(LogTemp, Log, TEXT("RTS seleção: %d → %d"), LoggedSelection, Selected.Num());
 		LoggedSelection = Selected.Num();
+	}
+	{
+		// (17/10 noite, o teste das faixas cinza no chão: o Felipe trocou Alta → Baixa → Alta no meio da partida) -RTSTestQualityAt=
+		// <s>:<nível>,<s>:<nível> troca o preset nesses segundos de partida, como as teclas F5–F8 (0 baixa … 3 ultra)
+		static TArray<FVector2D> QualityAt = []
+		{
+			TArray<FVector2D> Out;
+			FString Arg;
+			if (FParse::Value(FCommandLine::Get(), TEXT("-RTSTestQualityAt="), Arg, false))
+			{
+				TArray<FString> Items;
+				Arg.ParseIntoArray(Items, TEXT(","));
+				for (const FString& It : Items)
+				{
+					FString S, L;
+					if (It.Split(TEXT(":"), &S, &L))
+					{
+						Out.Add(FVector2D(FCString::Atof(*S), FCString::Atof(*L)));
+					}
+				}
+			}
+			return Out;
+		}();
+		const URTSMatchSubsystem* QM = bMenu ? nullptr : Match();
+		if (QM && QM->IsRunning() && QualityAt.Num() && QM->MatchSeconds() >= QualityAt[0].X)
+		{
+			UE_LOG(LogTemp, Log, TEXT("RTS TEST qualidade: preset %d aos %.1f s"), int32(QualityAt[0].Y), QM->MatchSeconds());
+			ApplyQuality(int32(QualityAt[0].Y), false);
+			QualityAt.RemoveAt(0);
+		}
 	}
 	// presets: as teclas (o atalho) e a linha QUALITY do Esc e do menu
 	const FKey QualityKeys[4] = { EKeys::F5, EKeys::F6, EKeys::F7, EKeys::F8 };
@@ -362,6 +420,15 @@ void ARTSPlayerController::OnButton(FName Id)
 	{
 		Session->FogMode = URTSSessionSubsystem::NextFogMode(Session->FogMode);
 	}
+	// (v4, 22/10) o dinheiro inicial: o do menu (fica guardado) e o da sala (o anfitrião)
+	else if (Id == TEXT("money_up") || Id == TEXT("money_down"))
+	{
+		Session->SetStartingMoney(Session->StepMoney(Session->StartingMoney, Id == TEXT("money_up") ? 1 : -1));
+	}
+	else if (Id == TEXT("lan_money_up") || Id == TEXT("lan_money_down"))
+	{
+		Net->SetStartingMoney(Session->StepMoney(Net->GetStartingMoney(), Id == TEXT("lan_money_up") ? 1 : -1));
+	}
 	else if (URTSMatchSubsystem* M = Match())
 	{
 		// o painel provisório da economia: eco_<ação>_<número>
@@ -391,15 +458,34 @@ void ARTSPlayerController::OnButton(FName Id)
 		}
 		if (S.StartsWith(TEXT("queue_")))
 		{
-			if (const uint32 Structure = SelectedStructure())
+			// (v4) na zona de lançamento a casa da fila é o avião de carga: não cancela nada
+			FRTSUnitState QU;
+			FRTSDefInfo QD;
+			const uint32 Structure = SelectedStructure();
+			if (Structure != 0 && M->GetUnit(Structure, QU) && M->GetDef(QU.Def, QD) && !QD.Produces.IsEmpty())
 			{
 				M->OrderCancelProduce(Structure, FCString::Atoi(*S.Mid(6)));
 			}
 			return;
 		}
+		if (S.StartsWith(TEXT("power_")))
+		{
+			// (v4) a coluna de poderes: a casa N é o N-ésimo poder que a patente já ligou (a mesma ordem das teclas F1–F3)
+			const int32 Power = M->PowerAtSlot(FCString::Atoi(*S.Mid(6)));
+			if (Power >= 0)
+			{
+				BeginTargeting(Power);
+			}
+			return;
+		}
 		if (S == TEXT("cmd_attack_move"))
 		{
+			// (v4) o mesmo da tecla A: armar o ataque andando desiste da mira do poder (senão o próximo clique no chão era o poder)
 			bAttackMoveArmed = !Selected.IsEmpty();
+			if (bAttackMoveArmed)
+			{
+				TargetingPower = -1;
+			}
 			return;
 		}
 		if (S == TEXT("cmd_stop"))
@@ -411,13 +497,32 @@ void ARTSPlayerController::OnButton(FName Id)
 			}
 			return;
 		}
+		if (S == TEXT("cmd_sell"))
+		{
+			// (v4, 23/10) vender (o Sell do ZH: sem confirmação, todos os prédios prontos da seleção); o prédio sendo vendido sai
+			// da seleção (o UNSELECTABLE do ZH, PruneSelection)
+			TArray<uint32> Sell;
+			for (const uint32 Building : Selected)
+			{
+				if (M->CanSell(Building))
+				{
+					Sell.Add(Building);
+				}
+			}
+			if (!Sell.IsEmpty())
+			{
+				M->OrderSell(Sell);
+				++Orders;
+			}
+			return;
+		}
 		if (S == TEXT("mm_settings"))
 		{
 			bPauseMenu = true;
 			M->SetPaused(true);
 			return;
 		}
-		if (S == TEXT("hud_bg") || S.StartsWith(TEXT("mm_")) || S.StartsWith(TEXT("power_")) || S == TEXT("promote") || S.StartsWith(TEXT("cmd_")))
+		if (S == TEXT("hud_bg") || S.StartsWith(TEXT("mm_")) || S == TEXT("promote") || S.StartsWith(TEXT("cmd_")))
 		{
 			return;   // a peça do HUD segura o clique; os botões que ainda não existem na partida não fazem nada
 		}
@@ -441,6 +546,7 @@ void ARTSPlayerController::OnButton(FName Id)
 			}
 			else if (Action == TEXT("build"))
 			{
+				TargetingPower = -1;   // (v4) posicionar e mirar o poder não andam juntos
 				BeginPlacing(N);
 			}
 			else if (Action == TEXT("cancelbuild") && Structure != 0)
@@ -604,6 +710,16 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	const bool bHasMouse = ReadMouse(MX, MY);
 	const FVector2D Mouse(MX, MY);
 
+	// (v4) a linha dos dois botões que acabou (mandou ou desistiu) só volta ao normal com os dois soltos: até lá o botão que
+	// ficou apertado não rola, não faz caixa, não clica nem desseleciona
+	if (LineChord == ELineChord::Swallow && !IsInputKeyDown(EKeys::LeftMouseButton) && !IsInputKeyDown(EKeys::RightMouseButton))
+	{
+		LineChord = ELineChord::None;
+		bLeftDown = false;
+		bRightDown = false;
+		bRightScrolling = false;
+	}
+
 	for (int32 I = Markers.Num() - 1; I >= 0; --I)
 	{
 		Markers[I].Age += DeltaTime;
@@ -619,18 +735,33 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		// quem caiu só assiste: nada selecionado, nada pra pôr no chão
 		Selected.Reset();
 		PlacingDef = -1;
+		TargetingPower = -1;
+	}
+	if (bOver)
+	{
+		// (v4) acabou, com qualquer resultado: a mira do poder sai, e a cruz do cursor junto (o círculo vermelho não fica
+		// seguindo o mouse na tela do resultado; o cursor só é escolhido depois do retorno lá embaixo)
+		TargetingPower = -1;
+		CurrentMouseCursor = EMouseCursor::Default;
 	}
 	if (WasInputKeyJustPressed(EKeys::F9) && M)
 	{
 		M->ToggleFogReveal();   // depuração: a névoa liga e desliga na hora
 	}
-	// o Esc desiste de posicionar o prédio antes de abrir a pausa
-	const bool bEscCancelsPlacement = PlacingDef >= 0 && WasInputKeyJustPressed(EKeys::Escape);
+	// o Esc desiste de posicionar o prédio (ou de mirar o poder) antes de abrir a pausa
+	const bool bEscCancelsPlacement = (PlacingDef >= 0 || TargetingPower >= 0) && WasInputKeyJustPressed(EKeys::Escape);
 	if (bEscCancelsPlacement)
 	{
 		PlacingDef = -1;
+		TargetingPower = -1;
 	}
-	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement)
+	// (v4) e desiste da linha dos dois botões sendo puxada (esse Esc não abre a pausa)
+	const bool bEscCancelsLine = (LineChord == ELineChord::Active || LineChord == ELineChord::Releasing) && WasInputKeyJustPressed(EKeys::Escape);
+	if (bEscCancelsLine)
+	{
+		CancelLine(TEXT("o Esc"));
+	}
+	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement && !bEscCancelsLine)
 	{
 		bPauseMenu = !bPauseMenu;
 		bSurrenderArmed = false;
@@ -642,6 +773,10 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	// parado em rede, só os botões da tela respondem (a ordem não fica guardada pra depois da pausa)
 	if (bPauseMenu || bOver || !M || M->IsNetPaused())
 	{
+		if (LineChord == ELineChord::Active || LineChord == ELineChord::Releasing)
+		{
+			CancelLine(TEXT("a pausa ou o fim da partida"));
+		}
 		bLeftDown = false;
 		if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse)
 		{
@@ -663,7 +798,11 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 
 	if (ARTSHUD* HUD = GetRTSHUD())
 	{
-		bOverMinimap = bHasMouse && HUD->IsOverMinimap(Mouse);
+		// (v4) um botão de verdade ganha da caixa do minimapa: a coluna de poderes desce pra dentro do quadrado em volta
+		// do losango (o "hud_bg" da peça não conta: ele cobre o losango também)
+		const FName UnderMouse = bHasMouse ? HUD->ButtonAt(Mouse) : NAME_None;
+		const bool bOnButton = !UnderMouse.IsNone() && !UnderMouse.ToString().StartsWith(TEXT("hud_bg"));
+		bOverMinimap = bHasMouse && !bOnButton && HUD->IsOverMinimap(Mouse);
 	}
 	TickMinimap(DeltaTime, Cam, Mouse, bHasMouse);
 	TickAlerts(DeltaTime);
@@ -674,10 +813,37 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	PruneSelection();
 	const bool bPlacing = TickPlacement(Mouse, bHasMouse);
 	UpdateGhost();
+	if (bPlacing)
+	{
+		TargetingPower = -1;
+	}
+	// (v4) os poderes do general: F1, F2, F3 na ordem da coluna (de baixo pra cima), em qualquer HUD; a mesma tecla de novo
+	// desiste. Sem poder ligado ainda, a tecla diz o que falta ("Requires: Rank 2")
+	{
+		static const FKey PowerKeys[3] = { EKeys::F1, EKeys::F2, EKeys::F3 };
+		for (int32 K = 0; K < 3; ++K)
+		{
+			if (!WasInputKeyJustPressed(PowerKeys[K]))
+			{
+				continue;
+			}
+			const int32 Power = M->PowerAtSlot(K);
+			if (Power >= 0)
+			{
+				BeginTargeting(Power);
+			}
+			else if (K < M->PowerCount())
+			{
+				SetPowerMessage(M->PowerRefusal(K));
+			}
+		}
+	}
+	const bool bTargeting = TickTargeting(Mouse, bHasMouse);
 
 	if (WasInputKeyJustPressed(EKeys::A) && !Selected.IsEmpty() && !bPlacing)
 	{
 		bAttackMoveArmed = true;
+		TargetingPower = -1;
 	}
 	if (WasInputKeyJustPressed(EKeys::S) && !Selected.IsEmpty())
 	{
@@ -707,23 +873,37 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 
 	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH)
 	const bool bMinimapMouse = bOverMinimap || MinimapGesture != EMinimapGesture::None;
-	HoverId = (bHasMouse && !bLeftDown && !bMinimapMouse) ? PickUnit(Mouse) : 0;
+	const bool bLineChord = LineChord == ELineChord::Active || LineChord == ELineChord::Releasing;
+	HoverId = (bHasMouse && !bLeftDown && !bMinimapMouse && LineChord == ELineChord::None) ? PickUnit(Mouse) : 0;
 	EMouseCursor::Type Cursor = EMouseCursor::Default;
 	FRTSUnitState Hovered;
-	if (bMinimapMouse)
+	if (bLineChord)
+	{
+		// (v4) puxando a linha dos dois botões: o "andar" (a mira com o ataque andando armado)
+		Cursor = bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross;
+	}
+	else if (bMinimapMouse)
 	{
 		// sobre o minimapa: seta sem seleção, "andar" com seleção, mira com o ataque andando armado
 		Cursor = Selected.IsEmpty() ? EMouseCursor::Default : (bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross);
 	}
-	else if (bAttackMoveArmed || (!Selected.IsEmpty() && (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))))
+	else if (TargetingPower >= 0 || bAttackMoveArmed || (!Selected.IsEmpty() && (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))))
 	{
-		Cursor = EMouseCursor::Crosshairs;   // (com o Ctrl: o tiro forçado, em qualquer coisa ou no chão)
+		Cursor = EMouseCursor::Crosshairs;   // (com o Ctrl: o tiro forçado, em qualquer coisa ou no chão; v4: a mira do poder)
 	}
 	else if (HoverId != 0 && M->GetUnit(HoverId, Hovered))
 	{
 		const bool bEnemy = M->IsEnemyOfLocal(Hovered.Owner);
 		Cursor = bEnemy ? (Selected.IsEmpty() ? EMouseCursor::Default : EMouseCursor::Crosshairs) : EMouseCursor::Hand;
+		// (v4, 23/10) o Dozer selecionado sobre o prédio avariado (dele ou do aliado): a chave do conserto, como no ZH; o clique manda
+		TArray<uint32> Dozers;
+		SelectedWith(true, Dozers);
+		if (!bEnemy && Hovered.bStructure && !Dozers.IsEmpty() && M->CanRepair(HoverId) && EnsureRepairCursor())
+		{
+			Cursor = EMouseCursor::Custom;
+		}
 	}
+	bRepairCursor = Cursor == EMouseCursor::Custom;
 	CurrentMouseCursor = Cursor;
 
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
@@ -739,27 +919,18 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		{
 			OnButton(Button);
 		}
-		else if (!bPlacing)
+		else if (!bPlacing && !bTargeting && LineChord == ELineChord::None)
 		{
+			// (v4, 23/10) o esquerdo arrastado é sempre a caixa de seleção, com tropa selecionada também (o Felipe: arrastar pra
+			// pegar outros tanques virava a linha); a linha agora é o esquerdo + o direito juntos (TickLineChord)
 			bLeftDown = true;
 			LeftDownPos = Mouse;
-			// com tropa selecionada, o arraste que começa no chão dá a direção; começando em cima de uma
-			// unidade nossa, ou com Shift, é a caixa de seleção
-			FRTSUnitState Under;
-			const uint32 UnderId = PickUnit(Mouse);
-			const bool bOnOwn = UnderId != 0 && M->GetUnit(UnderId, Under) && Under.Owner == M->LocalPlayer();
-			const bool bShiftDown = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
-			// (só com tropa: com só prédio selecionado, que não anda, o arraste é a caixa; o teste base de 13/10
-			// virou "linha de frente" com a War Factory selecionada)
-			bool bTroops = false;
-			for (const uint32 Id : Selected)
-			{
-				FRTSUnitState S;
-				bTroops |= M->GetUnit(Id, S) && !S.bStructure && S.Owner == M->LocalPlayer();
-			}
-			bFacingDrag = bTroops && !bShiftDown && !bOnOwn && !bMinimapMouse;
+			LeftDownAt = FPlatformTime::Seconds();
 		}
 	}
+	// (v4) a linha dos dois botões: depois do esquerdo e do direito que descem (este quadro já sabe dos dois) e antes do
+	// esquerdo que sobe (o acorde pega o soltar antes da caixa e do clique)
+	TickLineChord(Mouse, bHasMouse);
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton))
 	{
 		UE_LOG(LogTemp, Log, TEXT("RTS clique: esquerdo subiu em (%.0f, %.0f), estava apertado %d"), Mouse.X, Mouse.Y, int32(bLeftDown));
@@ -767,9 +938,9 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	if (WasInputKeyJustReleased(EKeys::LeftMouseButton) && bLeftDown)
 	{
 		bLeftDown = false;
-		if (FVector2D::Distance(LeftDownPos, Mouse) > DragThresholdPx && bFacingDrag)
+		if (LineChord != ELineChord::None)
 		{
-			HandleFacingDrag(LeftDownPos, Mouse);
+			// o esquerdo do acorde: a linha é do TickLineChord (nem caixa nem clique)
 		}
 		else if (FVector2D::Distance(LeftDownPos, Mouse) > DragThresholdPx)
 		{
@@ -841,7 +1012,9 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 		bRightScrolling = false;
 		RightAnchor = Mouse;
 	}
-	if (bRightDown && bHasMouse && H > 0)
+	// (v4) no acorde da linha (esquerdo + direito) o direito não rola: o arraste é a linha; a borda, as setas e a roda seguem
+	// (a linha fica presa no chão, dá pra puxar uma comprida rolando)
+	if (bRightDown && bHasMouse && H > 0 && LineChord == ELineChord::None)
 	{
 		const FVector2D Offset = Mouse - RightAnchor;
 		bRightScrolling |= Offset.Size() > DragThresholdPx;
@@ -854,12 +1027,16 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 	}
 	if (WasInputKeyJustReleased(EKeys::RightMouseButton))
 	{
-		if (bRightDown && !bRightScrolling)
+		if (bRightDown && !bRightScrolling && LineChord == ELineChord::None)   // (o direito do acorde da linha não desseleciona)
 		{
 			if (PlacingDef >= 0)
 			{
 				// posicionando: o clique simples desiste do prédio e mantém a seleção (o arraste só rola)
 				PlacingDef = -1;
+			}
+			else if (TargetingPower >= 0)
+			{
+				TargetingPower = -1;   // (v4) mirando o poder: o mesmo, desiste e mantém a seleção
 			}
 			else
 			{
@@ -932,6 +1109,12 @@ void ARTSPlayerController::TickMinimap(float DeltaTime, ARTSCameraPawn* Cam, con
 		if (!bOnMap)
 		{
 			MinimapGesture = EMinimapGesture::Ignore;   // a moldura fora do losango: só engole o clique
+		}
+		else if (bLeftPressed && TargetingPower >= 0)
+		{
+			// (v4) mirando o poder, o esquerdo no minimapa usa ali (como no C&C); ponto que não vale: segue mirando, com o motivo
+			TryUsePower(Cm);
+			MinimapGesture = EMinimapGesture::LeftDone;
 		}
 		else if (bLeftPressed && !Selected.IsEmpty())
 		{
@@ -1031,6 +1214,128 @@ void ARTSPlayerController::TickAlerts(float DeltaTime)
 		bHasAlert = true;
 		AttackMessageAge = 0.0f;
 	}
+	// (v4) o ataque de mísseis chegando perto do que é seu: o ponto pisca no minimapa e o Espaço leva a câmera até lá.
+	// Os avisos do mesmo quadro têm o mesmo At (dois inimigos no mesmo passo, dois passos num quadro): a chave de "já
+	// posto" é o At e a ordem dentro dele (a lista só cresce no fim e sai inteira por idade)
+	int32 SameAt = 0;
+	for (const URTSMatchSubsystem::FHudNotice& N : M->HudNotices())
+	{
+		if (N.Kind != URTSMatchSubsystem::FHudNotice::EKind::StrikeIncoming || N.At < LastStrikeNoticeAt)
+		{
+			continue;
+		}
+		if (N.At > LastStrikeNoticeAt)
+		{
+			LastStrikeNoticeAt = N.At;
+			LastStrikeNoticeCount = 0;
+			SameAt = 0;
+		}
+		if (++SameAt > LastStrikeNoticeCount)
+		{
+			LastStrikeNoticeCount = SameAt;
+			MinimapPings.Add({ N.Cm, 0.0f });
+			LastAlertCm = N.Cm;
+			LastAlertTime = Now;
+			bHasAlert = true;
+		}
+	}
+}
+
+// ---------------------------------------------------------------- (v4, 23/10) a mira do poder do general
+
+const FText& ARTSPlayerController::GetPowerMessage(float& OutAgeS) const
+{
+	OutAgeS = float(FPlatformTime::Seconds() - PowerMessageAt);
+	return PowerMessage;
+}
+
+void ARTSPlayerController::SetPowerMessage(const FText& Text)
+{
+	PowerMessage = Text;
+	PowerMessageAt = FPlatformTime::Seconds();
+}
+
+void ARTSPlayerController::BeginTargeting(int32 Power)
+{
+	URTSMatchSubsystem* M = Match();
+	if (!M || M->IsLocalDefeated())
+	{
+		return;
+	}
+	if (TargetingPower == Power)
+	{
+		TargetingPower = -1;   // o mesmo botão (ou a tecla) de novo desiste
+		return;
+	}
+	// sem estar pronto (a espera, sem o Command Center) nem entra na mira: o motivo aparece no mouse
+	const FText Why = M->PowerRefusal(Power);
+	if (!Why.IsEmpty())
+	{
+		SetPowerMessage(Why);
+		UE_LOG(LogTemp, Log, TEXT("RTS poder: o poder %d recusado no botão (%s)"), Power, *Why.ToString());
+		return;
+	}
+	TargetingPower = Power;
+	PlacingDef = -1;
+	bAttackMoveArmed = false;
+	PowerMessage = FText::GetEmpty();
+	UE_LOG(LogTemp, Log, TEXT("RTS poder: mirando o poder %d"), Power);
+}
+
+bool ARTSPlayerController::TickTargeting(const FVector2D& Mouse, bool bHasMouse)
+{
+	if (TargetingPower < 0)
+	{
+		return false;
+	}
+	URTSMatchSubsystem* M = Match();
+	if (!M || M->IsLocalDefeated())
+	{
+		TargetingPower = -1;
+		return false;
+	}
+	// o poder deixou de valer no meio da mira (o Command Center caiu): sai, com o motivo
+	const FText Why = M->PowerRefusal(TargetingPower);
+	if (!Why.IsEmpty())
+	{
+		SetPowerMessage(Why);
+		TargetingPower = -1;
+		return false;
+	}
+	const ARTSHUD* HUD = GetRTSHUD();
+	if ((HUD && !HUD->ButtonAt(Mouse).IsNone()) || bOverMinimap)
+	{
+		return false;   // os botões do painel e o minimapa seguem valendo
+	}
+	FVector Ground;
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse && GroundUnderCursor(Mouse, Ground))
+	{
+		TryUsePower(FVector2D(Ground.X, Ground.Y));
+	}
+	return true;   // mirando: o clique esquerdo é do poder (nem caixa nem ordem)
+}
+
+bool ARTSPlayerController::TryUsePower(const FVector2D& Cm)
+{
+	URTSMatchSubsystem* M = Match();
+	if (!M || TargetingPower < 0)
+	{
+		return false;
+	}
+	const FText Why = M->PowerRefusal(TargetingPower, &Cm);
+	if (!Why.IsEmpty())
+	{
+		SetPowerMessage(Why);
+		UE_LOG(LogTemp, Log, TEXT("RTS poder: o ponto (%.0f, %.0f) m recusado (%s)"), Cm.X / 100.0, Cm.Y / 100.0, *Why.ToString());
+		return false;
+	}
+	M->OrderUsePower(TargetingPower, Cm);
+	const FRTSBakedMap* Map = M->BakedMap();
+	AddMarker(FVector(Cm.X, Cm.Y, Map ? Map->GroundZCm(Cm) : 0.0f), true);
+	++Orders;
+	TargetingPower = -1;
+	PowerMessage = FText::GetEmpty();
+	return true;
 }
 
 void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
@@ -1129,32 +1434,186 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 	}
 }
 
-void ARTSPlayerController::HandleFacingDrag(const FVector2D& A, const FVector2D& B)
+// ---------------------------------------------------------------- (v4, 23/10) a linha dos dois botões
+//
+// O pedido do Felipe (23/10): a linha de antes era o esquerdo arrastado com tropa selecionada, e arrastar pra pegar outros
+// tanques na caixa virava a linha; só o direito também não dá (ele rola a câmera). Os jogos põem a linha no direito
+// arrastado porque lá o direito dá as ordens (Total War, BAR com o Custom Formations, AoE4); no nosso esquema do ZH o esquerdo
+// faz tudo e o direito é a câmera, e o gesto livre é o acorde dos dois, como o Supreme Commander (esquerdo com o direito
+// apertado) e o campo minado do Windows. Puxar da esquerda pra direita deixa a frente pra longe da câmera; ao contrário, pra
+// ela (a regra do lado do Total War). As vagas aparecem no chão enquanto puxa (ARTSHUD::DrawLinePreview), pela mesma conta da
+// simulação (World::PreviewLineSlots): o anel fica onde o tanque vai parar.
+
+bool ARTSPlayerController::HasOwnTroopsSelected() const
 {
-	// o ponto apertado é onde a linha de frente fica; o arraste é pra onde ela olha, e o comprimento é a
-	// largura dela (arraste curto = a largura do grupo). Com o F segurado, vai em formação; com o ataque
-	// andando armado, vai atacando
-	URTSMatchSubsystem* M = GetWorld()->GetSubsystem<URTSMatchSubsystem>();
-	FVector From;
-	FVector To;
-	if (!M || Selected.IsEmpty() || !GroundUnderCursor(A, From) || !GroundUnderCursor(B, To))
+	// só com tropa: prédio não anda (o teste base de 13/10 virou "linha de frente" com a War Factory selecionada)
+	const URTSMatchSubsystem* M = Match();
+	if (!M)
 	{
+		return false;
+	}
+	for (const uint32 Id : Selected)
+	{
+		FRTSUnitState S;
+		if (M->GetUnit(Id, S) && !S.bStructure && S.Owner == M->LocalPlayer())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ARTSPlayerController::GetLineDrag(FLineDrag& Out) const
+{
+	if ((LineChord != ELineChord::Active && LineChord != ELineChord::Releasing) || !bLineOpened)
+	{
+		return false;
+	}
+	const FVector2D D = LineEndCm - LineStartCm;
+	const double Len = D.Size();
+	if (Len < double(MinLineM) * 100.0)
+	{
+		return false;
+	}
+	// a linha mais comprida que o teto do comando fica no teto, a partir do ponto apertado
+	const double L = FMath::Min(Len, double(MaxLineM) * 100.0);
+	Out.StartCm = LineStartCm;
+	Out.EndCm = LineStartCm + D / Len * L;
+	// o ponto da ordem é o meio: a fileira da frente fica em cima da linha puxada, as outras atrás. A largura passa sempre (até
+	// uma vaga de largura, a simulação já usa a do grupo)
+	Out.CenterCm = (Out.StartCm + Out.EndCm) * 0.5;
+	Out.WidthM = float(L / 100.0);
+	// a frente é a linha girada −90° no giro: na vista de cima (Z pra cima), com a câmera no giro θ a direita da tela é
+	// (−sen θ, cos θ), que vira (cos θ, sen θ), a frente da câmera. Da esquerda pra direita: de costas pra câmera
+	Out.FacingDeg = float(FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X))) - 90.0f;
+	Out.bAttack = bAttackMoveArmed;
+	Out.bFormation = IsInputKeyDown(EKeys::F);
+	return true;
+}
+
+void ARTSPlayerController::TickLineChord(const FVector2D& Mouse, bool bHasMouse)
+{
+	const bool bLeftHeld = IsInputKeyDown(EKeys::LeftMouseButton);
+	const bool bRightHeld = IsInputKeyDown(EKeys::RightMouseButton);
+	const double Now = FPlatformTime::Seconds();
+	switch (LineChord)
+	{
+	case ELineChord::None:
+	{
+		// o acorde forma quando o segundo botão desce com o primeiro ainda "livre": o esquerdo que começou no mundo (fora de botão,
+		// minimapa, prédio sendo posto e mira) e não virou caixa (a menos de 6 px, ou apertado há até 0,2 s), e o direito que
+		// ainda não rolou. O primeiro que já virou caixa ou rolagem deixa o segundo com o significado de hoje
+		const bool bLeftNew = WasInputKeyJustPressed(EKeys::LeftMouseButton);
+		const bool bRightNew = WasInputKeyJustPressed(EKeys::RightMouseButton);
+		if (!bHasMouse || !bLeftHeld || !bRightHeld || !(bLeftNew || bRightNew) || !bLeftDown || !bRightDown || bRightScrolling)
+		{
+			return;
+		}
+		const bool bLeftFree = FVector2D::Distance(LeftDownPos, Mouse) <= DragThresholdPx || Now - LeftDownAt <= ChordPressGraceSeconds;
+		if (!bLeftFree || PlacingDef >= 0 || TargetingPower >= 0 || !HasOwnTroopsSelected())
+		{
+			return;
+		}
+		// a linha sai de onde o PRIMEIRO botão desceu (os dois no mesmo quadro: o mouse), guardada no chão
+		const FVector2D StartPx = (bLeftNew && bRightNew) ? Mouse : (bRightNew ? LeftDownPos : RightAnchor);
+		FVector Ground;
+		if (!GroundUnderCursor(StartPx, Ground))
+		{
+			return;
+		}
+		LineChord = ELineChord::Active;
+		LineStartCm = FVector2D(Ground.X, Ground.Y);
+		LineEndCm = LineStartCm;
+		bLineOpened = false;
+		UE_LOG(LogTemp, Log, TEXT("RTS linha: os dois botões (%s antes) em (%.0f, %.0f) m"),
+			(bLeftNew && bRightNew) ? TEXT("juntos") : (bRightNew ? TEXT("o esquerdo") : TEXT("o direito")), LineStartCm.X / 100.0, LineStartCm.Y / 100.0);
 		return;
 	}
-	const FVector2D Dir(To.X - From.X, To.Y - From.Y);
-	const float LengthM = float(Dir.Size()) / 100.0f;
-	if (LengthM < 1.0f)
+	case ELineChord::Active:
 	{
-		HandleLeftClick(A);
+		if (PlacingDef >= 0 || TargetingPower >= 0 || !HasOwnTroopsSelected())
+		{
+			CancelLine(TEXT("a seleção ficou sem tropa, ou entrou o prédio ou a mira"));
+			return;
+		}
+		// a ponta segue o chão sob o cursor (sem chão no raio, fica a última boa)
+		FVector Ground;
+		if (bHasMouse && GroundUnderCursor(Mouse, Ground))
+		{
+			LineEndCm = FVector2D(Ground.X, Ground.Y);
+		}
+		// a zona morta é na tela, do ponto apertado reprojetado (a câmera pode ter andado)
+		const URTSMatchSubsystem* M = Match();
+		const FRTSBakedMap* Map = M ? M->BakedMap() : nullptr;
+		FVector2D StartPx;
+		if (!bLineOpened && bHasMouse && ProjectWorldLocationToScreen(FVector(LineStartCm.X, LineStartCm.Y, Map ? Map->GroundZCm(LineStartCm) : 0.0f), StartPx)
+			&& FVector2D::Distance(StartPx, Mouse) > DragThresholdPx)
+		{
+			bLineOpened = true;
+		}
+		if (!bLeftHeld && !bRightHeld)
+		{
+			CommitLine();
+		}
+		else if (!bLeftHeld || !bRightHeld)
+		{
+			// um subiu: a ponta congela, e o outro tem a folga pra subir junto (ninguém solta os dois no mesmo quadro)
+			LineChord = ELineChord::Releasing;
+			LineReleaseAt = Now;
+		}
 		return;
 	}
-	const float FacingDeg = FMath::RadiansToDegrees(FMath::Atan2(float(Dir.Y), float(Dir.X)));
-	const float WidthM = LengthM >= 12.0f ? LengthM : 0.0f;   // até ~1,5 vaga é só a direção
-	M->OrderMove(Selected, FVector2D(From.X, From.Y), bAttackMoveArmed, IsInputKeyDown(EKeys::F), true, FacingDeg, WidthM);
-	AddMarker(From, bAttackMoveArmed);
-	UE_LOG(LogTemp, Log, TEXT("RTS ordem: linha de frente em (%.0f, %.0f) m, virada a %.0f°, %.0f m de largura"), From.X / 100.0, From.Y / 100.0, FacingDeg, WidthM);
+	case ELineChord::Releasing:
+	{
+		if (!bLeftHeld && !bRightHeld)
+		{
+			CommitLine();   // o outro subiu dentro da folga: a linha congelada
+		}
+		else if (bLeftHeld && bRightHeld)
+		{
+			LineChord = ELineChord::Active;   // o dedo voltou: segue puxando
+		}
+		else if (Now - LineReleaseAt > ChordReleaseGraceSeconds)
+		{
+			CancelLine(TEXT("soltou um botão e segurou o outro"));
+		}
+		else if (!HasOwnTroopsSelected())
+		{
+			CancelLine(TEXT("a seleção ficou sem tropa"));
+		}
+		return;
+	}
+	case ELineChord::Swallow:
+		return;
+	}
+}
+
+void ARTSPlayerController::CommitLine()
+{
+	URTSMatchSubsystem* M = Match();
+	FLineDrag L;
+	if (!M || !GetLineDrag(L))
+	{
+		CancelLine(TEXT("a linha não saiu da zona morta"));
+		return;
+	}
+	TArray<URTSMatchSubsystem::FLineSlot> Slots;
+	M->PreviewLineMove(Selected, L.CenterCm, L.bFormation, L.FacingDeg, L.WidthM, Slots);   // (só pro registro: as vagas da ordem)
+	M->OrderMove(Selected, L.CenterCm, L.bAttack, L.bFormation, true, L.FacingDeg, L.WidthM);
+	const FRTSBakedMap* Map = M->BakedMap();
+	AddMarker(FVector(L.CenterCm.X, L.CenterCm.Y, Map ? Map->GroundZCm(L.CenterCm) : 0.0f), L.bAttack);
+	UE_LOG(LogTemp, Log, TEXT("RTS ordem: linha de (%.0f, %.0f) a (%.0f, %.0f) m, virada a %.0f°, %.0f m, %d vagas%s"),
+		L.StartCm.X / 100.0, L.StartCm.Y / 100.0, L.EndCm.X / 100.0, L.EndCm.Y / 100.0, L.FacingDeg, L.WidthM, Slots.Num(),
+		L.bAttack ? TEXT(", ataque andando") : TEXT(""));
 	bAttackMoveArmed = false;
 	++Orders;
+	LineChord = ELineChord::Swallow;
+}
+
+void ARTSPlayerController::CancelLine(const TCHAR* Why)
+{
+	UE_LOG(LogTemp, Log, TEXT("RTS linha: desistiu (%s), nenhuma ordem"), Why);
+	LineChord = ELineChord::Swallow;
 }
 
 void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& B)
@@ -1344,7 +1803,8 @@ bool ARTSPlayerController::GroundUnderCursor(const FVector2D& Mouse, FVector& Ou
 		Out = Hit.ImpactPoint;
 		return true;
 	}
-	if (FMath::Abs(Dir.Z) > KINDA_SMALL_NUMBER)
+	// (16/10) o plano do chão só na frente da câmera: com a vista no céu (a câmera que olha pra cima) não há chão no cursor
+	if (Dir.Z < -KINDA_SMALL_NUMBER && -Origin.Z / Dir.Z > 0.0)
 	{
 		Out = Origin + Dir * (-Origin.Z / Dir.Z);
 		return true;
@@ -1362,8 +1822,9 @@ void ARTSPlayerController::PruneSelection()
 	}
 	Selected.RemoveAll([M](uint32 Id)
 	{
+		// (v4, 23/10) o prédio sendo vendido sai da seleção (o OBJECT_STATUS_UNSELECTABLE do ZH)
 		FRTSUnitState U;
-		return !M->GetUnit(Id, U);
+		return !M->GetUnit(Id, U) || U.bSelling;
 	});
 }
 

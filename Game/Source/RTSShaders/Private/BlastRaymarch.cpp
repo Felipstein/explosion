@@ -5,6 +5,8 @@
 #include "RTSSceneLights.h"
 #include "RTSSunShadowRender.h"
 #include "RTSDustField.h"
+#include "RTSSmokeShadow.h"
+#include "RTSSmokeShadowPass.h"
 #include <atomic>
 
 namespace
@@ -437,6 +439,24 @@ namespace
 		return GraphBuilder.RegisterExternalTexture(CreateRenderTarget(Texture, Name));
 	}
 
+	/** (23/10) O mapa que a light function do sol lê: a espessura óptica das explosões e da poeira (VolTau, o mapa de passagem; ou
+	 *  nada) mais a do rastro do míssil (RTSSmokeShadow), compostas no alvo final. Sem dono no jogo (o mapa não existe), nada. */
+	void ComposeSmokeShadow(FRDGBuilder& GraphBuilder, const FSceneView& View, const FBlastRaymarchExtension::FShadow& Shadow, FRDGTextureRef VolTau)
+	{
+		if (!Shadow.Out || !Shadow.Out->GetRenderTargetTexture())
+		{
+			return;
+		}
+		RTSSmokeShadow::FMap Map;
+		Map.OriginM = Shadow.OriginM;
+		Map.WindowM = float(Shadow.Res) * Shadow.TexelM;
+		Map.GroundZM = Shadow.GroundZM;
+		Map.ToSun = Shadow.ToSun;
+		Map.SunHalfAngleRad = Shadow.SunHalfAngleRad;
+		RTSSmokeShadow::AddComposePass(GraphBuilder, GetGlobalShaderMap(View.GetFeatureLevel()), VolTau,
+			External(GraphBuilder, Shadow.Out->GetRenderTargetTexture(), TEXT("BlastRaymarch.Shadow")), Map);
+	}
+
 	/** Pixels por metro a 1 m da câmera, na altura da imagem de saída (o voxel na tela, pro detalhe de perto). */
 	float OutRectHeightForDetail(const FSceneView& View, const FIntRect& OutRect)
 	{
@@ -497,6 +517,8 @@ void FBlastRaymarchExtension::SetFog_GameThread(const FFog& InFog)
 
 void FBlastRaymarchExtension::SetShadow_GameThread(const FShadow& InShadow)
 {
+	// (23/10) o rastro do míssil fica sabendo que o mapa existe e a direção pro sol dele (o corte do contorno visto do sol)
+	RTSSmokeShadow::SetMap_GameThread(InShadow.Out != nullptr, FVector(InShadow.ToSun));
 	ENQUEUE_RENDER_COMMAND(BlastRaymarchShadow)(
 		[Self = StaticCastSharedRef<FBlastRaymarchExtension>(AsShared()), InShadow](FRHICommandListImmediate&) { Self->Shadow = InShadow; });
 }
@@ -677,7 +699,9 @@ void FBlastRaymarchExtension::SubscribeToPostProcessingPass(EPostProcessingPass 
 	{
 		GLastViewExposure.store(View.GetLastEyeAdaptationExposure(), std::memory_order_relaxed);
 	}
-	if (Pass == Where && (Instances.Num() || RTSDustField::GetStats().X > 0) && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
+	// (23/10) também só com o rastro do míssil (sem explosão nem poeira): o passe compõe a sombra dele no mapa do sol
+	const bool bTrailShadow = Shadow.Out && RTSSmokeShadow::HasPuffs_RenderThread();
+	if (Pass == Where && (Instances.Num() || RTSDustField::GetStats().X > 0 || bTrailShadow) && !View.bIsSceneCapture && !View.bIsReflectionCapture && !View.bIsPlanarReflection)
 	{
 		InOutPassCallbacks.Add(FPostProcessingPassDelegate::CreateRaw(this, &FBlastRaymarchExtension::Render_RenderThread));
 	}
@@ -687,8 +711,21 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 {
 	const FScreenPassTexture SceneColor = FScreenPassTexture::CopyFromSlice(GraphBuilder, Inputs.GetInput(EPostProcessMaterialInput::SceneColor));
 	const FRDGTextureRef Depth = Inputs.SceneTextures.SceneTextures ? Inputs.SceneTextures.SceneTextures->GetParameters()->SceneDepthTexture : nullptr;
+	// (17/10 noite, a briga fora da câmera) os blocos que subiram vão pro atlas mesmo num quadro sem nada pra desenhar:
+	// guardados, caíam todos de uma vez (o tranco) quando a próxima explosão entrava na vista
+	auto FlushPending = [&]()
+	{
+		if (Pending.Num() && AtlasA.IsValid() && AtlasF.IsValid())
+		{
+			ScatterPending(GraphBuilder, View, External(GraphBuilder, AtlasA.GetReference(), TEXT("BlastRaymarch.AtlasA")),
+				External(GraphBuilder, AtlasF.GetReference(), TEXT("BlastRaymarch.AtlasF")));
+		}
+	};
 	if ((!Instances.Num() && RTSDustField::GetStats().X <= 0) || !PoolPT.IsValid() || !AtlasA.IsValid() || !Noise.IsValid() || !Depth || !SceneColor.IsValid())
 	{
+		FlushPending();
+		// (23/10) sem a marcha neste quadro (só o rastro do míssil, ou ainda sem o pool): o mapa da sombra só com o rastro
+		ComposeSmokeShadow(GraphBuilder, View, Shadow, nullptr);
 		return SceneColor;
 	}
 	RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRaymarch, "BlastRaymarch");
@@ -924,7 +961,8 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.InstRot[N] = FVector4f(Cy, Sy, 0.0f, 0.0f);
 		Base.InstFrame[N] = FVector4f(float(I.Slot0), float(I.Slot1), A,
 			(B.TimeOfFrame(float(F1)) - B.TimeOfFrame(float(F0))) * (B.Res / B.Domain) * MvScale);
-		Base.InstMisc[N] = FVector4f(B.TimeOfFrame(I.Frame), I.Seed, I.Keep, float(S));
+		// (23/10) o relógio do ruído de detalhe: o tempo do quadro e, na nuvem viva da ogiva (o quadro parado), o que passou depois
+		Base.InstMisc[N] = FVector4f(B.TimeOfFrame(I.Frame) + I.NoiseExtraS, I.Seed, I.Keep, float(S));
 		Base.InstNoise[N] = FVector4f(I.NoiseScale, 0.0f, 0.0f, 0.0f);
 		Base.InstLight2[N] = FVector4f(I.SunFull, I.SkyGain, 0.0f, 0.0f);
 		Base.InstGround[N] = FVector4f(I.GroundAlbedo.X, I.GroundAlbedo.Y, I.GroundAlbedo.Z, I.GroundAlbedo.W > 0.0f ? 1.0f : 0.0f);
@@ -1070,8 +1108,13 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.DustBoxMin = FVector4f(DustMin, 0.0f);
 		Base.DustBoxMax = FVector4f(DustMax, 0.0f);
 		// (17/10, a Arte: o A x B das oitavas da poeira) o céu e o sol cheio por linha de comando; o padrão é o de antes
-		static const float DustSky = ParamOr(TEXT("RmDustSky="), 3.4f);
-		static const float DustSunFull = ParamOr(TEXT("RmDustSunFull="), 0.27f);
+		// (17/10 noite, a calibração da Arte em poeira_sombra_wf2, Ultra, a luz A): com o céu curto e a areia tapada pela
+		// poeira de baixo, a sombra da poeira tinha escurecido 12%; 3,84 a devolve ao nível aprovado de manhã (corpo 0,82)
+		static const float DustSky = ParamOr(TEXT("RmDustSky="), 3.84f);
+		// (22/10, v4) o sol inteiro na poeira (1 = o físico: um volume não tem normal e recebe o sol todo). O 0,27 escurecia a
+		// poeira pro tom do chão deitado e ela saía marrom e "tenebrosa"; com a densidade 0,3 (o perfil), fica o véu claro
+		// cor de areia do game shot do ataque do GLA (r1_raid_slabs). Na sombra funda do prédio o sol não chega (MapV 0)
+		static const float DustSunFull = ParamOr(TEXT("RmDustSunFull="), 1.0f);
 		Base.DustLook = FVector4f(DustSky, DustSunFull, 0.125f, bDust ? 1.0f : 0.0f);
 		// (17/10) a poeira em resolução de tela, na composição (a borda dos bolos; o A/B da WF): -RmDustFull=0 volta à marcha
 		// conjunta em meia resolução
@@ -1082,6 +1125,8 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 		Base.DustOctExp = DustOctExp > 0.5f ? 1.0f : 0.0f;
 		if (!N && !bDust)
 		{
+			FlushPending();
+			ComposeSmokeShadow(GraphBuilder, View, Shadow, nullptr);   // (23/10) as explosões fora da tela: o mapa só com o rastro
 			return SceneColor;
 		}
 	}
@@ -1199,18 +1244,24 @@ FScreenPassTexture FBlastRaymarchExtension::Render_RenderThread(FRDGBuilder& Gra
 
 	// 1b) a sombra no chão: a espessura óptica entre o plano do chão e o sol, vista de cima (a light function do sol lê
 	// no quadro seguinte). Sem dono no jogo (mapas do BlastLab, que têm a sombra da fumaça de campo), não roda.
+	// (23/10) a marcha escreve no mapa de passagem (Res², o custo de sempre); a composição soma o rastro do míssil no alvo final
+	// (RTSSmokeShadow::OutRes², a mesma janela), que a light function lê
 	if (Shadow.Out && Shadow.Out->GetRenderTargetTexture())
 	{
-		RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmShadow, "BlastRmShadow");
-		FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
-		Common(P);
-		FRDGTextureRef ShadowTex = External(GraphBuilder, Shadow.Out->GetRenderTargetTexture(), TEXT("BlastRaymarch.Shadow"));
-		P->ShadowOut = GraphBuilder.CreateUAV(ShadowTex);
-		P->ShadowA = FVector4f(float(Shadow.OriginM.X - CamCm.X * 0.01), float(Shadow.OriginM.Y - CamCm.Y * 0.01), Shadow.TexelM, float(Shadow.GroundZM - CamCm.Z * 0.01));
-		P->ShadowB = FVector4f(Shadow.ToSun, float(Shadow.Res));
-		TShaderMapRef<FBlastRaymarchShadowMapCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
-		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ShadowMap"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
-			Shader, P, FComputeShaderUtils::GetGroupCount(FIntPoint(Shadow.Res, Shadow.Res), FIntPoint(8, 8)));
+		FRDGTextureRef VolTau = GraphBuilder.CreateTexture(FRDGTextureDesc::Create2D(FIntPoint(Shadow.Res, Shadow.Res), PF_R32_FLOAT,
+			FClearValueBinding::Black, TexCreate_ShaderResource | TexCreate_UAV), TEXT("BlastRaymarch.ShadowVolumes"));
+		{
+			RDG_EVENT_SCOPE_STAT(GraphBuilder, BlastRmShadow, "BlastRmShadow");
+			FBlastRaymarchParameters* P = GraphBuilder.AllocParameters<FBlastRaymarchParameters>();
+			Common(P);
+			P->ShadowOut = GraphBuilder.CreateUAV(VolTau);
+			P->ShadowA = FVector4f(float(Shadow.OriginM.X - CamCm.X * 0.01), float(Shadow.OriginM.Y - CamCm.Y * 0.01), Shadow.TexelM, float(Shadow.GroundZM - CamCm.Z * 0.01));
+			P->ShadowB = FVector4f(Shadow.ToSun, float(Shadow.Res));
+			TShaderMapRef<FBlastRaymarchShadowMapCS> Shader(GetGlobalShaderMap(View.GetFeatureLevel()));
+			FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("BlastRaymarch ShadowMap"), ERDGPassFlags::Compute | ERDGPassFlags::NeverCull,
+				Shader, P, FComputeShaderUtils::GetGroupCount(FIntPoint(Shadow.Res, Shadow.Res), FIntPoint(8, 8)));
+		}
+		ComposeSmokeShadow(GraphBuilder, View, Shadow, VolTau);
 	}
 
 	// 2) a marcha, meia resolução

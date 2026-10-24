@@ -385,11 +385,29 @@ O primeiro corte: lockstep com o anfitrião como relógio, só na LAN, sem pausa
   - `-BotExtra '-RTSNetBotQuitAt=<passo>','-RTSNetTestVote'`: o 1º robô some sem avisar e o 2º vota;
   - `-RTSNetTestVote` no anfitrião: ele vota também.
 
+**O dinheiro inicial** (v4, 22/10):
+- O anfitrião escolhe na sala, de 10 000 a 50 000 (`[ - ] $20,000 [ + ]`); os outros vêem ao lado da névoa.
+- O pacote da sala leva o valor (U32 depois da névoa; fora de 1 000 a 1 000 000 o pacote não entra). A partida leva nas regras da montagem (`Economy.StartingMoney`, × 5 no `-RTSFast`), então todos começam com o mesmo.
+- **A versão da rede** subiu (0004): o jogo velho não entra na sala nova.
+- Teste: `game.ps1 view -Folder X -Script lanhost -Money 50000` (o anfitrião clica até 50 000 e confere na partida); no `lanclient`, o robô anfitrião já cria a sala com o valor.
+
 **Os testes com uma placa só** (`game.ps1 view -Folder X -Script lanhost|lanclient -Players 4 [-NoFog]`):
 - Os outros jogadores são jogos sem placa (`-nullrhi`), e o robô do skirmish joga por eles pela rede.
 - **lanhost:** a nossa tela cria a sala e fica vermelha no botão de cor. Só então os robôs entram, porque o teste abre a porta com um arquivo. Depois os 4 jogam a partida inteira e todos voltam pra sala.
 - **lanclient:** o anfitrião é um robô sem placa. A nossa tela acha a sala na lista da rede, entra, troca de cor e joga. No fim, o anfitrião leva todos de volta.
 - Cada jogo escreve no fim o passo, o resultado e o estado final. Os 4 têm que dar igual.
+- **A sala só com IA** (`-Script lanhost -Players 4 -AI 3`, sem robô): o anfitrião sozinho com 3 IAs. Em 14/10 o Felipe achou a partida parada em "Waiting for the other players" (o começo exigia ao menos um PC de fora); corrigido no `RTSNetSession` e entra no roteiro.
+- **O roteiro antes de mandar um pacote** (`-Packaged`, os robôs também do pacote):
+  1. a cena com tela;
+  2. a `longe` (a briga fora da câmera, o travamento de 14/10);
+  3. a sala só com IA;
+  4. 2 PCs pelo pacote;
+  5. lanhost 3;
+  6. lanclient 3;
+  7. a pausa;
+  8. o render-se;
+  9. a queda.
+  - Com 4 cópias no mesmo PC a memória acaba (o arquivo de paginação encheu o disco em 14/10): até 3 cópias.
 
 ---
 

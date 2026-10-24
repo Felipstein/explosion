@@ -70,6 +70,12 @@ namespace RTSDustField
 	RTSDUSTFIELD_API bool IsKickLoaded();
 	/** A duração da gravação em quadros (o mesmo índice do atlas das folhas). */
 	RTSDUSTFIELD_API int32 KickFrames();
+	/** A coluna densa do quadro da gravação (Σ ρ²·dz no p95 das colunas, m na escala 1): × σ do puff = a profundidade
+	 *  óptica do miolo (17/10, o nascer do puff com a opacidade do cartão). */
+	RTSDUSTFIELD_API float KickColumn(float Frame);
+	/** O quadro (fracionário) da gravação no tempo de cozimento BakeT (s), pelos tempos dela; −1 se ela não tem os tempos.
+	 *  A gravação de 30 quadros por segundo (22/10) tem outro número de quadros que a folha dos cartões. */
+	RTSDUSTFIELD_API float KickFrameAt(double BakeT);
 	/**
 	 * Na thread do jogo, a cada quadro: os puffs, o ponto que a câmera olha (m, mundo: o centro da janela), a direção
 	 * pro sol, o relógio (s) e o detalhe fino da marcha.

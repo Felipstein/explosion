@@ -71,6 +71,20 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   **Veja em movimento** (vídeo), não só em fotos.
 - **Jogabilidade antes do realismo**: câmera de RTS vista de cima; efeito que
   cobre unidades ou polui a leitura da batalha é defeito, mesmo sendo físico.
+- **Toda fumaça, fogo e poeira é volumétrica e vive na luz do mundo** (o Felipe,
+  repetido "mil vezes"; 16/10: "VOCÊS NÃO ME ESCUTAM"). As quatro coisas valem
+  sempre, juntas:
+  1. tem volume;
+  2. recebe a sombra do mapa (prédios, relevo, palmeiras);
+  3. projeta sombra no chão e nas unidades;
+  4. é acesa pelo fogo, pelas explosões e pelas luzes perto.
+  O fogo vira fuligem com volume, como no vídeo de referência dele
+  (Downloads/gemini_generated_video_a0c04d8e.mp4: o carro queimando, o diesel
+  do tanque). Sprite chapado ou só auto-sombra não é entrega, mesmo provisório.
+  **Antes de mostrar qualquer fumaça:** prova no jogo, ampliada, com o efeito
+  na sombra de um prédio e ao lado de uma explosão.
+  **Sistema:** um só pra todas as fumaças (`docs/ESTUDO_LUZ_NA_FUMACA.md`, o
+  Fluxo); quem faz fumaça lê dele.
 - **Poucas configurações pro jogador**: presets baixa/média/alta/ultra
   bastam; opções detalhadas são ferramenta de debug.
 - **Respostas curtas**: ele quer saber o que muda pra ele, sem textão técnico.

@@ -17,6 +17,12 @@
 	"units": [
 		{
 			"key": "usa_mbt",
+			"_crusher": "(16/10, o esmagar do ZH: docs/ESMAGAR_E_DERRUBAR.md) crusher_level 2 esmaga o carro civil e derruba a palmeira (o CrusherLevel do Crusader); hull_m = a caixa do casco (comprimento, largura) que pega o objeto.",
+			"crusher_level": 2,
+			"hull_m": [7.9, 3.7],
+			"_wreck": "(22/10, item 4 da v4) a carcaça fica sólida e empurrável por wreck_life_s (o fogo dela, 4 + 30 s, e ~10 s de casco frio), afunda em wreck_sink_s (o SinkDelay/DestructionDelay do hulk do ZH) e some; o queimado no chão fica. Sem o campo: 48 e 7.",
+			"wreck_life_s": 48,
+			"wreck_sink_s": 7,
 			"name": "Battle Tank",
 			"_source": "AmericaTankCrusader / CrusaderLocomotor / CrusaderTankGun / TankArmor (ZH 1.04)",
 			"max_hp": 480,
@@ -51,11 +57,15 @@
 					"/Game/Units/USA_MBT_LL/SM_LL_USATank_Barrel/StaticMeshes/SM_LL_USATank_Barrel"
 				],
 				"turret_pivot_m": [0.10, 0.0],
+				"_turret_box_m": "(v4, 23/10) o corpo da torre que voa na morte (a física de corpo rígido, RTSLooseTurret.h), no quadro das malhas (m): o casco fundido do look_tank.py, do anel (o cilindro do anel vai de 1,54 a 1,62) ao teto (2,48) com a mira e a cúpula (até 2,80), do cesto atrás (−2,62) ao mantelete (2,61), e as caixas da defesa ativa (±1,80). O mastro do sensor, a estação de armas e as antenas ficam fora (quebram na queda); o cano vem da malha Barrel. A arte final do tanque vai precisar de números novos.",
+				"turret_box_m": [[-2.62, -1.80, 1.54], [2.61, 1.80, 2.80]],
 				"muzzle_height_m": 2.08,
 				"tracks_m": [2.85, 0.64],
 				"_impact_crater": "a cratera do tiro (13/10, o Felipe: o tiro de tanque é a A, do Game/Tools/bake_craters.py) e a parte dos tiros que passa raspando e cava o chão 6–12 m além do alvo (só desenho)",
 				"impact_crater": "A",
-				"near_miss": 0.2
+				"near_miss": 0.2,
+				"mass_t": 60,
+				"_mass_t": "(23/10, a explosão com vida) a massa do veículo (t): no desenho, o tranco do acerto de míssil vai com W/M; (v4, 23/10) na simulação, o derrubar pelo choque (½·m·v² contra a palmeira e o poste: World.h KnocksOver; o tanque e o Dozer derrubam pelo crusher_level em qualquer velocidade). O tranco do desenho (a âncora: a Patriot, 4 kg, num tanque de 60 t balança ~1,5° como o tiro de canhão; RTSHitLife.cpp). O tanque de batalha de ~60 t (M1A2: 62 t)"
 			},
 			"cost": 900,
 			"build_time_s": 10,
@@ -109,7 +119,9 @@
 			"produces": [
 				"usa_dozer"
 			],
-			"exit_lane_m": 6.6
+			"exit_lane_m": 6.6,
+			"_grants_powers": "(v4, 22/10) o CC pronto e vivo liga os poderes do general (o Cruise Missile Strike): sem CC, sem poder (spec v4)",
+			"grants_powers": true
 		},
 		{
 			"key": "usa_power_plant",
@@ -245,14 +257,104 @@
 				"usa_supply_center"
 			],
 			"produces": [
-				"usa_mbt"
+				"usa_mbt",
+				"usa_tomahawk"
 			],
 			"exit_lane_m": 6.6
 		},
 		{
+			"key": "usa_patriot",
+			"name": "Patriot Missile System",
+			"_source": "AmericaPatriotBattery (FB: BuildCost 1000, BuildTime 25, EnergyProduction -3, MaxHealth 1000, VisionRange 360, TurretTurnRate 180, KindOf POWERED, Prerequisites AmericaPowerPlant) + PatriotMissileWeapon (Weapon.ini: 30 EXPLOSION, AttackRange 225, DelayBetweenShots 250 ms, ClipSize 4, ClipReloadTime 2000 ms) + PatriotMissileLocomotor (Speed 400), ZH 1.04; × 0,2633 m. O tiro antiaéreo (PatriotMissileWeaponAir) entra quando houver avião",
+			"kind": "structure",
+			"max_hp": 1000,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 180,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 94.8,
+			"weapon": {
+				"range_m": 59.2,
+				"damage": 30,
+				"damage_type": "explosive",
+				"reload_s": 0.25,
+				"aim_tolerance_deg": 2.0,
+				"projectile_mps": 110.0,
+				"clip_size": 4,
+				"clip_reload_s": 2.0,
+				"_missile": "(16/10, o Felipe: 'ele atira mísseis ... com explosão quando encosta no tanque; simular bem cada coisa') O míssil de verdade na simulação: sai de uma das 4 caixas (2 x 2) inclinado launch_pitch_deg, a launch_mps, com o rumo aberto em leque (spread_deg, metade na fileira de cima); sai reto boost_s e então guia a turn_dps (rumo e inclinação) pro ponto onde o alvo vai estar, acelerando accel_mps2 até o projectile_mps; explode no contato com o casco, no chão ou depois de life_s. Os números dão ~0,7 s de voo a 59 m, subindo ~5 m: o rastro lê na câmera do jogo.",
+				"missile": {
+					"launch_mps": 20.0,
+					"accel_mps2": 120.0,
+					"turn_dps": 200.0,
+					"boost_s": 0.15,
+					"launch_pitch_deg": 35.0,
+					"launch_height_m": 2.4,
+					"spread_deg": 10.0,
+					"life_s": 4.0
+				}
+			},
+			"size_m": [
+				8.0,
+				8.0
+			],
+			"cost": 1000,
+			"build_time_s": 25,
+			"energy": -3,
+			"counts_for_victory": false,
+			"needs_power": true,
+			"_assist": "(16/10, o AssistedTargetingUpdate do ZH) a cada tiro, as Patriot do mesmo dono a até assist_range_m, livres e que alcançam o alvo, passam a mirar nele (o laser entre as baterias); a defesa também larga o alvo que os mísseis no ar já vão matar.",
+			"assist_range_m": 60.0,
+			"visual": {
+				"_mesh": "a defesa de base provisória por script (Modelos 3D, 14/10, aprovada pelo Felipe: 'top, manda pros cara botar no jogo'): Game/Tools/model_usa_patriot.py → game.ps1 patriot → /Game/Structures/USA_Patriot. A caixa lançadora gira (torre, pivô no centro do lote); o radar gira no mastro (spin, para sem energia)",
+				"hull": [
+					"/Game/Structures/USA_Patriot/SM_USA_Patriot_Base/StaticMeshes/SM_USA_Patriot_Base"
+				],
+				"turret": [
+					"/Game/Structures/USA_Patriot/SM_USA_Patriot_Turret/StaticMeshes/SM_USA_Patriot_Turret"
+				],
+				"turret_yaw_offset_deg": 0, "_turret_yaw_offset": "(16/10) 0: a frente da caixa é o +X do modelo (model_usa_patriot.py); o defeito do míssil saindo pela traseira era a torre de prédio que não girava no desenho (corrigido no RTSUnitActor)",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 3.75,
+				"spin": [
+					{
+						"mesh": "/Game/Structures/USA_Patriot/SM_USA_Patriot_Dish/StaticMeshes/SM_USA_Patriot_Dish",
+						"at_m": [
+							-2.35,
+							-2.35,
+							4.4
+						],
+						"rpm": 12,
+						"_at": "o eixo do radar no topo do mastro, igual ao DISH_AT do model_usa_patriot.py (a exportação dos Modelos 3D não espelha o Y, como o beacon do Dozer)"
+					}
+				],
+				"scaffold": "/Game/Structures/USA_Patriot/SM_USA_Patriot_Scaffold/StaticMeshes/SM_USA_Patriot_Scaffold",
+				"hit_life": {
+					"fragment_tilt_deg": 34,
+					"carry": 0.8
+				},
+				"_hit_life": "(23/10, a explosão com vida; -HitLifeV=1 ignora) a munição, só desenho (BlastFxHitLife.h): fragment_tilt_deg = o leque dos estilhaços inclinado pra frente, atan(Vm/Vf) de Gurney (o PAC-2: 31–38°); carry = w, o peso do que o míssil traz na direção da explosão, ℓ = normalize(n + 0,3·cima·[face de pé] + w·t) (o interceptador rápido: 0,8 [E], a fechar no A/B)",
+				"warhead_kg": 4,
+				"_warhead": "(23/10, a ogiva v2: o Felipe, 'o míssil só impacta como um tiro normal de tanque [...] tem que ter uma explosão, menor do que a carga pesada, mais fraca') a carga da ogiva em kg de TNT, só desenho (a simulação não lê): a explosão do BlastFx é a Carga Pesada na escala de Hopkinson-Cranz, λ = 0,55·(W/20 kg)^(1/3), a clássica do jogo = 20 kg. 4 kg = o meio da faixa de 3–5 kg do estudo (docs/ESTUDO_MISSIL_PATRIOT.md); conferência: o dano 30/110 × os 11,6 kg do Tomahawk dá 3,2 kg. Bola de 3,2 m de diâmetro, acesa ~0,44 s, a fuligem afina pra 0,18 (o alvo legível) e some em ~1,5 s; anel de areia baixo e translúcido até ~8 m (o tiro de canhão na areia aprovado, 6 m com ~1,6 kg, na distância escalada: 0,85·(W/1,6 kg)^(1/3) = 1,15; ~5× a bola, como na arte 4.7), só no Alta/Ultra, um por vez (com a vida e o véu ligado, a areia que o choque levanta é só o véu na poeira em volume, sem o anel: uma representação só, RTSHitLife.h). Afinar aqui sem recompilar (relido a cada partida)"
+			},
+			"requires": [
+				"usa_power_plant"
+			]
+		},
+		{
 			"key": "usa_dozer",
+			"crusher_level": 2,
+			"wreck_life_s": 48,
+			"wreck_sink_s": 7,
 			"name": "Dozer",
 			"_source": "AmericaVehicleDozer (AV:1682-1801), DozerLocomotor (LO:3532-3536)",
+			"_repair": "(v4, 23/10) o conserto do ZH (DozerAIUpdate: RepairHealthPercentPerSecond = 2%): o Dozer mandado num prédio avariado (dele ou do aliado) vai até ele e devolve 2% da vida cheia por segundo, de graça (o ZH não cobra), até encher; um Dozer por prédio. O conserto sozinho do ZH (o Dozer à toa 5 s procurando prédio avariado a 150 u) fica de fora: mexeria nos Dozers da IA",
+			"repair_pct_per_s": 2.0,
 			"max_hp": 250,
 			"armor": "tank",
 			"radius_m": 3.6,
@@ -270,7 +372,9 @@
 				"usa_power_plant",
 				"usa_supply_center",
 				"usa_war_factory",
-				"usa_command_center"
+				"usa_patriot",
+				"usa_command_center",
+				"usa_drop_zone"
 			],
 			"visual": {
 				"_mesh": "o Dozer provisório por script (Modelos 3D, 13/10, aprovado pelo Felipe): Game/Tools/model_usa_dozer.py → game.ps1 dozer → /Game/Units/USA_Dozer; o de antes era /Game/Structures/dozer com as esteiras do tanque",
@@ -282,6 +386,8 @@
 				],
 				"turret": [],
 				"tracks_m": [2.56, 0.62],
+				"mass_t": 49,
+				"_mass_t": "(23/10) a massa (t) pro tranco do acerto (ver usa_mbt): o trator de esteira do porte do Caterpillar D9 (~49 t) [E]",
 				"blade": {
 					"mesh": "/Game/Units/USA_Dozer/SM_USA_Dozer_Blade/StaticMeshes/SM_USA_Dozer_Blade",
 					"at_m": [
@@ -307,6 +413,9 @@
 		},
 		{
 			"key": "usa_supply_truck",
+			"crusher_level": 1,
+			"wreck_life_s": 48,
+			"wreck_sink_s": 7,
 			"name": "Supply Truck",
 			"_source": "ChinaVehicleSupplyTruck (CV:2003-2105), SupplyTruckLocomotor (LO:1056-1060)",
 			"max_hp": 300,
@@ -330,6 +439,10 @@
 					"/Game/Units/USA_SupplyTruck/SM_USA_SupplyTruck_Wheels/StaticMeshes/wheel_*"
 				],
 				"turret": [],
+				"wheels": {"tyre_w_m": 0.274, "dust_scale": 0.65, "dust_amount": 1.0, "dust_spacing": 1.5, "dust_trail_s": 0.82, "mark_dark": 0.35, "mark_depth": 0.4, "mark_lug": 1.5, "mark_segment_m": 2.0},
+				"_wheels": "(23/10, v4; o Felipe: \"bem pouquinho, igual o game shot, porque é um caminhãozinho de roda\") o pneu (model_usa_supply_truck.py e model_tomahawk.py, 0,38 × 0,72 = 0,274 m de largura; os eixos, o raio e a bitola o jogo lê das malhas wheel_*), contra a lagarta do tanque aprovado. A poeira (Plugins/RTSTreadDust/INTEGRACAO.md, \"As rodas\"): a mesma nuvem K2 do tanque, da roda de trás, a mesma rampa (o pneu de 0,36 m de raio solta a areia a √(g·r) = 1,88 m/s, o raio da roda motriz do tanque); dust_scale 0,65 = o lado do puff (a nuvem da picape ÷ a do tanque no game shot r1, 65 ÷ 100 px); a massa por metro (dust_amount × 0,65² ÷ dust_spacing): sem a garra da lagarta só sai a areia presa nos vãos da banda (0,274 m × 2 cm × 40 % contra 0,64 m × 4 cm × 50 % = 0,17 da massa), em puffs 2× mais espaçados e mais densos (os \"bolos mais separados\" da picape da r1; o RocketBuggyDust do ZH sai a cada 2–5 quadros, o TrackDebrisDirt da lagarta a todo quadro): 0,8 × 0,42 ÷ 2 = 0,17. A marca (RTSGroundMemory): a fita na largura do pneu (0,43 da lagarta), o pneu rola e compacta em vez de revirar com a garra: a passada escurece 0,35 e o sulco e a bordinha têm 0,4 da lagarta (o tanque domina a leitura: com 0,5 e 0,6 a linha fina do pneu no sol baixo lia tão escura quanto a da esteira, captures/game/v4_rodas/poeira_b), e as garras da banda (~13 cm, a do pneu militar) são 1,5 por metro × as do M1 (19,4 cm); a fita nas retas em trechos de 2 m (mark_segment_m; a lagarta, 1 m; a curva parte a cada 6° do mesmo jeito): metade das fitas guardadas e redesenhadas, porque o caminhão de suprimento passa a partida inteira no mesmo vaivém",
+				"mass_t": 15,
+				"_mass_t": "(23/10) a massa (t) pro tranco do acerto (ver usa_mbt): o caminhão 6x6 de carga carregado (~15 t) [E]; leve, bate no teto da mola já com a Patriot",
 				"cargo": {
 					"mesh": "/Game/Units/USA_SupplyTruck/SM_USA_SupplyCrate_Small/StaticMeshes/SM_USA_SupplyCrate_Small",
 					"slots_m": [
@@ -341,12 +454,285 @@
 				},
 				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10)."
 			}
+		},
+		{
+			"key": "usa_drop_zone",
+			"name": "Supply Drop Zone",
+			"_source": "(v4, 22/10) o pedido do Felipe (um prédio que junta dinheiro com o tempo), raiz no AmericaSupplyDropZone do ZH (FB:19263-19305: 2500, 45 s, -4 de energia, 1000 PV, um avião a cada 120 s); os números do spec v4 (o debate de design): $2 500, 30 s, 1 200 PV, 20 x 20 m, -3 de energia, até 2 por jogador (fundações inclusive), precisa da War Factory, sem patente (a renda nunca depende de ganhar briga). Paga em 4,25 min (3x o centro de suprimentos, a regra da fonte infinita)",
+			"kind": "structure",
+			"max_hp": 1200,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 52.7,
+			"size_m": [
+				16.0,
+				16.0
+			],
+			"_size_m": "(23/10) 16 x 16 m (4 x 4 quadrados de 4 m), o lote do modelo provisório (model_drop_zone.py; o spec dizia 20 x 20, o modelo arredondou o pedido de ~14 m pra grade, docs/PRODUCAO_3D.md §2)",
+			"cost": 2500,
+			"build_time_s": 30,
+			"energy": -3,
+			"needs_power": true,
+			"counts_for_victory": true,
+			"requires": [
+				"usa_war_factory"
+			],
+			"max_per_player": 2,
+			"_airlift": "o avião de carga (C-130): o 1º pouso first_s depois de pronta, depois um a cada period_s (70 s desde 23/10); o aviso (o avião aparece) lead_s antes; o pouso n traz min(3 + n, 5) paletes de 4 caixas ($75 cada: $900, $1 200, $1 500...) no pátio, e a empilhadeira leva um palete a cada unload_s_per_pallet (o '+$300'). Sem energia, a contagem e a empilhadeira param (o avião já avisado pousa). Morta, as caixas do pátio caem como a carga que cai e a rota volta a 3. altitude_m = a altura do voo (só desenho)",
+			"airlift": {
+				"first_s": 45,
+				"period_s": 70,
+				"_period_s": "(23/10) 70 s em vez dos 90 do spec, medido no harness IA x IA (20 partidas, scratchpad simrun/sum_rep70.txt): a renda que zera por mais de 60 s quando os caminhões morrem cai de 22 pra 4 lados em 40, a mistura de gasto muda em 37/40 (era 25/40), a mediana fica em 15,9 min. A zona madura rende 5 x $300 a cada 70 s = $1 286/min",
+				"lead_s": 10,
+				"pallets": [3, 5],
+				"boxes_per_pallet": 4,
+				"unload_s_per_pallet": 3,
+				"altitude_m": 24
+			},
+			"visual": {
+				"_mesh": "PROVISÓRIO por script (a frente dos Modelos 3D, v4): Game/Tools/model_drop_zone.py -> captures/game/models/usa_drop_zone -> import_provisional.py com PROV_FOLDER -> /Game/Structures/usa_drop_zone. Enquanto a malha não existir no projeto, vale o fallback (o desenho do centro de suprimentos). cargo = a caixa do lançamento nas 5 vagas de palete do pátio (2 x 2 caixas cada, palete por palete); spin = o radar da torre (para sem energia)",
+				"hull": [
+					"/Game/Structures/usa_drop_zone/SM_USA_DropZone_Base/StaticMeshes/SM_USA_DropZone_Base"
+				],
+				"turret": [],
+				"spin": [
+					{
+						"mesh": "/Game/Structures/usa_drop_zone/SM_USA_DropZone_Radar/StaticMeshes/SM_USA_DropZone_Radar",
+						"at_m": [
+							-6.3,
+							-6.3,
+							6.4
+						],
+						"rpm": 15,
+						"_at": "o RADAR_AT do model_drop_zone.py (o eixo do radar em cima da torre, no canto de trás; coordenadas da Unreal)"
+					}
+				],
+				"scaffold": "/Game/Structures/usa_drop_zone/SM_USA_DropZone_Scaffold/StaticMeshes/SM_USA_DropZone_Scaffold",
+				"cargo": {
+					"mesh": "/Game/Structures/SupplyDrop/SM_SupplyDrop_Crate/StaticMeshes/SM_SupplyDrop_Crate",
+					"_mesh": "(23/10) a caixa do lançamento (1,2 x 1,0 m, model_supply_crate.py), a mesma que desce no paraquedas; a do depósito (supply_crate) é a pilha de 4 m e saía como placas fora do pátio",
+					"slots_m": [
+						[-0.75, -0.65, 0.14],
+						[0.75, -0.65, 0.14],
+						[-0.75, 0.65, 0.14],
+						[0.75, 0.65, 0.14],
+						[1.85, 1.95, 0.14],
+						[3.35, 1.95, 0.14],
+						[1.85, 3.25, 0.14],
+						[3.35, 3.25, 0.14],
+						[1.85, -3.25, 0.14],
+						[3.35, -3.25, 0.14],
+						[1.85, -1.95, 0.14],
+						[3.35, -1.95, 0.14],
+						[-3.35, 1.95, 0.14],
+						[-1.85, 1.95, 0.14],
+						[-3.35, 3.25, 0.14],
+						[-1.85, 3.25, 0.14],
+						[-3.35, -3.25, 0.14],
+						[-1.85, -3.25, 0.14],
+						[-3.35, -1.95, 0.14],
+						[-1.85, -1.95, 0.14]
+					]
+				},
+				"fallback": {
+					"_about": "(v4) o desenho de reserva enquanto o modelo provisório não chega no projeto (RTSGameData: sem a malha do hull, o visual inteiro vem daqui)",
+					"hull": [
+						"/Game/Structures/supply_center/supply_center/StaticMeshes/supply_center"
+					],
+					"turret": [],
+					"scaffold": "/Game/Structures/supply_center/supply_center_scaffold/StaticMeshes/supply_center_scaffold"
+				}
+			}
+		},
+		{
+			"key": "usa_tomahawk",
+			"name": "Tomahawk Launcher",
+			"_source": "(v4, 22/10) a artilharia de mísseis da patente 3 (spec v4; a escada aprovada: 3 = unidades médias de topo): quebra a parede de Patriot. Enxerga 70 m e atira até 85 m (a Patriot só alcança 63,2 m), nada a menos de 20 m; rajada de 2 mísseis de 110 com dano em área (cheio até 2 m da borda, 50% em 5 m), 9 s de recarga (22,9 de dano por segundo). O chassi, a aceleração, o giro e o esmagar do caminhão de suprimento",
+			"crusher_level": 1,
+			"wreck_life_s": 48,
+			"wreck_sink_s": 7,
+			"max_hp": 200,
+			"armor": "tank",
+			"radius_m": 4.0,
+			"path_radius_m": 1.9,
+			"speed_mps": 7.0,
+			"accel_mps2": 63.2,
+			"brake_mps2": 63.2,
+			"turn_dps": 90,
+			"turret_turn_dps": 90,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 70.0,
+			"weapon": {
+				"range_m": 85.0,
+				"min_range_m": 20.0,
+				"damage": 110,
+				"damage_type": "explosive",
+				"reload_s": 0.6,
+				"aim_tolerance_deg": 3.0,
+				"projectile_mps": 55.0,
+				"clip_size": 2,
+				"clip_reload_s": 9.0,
+				"splash_m": [2.0, 5.0],
+				"splash_edge_pct": 50,
+				"_pre_attack": "(v4, 23/10, decidido com o dono do lançador) a mira antes do tiro, como o AIM do TurretAI do ZH com o PreAttackDelay: o relógio conta desde que há alvo no alcance (a torre gira e o tubo levanta juntos), o tiro só sai alinhado e com o relógio em pre_attack_s, os seguintes da rajada não esperam de novo; sem alvo por turret_idle_return_s (2 s, o RecenterTime do ZH) o relógio desce à metade da velocidade. 1,0 s = levantar 45 graus a 60 graus/s (o TurretPitchRate do ZH, 0,75 s) + os 0,25 s do PreAttackDelay. launch_offset_m = a boca do tubo levantado a 45 graus a partir do pivô da torre (turret_pivot_m do visual): 0,463 m pra frente, ±0,302 m de lado (os tubos alternam) e 3,29 m do chão (a varredura de colisão do modelo)",
+				"pre_attack_s": 1.0,
+				"launch_offset_m": [0.463, 0.302, 3.29],
+				"_missile": "sai da boca do tubo a 15 m/s inclinado 45 graus (o TEL do BGM-109G e o modelo: a 55 os tubos cortavam a lona), acelera 40 m/s2 até 55 m/s, guia a 100 graus/s depois de 0,4 s: ~2 s de voo a 85 m num arco de ~20 m (o rastro aprovado da Patriot)",
+				"missile": {
+					"launch_mps": 15.0,
+					"accel_mps2": 40.0,
+					"turn_dps": 100.0,
+					"boost_s": 0.4,
+					"launch_pitch_deg": 45.0,
+					"launch_height_m": 2.6,
+					"spread_deg": 4.0,
+					"life_s": 6.0
+				}
+			},
+			"cost": 1200,
+			"build_time_s": 15,
+			"requires": [
+				"usa_war_factory"
+			],
+			"requires_rank": 3,
+			"visual": {
+				"_mesh": "PROVISÓRIO por script (23/10): Game/Tools/model_tomahawk.py -> captures/game/models/usa_tomahawk -> game.ps1 v4models -> /Game/Units/USA_Tomahawk. O chassi do caminhão com os dois tubos deitados num berço que gira (turret: a mesa e o berço + os tubos, pivô em turret_pivot_m); (23/10, v4) o berço com os tubos (a malha Pod) levanta pela dobradiça de trás (o bloco launcher) e o míssil sai da boca do tubo levantado",
+				"hull": [
+					"/Game/Units/USA_Tomahawk/SM_USA_Tomahawk_Hull/StaticMeshes/SM_USA_Tomahawk_Hull",
+					"/Game/Units/USA_Tomahawk/SM_USA_Tomahawk_Wheels/StaticMeshes/wheel_*"
+				],
+				"turret": [
+					"/Game/Units/USA_Tomahawk/SM_USA_Tomahawk_Turret/StaticMeshes/SM_USA_Tomahawk_Turret",
+					"/Game/Units/USA_Tomahawk/SM_USA_Tomahawk_Pod/StaticMeshes/SM_USA_Tomahawk_Pod",
+					"/Game/Units/USA_Tomahawk/SM_USA_Tomahawk_Noses/StaticMeshes/nose_*"
+				],
+				"turret_pivot_m": [-1.296, 0.0],
+				"launcher": {
+					"mesh": "SM_USA_Tomahawk_Pod",
+					"hinge_m": [-2.304, 0.0, 1.404],
+					"fire_pitch_deg": 45,
+					"raise_dps": 75,
+					"accel_dps2": 360,
+					"brake_dps2": 600,
+					"lower_dps": 30,
+					"lower_delay_s": 2.0,
+					"stop_hz": 3.0,
+					"stop_zeta": 0.45,
+					"tubes_m": [[0.072, -0.302, 1.699], [0.072, 0.302, 1.699]],
+					"noses": ["nose_001", "nose_002"]
+				},
+				"_launcher": "(23/10, v4, decidido com o líder) o lançador que levanta: o berço com os 2 tubos (a malha Pod) gira na dobradiça de trás (model_tomahawk.py HINGE (-3,2; 1,95) × 0,72; o eixo é o Y) até 45° (a pose do TEL do GLCM, a pose de tiro do modelo; a varredura de colisão do Blender é limpa nos 360° do giro só até 45°: a 55° os tubos cortam a lona do convés com a torre a 125–160°). A hidráulica: o cilindro acelera a 360°/s², corre a 75°/s e freia a 600°/s² no fim do curso: 45° em 0,75 s, a média do TurretPitchRate 60 do Tomahawk do ZH (45° a 60°/s); o berço segue numa mola de 3 Hz com amortecimento 0,45 (o batente: passa ~1,1° e assenta a ±0,5° em 0,9 s; com 60°/s, 180 e 360 e o pedido de 60°/s × o relógio, o cilindro ficava ~10° atrás da rampa e o tiro saía com o berço a 42°, ainda subindo). O ângulo segue o relógio da mira da simulação (AimTicks, o pre_attack_s da arma) como o TurretAI do ZH: sobe desde o começo da mira, junto do giro da torre, e está assentado quando o tiro sai (1 s: os 0,25 s do PreAttackDelay do ZH); fica em cima na rajada e na recarga dela e, sem alvo, desce junto com o relógio quando ele começa a cair (a volta da torre, 2 s depois do último alvo): o de tiro × a fração do relógio, deitado com ele em zero (o relógio cai na metade da velocidade: 45° em 2 s). Sem o relógio na simulação, o do desenho: sobe na hora e desce a lower_dps (30°/s) lower_delay_s depois do último alvo. noses = as pontas dos mísseis na boca dos tubos (model_tomahawk.py noses(), malhas à parte que levantam com o berço): a do tubo que atirou some até a recarga da rajada (9 s) e volta com a arma pronta, como o ProjectileBoneFeedbackEnabledSlots do Tomahawk do ZH (o míssil atirado não fica no tubo; o tubo vazio mostra o fundo escuro). O tubo de cada tiro é o do lado de onde a simulação soltou o míssil; o clarão, a nuvem e o voo novo saem da boca desenhada (no chão inclinado o casco desenhado inclina e a boca escorrega ~3,3 m × o seno da inclinação do ponto plano da simulação: o voo emenda nele em 0,6 s). tubes_m = a boca de cada tubo deitado (x 0,1 × 0,72, y ±0,42 × 0,72, z 2,36 × 0,72): a 45° fica 0,463 m à frente do pivô da torre e a 3,29 m do chão, de onde a simulação solta o míssil. Na morte o berço cai deitado (a hidráulica perde a pressão)",
+				"wheels": {"tyre_w_m": 0.274, "dust_scale": 0.65, "dust_amount": 1.0, "dust_spacing": 1.5, "dust_trail_s": 0.82, "mark_dark": 0.35, "mark_depth": 0.4, "mark_lug": 1.5, "mark_segment_m": 2.0},
+				"_wheels": "(23/10, v4; o Felipe: \"bem pouquinho, igual o game shot, porque é um caminhãozinho de roda\") o pneu (model_usa_supply_truck.py e model_tomahawk.py, 0,38 × 0,72 = 0,274 m de largura; os eixos, o raio e a bitola o jogo lê das malhas wheel_*), contra a lagarta do tanque aprovado. A poeira (Plugins/RTSTreadDust/INTEGRACAO.md, \"As rodas\"): a mesma nuvem K2 do tanque, da roda de trás, a mesma rampa (o pneu de 0,36 m de raio solta a areia a √(g·r) = 1,88 m/s, o raio da roda motriz do tanque); dust_scale 0,65 = o lado do puff (a nuvem da picape ÷ a do tanque no game shot r1, 65 ÷ 100 px); a massa por metro (dust_amount × 0,65² ÷ dust_spacing): sem a garra da lagarta só sai a areia presa nos vãos da banda (0,274 m × 2 cm × 40 % contra 0,64 m × 4 cm × 50 % = 0,17 da massa), em puffs 2× mais espaçados e mais densos (os \"bolos mais separados\" da picape da r1; o RocketBuggyDust do ZH sai a cada 2–5 quadros, o TrackDebrisDirt da lagarta a todo quadro): 0,8 × 0,42 ÷ 2 = 0,17. A marca (RTSGroundMemory): a fita na largura do pneu (0,43 da lagarta), o pneu rola e compacta em vez de revirar com a garra: a passada escurece 0,35 e o sulco e a bordinha têm 0,4 da lagarta (o tanque domina a leitura: com 0,5 e 0,6 a linha fina do pneu no sol baixo lia tão escura quanto a da esteira, captures/game/v4_rodas/poeira_b), e as garras da banda (~13 cm, a do pneu militar) são 1,5 por metro × as do M1 (19,4 cm); a fita nas retas em trechos de 2 m (mark_segment_m; a lagarta, 1 m; a curva parte a cada 6° do mesmo jeito): metade das fitas guardadas e redesenhadas, porque o caminhão de suprimento passa a partida inteira no mesmo vaivém",
+				"muzzle_height_m": 1.7,
+				"impact_crater": "A",
+				"mass_t": 30,
+				"_mass_t": "(23/10) a massa (t) pro tranco do acerto (ver usa_mbt): o caminhão lançador 8x8 (o porte do HEMTT, ~30 t) [E]",
+				"hit_life": {
+					"fragment_tilt_deg": 8,
+					"carry": 0.5
+				},
+				"_hit_life": "(23/10, a explosão com vida; ver usa_patriot) o subsônico: o leque dos estilhaços quase reto (7–9°, Gurney) e w 0,5 [E]",
+				"warhead_kg": 12,
+				"_warhead": "(23/10, a ogiva v2) kg de TNT, só desenho (ver usa_patriot): o raio de 50% do dano em área contra o do ataque de mísseis (5 m contra 6 m), cuja explosão é a clássica de 20 kg; a distância escalada R ∝ W^(1/3) dá 20·(5/6)³ = 11,6 kg. Bola de 4,6 m de diâmetro, acesa ~0,63 s, a fuligem afina pra 0,10 e some em ~1,9 s; anel de areia baixo e translúcido até ~11,6 m (o tiro de canhão na areia na distância escalada, 1,66; com a vida e o véu ligado, só o véu, sem o anel)"
+			}
+		},
+		{
+			"key": "usa_cruise_missile",
+			"name": "Cruise Missile",
+			"_about": "(v4, 22/10) a munição do Cruise Missile Strike (o poder do general): unidade só de dados, nunca sai de fábrica nem de Dozer (custo 0; sem alcance, a IA não a conta como armada). 150 de explosão em área (cheio até 3 m da borda, 50% em 6 m), 55 m/s do começo ao fim, guia a 90 graus/s depois de 0,3 s, explode no chão ou aos 8 s",
+			"max_hp": 1,
+			"armor": "tank",
+			"radius_m": 0.5,
+			"path_radius_m": 0.5,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 0,
+			"weapon": {
+				"range_m": 0,
+				"damage": 150,
+				"damage_type": "explosive",
+				"reload_s": 0,
+				"aim_tolerance_deg": 0,
+				"projectile_mps": 55.0,
+				"splash_m": [3.0, 6.0],
+				"splash_edge_pct": 50,
+				"missile": {
+					"launch_mps": 55.0,
+					"accel_mps2": 0,
+					"turn_dps": 90.0,
+					"boost_s": 0.3,
+					"launch_pitch_deg": 0,
+					"launch_height_m": 0,
+					"spread_deg": 0,
+					"life_s": 8.0
+				}
+			},
+			"cost": 0,
+			"visual": {
+				"_mesh": "sem malha: o míssil é o da simulação (o rastro aprovado da Patriot e a explosão do BlastFx); impact_crater = a cratera A",
+				"hull": [],
+				"turret": [],
+				"impact_crater": "B",
+				"impact_blast": "classic",
+				"_impact": "(23/10) a ogiva de ~450 kg do Tomahawk de verdade (1 m de bola por kg^(1/3), LANL: ~7,7 m) não cabe na leitura do RTS; fica a explosão clássica em volume dos prédios (aprovada, sem destroços) e a cratera B, maior que a do tiro de tanque",
+				"warhead_kg": 12,
+				"_warhead": "(23/10, a ogiva v2) kg de TNT, só desenho: o mesmo míssil do lançador Tomahawk (ver usa_tomahawk). Vale pra metade leve do ataque (o 2º, o 4º, o 6º... míssil), que antes ficava só com o clarão; a metade pesada continua com a clássica (impact_blast)",
+				"warhead_look": "classic",
+				"_warhead_look": "(23/10, a revisão) a metade leve é a mesma gravação da metade pesada ao lado (a Carga Pesada): a mesma família de luz e cor (a fuligem, o sol, o céu e o chão da clássica, sem o anel de areia, que a clássica não tem), não a da morte de tanque. Sem o campo (ou outro valor): a da morte de tanque e dos tiros (a Patriot e o lançador)",
+				"hit_life": {
+					"fragment_tilt_deg": 8,
+					"carry": 0.5,
+					"ejecta_kg": 20,
+					"sand_kg": 150,
+					"crater": "C",
+					"mark_m": 6.72,
+					"crater_depth": 0.98
+				},
+				"_hit_life": "(23/10, a explosão com vida; o Felipe: 'falta a interação no chão: areia grossa voando, um impacto e uma cratera bem maiores') o chão do ataque na escala de verdade, legível: a terra e os torrões da carga clássica (ejecta_kg 20, K 1,71: tamanhos × K, quantidades × K², velocidades × √K, o regime da gravidade; os maiores, 8 no Ultra, 6 na Alta e 3 na Média, levantam o respingo de areia no 1º toque) e a cratera C no maior tamanho do atlas (mark_m 6,72 = 1,6× a de sempre: a bacia de ~6 m) e mais funda (crater_depth 0,98 = o teto 1,4×; o real de 150 kg dá 2,7–4,3 m de boca, com espoleta de retardo 6–8 m). A cratera B de sempre volta com -HitLifeV=1 ou blast.HitLife.Strike 0. (23/10, a areia do acerto; o Felipe: 'os tomahawk quando cai na areia em si, fica igual o gameshot, areia pra caralho, impacto, denso') sand_kg 150 = a carga que joga a areia no chão: o Tomahawk de verdade (~150 kg de TNT equivalente), a escala da gravação strike_chao, que toca em todo míssil na escala 1; sem ela, o véu, a onda de base e a poeira que fica na poeira em volume pela mesma carga (RTSHitLife.cpp; docs/ESTUDO_MISSIL_PATRIOT.md, 'A areia do acerto')"
+			}
+		}
+	],
+	"_about_rank": "(v4, 22/10) A patente do general, só pela luta (spec v4, o debate de design; o Felipe 11/10: 'por enquanto a patente mesmo', 'pras pessoas precisarem ir pra luta'). Cada acerto vale C = o dano até a vida que o alvo tinha, em valor C x custo / vida cheia: 1 XP por dealt_value_per_xp $ pro dono de quem acertou, 1 por taken_value_per_xp $ pro dono do alvo; obra inacabada, alvo próprio ou aliado e o que custa 0 valem nada. xp = o XP de cada patente (1 a 5). A escada aprovada (IDEIAS:178-186): 2 = o 1º poder, 3 = as unidades médias de topo (o Tomahawk), 4 = o poder cresce, 5 = a superarma (depois)",
+	"rank": {
+		"xp": [0, 600, 1500, 3000, 5000],
+		"dealt_value_per_xp": 10,
+		"taken_value_per_xp": 30
+	},
+	"_about_powers": "(v4, 22/10) Os poderes do general, na ordem (o índice vai no comando UsePower). Liga na requires_rank com um prédio pronto que liga poderes (grants_powers: o CC), cresce na upgrade_rank (missiles e pattern_radius_m = [o de sempre, o crescido]); cooldown_s de espera depois de cada uso (pronto assim que liga). Os mísseis saem um a cada interval_s, spawn_back_m atrás do ponto (do lado de quem atirou) e spawn_up_m acima, mirando num girassol (sem sorteio); a arma e o voo são os da munition (unidade só de dados). icon = o ícone do HUD (kit/icons/<icon>.png)",
+	"powers": [
+		{
+			"key": "cruise_strike",
+			"name": "Cruise Missile Strike",
+			"icon": "artillery_strike",
+			"requires_rank": 2,
+			"upgrade_rank": 4,
+			"cooldown_s": 180,
+			"missiles": [6, 9],
+			"pattern_radius_m": [12, 14],
+			"interval_s": 0.2,
+			"spawn_back_m": 150,
+			"spawn_up_m": 45,
+			"munition": "usa_cruise_missile"
 		}
 	],
 	"_about_economy": "Economia e construção do ZH 1.04 (docs/ECONOMIA.md, Parte 1: INI originais + código GPL). Os prédios são da USA; o caminhão e o Supply Center seguem o conjunto da China (decisão do Felipe, 10/10: o coletor é um caminhão). Tamanhos = Geometry do ZH × 2 × 0,2633.",
 	"economy": {
 		"_source": "GameData.ini (multiplayer.ini: 10 000 padrão; ValuePerSupplyBox 75; MaxLowEnergyProductionSpeed 0.8 / MinLowEnergyProductionSpeed 0.5; AllowedHeightVariationForBuilding 10 u; MinDistFromEdgeOfMapForBuild 30 u; SupplyCenterCloseRadius 20 u), ChinaVehicle.ini (SupplyWarehouseActionDelay 1000 ms por caixa, SupplyCenterActionDelay 400 ms, SupplyWarehouseScanDistance 700 u), ProductionUpdate.cpp (fila de 9), CivilianBuilding.ini (SupplyPileSmall: raio 16 u)",
 		"starting_money": 10000,
+		"starting_money_choices": [10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000],
+		"_starting_money_choices": "v4 (22/10): o dinheiro inicial que o jogador escolhe no menu e o anfitrião na sala, de 10 000 a 50 000 de 5 000 em 5 000; o padrão é o starting_money. ZH: o anfitrião leva SC=<dinheiro> nas opções da partida (GameNetwork/GameInfo.cpp:928-930, lido em 1131-1136), a lista da sala LAN (LanGameOptionsMenu.cpp:602-613) e o skirmish guarda o StartingCash (SkirmishGameOptionsMenu.cpp:316-359); multiplayer.ini: 10 000 padrão, opções 5 000 / 10 000 / 20 000 / 50 000 (docs/ECONOMIA.md)",
 		"box_value": 75,
 		"seconds_per_box": 1.0,
 		"center_s": 0.4,
@@ -360,7 +746,10 @@
 		"dock_clear_cells": 1,
 		"_dock_clear_cells": "nosso: todo prédio deixa 1 célula livre em volta da doca (na nossa grade, cercar a doca a travaria; revisão de 10/10)",
 		"drop_pile_m": 8.4,
-		"_drop_pile_m": "a carga que cai: a pilha tem o tamanho do SupplyPileSmall"
+		"_drop_pile_m": "a carga que cai: a pilha tem o tamanho do SupplyPileSmall",
+		"_sell": "(v4, 23/10) vender (o BuildAssistant::sellObject do ZH): volta sell_percent do custo (SellPercentage do GameData.ini: 50%) no fim da desmontagem de sell_s (o ZH: 1,5 s de andaime + 3 s desmontando + 1,5 s = 6 s); a fila volta na hora, a energia, a defesa e os poderes param já no começo; destruído no meio, nada volta",
+		"sell_percent": 50,
+		"sell_s": 6.0
 	},
 	"supply_dock_visual": {
 		"_about": "O depósito (ZH SupplyDock) e a pilha da carga que cai. As caixas somem na proporção do estoque, as de cima primeiro (W3DSupplyDraw do ZH); a pilha mostra uma caixa por caixa. pads_m = as vagas pintadas no pátio; stack_m = a pilha em cada vaga (4 embaixo e 1 em cima); pile_m = x, y, z (m) e giro (graus), as de cima primeiro. Em coordenadas da Unreal (o Y é o contrário do Blender).",

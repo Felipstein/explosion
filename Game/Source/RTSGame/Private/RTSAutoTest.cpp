@@ -1,10 +1,14 @@
 #include "RTSAutoTest.h"
 #include "EngineUtils.h"
 #include "LookDirector.h"
+#include "LookRecipe.h"
 
 #include "RTSFogOfWar.h"
+#include "RTSFrameRecorder.h"
+#include "HAL/FileManager.h"
 #include "RTSHUD.h"
 
+#include "Dom/JsonObject.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
@@ -16,11 +20,16 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "RTSCameraPawn.h"
+#include "RTSChat.h"
 #include "RTSHUD.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSNetSession.h"
 #include "RTSPlayerController.h"
+#include "RTSUnitActor.h"
+#include "Sim/World.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
 #include "UnrealClient.h"
 #include "Widgets/SViewport.h"
 
@@ -62,6 +71,7 @@ void URTSAutoTest::Initialize(FSubsystemCollectionBase& Collection)
 	bLanClient = ScriptName == TEXT("lanclient");
 	bLan = ScriptName == TEXT("lanhost") || bLanClient;
 	bBase = ScriptName == TEXT("base") || bLan;
+	bAIvsAI = ScriptName == TEXT("aivsai");
 	FString ScenarioArg;
 	bScenario = FParse::Value(FCommandLine::Get(), TEXT("-RTSScenario="), ScenarioArg);
 	FParse::Value(FCommandLine::Get(), TEXT("-RTSNetPlayers="), NetPlayers);
@@ -70,6 +80,7 @@ void URTSAutoTest::Initialize(FSubsystemCollectionBase& Collection)
 	FParse::Value(FCommandLine::Get(), TEXT("-RTSNetGate="), GateFile);
 	FParse::Value(FCommandLine::Get(), TEXT("-RTSNetAI="), NetAIs);
 	bTeams = FParse::Param(FCommandLine::Get(), TEXT("RTSTestTeams"));
+	FParse::Value(FCommandLine::Get(), TEXT("-RTSTestMoney="), TestMoney);
 	Build();
 	if (FSlateApplication::IsInitialized())
 	{
@@ -160,6 +171,29 @@ void URTSAutoTest::QueueDrag(const FVector2D& From, const FVector2D& To)
 		Pending.Add({ FInputEvent::EType::Move, FMath::Lerp(From, To, K / 6.0), EKeys::Invalid });
 	}
 	Pending.Add({ FInputEvent::EType::Up, To, EKeys::LeftMouseButton });
+}
+
+void URTSAutoTest::QueueChord(const FVector2D& From, const FVector2D& To, bool bRightFirst, bool bRelease)
+{
+	const FKey First = bRightFirst ? EKeys::RightMouseButton : EKeys::LeftMouseButton;
+	const FKey Second = bRightFirst ? EKeys::LeftMouseButton : EKeys::RightMouseButton;
+	Pending.Add({ FInputEvent::EType::Move, From, EKeys::Invalid });
+	Pending.Add({ FInputEvent::EType::Down, From, First });
+	Pending.Add({ FInputEvent::EType::Down, From, Second });
+	for (int32 K = 1; K <= 8; ++K)
+	{
+		Pending.Add({ FInputEvent::EType::Move, FMath::Lerp(From, To, K / 8.0), EKeys::Invalid });
+	}
+	if (bRelease)
+	{
+		QueueUp(To, EKeys::LeftMouseButton);
+		QueueUp(To, EKeys::RightMouseButton);
+	}
+}
+
+void URTSAutoTest::QueueUp(const FVector2D& At, FKey Button)
+{
+	Pending.Add({ FInputEvent::EType::Up, At, Button });
 }
 
 void URTSAutoTest::QueueKey(FKey K)
@@ -371,6 +405,33 @@ void URTSAutoTest::Build()
 				},
 				0.5f, 15.0f });
 		}
+		// (v4) o dinheiro inicial da sala pelos botões + e - (antes da névoa: a porta dos robôs abre depois)
+		if (TestMoney > 0)
+		{
+			Steps.Add({ TEXT("lan_dinheiro"),
+				[this]() { RetryAt = 0.0f; },
+				[this]()
+				{
+					const URTSNetSession* N = NetSession();
+					if (N && N->GetStartingMoney() == TestMoney)
+					{
+						return true;
+					}
+					if (N && Timer >= RetryAt && Pending.IsEmpty())
+					{
+						RetryAt = Timer + 0.4f;
+						QueueClick(ButtonCenter(N->GetStartingMoney() < TestMoney ? TEXT("lan_money_up") : TEXT("lan_money_down")));
+					}
+					return false;
+				},
+				[this]()
+				{
+					const URTSNetSession* N = NetSession();
+					UE_LOG(LogTemp, Display, TEXT("RTS TEST dinheiro inicial da sala: %d (pedido %d)"), N ? N->GetStartingMoney() : -1, TestMoney);
+					return N && N->GetStartingMoney() == TestMoney ? FString() : FString::Printf(TEXT("o botão da sala não chegou em %d"), TestMoney);
+				},
+				0.5f, 20.0f });
+		}
 		// a névoa da sala: o botão passa por explorada → preta → desligada
 		Steps.Add({ TEXT("lan_nevoa"),
 			[this]() { RetryAt = 0.0f; },
@@ -459,6 +520,63 @@ void URTSAutoTest::Build()
 			},
 			[this]() { return Match() ? FString() : TEXT("a partida em rede não começou"); },
 			3.0f, 300.0f });
+		// (17/10) o chat da partida, pelo teclado como o Felipe: o Enter abre, as letras (com acento, e o A e o S, que são
+		// ordens) vão pra caixa e não pro jogo, o Enter manda; com um robô na sala, a linha dele chega aqui pela rede
+		static const FString ChatLine = TEXT("ataque às 5, ação já!");
+		static int32 ChatOrdersBefore = 0;
+		Steps.Add({ TEXT("chat_abrir"),
+			[this]() { QueueKey(EKeys::Enter); },
+			[]() { return RTSChat::IsTyping(); },
+			[]() { return RTSChat::IsTyping() ? FString() : TEXT("o Enter não abriu o chat"); },
+			0.3f, 5.0f, false });
+		Steps.Add({ TEXT("chat_digitar"),
+			[this]()
+			{
+				ChatOrdersBefore = PC() ? PC()->OrdersGiven() : 0;
+				TGuardValue<bool> Injecting(Gate.IsValid() ? Gate->bInjecting : bDummyInjecting, true);
+				RTSChat::SimulateTyping(ChatLine);
+			},
+			[]() { return RTSChat::Draft() == ChatLine; },
+			[this]()
+			{
+				UE_LOG(LogTemp, Display, TEXT("RTS TEST chat: rascunho \"%s\", ordens %d → %d"), *RTSChat::Draft(), ChatOrdersBefore, PC() ? PC()->OrdersGiven() : -1);
+				if (RTSChat::Draft() != ChatLine)
+				{
+					return FString::Printf(TEXT("a caixa ficou com \"%s\""), *RTSChat::Draft());
+				}
+				return PC() && PC()->OrdersGiven() == ChatOrdersBefore ? FString() : TEXT("as letras do chat viraram ordem no jogo");
+			},
+			0.5f, 5.0f });
+		Steps.Add({ TEXT("chat_enviar"),
+			[this]() { QueueKey(EKeys::Enter); },
+			[this]()
+			{
+				const URTSNetSession* N = NetSession();
+				return !RTSChat::IsTyping() && N && N->ChatLines().Num() > 0 && N->ChatLines().Last().Text == ChatLine;
+			},
+			[this]()
+			{
+				const URTSNetSession* N = NetSession();
+				return N && N->ChatLines().Num() > 0 && N->ChatLines().Last().Text == ChatLine ? FString() : TEXT("a linha não foi");
+			},
+			1.0f, 5.0f });
+		if (NetPlayers - NetAIs >= 2)
+		{
+			// o robô manda a dele (-RTSTestChat=) com 5 s de partida
+			Steps.Add({ TEXT("chat_receber"), nullptr,
+				[this]()
+				{
+					const URTSNetSession* N = NetSession();
+					return N && N->ChatLines().ContainsByPredicate([N](const URTSNetSession::FChatLine& L) { return L.Slot != N->LocalSlot(); });
+				},
+				[this]()
+				{
+					const URTSNetSession* N = NetSession();
+					return N && N->ChatLines().ContainsByPredicate([N](const URTSNetSession::FChatLine& L) { return L.Slot != N->LocalSlot(); })
+						? FString() : TEXT("a linha do outro jogador não chegou");
+				},
+				1.0f, 60.0f });
+		}
 	}
 	if (bLanClient)
 	{
@@ -516,6 +634,33 @@ void URTSAutoTest::Build()
 			[this]() { return Match() ? FString() : TEXT("o anfitrião não começou a partida"); },
 			1.0f, 400.0f });
 	}
+	if (!bLan && TestMoney > 0)
+	{
+		// (v4) o dinheiro inicial pelos botões + e - do menu, como o Felipe faria
+		Steps.Add({ TEXT("dinheiro"),
+			[this]() { RetryAt = 0.0f; },
+			[this]()
+			{
+				const URTSSessionSubsystem* S = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+				if (S && S->StartingMoney == TestMoney)
+				{
+					return true;
+				}
+				if (S && Timer >= RetryAt && Pending.IsEmpty())
+				{
+					RetryAt = Timer + 0.4f;
+					QueueClick(ButtonCenter(S->StartingMoney < TestMoney ? TEXT("money_up") : TEXT("money_down")));
+				}
+				return false;
+			},
+			[this]()
+			{
+				const URTSSessionSubsystem* S = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+				UE_LOG(LogTemp, Display, TEXT("RTS TEST dinheiro inicial no menu: %d (pedido %d)"), S ? S->StartingMoney : -1, TestMoney);
+				return S && S->StartingMoney == TestMoney ? FString() : FString::Printf(TEXT("o botão do menu não chegou em %d"), TestMoney);
+			},
+			0.5f, 20.0f });
+	}
 	if (!bLan)
 	{
 		Steps.Add({ TEXT("jogar_skirmish"),
@@ -540,10 +685,38 @@ void URTSAutoTest::Build()
 			[this]() { return Match() ? FString() : TEXT("a partida não começou"); },
 			5.0f, 120.0f });
 	}
+	// (v4) com a IA jogando pelo jogador local (aivsai, -RTSSelfAI: o mesmo teste do RTSMatchSubsystem) a conferência na partida
+	// não vale: a IA põe a usina e o Dozer na fila no passo 0, e o dinheiro já baixou quando ela olha (~0,7 s depois). Fica a do
+	// menu (o passo dinheiro)
+	const bool bSelfAI = bAIvsAI || (!bLan && !bScenario && FParse::Param(FCommandLine::Get(), TEXT("RTSSelfAI")));
+	if (TestMoney > 0 && bSelfAI)
+	{
+		UE_LOG(LogTemp, Display, TEXT("RTS TEST dinheiro na partida: não confere (a IA joga pelo jogador local e gasta no 1º passo)"));
+	}
+	if (TestMoney > 0 && !bSelfAI)
+	{
+		// (v4) a partida começou com o escolhido (× 5 no -RTSFast), antes de qualquer obra
+		Steps.Add({ TEXT("dinheiro_na_partida"), nullptr,
+			[this]() { return Match() != nullptr; },
+			[this]()
+			{
+				const URTSSessionSubsystem* S = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+				const int32 Want = TestMoney * (S ? S->MoneyScale : 1);
+				const int32 Have = Match() ? Match()->Money(Match()->LocalPlayer()) : -1;
+				UE_LOG(LogTemp, Display, TEXT("RTS TEST dinheiro na partida: %d (esperado %d)"), Have, Want);
+				return Have == Want ? FString() : FString::Printf(TEXT("o jogador começou com %d, não %d"), Have, Want);
+			},
+			0.2f, 10.0f, false });
+	}
 
 	if (bScenario)
 	{
 		BuildScenario();
+		return;
+	}
+	if (bAIvsAI)
+	{
+		BuildAIvsAI();
 		return;
 	}
 	if (bBase)
@@ -551,54 +724,52 @@ void URTSAutoTest::Build()
 		BuildBase();
 	}
 
-	Steps.Add({ TEXT("caixa_de_selecao"),
-		[this]()
+	// a caixa em volta de todos os seus tanques, como o jogador faria (no começo e de novo depois da linha dos dois botões, v4)
+	auto QueueArmyBox = [this]()
+	{
+		URTSMatchSubsystem* M = Match();
+		ARTSPlayerController* P = PC();
+		if (!M || !P)
 		{
-			// a caixa em volta de todos os seus tanques, como o jogador faria
-			URTSMatchSubsystem* M = Match();
-			ARTSPlayerController* P = PC();
-			if (!M || !P)
-			{
-				return;
-			}
-			const FRTSBakedMap* Map = M->BakedMap();
-			TArray<FRTSUnitState> Units;
-			M->GetUnits(Units);
-			FBox2D Box(ForceInit);
-			for (const FRTSUnitState& U : Units)
-			{
-				FVector2D S;
-				FRTSDefInfo Info;
-				const bool bArmy = !U.bStructure && (!bBase || (M->GetDef(uint16(U.Def), Info) && Info.bArmed));
-				if (U.Owner == M->LocalPlayer() && bArmy && P->ProjectWorldLocationToScreen(FVector(U.PosCm.X, U.PosCm.Y, Map->GroundZCm(U.PosCm) + 150.0f), S))
-				{
-					Box += S;
-				}
-			}
-			UE_LOG(LogTemp, Log, TEXT("RTS TEST caixa: tanques na tela de (%.0f, %.0f) a (%.0f, %.0f), válida %d"), Box.Min.X, Box.Min.Y, Box.Max.X, Box.Max.Y, int32(Box.bIsValid));
-			if (Box.bIsValid)
-			{
-				QueueDrag(Box.Min - FVector2D(60, 60), Box.Max + FVector2D(60, 60));
-			}
-		},
-		[]() { return true; },
-		[this]()
+			return;
+		}
+		const FRTSBakedMap* Map = M->BakedMap();
+		TArray<FRTSUnitState> Units;
+		M->GetUnits(Units);
+		FBox2D Box(ForceInit);
+		for (const FRTSUnitState& U : Units)
 		{
-			URTSMatchSubsystem* M = Match();
-			TArray<FRTSUnitState> Units;
-			if (M) { M->GetUnits(Units); }
-			int32 Own = 0;
+			FVector2D S;
 			FRTSDefInfo Info;
-			for (const FRTSUnitState& U : Units)
+			const bool bArmy = !U.bStructure && (!bBase || (M->GetDef(uint16(U.Def), Info) && Info.bArmed));
+			if (U.Owner == M->LocalPlayer() && bArmy && P->ProjectWorldLocationToScreen(FVector(U.PosCm.X, U.PosCm.Y, Map->GroundZCm(U.PosCm) + 150.0f), S))
 			{
-				const bool bArmy = !U.bStructure && (!bBase || (M->GetDef(uint16(U.Def), Info) && Info.bArmed));
-				Own += U.Owner == (M ? M->LocalPlayer() : 0) && bArmy ? 1 : 0;
+				Box += S;
 			}
-			const int32 Sel = PC() ? PC()->GetSelection().Num() : 0;
-			// com base, a caixa pode pegar junto um caminhão que passava (o ZH também pega)
-			return (bBase ? Sel >= Own : Sel == Own) && Own > 0 ? FString() : FString::Printf(TEXT("selecionou %d de %d"), Sel, Own);
-		},
-		1.0f });
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS TEST caixa: tanques na tela de (%.0f, %.0f) a (%.0f, %.0f), válida %d"), Box.Min.X, Box.Min.Y, Box.Max.X, Box.Max.Y, int32(Box.bIsValid));
+		if (Box.bIsValid)
+		{
+			QueueDrag(Box.Min - FVector2D(60, 60), Box.Max + FVector2D(60, 60));
+		}
+	};
+	auto CheckArmySelected = [this]()
+	{
+		URTSMatchSubsystem* M = Match();
+		TArray<FRTSUnitState> Units;
+		if (M) { M->GetUnits(Units); }
+		int32 Own = 0;
+		FRTSDefInfo Info;
+		for (const FRTSUnitState& U : Units)
+		{
+			const bool bArmy = !U.bStructure && (!bBase || (M->GetDef(uint16(U.Def), Info) && Info.bArmed));
+			Own += U.Owner == (M ? M->LocalPlayer() : 0) && bArmy ? 1 : 0;
+		}
+		const int32 Sel = PC() ? PC()->GetSelection().Num() : 0;
+		// com base, a caixa pode pegar junto um caminhão que passava (o ZH também pega)
+		return (bBase ? Sel >= Own : Sel == Own) && Own > 0 ? FString() : FString::Printf(TEXT("selecionou %d de %d"), Sel, Own);
+	};
+	Steps.Add({ TEXT("caixa_de_selecao"), QueueArmyBox, []() { return true; }, CheckArmySelected, 1.0f });
 
 	Steps.Add({ TEXT("ordem_andar"),
 		[this]()
@@ -625,6 +796,495 @@ void URTSAutoTest::Build()
 		[]() { return true; },
 		[this]() { return PC() && !PC()->IsAttackMoveArmed() ? FString() : TEXT("o ataque andando ficou armado"); },
 		2.0f });
+
+	// (v4, 23/10) a linha dos dois botões, clique a clique como o Felipe: o esquerdo + o direito arrastando puxa a linha e mostra a
+	// vaga de cada um no chão; o esquerdo arrastado sozinho é sempre a caixa (o defeito que ele contou: com tanques selecionados,
+	// arrastar pra pegar outros virava a linha) e o direito sozinho rola. A foto da prévia (os anéis) e a da chegada (os tanques
+	// em cima deles) saem com a mesma câmera: o A/B
+	const FVector2D LineFrom(0.35, 0.45);
+	const FVector2D LineTo(0.65, 0.45);
+	const FVector2D LineFrom2(0.35, 0.55);
+	const FVector2D LineTo2(0.65, 0.55);
+	const FVector2D StillAt(0.5, 0.62);
+	auto CamFocus = [this]()
+	{
+		const ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+		return Cam ? Cam->GetFocusCm() : FVector2D(1e9, 1e9);
+	};
+	auto CamYaw = [this]()
+	{
+		const ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+		return Cam ? Cam->GetViewYawDeg() : 0.0f;
+	};
+	// o estado antes de cada passo: a câmera, as ordens, a seleção e o destino de cada um da seleção
+	auto LineSnapshot = [this, CamFocus]()
+	{
+		LineCamCm = CamFocus();
+		LineOrders = PC() ? PC()->OrdersGiven() : 0;
+		LineSelection = PC() ? PC()->GetSelection() : TArray<uint32>();
+		LineOrderPoints.Reset();
+		for (const uint32 Id : LineSelection)
+		{
+			FVector2D At;
+			if (Match() && Match()->GetOrderPointCm(Id, At))
+			{
+				LineOrderPoints.Add(Id, At);
+			}
+		}
+	};
+	// nada mudou: nenhuma ordem, a mesma seleção, nenhum destino mexido, sem a pausa e sem linha aberta (bCamera: e a câmera parada)
+	auto LineUnchanged = [this, CamFocus](bool bCamera) -> FString
+	{
+		ARTSPlayerController* P = PC();
+		URTSMatchSubsystem* M = Match();
+		if (!P || !M)
+		{
+			return TEXT("sem partida");
+		}
+		TArray<uint32> Now = P->GetSelection();
+		TArray<uint32> Was = LineSelection;
+		Now.Sort();
+		Was.Sort();
+		int32 Moved = 0;
+		for (const TPair<uint32, FVector2D>& It : LineOrderPoints)
+		{
+			FVector2D At;
+			Moved += M->GetOrderPointCm(It.Key, At) && FVector2D::Distance(At, It.Value) > 1.0 ? 1 : 0;
+		}
+		const double CamCm = FVector2D::Distance(CamFocus(), LineCamCm);
+		ARTSPlayerController::FLineDrag L;
+		UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: ordens %d → %d, seleção %d → %d, %d destinos mexidos, câmera andou %.1f cm, pausa %d"),
+			LineOrders, P->OrdersGiven(), Was.Num(), Now.Num(), Moved, CamCm, int32(P->IsPauseMenuOpen()));
+		if (P->OrdersGiven() != LineOrders || Moved > 0)
+		{
+			return FString::Printf(TEXT("saiu ordem (%d ordens novas, %d destinos mexidos)"), P->OrdersGiven() - LineOrders, Moved);
+		}
+		if (Now != Was)
+		{
+			return FString::Printf(TEXT("a seleção mudou (%d → %d)"), Was.Num(), Now.Num());
+		}
+		if (P->IsPauseMenuOpen() || P->GetLineDrag(L))
+		{
+			return TEXT("abriu a pausa, ou a linha ficou aberta");
+		}
+		if (bCamera && CamCm > 1.0)
+		{
+			return FString::Printf(TEXT("a câmera andou %.0f cm"), CamCm);
+		}
+		return FString();
+	};
+	// o controle já leu o último evento da fila (ele chega no quadro seguinte ao da entrega)
+	auto InputDone = [this]() { return InputQuietFrames >= 3; };
+	auto MedianMs = [this](int32 From, int32 To)
+	{
+		TArray<float> V;
+		for (int32 K = FMath::Max(0, From); K < FMath::Min(To, FrameMs.Num()); ++K)
+		{
+			V.Add(FrameMs[K]);
+		}
+		V.Sort();
+		return V.IsEmpty() ? 0.0f : V[V.Num() / 2];
+	};
+	// os destinos que a simulação deu contra as vagas da prévia, como conjunto a 1 cm (a linha congelada dá o mesmo ponto e o
+	// mesmo valor, e o conjunto das vagas não depende de onde os tanques estão: só quem fica com qual)
+	auto LineOrdersMatch = [this](double& OutWorstCm)
+	{
+		OutWorstCm = 0.0;
+		URTSMatchSubsystem* M = Match();
+		int32 Matched = 0;
+		TArray<FVector2D> Free = LineSlotsCm;
+		for (const uint32 Id : LineIds)
+		{
+			FVector2D At;
+			if (!M || !M->GetOrderPointCm(Id, At))
+			{
+				continue;
+			}
+			int32 Best = INDEX_NONE;
+			double BestCm = 1e12;
+			for (int32 K = 0; K < Free.Num(); ++K)
+			{
+				const double D = FVector2D::Distance(At, Free[K]);
+				if (D < BestCm)
+				{
+					BestCm = D;
+					Best = K;
+				}
+			}
+			OutWorstCm = FMath::Max(OutWorstCm, BestCm);
+			if (Best != INDEX_NONE && BestCm <= 1.0)
+			{
+				++Matched;
+				Free.RemoveAtSwap(Best);
+			}
+		}
+		return Matched;
+	};
+
+	Steps.Add({ TEXT("linha_previa"),
+		[this, LineSnapshot, LineFrom, LineTo]()
+		{
+			LineSnapshot();
+			LineFrameStart = FrameMs.Num();
+			QueueChord(ViewportFrac(LineFrom), ViewportFrac(LineTo), false, false);   // o esquerdo antes, da esquerda pra direita, segurando
+		},
+		InputDone,
+		[this, CamFocus, CamYaw, MedianMs]()
+		{
+			ARTSPlayerController* P = PC();
+			URTSMatchSubsystem* M = Match();
+			ARTSPlayerController::FLineDrag L;
+			if (!P || !M || !P->GetLineDrag(L))
+			{
+				return FString(TEXT("o esquerdo + o direito arrastando não puxaram a linha"));
+			}
+			TArray<URTSMatchSubsystem::FLineSlot> Slots;
+			M->PreviewLineMove(P->GetSelection(), L.CenterCm, L.bFormation, L.FacingDeg, L.WidthM, Slots);
+			int32 Troops = 0;
+			for (const uint32 Id : P->GetSelection())
+			{
+				FRTSUnitState U;
+				Troops += M->GetUnit(Id, U) && !U.bStructure && U.Owner == M->LocalPlayer() ? 1 : 0;
+			}
+			LineIds.Reset();
+			LineSlotsCm.Reset();
+			double GapM = 1e9;
+			for (int32 A = 0; A < Slots.Num(); ++A)
+			{
+				LineIds.Add(Slots[A].Id);
+				LineSlotsCm.Add(Slots[A].Cm);
+				for (int32 B = A + 1; B < Slots.Num(); ++B)
+				{
+					GapM = FMath::Min(GapM, FVector2D::Distance(Slots[A].Cm, Slots[B].Cm) / 100.0);
+				}
+			}
+			LineFacingDeg = L.FacingDeg;
+			const double CamCm = FVector2D::Distance(CamFocus(), LineCamCm);
+			const float FaceOff = FMath::Abs(FMath::FindDeltaAngleDegrees(CamYaw(), L.FacingDeg));
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: %d vagas pra %d unidades, %.0f m de (%.0f, %.0f) a (%.0f, %.0f), frente a %.1f° da câmera, par mais perto a %.1f m, câmera andou %.1f cm"),
+				Slots.Num(), Troops, L.WidthM, L.StartCm.X / 100.0, L.StartCm.Y / 100.0, L.EndCm.X / 100.0, L.EndCm.Y / 100.0, FaceOff, Slots.Num() > 1 ? GapM : 0.0, CamCm);
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: o custo da prévia, quadro mediano %.1f ms segurando os dois botões contra %.1f ms antes"),
+				MedianMs(LineFrameStart, FrameMs.Num()), MedianMs(LineFrameStart - 90, LineFrameStart));
+			if (Troops == 0 || Slots.Num() != Troops)
+			{
+				return FString::Printf(TEXT("a prévia deu %d vagas pra %d unidades"), Slots.Num(), Troops);
+			}
+			if (CamCm > 1.0)
+			{
+				return FString::Printf(TEXT("a câmera andou %.0f cm segurando os dois botões (o direito rolou)"), CamCm);
+			}
+			if (FaceOff > 10.0f)
+			{
+				return FString::Printf(TEXT("da esquerda pra direita a frente devia ficar de costas pra câmera (%.0f° fora)"), FaceOff);
+			}
+			if (Slots.Num() > 1 && GapM < 7.0)
+			{
+				return FString::Printf(TEXT("vagas encostadas (%.1f m)"), GapM);
+			}
+			return FString();
+		},
+		1.5f, 10.0f });
+
+	Steps.Add({ TEXT("linha_ordem"),
+		[this, LineTo]()
+		{
+			// soltar: o esquerdo e, no quadro seguinte, o direito (a mão nunca solta os dois no mesmo quadro)
+			QueueUp(ViewportFrac(LineTo), EKeys::LeftMouseButton);
+			QueueUp(ViewportFrac(LineTo), EKeys::RightMouseButton);
+		},
+		[this, InputDone, LineOrdersMatch]()
+		{
+			double WorstCm = 0.0;
+			return InputDone() && !LineIds.IsEmpty() && LineOrdersMatch(WorstCm) == LineIds.Num();
+		},
+		[this, LineOrdersMatch]()
+		{
+			ARTSPlayerController* P = PC();
+			if (!P)
+			{
+				return FString(TEXT("sem jogador"));
+			}
+			double WorstCm = 0.0;
+			const int32 Matched = LineOrdersMatch(WorstCm);
+			TArray<uint32> Now = P->GetSelection();
+			TArray<uint32> Was = LineSelection;
+			Now.Sort();
+			Was.Sort();
+			ARTSPlayerController::FLineDrag L;
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: %d de %d destinos nas vagas da prévia (o mais longe a %.2f cm), ordens %d → %d, seleção %d → %d"),
+				Matched, LineIds.Num(), WorstCm, LineOrders, P->OrdersGiven(), Was.Num(), Now.Num());
+			if (LineIds.IsEmpty() || Matched != LineIds.Num())
+			{
+				return FString::Printf(TEXT("só %d de %d destinos caíram nas vagas da prévia (o mais longe a %.0f cm)"), Matched, LineIds.Num(), WorstCm);
+			}
+			if (P->OrdersGiven() != LineOrders + 1)
+			{
+				return FString::Printf(TEXT("%d ordens em vez de 1"), P->OrdersGiven() - LineOrders);
+			}
+			if (Now != Was)
+			{
+				return FString::Printf(TEXT("soltar o direito mexeu na seleção (%d → %d)"), Was.Num(), Now.Num());
+			}
+			if (P->IsPauseMenuOpen() || P->GetLineDrag(L))
+			{
+				return FString(TEXT("abriu a pausa, ou a linha ficou aberta"));
+			}
+			return FString();
+		},
+		0.3f, 8.0f, false });
+
+	Steps.Add({ TEXT("linha_chegada"),
+		[this]() { LineStillFor = 0.0f; LineLastTimer = -1.0f; },
+		[this]()
+		{
+			// todos parados por 1,5 s seguidos (o giro final no lugar), até 24 s
+			URTSMatchSubsystem* M = Match();
+			bool bAllStill = M != nullptr;
+			for (const uint32 Id : LineIds)
+			{
+				FRTSUnitState U;
+				bAllStill = bAllStill && !(M->GetUnit(Id, U) && U.bMoving);
+			}
+			LineStillFor = bAllStill ? LineStillFor + (LineLastTimer < 0.0f ? 0.0f : Timer - LineLastTimer) : 0.0f;
+			LineLastTimer = Timer;
+			return LineStillFor >= 1.5f || Timer >= 24.0f;
+		},
+		[this]()
+		{
+			// a chegada é da simulação (o TestLineDrag cobra); aqui ficam o registro e a foto, com a câmera da prévia
+			URTSMatchSubsystem* M = Match();
+			int32 Alive = 0;
+			int32 Still = 0;
+			int32 Near = 0;
+			int32 Facing = 0;
+			for (const uint32 Id : LineIds)
+			{
+				FRTSUnitState U;
+				FVector2D Goal;
+				if (!M || !M->GetUnit(Id, U) || !M->GetOrderPointCm(Id, Goal))
+				{
+					continue;
+				}
+				++Alive;
+				const double OffM = FVector2D::Distance(U.PosCm, Goal) / 100.0;
+				const float TurnOff = FMath::Abs(FMath::FindDeltaAngleDegrees(LineFacingDeg, U.HullYawDeg));
+				Still += U.bMoving ? 0 : 1;
+				Near += OffM < 3.0 ? 1 : 0;
+				Facing += TurnOff < 10.0f ? 1 : 0;
+				UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: #%u a %.1f m da vaga, o casco a %.0f° da frente%s"), Id, OffM, TurnOff, U.bMoving ? TEXT(", andando") : TEXT(""));
+			}
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: a chegada em %.1f s, %d de %d parados, %d a menos de 3 m da vaga, %d virados pra frente da linha"),
+				Timer, Still, Alive, Near, Facing);
+			return FString();
+		},
+		2.0f, 30.0f });
+
+	Steps.Add({ TEXT("linha_esc"),
+		[this, LineSnapshot, LineFrom2, LineTo2]()
+		{
+			// puxa, o Esc desiste (sem abrir a pausa), e depois solta os dois: nenhuma ordem
+			LineSnapshot();
+			QueueChord(ViewportFrac(LineFrom2), ViewportFrac(LineTo2), false, false);
+			QueueKey(EKeys::Escape);
+			QueueUp(ViewportFrac(LineTo2), EKeys::LeftMouseButton);
+			QueueUp(ViewportFrac(LineTo2), EKeys::RightMouseButton);
+		},
+		InputDone,
+		[LineUnchanged]() { return LineUnchanged(true); },
+		0.5f, 10.0f, false });
+
+	Steps.Add({ TEXT("linha_solta_um"),
+		[this, LineSnapshot, LineFrom2, LineTo2]()
+		{
+			// o direito antes, da direita pra esquerda, segurando: a frente vira pra câmera (a foto mostra os risquinhos)
+			LineSnapshot();
+			QueueChord(ViewportFrac(LineTo2), ViewportFrac(LineFrom2), true, false);
+		},
+		InputDone,
+		[this, CamYaw]()
+		{
+			ARTSPlayerController::FLineDrag L;
+			if (!PC() || !PC()->GetLineDrag(L))
+			{
+				return FString(TEXT("com o direito antes, os dois botões não puxaram a linha"));
+			}
+			const float FaceOff = FMath::Abs(FMath::FindDeltaAngleDegrees(CamYaw() + 180.0f, L.FacingDeg));
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST linha: da direita pra esquerda, a frente a %.1f° de olhar pra câmera"), FaceOff);
+			return FaceOff <= 10.0f ? FString() : FString::Printf(TEXT("da direita pra esquerda a frente devia virar pra câmera (%.0f° fora)"), FaceOff);
+		},
+		0.8f, 10.0f });
+
+	Steps.Add({ TEXT("linha_solta_um_fim"),
+		[this, LineFrom2]()
+		{
+			bLineQueued = false;
+			QueueUp(ViewportFrac(LineFrom2), EKeys::LeftMouseButton);
+		},
+		[this, LineFrom2]()
+		{
+			// o direito segue apertado 0,6 s depois do esquerdo subir (passou da folga de 0,25 s): desiste, sem ordem nem rolagem
+			if (!bLineQueued)
+			{
+				if (Timer >= 0.7f)
+				{
+					bLineQueued = true;
+					QueueUp(ViewportFrac(LineFrom2), EKeys::RightMouseButton);
+				}
+				return false;
+			}
+			return InputQuietFrames >= 3;
+		},
+		[LineUnchanged]() { return LineUnchanged(true); },
+		0.1f, 10.0f, false });
+
+	Steps.Add({ TEXT("acorde_parado"),
+		[this, LineSnapshot, StillAt]()
+		{
+			// os dois apertados e soltos sem mexer: nada (nem ordem, nem desselecionar, nem clique)
+			LineSnapshot();
+			QueueChord(ViewportFrac(StillAt), ViewportFrac(StillAt), false, true);
+		},
+		InputDone,
+		[LineUnchanged]() { return LineUnchanged(true); },
+		0.5f, 10.0f, false });
+
+	Steps.Add({ TEXT("direito_rola"),
+		[this, LineSnapshot, StillAt]()
+		{
+			// só o direito, arrastado 200 px por 0,6 s: rola a câmera, como sempre
+			LineSnapshot();
+			bLineQueued = false;
+			const FVector2D P = ViewportFrac(StillAt);
+			Pending.Add({ FInputEvent::EType::Move, P, EKeys::Invalid });
+			Pending.Add({ FInputEvent::EType::Down, P, EKeys::RightMouseButton });
+			for (int32 K = 1; K <= 8; ++K)
+			{
+				Pending.Add({ FInputEvent::EType::Move, P + FVector2D(25.0 * K, 0.0), EKeys::Invalid });
+			}
+		},
+		[this, StillAt]()
+		{
+			if (!bLineQueued)
+			{
+				if (Timer >= 0.6f)
+				{
+					bLineQueued = true;
+					QueueUp(ViewportFrac(StillAt) + FVector2D(200.0, 0.0), EKeys::RightMouseButton);
+				}
+				return false;
+			}
+			return InputQuietFrames >= 3;
+		},
+		[this, CamFocus, LineUnchanged]()
+		{
+			const double MovedM = FVector2D::Distance(CamFocus(), LineCamCm) / 100.0;
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST direito: a câmera andou %.1f m com o direito arrastado 200 px"), MovedM);
+			const FString Why = LineUnchanged(false);
+			if (!Why.IsEmpty())
+			{
+				return Why;
+			}
+			return MovedM > 1.0 ? FString() : FString::Printf(TEXT("o direito arrastado não rolou a câmera (%.2f m)"), MovedM);
+		},
+		0.1f, 10.0f, false });
+
+	Steps.Add({ TEXT("camera_volta"),
+		[this]()
+		{
+			// a câmera de antes da rolagem, pra caixa achar os tanques
+			if (ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr)
+			{
+				Cam->JumpTo(LineCamCm);
+			}
+		},
+		nullptr, nullptr, 0.6f, 5.0f, false });
+
+	Steps.Add({ TEXT("caixa_com_tropa"),
+		[this, LineSnapshot]()
+		{
+			// o defeito que o Felipe contou: com todos selecionados, o esquerdo arrastado em volta só da metade da esquerda (na tela)
+			// seleciona só eles, e caixa não dá ordem
+			LineSnapshot();
+			LineIds.Reset();
+			URTSMatchSubsystem* M = Match();
+			ARTSPlayerController* P = PC();
+			const FRTSBakedMap* Map = M ? M->BakedMap() : nullptr;
+			if (!M || !P || !Map)
+			{
+				return;
+			}
+			struct FOnScreen
+			{
+				uint32 Id = 0;
+				FVector2D S = FVector2D::ZeroVector;
+			};
+			TArray<FOnScreen> Sel;
+			for (const uint32 Id : LineSelection)
+			{
+				FRTSUnitState U;
+				FVector2D S;
+				if (M->GetUnit(Id, U) && !U.bStructure && ScreenOf(U.PosCm, S, 150.0f))
+				{
+					Sel.Add({ Id, S });
+				}
+			}
+			Sel.Sort([](const FOnScreen& A, const FOnScreen& B) { return A.S.X < B.S.X; });
+			if (Sel.Num() < 2)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("RTS TEST caixa com tropa: só %d da seleção na tela"), Sel.Num());
+				return;
+			}
+			const int32 Half = Sel.Num() / 2;
+			const double Margin = FMath::Clamp((Sel[Half].S.X - Sel[Half - 1].S.X) * 0.4, 4.0, 20.0);
+			FBox2D Box(ForceInit);
+			for (int32 K = 0; K < Half; ++K)
+			{
+				Box += Sel[K].S;
+			}
+			Box = Box.ExpandBy(Margin);
+			// o que a caixa deve pegar, pela regra dela (HandleBoxSelect): toda unidade nossa que anda, com o ponto a 1,5 m do chão dentro
+			TArray<FRTSUnitState> All;
+			M->GetUnits(All);
+			for (const FRTSUnitState& U : All)
+			{
+				FVector2D S;
+				if (U.Owner == M->LocalPlayer() && !U.bStructure && P->ProjectWorldLocationToScreen(FVector(U.PosCm.X, U.PosCm.Y, Map->GroundZCm(U.PosCm) + 150.0f), S) && Box.IsInside(S))
+				{
+					LineIds.Add(U.Id);
+				}
+			}
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST caixa com tropa: %d selecionados na tela, a caixa de (%.0f, %.0f) a (%.0f, %.0f) deve pegar %d"),
+				Sel.Num(), Box.Min.X, Box.Min.Y, Box.Max.X, Box.Max.Y, LineIds.Num());
+			QueueDrag(Box.Min, Box.Max);
+		},
+		InputDone,
+		[this]()
+		{
+			ARTSPlayerController* P = PC();
+			if (!P)
+			{
+				return FString(TEXT("sem jogador"));
+			}
+			TArray<uint32> Now = P->GetSelection();
+			TArray<uint32> Want = LineIds;
+			Now.Sort();
+			Want.Sort();
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST caixa com tropa: selecionou %d (queria %d, de %d antes), ordens %d → %d"),
+				Now.Num(), Want.Num(), LineSelection.Num(), LineOrders, P->OrdersGiven());
+			if (P->OrdersGiven() != LineOrders)
+			{
+				return FString::Printf(TEXT("a caixa deu ordem (%d)"), P->OrdersGiven() - LineOrders);
+			}
+			if (Want.IsEmpty() || Want.Num() >= LineSelection.Num())
+			{
+				return FString::Printf(TEXT("não deu pra montar a caixa de metade (%d de %d)"), Want.Num(), LineSelection.Num());
+			}
+			return Now == Want ? FString() : FString::Printf(TEXT("a caixa com tropa selecionada pegou %d em vez de %d"), Now.Num(), Want.Num());
+		},
+		0.5f, 10.0f });
+
+	// todos de novo, pros passos seguintes (o minimapa manda o exército inteiro)
+	Steps.Add({ TEXT("caixa_todos"), QueueArmyBox, InputDone, CheckArmySelected, 1.0f });
 
 	// a névoa e o minimapa (docs/BASE_JOGAVEL.md §0), clicando como o Felipe clica
 	auto Hud = [this]() { return PC() ? Cast<ARTSHUD>(PC()->GetHUD()) : nullptr; };
@@ -1251,7 +1911,7 @@ void URTSAutoTest::BuildScenario()
 			ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
 			if (Sc && Cam)
 			{
-				Cam->SetView(Sc->CameraYawDeg, Sc->CameraDistanceM, Sc->CameraPitchDeg);
+				Cam->SetView(Sc->CameraYawDeg, Sc->CameraDistanceM, Sc->CameraPitchDeg, Sc->CameraLookUpDeg);
 				Cam->JumpTo(Sc->CameraFocusM * 100.0);
 				if (!Sc->bHud && PC()->GetHUD())
 				{
@@ -1261,13 +1921,90 @@ void URTSAutoTest::BuildScenario()
 				// cair onde o jogador o vê na câmera dele (o Look, 13/10: a foto saía com o sol 90° fora)
 				for (TActorIterator<ALookDirector> It(GetWorld()); It; ++It)
 				{
-					It->ApplyRecipe();
+					if (Sc->bSunRel && It->Recipe)
+					{
+						// (16/10) o sol a sun_rel_deg da frente da câmera da cena: o diretor põe o sol pela câmera (a frente
+						// girada FromCamera pra esquerda), então ele lê um giro de mentira e a câmera volta pro dela
+						Cam->SetView(Sc->CameraYawDeg + Sc->SunRelDeg + It->Recipe->Sun.FromCamera, Sc->CameraDistanceM, Sc->CameraPitchDeg, Sc->CameraLookUpDeg);
+						It->ApplyRecipe();
+						Cam->SetView(Sc->CameraYawDeg, Sc->CameraDistanceM, Sc->CameraPitchDeg, Sc->CameraLookUpDeg);
+						Cam->JumpTo(Sc->CameraFocusM * 100.0);
+					}
+					else
+					{
+						It->ApplyRecipe();
+					}
 				}
+				bSceneCameraSet = true;
 			}
 		},
 		[this]() { return Match() && Match()->IsReady() && Match()->GetScenario(); },
 		[this]() { return Match() && Match()->GetScenario() ? FString() : TEXT("o cenário não montou"); },
 		0.2f, 60.0f, false });
+	// (v4, 23/10) "select" no cenário: o prédio do jogador local daquele tipo selecionado por um clique de verdade, antes da
+	// 1ª foto (o HUD da zona de lançamento selecionada: o relógio do avião). O campo é lido aqui, só pro teste.
+	// (revisão de 23/10) "clicks": "repair_sell" = o conserto e o vender pelos cliques (AddRepairAndSellSteps) antes das
+	// fotos da cena: saíram da base (vendiam a única usina dela e a vitrine, a energia, a batalha e a numeração das fotos
+	// mudavam pros outros donos)
+	FString SelectKey;
+	FString ClicksFlow;
+	{
+		FString Name;
+		FString Text;
+		TSharedPtr<FJsonObject> Root;
+		const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+		if (FParse::Value(FCommandLine::Get(), TEXT("-RTSScenario="), Name)
+			&& FFileHelper::LoadFileToString(Text, *FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), TEXT("Scenarios.json")))
+			&& FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Root) && Root.IsValid()
+			&& Root->TryGetArrayField(TEXT("scenarios"), List))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *List)
+			{
+				const TSharedPtr<FJsonObject> O = V.IsValid() ? V->AsObject() : nullptr;
+				FString Each;
+				if (O.IsValid() && O->TryGetStringField(TEXT("name"), Each) && Each == Name)
+				{
+					O->TryGetStringField(TEXT("select"), SelectKey);
+					O->TryGetStringField(TEXT("clicks"), ClicksFlow);
+				}
+			}
+		}
+	}
+	if (!SelectKey.IsEmpty())
+	{
+		Steps.Add({ TEXT("cena_selecionar"),
+			[this]() { RetryAt = 0.0f; },
+			[this, SelectKey]()
+			{
+				TArray<FRTSUnitState> F;
+				if (!OwnOf(DefIndex(SelectKey), F) || F.IsEmpty() || !PC())
+				{
+					return false;
+				}
+				if (PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == F[0].Id)
+				{
+					return true;
+				}
+				FVector2D At;
+				if (Timer >= RetryAt && Pending.IsEmpty() && ScreenOf(F[0].PosCm, At, 60.0f))
+				{
+					RetryAt = Timer + 0.8f;
+					QueueClick(At);
+				}
+				return false;
+			},
+			[this, SelectKey]()
+			{
+				TArray<FRTSUnitState> F;
+				return OwnOf(DefIndex(SelectKey), F) && !F.IsEmpty() && PC() && PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == F[0].Id
+					? FString() : FString::Printf(TEXT("o clique não selecionou %s"), *SelectKey);
+			},
+			0.5f, 10.0f, false });
+	}
+	if (ClicksFlow == TEXT("repair_sell"))
+	{
+		AddRepairAndSellSteps();
+	}
 	const FRTSScenario* Sc = nullptr;
 	FRTSScenario Loaded;
 	FString ScenarioName;
@@ -1298,6 +2035,100 @@ void URTSAutoTest::BuildScenario()
 		[this, EndS]() { return Match() && Match()->SimTick() >= uint32(FMath::RoundToInt(EndS * 30.0f)); },
 		nullptr,
 		0.0f, 120.0f, false });
+}
+
+void URTSAutoTest::BuildAIvsAI()
+{
+	// (v4, 23/10) a prova da v4 numa partida de verdade, sem ninguém: a IA joga pelos dois lados (-RTSSelfAI). Uma foto a cada
+	// 15 s de partida onde houve tiro por último (senão as bases e o meio, em rodízio); a cada ataque de mísseis novo a câmera
+	// vai até ele e fotografa a 1,5, 3 e 5 s. Acaba em -RTSTestMinutes= (padrão 20) ou no fim da partida
+	float Minutes = 20.0f;
+	FParse::Value(FCommandLine::Get(), TEXT("-RTSTestMinutes="), Minutes);
+	Steps.Add({ TEXT("ia_x_ia"),
+		[this]()
+		{
+			WatchNextShot = 10.0f;
+			WatchShotAt = -1.0f;
+			WatchStrikeSerial = Match() ? Match()->GetStrikeSerial() : 0;
+			WatchBurst.Reset();
+			bWatchStarted = false;
+		},
+		[this, Minutes]() { return WatchTick() || (Match() && Match()->MatchSeconds() >= Minutes * 60.0f); },
+		[this]()
+		{
+			const URTSMatchSubsystem* M = Match();
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST IA x IA: fim aos %.0f s, resultado %d, ataques de mísseis %d"),
+				M ? M->MatchSeconds() : -1.0f, M ? int32(M->Result()) : -1, M ? M->GetStrikeSerial() : -1);
+			return M ? FString() : TEXT("a partida sumiu");
+		},
+		0.0f, Minutes * 60.0f + 300.0f, false });
+}
+
+bool URTSAutoTest::WatchTick()
+{
+	URTSMatchSubsystem* M = Match();
+	ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+	if (!M || !Cam)
+	{
+		return bWatchStarted;   // a partida acabou (ou ainda não começou)
+	}
+	bWatchStarted = true;
+	if (M->Result() != ERTSMatchResult::Playing)
+	{
+		Shot(TEXT("fim"));
+		return true;
+	}
+	const float T = M->MatchSeconds();
+	// a foto marcada (meio segundo depois de a câmera chegar)
+	if (WatchShotAt >= 0.0f && T >= WatchShotAt)
+	{
+		Shot(WatchShotName);
+		WatchShotAt = -1.0f;
+		return false;
+	}
+	auto Stamp = [T](const TCHAR* What) { return FString::Printf(TEXT("%s_%02dm%02ds"), What, int32(T) / 60, int32(T) % 60); };
+	// o ataque de mísseis novo: a câmera vai até o ponto e a rajada de fotos
+	FVector2D Spot;
+	float At = 0.0f;
+	if (M->GetStrikeSerial() != WatchStrikeSerial && M->GetLastStrike(Spot, At))
+	{
+		WatchStrikeSerial = M->GetStrikeSerial();
+		// a foto do rodízio que esperava a câmera chegar (base, meio, luta) não sai mais: a câmera foi pro ataque, e ela
+		// gravaria o ataque com o nome do outro lugar
+		WatchShotAt = -1.0f;
+		WatchShotName.Reset();
+		Cam->JumpTo(Spot);
+		WatchBurst = { T + 1.5f, T + 3.0f, T + 5.0f };
+		WatchNextShot = T + 8.0f;
+		UE_LOG(LogTemp, Display, TEXT("RTS TEST IA x IA: ataque de mísseis em (%.0f, %.0f) m aos %.0f s"), Spot.X / 100.0, Spot.Y / 100.0, T);
+		return false;
+	}
+	if (WatchBurst.Num() && T >= WatchBurst[0])
+	{
+		WatchBurst.RemoveAt(0);
+		Shot(Stamp(TEXT("ataque")));
+		return false;
+	}
+	if (WatchBurst.IsEmpty() && T >= WatchNextShot && WatchShotAt < 0.0f)
+	{
+		WatchNextShot = T + 15.0f;
+		// onde houve tiro nos últimos 5 s; senão o rodízio: a base de cada um e o meio
+		if (M->GetLastHit(Spot, At) && T - At < 5.0f)
+		{
+			Cam->JumpTo(Spot);
+			WatchShotName = Stamp(TEXT("luta"));
+		}
+		else
+		{
+			const FVector2D Mine = M->PlayerStartCm(M->LocalPlayer());
+			const FVector2D Theirs = M->PlayerStartCm(M->LocalPlayer() == 0 ? 1 : 0);
+			const int32 K = WatchCycle++ % 3;
+			Cam->JumpTo(K == 0 ? Mine : K == 1 ? (Mine + Theirs) * 0.5 : Theirs);
+			WatchShotName = Stamp(K == 0 ? TEXT("base_azul") : K == 1 ? TEXT("meio") : TEXT("base_vermelha"));
+		}
+		WatchShotAt = T + 0.5f;
+	}
+	return false;
 }
 
 void URTSAutoTest::BuildBase()
@@ -1331,6 +2162,32 @@ void URTSAutoTest::BuildBase()
 		0.5f, 90.0f });
 
 	AddBuildSteps(TEXT("fabrica"), TEXT("usa_war_factory"), ESpot::Front);
+	if (FParse::Param(FCommandLine::Get(), TEXT("RTSTestPatriot")))
+	{
+		// (17/10 noite, o Felipe: "vc nem se quer construiu a porra do patriot na partida") o Patriot pelo Dozer, como ele faz, e
+		// a troca de qualidade dele no meio da partida (Alta → Baixa → Alta, as teclas F5 e F7): as faixas cinza no chão
+		AddBuildSteps(TEXT("patriot"), TEXT("usa_patriot"), ESpot::Front);
+		Steps.Add({ TEXT("qualidade_baixa"), [this]() { QueueKey(EKeys::F5); }, []() { return true; }, []() { return FString(); }, 4.0f, 10.0f });
+		Steps.Add({ TEXT("qualidade_alta"), [this]() { QueueKey(EKeys::F7); }, []() { return true; }, []() { return FString(); }, 4.0f, 10.0f });
+		Steps.Add({ TEXT("qualidade_alta_depois"), nullptr, []() { return true; }, []() { return FString(); }, 6.0f, 10.0f });
+		// e fica olhando o Patriot na vista do jogo durante o ataque da IA (no modo rápido ela chega em ~1:30; 17/10: "eu vi a
+		// patriot bugando, vc nem viu pq vc saiu da tela"), uma foto a cada 2 s
+		Steps.Add({ TEXT("patriot_guarda"),
+			[this]()
+			{
+				TArray<FRTSUnitState> Pat;
+				ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr;
+				if (Cam && OwnOf(DefIndex(TEXT("usa_patriot")), Pat))
+				{
+					Cam->FocusOn(Pat[0].PosCm);
+				}
+			},
+			[]() { return true; }, []() { return FString(); }, 1.0f, 5.0f });
+		for (int32 K = 0; K < 24; ++K)
+		{
+			Steps.Add({ FString::Printf(TEXT("patriot_guarda_%02d"), K), nullptr, []() { return true; }, []() { return FString(); }, 2.0f, 5.0f });
+		}
+	}
 
 	Steps.Add({ TEXT("selecionar_fabrica"),
 		[this]() { RetryAt = 0.0f; },
@@ -1540,7 +2397,10 @@ void URTSAutoTest::Tick(float DeltaTime)
 	{
 		P->SetEdgeScroll(false);
 	}
+	// zera também quando o evento entregue agora era o único da fila (senão o passo confere antes do controle ler)
+	const bool bPumped = !Pending.IsEmpty();
 	PumpInput();
+	InputQuietFrames = bPumped ? 0 : InputQuietFrames + 1;
 	// o cenário com a câmera deslizando (pan_m_s): o foco anda com o relógio da simulação, depois da foto do começo
 	if (bScenario && Index > 0)
 	{
@@ -1550,13 +2410,108 @@ void URTSAutoTest::Tick(float DeltaTime)
 		{
 			Cam->JumpTo((Sc->CameraFocusM + Sc->CameraPanMS * Match()->MatchSeconds()) * 100.0);
 		}
+		// (16/10) a câmera que segue uma unidade (camera.follow_unit): o foco alcança o tanque desenhado em follow_lag_s
+		if (Sc && Cam && Sc->FollowUnit >= 0 && Match()->IsReady())
+		{
+			if (FollowId == 0)
+			{
+				// a N-ésima unidade (não prédio) do jogador, na ordem da criação: a mesma conta da ordem "unit"
+				TArray<FRTSUnitState> All;
+				Match()->GetUnits(All);
+				int32 K = 0;
+				for (const FRTSUnitState& Un : All)
+				{
+					if (Un.Owner == Sc->FollowPlayer && !Un.bStructure && K++ == Sc->FollowUnit)
+					{
+						FollowId = Un.Id;
+						break;
+					}
+				}
+			}
+			if (const ARTSUnitActor* A = FollowId != 0 ? Match()->ViewOf(FollowId) : nullptr)
+			{
+				const FVector2D At(A->GetActorLocation().X, A->GetActorLocation().Y);
+				FollowCm = bFollowInit ? FollowCm + (At - FollowCm) * (1.0f - FMath::Exp(-DeltaTime / FMath::Max(Sc->FollowLagS, 0.01f))) : At;
+				bFollowInit = true;
+				// (16/10) o chão do tanque no ponto da tela pedido (follow_screen): o foco anda pra frente pela inclinação
+				// (o raio desse ponto da tela desce mais) e pro lado pelo campo de visão, na profundidade do tanque
+				FVector2D FocusCm = FollowCm;
+				if (!Sc->FollowScreen.Equals(FVector2D(0.5, 0.5), 0.001))
+				{
+					const float P = FMath::DegreesToRadians(FMath::Max(Cam->GetViewPitchDeg(), 0.5f));
+					const float H = Cam->GetViewDistanceM() * 100.0f * FMath::Sin(P);
+					const float TanH = FMath::Tan(FMath::DegreesToRadians(Cam->GetFieldOfViewDeg() * 0.5f));
+					FVector2D Vp(16.0, 9.0);
+					if (GEngine && GEngine->GameViewport)
+					{
+						GEngine->GameViewport->GetViewportSize(Vp);
+					}
+					const float TanV = TanH * float(Vp.Y / FMath::Max(Vp.X, 1.0));
+					const float Below = FMath::Atan(float(Sc->FollowScreen.Y - 0.5) * 2.0f * TanV);
+					const float Dep = FMath::Max(P + Below, FMath::DegreesToRadians(0.5f));
+					const float Lt = H / FMath::Tan(Dep), Lf = H / FMath::Tan(P);
+					const float Depth = FMath::Sqrt(H * H + Lt * Lt) * FMath::Cos(Below);
+					const float Dr = float(Sc->FollowScreen.X - 0.5) * 2.0f * TanH * Depth;
+					const float Yaw = FMath::DegreesToRadians(Cam->GetViewYawDeg());
+					const FVector2D Fwd(FMath::Cos(Yaw), FMath::Sin(Yaw)), Right(-FMath::Sin(Yaw), FMath::Cos(Yaw));
+					FocusCm = FollowCm + Fwd * double(Lf - Lt) - Right * double(Dr);
+				}
+				Cam->JumpTo(FocusCm);
+			}
+		}
+		// a câmera que anda (camera.keys): giro, distância e inclinação pelos segundos da simulação, entre os pontos
+		if (Sc && Cam && Sc->CameraKeys.Num() > 0 && Match()->IsReady())
+		{
+			const float T = Match()->MatchSeconds();
+			const TArray<FRTSScenarioCameraKey>& K = Sc->CameraKeys;
+			int32 B = 0;
+			while (B < K.Num() && K[B].AtS <= T)
+			{
+				++B;
+			}
+			if (B > 0)
+			{
+				const FRTSScenarioCameraKey& P0 = K[B - 1];
+				const FRTSScenarioCameraKey& P1 = K[FMath::Min(B, K.Num() - 1)];
+				const float A = P1.AtS > P0.AtS ? FMath::Clamp((T - P0.AtS) / (P1.AtS - P0.AtS), 0.0f, 1.0f) : 1.0f;
+				const float S = FMath::SmoothStep(0.0f, 1.0f, A);
+				const float Yaw = P0.YawDeg + FMath::FindDeltaAngleDegrees(P0.YawDeg, P1.YawDeg) * S;
+				// a inclinação: com as duas na curva do zoom, fica na curva; senão, a da curva entra pelo valor que ela dá. (16/10)
+				// O olhar pra cima (look_up_deg) entra como inclinação negativa: deitar até o horizonte e subir é uma linha só
+				const auto Eff = [Cam](const FRTSScenarioCameraKey& Kk)
+				{
+					return Kk.LookUpDeg > 0.0f ? -Kk.LookUpDeg : (Kk.PitchDeg < 0.0f ? Cam->CurvePitchAt(Kk.DistanceM) : Kk.PitchDeg);
+				};
+				const bool bCurve = P0.PitchDeg < 0.0f && P1.PitchDeg < 0.0f && P0.LookUpDeg <= 0.0f && P1.LookUpDeg <= 0.0f;
+				const float Pitch = bCurve ? -1.0f : FMath::Lerp(Eff(P0), Eff(P1), S);
+				Cam->SetView(Yaw, FMath::Lerp(P0.DistanceM, P1.DistanceM, S), Pitch < 0.0f ? -1.0f : Pitch, bCurve || Pitch >= 0.0f ? 0.0f : -Pitch);
+			}
+		}
 	}
 	if (bRecord && !bRecordDone)
 	{
 		URTSMatchSubsystem* M = Match();
-		if (M && M->GetShotsFired() > 0 && RecordFrames < 2400 && !FScreenshotRequest::IsScreenshotRequested())
+		// (a gravação começa no 1º tiro; com a câmera que anda, já no 1º ponto dela: o vídeo do céu não tem tiro)
+		const FRTSScenario* RecSc = M ? M->GetScenario() : nullptr;
+		// (16/10) a cena sem tiro nem câmera que anda (os vídeos da poeira): grava com a cena pronta, até o end_s
+		const bool bCamRec = RecSc && M->IsReady() && bSceneCameraSet && (RecSc->CameraKeys.Num() == 0 || M->MatchSeconds() >= RecSc->CameraKeys[0].AtS);
+		if (M && (M->GetShotsFired() > 0 || bCamRec) && RecordFrames < 2400 && !FScreenshotRequest::IsScreenshotRequested())
 		{
-			FScreenshotRequest::RequestScreenshot(FPaths::Combine(Folder, TEXT("frames"), FString::Printf(TEXT("f_%05d.png"), RecordFrames++)), true, false);
+			// (17/10) a gravação sem travar a placa (RTSFrameRecorder): o teste gravado rodava a 7–12 s de relógio por s de jogo
+			const FString Frames = FPaths::Combine(Folder, TEXT("frames"));
+			if (RecordFrames == 0 && RTSFrameRecorder::WantFast())
+			{
+				IFileManager::Get().MakeDirectory(*Frames, true);
+				RTSFrameRecorder::Start();
+			}
+			if (RTSFrameRecorder::IsActive())
+			{
+				RTSFrameRecorder::Capture(FPaths::Combine(Frames, FString::Printf(TEXT("f_%05d.jpg"), RecordFrames++)));
+			}
+			else
+			{
+				FScreenshotRequest::RequestScreenshot(FPaths::Combine(Frames, FString::Printf(TEXT("f_%05d.png"), RecordFrames++)), true, false);
+			}
 			if (M->Result() != ERTSMatchResult::Playing && (RecordTail += DeltaTime) > 4.0f)
 			{
 				bRecordDone = true;
@@ -1611,9 +2566,9 @@ void URTSAutoTest::Tick(float DeltaTime)
 		{
 			++Failures;
 			UE_LOG(LogTemp, Warning, TEXT("RTS TEST FALHOU %s: %s"), *S.Name, *Why);
-			// com base, sem a base de pé o resto do teste não diz nada: encerra logo e libera a placa
+			// com base, sem a base de pé o resto do teste não diz nada: encerra logo e libera a placa (o chat não é a base)
 			const int32 ArmyStep = Steps.IndexOfByPredicate([](const FStep& X) { return X.Name == TEXT("caixa_de_selecao"); });
-			if (bBase && Index < ArmyStep)
+			if (bBase && Index < ArmyStep && !S.Name.StartsWith(TEXT("chat_")))
 			{
 				UE_LOG(LogTemp, Warning, TEXT("RTS TEST abortado: a base não ficou de pé (%s)"), *S.Name);
 				Shot(S.Name);
@@ -1650,5 +2605,227 @@ void URTSAutoTest::Finish()
 	}
 	UE_LOG(LogTemp, Display, TEXT("RTS TEST quadros na partida: mediana %.1f ms, p95 %.1f ms, %d acima de 50 ms (de %d)"), Median, P95, Hitches, FrameMs.Num());
 	UE_LOG(LogTemp, Display, TEXT("RTS TEST fim: %d falha(s), %.0f s"), Failures, TotalTime);
+	RTSFrameRecorder::Stop();   // (17/10) os quadros que ainda estão em voo ou comprimindo
 	FPlatformMisc::RequestExit(false);
+}
+
+void URTSAutoTest::AddRepairAndSellSteps()
+{
+	// (v4, 23/10) o conserto do Dozer e o vender pelo fluxo de verdade (cliques): os tanques avariam a própria usina (o Ctrl; a
+	// ordem vai direto, é o preparo do teste), o Dozer é selecionado no clique, o cursor vira a chave sobre a usina avariada, o
+	// clique manda consertar e a vida sobe; depois a usina é selecionada e vendida pelo botão Sell do painel: ela sai da seleção,
+	// desmonta e some, e o dinheiro sobe
+	const auto Camera = [this](const FVector2D& Cm)
+	{
+		if (ARTSCameraPawn* Cam = PC() ? Cast<ARTSCameraPawn>(PC()->GetPawn()) : nullptr)
+		{
+			Cam->JumpTo(Cm);
+		}
+	};
+	const auto Plant = [this](FRTSUnitState& Out)
+	{
+		return Match() && RepairPlant != 0 && Match()->GetUnit(RepairPlant, Out);
+	};
+	Steps.Add({ TEXT("conserto_avaria"),
+		[this, Camera]()
+		{
+			TArray<FRTSUnitState> P, T;
+			RepairPlant = OwnOf(DefIndex(TEXT("usa_power_plant")), P) ? P[0].Id : 0;
+			if (RepairPlant != 0 && OwnOf(DefIndex(TEXT("usa_mbt")), T) && Match())
+			{
+				Camera(P[0].PosCm);
+				TArray<uint32> Ids;
+				for (const FRTSUnitState& U : T)
+				{
+					Ids.Add(U.Id);
+				}
+				Match()->OrderAttack(Ids, RepairPlant, /*bForced=*/true);
+			}
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			if (!Plant(U) || U.Hp > U.MaxHp * 6 / 10)
+			{
+				return false;
+			}
+			TArray<FRTSUnitState> T;
+			TArray<uint32> Ids;
+			OwnOf(DefIndex(TEXT("usa_mbt")), T);
+			for (const FRTSUnitState& Tank : T)
+			{
+				Ids.Add(Tank.Id);
+			}
+			Match()->OrderStop(Ids);
+			return true;
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			return Plant(U) && U.Hp < U.MaxHp ? FString() : TEXT("a usina não avariou");
+		},
+		1.0f, 40.0f });
+	Steps.Add({ TEXT("conserto_dozer"),
+		[this]() { RetryAt = 0.0f; },
+		[this]()
+		{
+			TArray<FRTSUnitState> D;
+			if (!OwnOf(DefIndex(TEXT("usa_dozer")), D) || !PC())
+			{
+				return false;
+			}
+			RepairDozer = D[0].Id;
+			if (PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == RepairDozer)
+			{
+				return true;
+			}
+			FVector2D S;
+			if (Timer >= RetryAt && Pending.IsEmpty())
+			{
+				RetryAt = Timer + 0.8f;
+				if (ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(PC()->GetPawn()))
+				{
+					Cam->JumpTo(D[0].PosCm);
+				}
+				if (ScreenOf(D[0].PosCm, S, 150.0f))
+				{
+					QueueClick(S);
+				}
+			}
+			return false;
+		},
+		[this]() { return PC() && PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == RepairDozer ? FString() : TEXT("o clique não selecionou o Dozer"); },
+		0.8f, 8.0f });
+	Steps.Add({ TEXT("conserto_cursor"),
+		[this, Camera, Plant]()
+		{
+			FRTSUnitState U;
+			if (Plant(U))
+			{
+				Camera(U.PosCm);
+			}
+			RetryAt = 0.5f;
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			FVector2D S;
+			if (Timer >= RetryAt && Pending.IsEmpty() && Plant(U) && ScreenOf(U.PosCm, S, 300.0f))
+			{
+				RetryAt = Timer + 0.5f;
+				Pending.Add({ FInputEvent::EType::Move, S, EKeys::Invalid });   // só passa o mouse por cima
+			}
+			return PC() && PC()->IsRepairCursorShown();
+		},
+		[this]() { return PC() && PC()->IsRepairCursorShown() ? FString() : TEXT("o cursor não virou a chave do conserto sobre a usina avariada"); },
+		0.5f, 6.0f });
+	Steps.Add({ TEXT("conserto_clique"),
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			FVector2D S;
+			if (Plant(U) && ScreenOf(U.PosCm, S, 300.0f))
+			{
+				RepairHpStart = U.Hp;
+				QueueClick(S);
+			}
+		},
+		[this]()
+		{
+			FRTSUnitState D;
+			return Match() && Match()->GetUnit(RepairDozer, D) && D.Task == uint8(Sim::UnitTask::Repair);
+		},
+		[this]()
+		{
+			FRTSUnitState D;
+			return Match() && Match()->GetUnit(RepairDozer, D) && D.Task == uint8(Sim::UnitTask::Repair) ? FString() : TEXT("o clique não mandou o Dozer consertar");
+		},
+		0.5f, 5.0f });
+	Steps.Add({ TEXT("conserto_sobe"), nullptr,
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			return Plant(U) && U.Hp >= RepairHpStart + 50;
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			const bool bOk = Plant(U) && U.Hp >= RepairHpStart + 50;
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST conserto: a usina de %d a %d de %d PV"), RepairHpStart, bOk ? U.Hp : -1, bOk ? U.MaxHp : -1);
+			return bOk ? FString() : TEXT("a vida da usina não subiu com o Dozer");
+		},
+		1.0f, 60.0f });
+	// vender: o direito desfaz a seleção (o Dozer), o clique pega a usina e o botão Sell do painel vende
+	Steps.Add({ TEXT("vender_selecionar"),
+		[this]()
+		{
+			RetryAt = 0.0f;
+			if (PC())
+			{
+				QueueClick(ViewportFrac(FVector2D(0.5f, 0.12f)), EKeys::RightMouseButton);
+			}
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			if (!PC() || !Plant(U))
+			{
+				return false;
+			}
+			if (PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == RepairPlant)
+			{
+				return true;
+			}
+			FVector2D S;
+			if (Timer >= RetryAt + 0.4f && Pending.IsEmpty() && PC()->GetSelection().IsEmpty() && ScreenOf(U.PosCm, S, 300.0f))
+			{
+				RetryAt = Timer + 0.8f;
+				QueueClick(S);
+			}
+			else if (Timer >= RetryAt + 0.4f && Pending.IsEmpty() && !PC()->GetSelection().IsEmpty() && PC()->GetSelection()[0] != RepairPlant)
+			{
+				RetryAt = Timer + 0.8f;
+				QueueClick(ViewportFrac(FVector2D(0.5f, 0.12f)), EKeys::RightMouseButton);
+			}
+			return false;
+		},
+		[this]() { return PC() && PC()->GetSelection().Num() == 1 && PC()->GetSelection()[0] == RepairPlant ? FString() : TEXT("o clique não selecionou a usina"); },
+		0.8f, 8.0f });
+	Steps.Add({ TEXT("vender_botao"),
+		[this]()
+		{
+			SellMoneyStart = Match() ? Match()->Money(Match()->LocalPlayer()) : 0;
+			QueueClick(ButtonCenter(TEXT("cmd_sell")));
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			return !Plant(U) || U.bSelling;
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			const bool bSelling = Plant(U) && U.bSelling;
+			const bool bDeselected = PC() && !PC()->GetSelection().Contains(RepairPlant);
+			return bSelling && bDeselected ? FString() : FString::Printf(TEXT("o botão Sell não vendeu (vendendo %d, fora da seleção %d)"), int32(bSelling), int32(bDeselected));
+		},
+		0.5f, 5.0f });
+	Steps.Add({ TEXT("vender_desmonta"), nullptr, []() { return true; }, nullptr, 3.0f, 5.0f });
+	Steps.Add({ TEXT("vender_fim"), nullptr,
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			return !Plant(U);
+		},
+		[this, Plant]()
+		{
+			FRTSUnitState U;
+			FRTSUnitState D;
+			const int32 Now = Match() ? Match()->Money(Match()->LocalPlayer()) : 0;
+			// o Dozer que consertava larga a usina vendida (o canAcceptNewRepair do ZH: o prédio vendido sai do conserto)
+			const bool bDozerFree = !Match() || !Match()->GetUnit(RepairDozer, D) || D.Task != uint8(Sim::UnitTask::Repair);
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST vender: a usina saiu; o dinheiro de %d pra %d; o Dozer largou o conserto: %d"), SellMoneyStart, Now, int32(bDozerFree));
+			return !Plant(U) && Now >= SellMoneyStart + 400 && bDozerFree ? FString() : TEXT("a usina vendida não saiu, o dinheiro não voltou ou o Dozer seguiu consertando");
+		},
+		0.5f, 10.0f });
 }

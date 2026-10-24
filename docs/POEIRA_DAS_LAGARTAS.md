@@ -354,13 +354,67 @@ poeira tem volume, recebe a sombra do mapa, projeta sombra e é acesa por fogo e
       (`build_dust_coarse.py`).
     - A média de ρ elevada depois perdia 18–31 % da massa com a idade (Jensen). A média de ρ² fecha em 1,000.
     - As duas vão comprimidas (zlib): 42 MB → 1,8 MB e 0,3 MB no disco.
-- **A chave:** `rts.TreadDust.Path` 0 = os cartões da v26 (padrão), 1 = o volume (os cartões e a sombra deitada somem).
+- **A conferência do vídeo A × B e os consertos (17/10 à tarde; 5 revisores no jogo, `scratchpad/nitidez/verif`).** O Felipe
+  escolheu a A ("ok eu gostei da A também, pode colocar no jogo"). A B tinha bolsões quase pretos no sol, com cara de
+  fuligem. O custo das duas é o mesmo.
+  - **O brilho, calibrado NO JOGO** (`poeira_sombra_wf2`, câmera fixa; a poeira ÷ o chão com o fundo pela mediana no
+    tempo, `scratchpad/nitidez/measure_wf.py`). Com o céu curto e a areia tapada, a sombra tinha escurecido 12 % contra a
+    de manhã (corpo 0,72 contra 0,82).
+    - O céu da poeira foi de 3,4 pra 3,84, e o corpo voltou a 0,82.
+    - No sol, a poeira fica em 0,68 da areia, igual à de manhã. O game shot r1 pede 0,90.
+    - Subir o sol inteiro pra 0,6 clareia o sol (0,80), mas acende a poeira dentro da sombra do prédio (corpo 1,21). É o
+      defeito dos cartões, então o sol ficou em 0,27.
+    - **Pendente:** o sol mais claro pela física (o sol inteiro de 0,27 não é físico; ver a revisão do plano).
+  - **O nascer suave:** no cartão, o fade de entrada escala a OPACIDADE; no volume ele escalava σ. Um puff de miolo τ ~8
+    com 20 % do fade já saía ~80 % opaco, e o tufo aparecia inteiro de um quadro pro outro.
+    - Agora o fade vira o σ que dá a mesma opacidade no miolo: −ln(1 − Att·(1 − e^(−τ)))/τ, com τ a coluna densa do
+      quadro da gravação (`RTSDustField::KickColumn`, o p95 das colunas). O adulto não muda.
+    - No lab, os maiores saltos entre quadros caíram 35 % (3,08 → 2,02). Ainda acima dos cartões (1,2).
+  - **Pendentes da conferência:**
+    - um disco claro e achatado no pé da poeira (2,8–3,2 s);
+    - os tufos redondos e iguais (menos fiapo que os cartões);
+    - o véu liso e "penteado" quando os tanques param.
+  - **No jogo de fábrica:** `rts.TreadDust.Path` −1 (o volume na Alta e no Ultra, os cartões na Média e na Baixa).
+    - Na Baixa o volume custaria +1,5 ms na 1660 com 8 tanques (11,0 → 12,5 ms; `captures/game/nitjogo/cu_baixa_*.csv`).
+    - Num notebook de 2014, 4–6 ms. Por isso a Baixa fica nos cartões.
+- **A chave:** `rts.TreadDust.Path` −1 = pelo preset (o padrão desde 17/10), 0 = os cartões da v26, 1 = o volume (os
+  cartões e a sombra deitada somem).
   O perfil `tread_v29.json` é a v26 + `"volume"` (densidade 0,62, a conta velha); o de hoje é o `tread_v31.json` e o
   `Resources/tread.json` (densidade 1,0). No FXLab, `rts.DustField.Debug` 1–5 marcha o campo sozinho (só pra
   conferir forma e luz; a entrega é no raymarch do Fluxo, no jogo).
 - **A ordem:** o Fluxo integra no `MarchJoint` (a densidade da poeira entra também na marcha até o sol do mapa de sombra
   das explosões: a poeira faz sombra no chão e nos tanques) → provas no jogo, ampliadas (na sombra de prédio, ao lado
   de explosão, de noite, 40 tanques) → o Felipe aprova → só então os cartões e as gambiarras de sombra saem.
+
+## v4 (22–23/10): fraquinha, lisa e sem a linha
+
+O Felipe (22/10): "muito tenebrosa, nem parece que tá no jogo", "fps baixo" ("a poeira parece que está com um FPS
+diferente do jogo, ela se movimenta travadinho, enquanto o jogo roda liso"), "dá pra ver uma linha no meio da partida
+onde ela começa"; quer "bem fraco, bem menos denso", igual à areia do ataque do GLA (`r1_raid_slabs`).
+
+- **O travadinho, três causas, as três consertadas:**
+  - o campo refazia metade dos tijolos por quadro (xadrez): cada metade andava a 15 qps. Agora `rts.DustField.Refresh`
+    1 (padrão) refaz todos a cada quadro (2 e 4 voltam ao xadrez, só pra PC fraco);
+  - a gravação tinha 48 quadros com passo de 0,033 s no começo a 0,2 s no fim: a nuvem velha andava aos pulos de 5 qps.
+    Agora `dust_kick_v3_30hz.rtsdust` (149 quadros a 30 qps, `build_dust_volume.py` com `DUSTVOL_FRAMES=all` e
+    `DUSTVOL_RHO2=1`; média de ρ², 0,1 m, 1,04 MB) e o quadro pelo tempo dela (`RTSDustField::KickFrameAt`);
+  - a tremida da marcha ficava parada na tela (o `Jitter·71,13` mexia ~0,005 por quadro): o degrau de 0,125 m não
+    somava no TSR. Agora `IGN(p + 5,588238·n)` (`BlastRaymarch.usf`).
+- **A linha:** a janela do campo era menor que a tela no zoom de jogo. Agora 128 × 128 × 32 tijolos (256 m), puxada
+  40 m pra frente (a câmera inclinada vê mais chão acima do centro) e a borda some em 16 m (`DustField.ush`). Prova no
+  zoom mais longe (170 m, cena `poeira_linha`, `captures/game/v4p_linha2`): a poeira chega fraquinha no fundo da tela,
+  sem corte. (Achado de passagem: a faixa clara reta no lago do Salt2 nesse zoom é da água com a névoa, existe com a
+  poeira desligada e com a receita velha; não é da poeira.)
+- **"Não encaixa":** a névoa do mapa agora cobre a poeira também (a mesma conta das explosões, no `BlastRaymarch.usf`).
+- **A densidade:** `"volume": {"density": 0.08, "erode": 0.08}` nos dois `tread.json` (a erosão escala junto). Varredura
+  0,05 / 0,08 / 0,12 nas cenas `poeira_sombra_wf2` e `_perto` (`captures/game/v4d_*`), lado a lado com o recorte da r1:
+  0,12 já vira bola de algodão; 0,05 some na câmera do jogo; 0,08 fica no véu de fiapos da r1.
+  - A régua do brilho (`scratchpad/nitidez/measure_wf.py`, agora alinhada pelo fim do vídeo): 0,08 dá poeira ÷ chão
+    0,76 na sombra e 0,63 no sol (a A de 17/10: 0,72 e 0,68). A 0,12 acende na sombra (1,54): mais um motivo pra
+    ficar fina.
+- **A prova da regra da fumaça** (`poeira_prova_v4`, `captures/game/v4p_prova`): os tanques cruzam a sombra da War
+  Factory com um 3º atirando no chão 12 m ao lado; a poeira escurece na sombra, clareia no sol e fica ao lado da
+  fumaça do tiro.
 
 ---
 

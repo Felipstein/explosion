@@ -84,8 +84,21 @@ DOZER_SLOTS = dict(TANK_SLOTS, **{'Yellow': 'Yellow', 'Beacon': 'Beacon', 'Light
 # com a mesma tabela de slots do Dozer
 TRUCK_SRC = os.path.join(REPO, 'captures', 'game', 'models', 'usa_supply_truck')
 TRUCK_ROOT = '/Game/Units/USA_SupplyTruck'
+# a defesa de base da USA (a Patriot; Modelos 3D, 14/10, aprovada pelo Felipe): a base, a caixa lançadora (torre), o radar
+# (spin) e o andaime, com os slots dos prédios (Body, Trim, Dark, Player, Concrete, Hazard, Glass, Light, Beacon, Yellow)
+PATRIOT_SRC = os.path.join(REPO, 'captures', 'game', 'models', 'usa_patriot')
+PATRIOT_ROOT = '/Game/Structures/USA_Patriot'
 # a vila (12/10): o kit civil do Look em captures/look/civil_glb/SM_civ_<tipo>.glb, com os tipos do
 # village.json do WorldForge; o jogo põe cada peça pelo JSON (RTSMatchSubsystem::SpawnVillage)
+# a v4 (22–23/10, provisórios por script da frente dos Modelos 3D): a Supply Drop Zone (prédio, slots das construções), o
+# avião de carga e a caixa com paraquedas do lançamento (efeitos; slots das construções) e o Tomahawk (o chassi do caminhão,
+# slots do Dozer). As pastas e os destinos: (pasta em captures/game/models, glob, destino, tabela de slots)
+V4_MODELS = [
+    ('usa_drop_zone', 'SM_USA_DropZone_*.glb', '/Game/Structures/usa_drop_zone', None),
+    ('cargo_plane', 'SM_USA_CargoPlane*.glb', '/Game/Units/USA_CargoPlane', None),
+    ('supply_drop', 'SM_SupplyDrop_*.glb', '/Game/Structures/SupplyDrop', None),
+    ('usa_tomahawk', 'SM_USA_Tomahawk_*.glb', '/Game/Units/USA_Tomahawk', 'dozer'),
+]
 CIVIL_SRC = os.path.join(REPO, 'captures', 'look', 'civil_glb')
 CIVIL_ROOT = '/Game/Village'
 CIVIL_SLOTS = {'Plaster': 'CivPlaster', 'Wood': 'CivWood', 'Metal': 'CivMetal', 'Cloth': 'CivCloth', 'Dark': 'Dark',
@@ -519,6 +532,24 @@ def main():
             raise RuntimeError(f'nenhum SM_USA_Supply*.glb em {TRUCK_SRC}: rode o Blender antes (model_usa_supply_truck.py)')
         import_meshes(files, lambda f: TRUCK_ROOT, lambda k: DOZER_SLOTS.get(k, k), opaque)
         log('done (o caminhão)')
+        return
+    if os.environ.get('PROV_PATRIOT_ONLY'):
+        opaque = existing_instances()
+        files = sorted(glob.glob(os.path.join(PATRIOT_SRC, 'SM_USA_Patriot_*.glb')))
+        if not files:
+            raise RuntimeError(f'nenhum SM_USA_Patriot_*.glb em {PATRIOT_SRC}: rode o Blender antes (model_usa_patriot.py)')
+        import_meshes(files, lambda f: PATRIOT_ROOT, lambda k: k, opaque)
+        log('done (a Patriot)')
+        return
+    if os.environ.get('PROV_V4_ONLY'):
+        opaque = existing_instances()
+        for folder, pattern, dest, slots in V4_MODELS:
+            # só a pasta de cima (o usa_tomahawk/pose tem a pose de tiro, que é só da prévia)
+            files = sorted(glob.glob(os.path.join(REPO, 'captures', 'game', 'models', folder, pattern)))
+            if not files:
+                raise RuntimeError(f'nenhum {pattern} em captures/game/models/{folder}: rode o Blender antes')
+            import_meshes(files, lambda f, d=dest: d, (lambda k: DOZER_SLOTS.get(k, k)) if slots == 'dozer' else (lambda k: k), opaque)
+        log('done (os modelos da v4)')
         return
     if os.environ.get('PROV_DOZER_ONLY'):
         opaque = existing_instances()

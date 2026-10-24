@@ -64,23 +64,31 @@ float ValueNoise(float2 P)
 void MainPS(float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
 {
 	const float DeviceZ = SceneDepth.Load(int3(SvPosition.xy, 0)).r;
-	// sem nada atrás (céu, profundidade infinita com Z invertido) e fora do mapa = nunca visto
-	float Linear = 0.0;
-	if (DeviceZ > 0.0)
+	// o céu (nada atrás: profundidade infinita com Z invertido) nunca leva a névoa (14/10, o Look: com a câmera
+	// deitada pelo botão do meio, a névoa multiplicava o céu por zero e ficava preto acima do horizonte)
+	if (DeviceZ <= 0.0)
 	{
-		const float2 NDC = float2((SvPosition.x - ViewRect.x) / ViewRect.z * 2.0 - 1.0, 1.0 - (SvPosition.y - ViewRect.y) / ViewRect.w * 2.0);
-		const float4 W = mul(float4(NDC, DeviceZ, 1.0), ClipToWorld);
-		const float3 World = W.xyz / W.w;
-		const float2 UV = (World.xy - MapMinInvSize.xy) * MapMinInvSize.zw;
-		if (all(UV >= 0.0) && all(UV <= 1.0))
-		{
-			// a borda viva: um ruído lento, na escala da célula (4 m), desloca a amostra em até
-			// 2/3 de célula; sem isso a borda segue a grade mesmo suavizada
-			const float2 N = World.xy * (1.0 / 400.0);
-			const float2 Wobble = float2(ValueNoise(N + Time * 0.15), ValueNoise(N.yx + 17.3 - Time * 0.11)) - 0.5;
-			// a textura é sRGB: o hardware já devolve o multiplicador linear do nível da tela
-			Linear = saturate(SampleBSpline(UV + Wobble * FogTexelSize * 1.33));
-		}
+		OutColor = float4(1.0, 1.0, 1.0, 1.0);
+		return;
+	}
+	const float2 NDC = float2((SvPosition.x - ViewRect.x) / ViewRect.z * 2.0 - 1.0, 1.0 - (SvPosition.y - ViewRect.y) / ViewRect.w * 2.0);
+	const float4 W = mul(float4(NDC, DeviceZ, 1.0), ClipToWorld);
+	const float3 World = W.xyz / W.w;
+	const float2 UV = (World.xy - MapMinInvSize.xy) * MapMinInvSize.zw;
+	// a borda viva: um ruído lento, na escala da célula (4 m), desloca a amostra em até 2/3 de célula; sem isso a
+	// borda segue a grade mesmo suavizada
+	const float2 N = World.xy * (1.0 / 400.0);
+	const float2 Wobble = float2(ValueNoise(N + Time * 0.15), ValueNoise(N.yx + 17.3 - Time * 0.11)) - 0.5;
+	// a textura é sRGB: o hardware já devolve o multiplicador linear do nível da tela
+	const float2 Inside = saturate(UV);
+	float Linear = saturate(SampleBSpline(Inside + Wobble * FogTexelSize * 1.33));
+	if (any(UV != Inside))
+	{
+		// fora do mapa (o horizonte na câmera deitada): o nível do "já visto" (o FogAlpha 127 do ZH, 0,212 linear, o
+		// ExploredLevel do RTSFogOfWar.cpp), chegando nele da borda em 75 m; antes era preto puro, a tarja entre o mapa
+		// e o céu. Nenhuma unidade anda lá: não esconde nem mostra nada da partida.
+		const float2 Edge = MapMinInvSize.xy + Inside / MapMinInvSize.zw;
+		Linear = lerp(Linear, 0.212, saturate(length(World.xy - Edge) / 7500.0));
 	}
 	const float K = lerp(1.0, Linear, saturate(Strength));
 	OutColor = float4(K, K, K, 1.0);

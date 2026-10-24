@@ -250,6 +250,17 @@ como passo próprio depois do TSR e antes do bloom:
       o processador do jogo nas mortes 35,5 → 22,7 ms, o quadro 47,3 → 39,6 ms (p95 87 → 55). Os picos de 300+ ms que
       sobram no perfil são a foto do teste aos 25 s. **O pior caso na placa** agora é o raymarch: 11–21 ms por quadro
       entre 1,1 e 2,4 s depois das mortes (as 11 nuvens no tamanho máximo). É o próximo alvo; o plano, as medidas e a pesquisa de AAA com fontes em `docs/OTIMIZACAO_EXPLOSOES.md`.
+    - **16/10, madrugada (a v3 do tiro, sem commit; o Felipe: "TEM QUE ESTAR IGUAL NA JOGATINA").** Tudo provado no jogo,
+      nas cenas `fx_acerto`, `fx_disparo`, as `_67` (câmera de jogo) e `vila`; o relato e os números em
+      `docs/TIRO_E_ACERTO.md`. O que mudou:
+      - os destroços compensam a exposição da câmera como o fogo do raymarch: `BlastRaymarch::LastViewExposure()`, com a
+        referência da maquete onde a morte foi aprovada, 6,95·10⁻⁵ (no jogo saía tudo 3,2× mais forte, branco);
+      - o acerto pela caixa de cada malha, variando por tiro;
+      - o disparo com o relógio em dois andamentos (`SlowAfterS`/`SlowTimeScale`) e sem o clarão herdado;
+      - o traçante laranja curto;
+      - a fumaça de fonte parada visível (ferido e carcaça, com o fogo da carcaça);
+      - a moldura clara em volta da carcaça (a laje de areia dos quadros finais da `eg_tq_v2`, que tem ~6 s, exposta onde
+        a cratera afunda o chão): o pé da morte 70 cm abaixo.
 - **Rodar liso e lindo (11–12/10; o Felipe: "acho que dá pra aprovar").**
   - **Sombra da luz do fogo por campo de distância** abaixo do ultra (a virtual redesenhava a
     floresta inteira: 6 Cargas à noite 40,5 → 25,2 ms de placa; de dia igual à virtual; no baixa

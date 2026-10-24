@@ -14,12 +14,14 @@
 # Teste automático (sem clicar: abre, joga sozinho, tira fotos e fecha):
 #   game.ps1 looktank                 (o tanque da maquete do Look no jogo, com a cor do jogador)
 #   game.ps1 dozer                    (o Dozer provisório por script, Modelos 3D 13/10, pra /Game/Units/USA_Dozer)
-#   game.ps1 package                  (o jogo empacotado pro Windows em captures/dist/Windows; o Linux roda pelo Proton)
+#   game.ps1 package                  (o jogo empacotado pro Windows em captures/dist_next/Windows; o Linux roda pelo Proton)
 #   game.ps1 view -Folder teste1 [-Script base|skirmish|lanhost|lanclient] [-Players 4] [-NoFog]
 #       base = a partida com base do ZH (o padrão); lanhost = a LAN: este jogo cria a sala, fica
 #       vermelho e os outros (sem placa, o robô jogando) entram; lanclient = este jogo entra na sala
 #       de um anfitrião sem placa; -Players = quantos na sala (com as IAs); -AI = IAs que o
-#       anfitrião põe (lanhost); -Teams = 2 contra 2 (a gente e as IAs de um lado); -NoFog = sem névoa
+#       anfitrião põe (lanhost); -Teams = 2 contra 2 (a gente e as IAs de um lado); -NoFog = sem névoa;
+#       -Money 50000 = o dinheiro inicial pelos botões + e - (o menu, ou a sala no lanhost; no lanclient, o robô
+#       anfitrião já cria a sala com ele), conferido na partida (v4)
 # Fotos em captures\game\<Folder>\, log em captures\game\<Folder>.log
 param(
   [Parameter(Mandatory = $true)][string]$Command,
@@ -32,11 +34,17 @@ param(
   [switch]$NoFog,
   [switch]$Packaged,
   [switch]$Record,
+  # (17/10, o Felipe) o modo rápido dos testes: dinheiro × 5, construção e produção em 1/4 do tempo, veículos 2× mais rápidos
+  [switch]$Fast,
+  # (v4) o dinheiro inicial do teste (10000 a 50000, de 5000 em 5000; 0 = o padrão)
+  [int]$Money = 0,
   [string]$Res = '1600x900',
   [string]$Extra = '',
   # o teste da LAN: argumentos a mais pra cada robô, na ordem (ex.: -BotExtra '-RTSNetBotQuitAt=600','-RTSNetTestVote')
   [string[]]$BotExtra = @(),
-  [string]$Scenario = ''
+  [string]$Scenario = '',
+  # (16/10) controles a mais no -ExecCmds, junto do Scalability, separados por vírgula (ex.: -Cvars 'rts.Ground.Mips 0')
+  [string]$Cvars = ''
 )
 $ErrorActionPreference = 'Stop'
 $UE = 'C:\Program Files\Epic Games\UE_5.8\Engine'
@@ -166,6 +174,26 @@ function Worlds {
     Copy-Item $info $to -Force
     Write-Host "  $info -> $to (cópia)"
   }
+  # os mapas de teste do WorldForge (16/10, a v3 do mundo: a laje, a areia v2), com o ok do jogo: o mesmo caminho do
+  # World_TestSalt2 com outro nome (o umap linkado; a vila, a grade, a superfície e o map.json copiados). O World_TestSalt2
+  # acima não muda; os mapas de teste só entram se existirem no WorldForge
+  foreach ($m in 'World_TestV3', 'World_TestSandV2', 'World_TestGroundV3', 'World_TestSandV2Dune', 'World_TestGroundV3Dune', 'World_TestV3Dunes', 'World_TestV3Paint') {
+    $um = Join-Path $wf "Maps\$m.umap"
+    if (-not (Test-Path $um)) { continue }
+    Write-Host "mapa de teste $m (WorldForge):"
+    LinkFile $um (Join-Path $gc "Maps\$m.umap")
+    $ex = Join-Path $Repo "WorldForge\Saved\WorldForge\exports\$m"
+    foreach ($pair in @(@('village.json', "Villages\$m.json"), @('map.json', "Villages\$m.map.json"), @('grid.png', "Grid\$m.png"),
+                         @('grid.json', "Grid\$m.json"), @('surface.png', "Surface\$m.png"), @('surface.json', "Surface\$m.json"))) {
+      $from = Join-Path $ex $pair[0]
+      if (Test-Path $from) {
+        $to = Join-Path $Root ('Config\RTS\' + $pair[1])
+        New-Item -ItemType Directory -Force (Split-Path $to) | Out-Null
+        Copy-Item $from $to -Force
+        Write-Host "  $from -> $to (cópia)"
+      }
+    }
+  }
   Write-Host 'tanque USA (BlastLab):'
   LinkTree (Join-Path $bl 'Units') (Join-Path $gc 'Units')
   Write-Host 'explosões (BlastLab: gravações, material do volume, clarão e ofuscamento):'
@@ -183,6 +211,18 @@ function Worlds {
   }
   # a morte de tanque da v2 (13/10, o vídeo aprovado do BlastLab): a gravação nova, que vai no pacote junto das r96
   LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\eg_tq_v2.brm2') (Join-Path $Root 'Intermediate\Raymarch\eg_tq_v2.brm2')
+  # (14/10) a areia do acerto e do sopro do disparo (o tiro do BlastFx, o Fluxo)
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\jg_dust_impact_96.brm2') (Join-Path $Root 'Intermediate\Raymarch\jg_dust_impact_96.brm2')
+  # (16/10) o tiro na areia refeito (o estudo da 4.1 do Fluxo): a saia de areia simétrica do EmberGen e o anel da onda de choque
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\eg_poeira3_96.brm2') (Join-Path $Root 'Intermediate\Raymarch\eg_poeira3_96.brm2')
+  # (16/10) o jato de terra do tiro na areia (o Fluxo: a explosão no chão da JangaFX, 188 MB)
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\jg_ground_96.brm2') (Join-Path $Root 'Intermediate\Raymarch\jg_ground_96.brm2')
+  # (16/10, o Fluxo) o tiro na areia v7: o anel simulado no Mantaflow
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\sim_chao_anel.brm2') (Join-Path $Root 'Intermediate\Raymarch\sim_chao_anel.brm2')
+  # (23/10 noite, o diretor das explosões) a areia do ataque de mísseis: a strike_chao só de areia (assemble_sand.py, a v4d), a única gravação
+  # dedicada que ganhou da reserva no A/B do jogo (docs/ESTUDO_MISSIL_PATRIOT.md, "As gravações dedicadas no jogo"). As outras (warhead_lado_k,
+  # _km, _teto_k, _chao_k, _chao_sk) ficam no BlastLab, fora do pacote: o A/B com -HitBakeFile=nome:caminho
+  LinkFile (Join-Path $Repo 'BlastLab\Intermediate\Raymarch\strike_chao_v4d.brm2') (Join-Path $Root 'Intermediate\Raymarch\strike_chao.brm2')
 }
 
 switch ($Command) {
@@ -225,11 +265,23 @@ switch ($Command) {
     $env:PROV_DOZER_ONLY = '1'
     try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_DOZER_ONLY -ErrorAction SilentlyContinue }
   }
+  'patriot' {
+    # a defesa de base da USA (a Patriot; Modelos 3D, 14/10, aprovada): só os GLBs de captures/game/models/usa_patriot
+    # pra /Game/Structures/USA_Patriot, com os materiais dos prédios (sem a placa)
+    $env:PROV_PATRIOT_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_PATRIOT_ONLY -ErrorAction SilentlyContinue }
+  }
   'truck' {
     # o caminhão de suprimento provisório por script (Modelos 3D, 14/10, aprovado): só os GLBs de
     # captures/game/models/usa_supply_truck pra /Game/Units/USA_SupplyTruck, com os nossos materiais (sem a placa)
     $env:PROV_TRUCK_ONLY = '1'
     try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_TRUCK_ONLY -ErrorAction SilentlyContinue }
+  }
+  'v4models' {
+    # os provisórios da v4 (22–23/10): a Supply Drop Zone, o avião de carga, a caixa com paraquedas e o Tomahawk, de
+    # captures/game/models pros destinos do V4_MODELS do import_provisional.py, com os nossos materiais (sem a placa)
+    $env:PROV_V4_ONLY = '1'
+    try { RunUnrealPython 'Tools\import_provisional.py' } finally { Remove-Item Env:PROV_V4_ONLY -ErrorAction SilentlyContinue }
   }
   'village' {
     # o kit civil da vila (12/10): os GLBs da sessão do Look (captures/look/civil_glb) com os nossos
@@ -242,12 +294,14 @@ switch ($Command) {
   'editor' { Start-Process (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList "`"$Project`"" }
   'package' {
     # o jogo empacotado pro Windows (e pro Linux pelo Proton da Steam: o mesmo programa nos dois,
-    # a mesma conta da simulação): captures/dist/Windows, fora do git. Cozinha na CPU, sem a placa.
+    # a mesma conta da simulação): captures/dist_next/Windows, fora do git. Cozinha na CPU, sem a placa.
+    # (14/10: o captures/dist é o pacote que o Felipe mandou pro pai; nada de ferramenta escreve lá. Pra entregar,
+    # copiar o dist_next à mão depois do roteiro do docs/MULTIPLAYER.md.)
     # (os links do mapa e das gravações do raymarch vêm do 'game.ps1 worlds', já feitos; refazer aqui
     # falha com um jogo aberto segurando os arquivos)
     $uat = Join-Path $UE 'Build\BatchFiles\RunUAT.bat'
-    $dist = Join-Path $Repo 'captures\dist'
-    $log = Join-Path $Repo 'captures\dist_package.log'
+    $dist = Join-Path $Repo 'captures\dist_next'
+    $log = Join-Path $Repo 'captures\dist_next_package.log'
     New-Item -ItemType Directory -Force $dist | Out-Null
     & $uat BuildCookRun "-project=$Project" -noP4 -platform=Win64 -clientconfig=Development -build -cook -stage -pak -iostore -compressed -prereqs `
       -map=/Game/Maps/World_TestSalt2 "-stagingdirectory=$dist" -nocompileeditor -skipbuildeditor -unattended -utf8output *> $log
@@ -270,7 +324,10 @@ switch ($Command) {
     $levels = @{ baixa = '1'; media = '2'; alta = '3'; ultra = 'cine' }
     $q = if ($Target) { $levels[$Target] } else { '3' }
     $rx, $ry = $Res -split 'x'
-    $a = @("`"$Project`"", '-game', "-ExecCmds=`"Scalability $q`"", '-nosplash')
+    # (17/10) a gravação do -Record sem travar a placa (RTSFrameRecorder): 17 s de jogo gravados em 20 s, não 143 s;
+    # -Cvars 'rts.Record.Fast 0' volta pro print PNG de antes
+    $exec = if ($Cvars) { "Scalability $q, rts.Record.Fast 1, $Cvars" } else { "Scalability $q, rts.Record.Fast 1" }
+    $a = @("`"$Project`"", '-game', "-ExecCmds=`"$exec`"", '-nosplash')
     if ($Folder) {
       $a += '-windowed', "-ResX=$rx", "-ResY=$ry"   # o teste: janela de tamanho fixo, fotos comparáveis
     } else {
@@ -288,6 +345,8 @@ switch ($Command) {
       $a += "-RTSAutoTest=$Script", "-RTSCapture=$dest", "-abslog=$log", '-unattended'
       # o teste rápido (12/10): a partida pronta do Config/RTS/Scenarios.json, fotos em segundos fixos
       if ($Scenario) { $a += "-RTSScenario=$Scenario" }
+      if ($Fast) { $a += '-RTSFast' }
+      if ($Money -gt 0) { $a += "-RTSTestMoney=$Money" }
       # gravação: passo fixo de 1/30 s (cada quadro = um passo da simulação), uma foto por quadro do combate
       if ($Record) { $a += '-RTSRecord', '-benchmark', '-fps=30' }
       # o teste da LAN com uma placa só: os outros jogadores sem placa (-nullrhi), com o robô jogando
@@ -307,6 +366,7 @@ switch ($Command) {
           for ($k = 1; $k -lt ($Players - $AI); $k++) { $botArgs += , @('-RTSNetJoin=127.0.0.1', "-RTSNetJoinGate=$gate") }
         } else {
           $hostArgs = @('-RTSNetHost', "-RTSNetAutoStart=$Players")
+          if ($Money -gt 0) { $hostArgs += "-RTSStartMoney=$Money" }
           if ($NoFog) { $hostArgs += '-RTSNetNoFog' }
           $botArgs += , $hostArgs
           for ($k = 2; $k -lt $Players; $k++) { $botArgs += , @('-RTSNetJoin=127.0.0.1') }
@@ -314,8 +374,12 @@ switch ($Command) {
         for ($k = 0; $k -lt $botArgs.Count; $k++) {
           $botLog = Join-Path $Captures "$Folder.bot$k.log"
           $args1 = @("`"$Project`"", '-game', '-nullrhi', '-nosound', '-RTSNetBot', "-abslog=$botLog", '-unattended') + $botArgs[$k]
+          if ($Fast) { $args1 += '-RTSFast' }   # as mesmas regras do anfitrião (senão a versão da sala difere)
           if ($k -lt $BotExtra.Count -and $BotExtra[$k]) { $args1 += $BotExtra[$k] -split ' ' }
-          $p = Start-Process -FilePath (Join-Path $Engine 'UnrealEditor.exe') -ArgumentList $args1 -PassThru -WindowStyle Minimized
+          # -Packaged: os robôs também do pacote (14/10: como os PCs de verdade, e sem segurar as DLLs do editor)
+          $botExe = if ($Packaged) { Join-Path $Repo 'captures\dist_next\Windows\RTSGame.exe' } else { Join-Path $Engine 'UnrealEditor.exe' }
+          if ($Packaged) { $args1 = @($args1 | Select-Object -Skip 2) }
+          $p = Start-Process -FilePath $botExe -ArgumentList $args1 -PassThru -WindowStyle Minimized
           $bots += [pscustomobject]@{ Proc = $p; Log = $botLog; Name = "bot $k" }
           Write-Host "bot $k sem placa ($($botArgs[$k] -join ' ')): pid $($p.Id), log $botLog"
         }
@@ -323,7 +387,7 @@ switch ($Command) {
       try {
         if ($Packaged) {
           # o jogo empacotado (game.ps1 package): o mesmo teste, sem o projeto nem o -game
-          $exe = Join-Path $Repo 'captures\dist\Windows\RTSGame.exe'
+          $exe = Join-Path $Repo 'captures\dist_next\Windows\RTSGame.exe'
           RunWithGpu "RTSGame | teste $Folder (pacote)" @($a | Select-Object -Skip 2) $exe
         } else {
           RunWithGpu "RTSGame | teste $Folder" $a
@@ -350,10 +414,12 @@ switch ($Command) {
         $mp4 = Join-Path $dest 'batalha.mp4'
         # o ffmpeg para no primeiro número que falta: renumera em sequência antes
         $i = 0
-        Get-ChildItem $frames -Filter 'f_*.png' | Sort-Object Name | ForEach-Object {
-          Rename-Item $_.FullName (Join-Path $frames ('s_{0:D5}.png' -f $i)); $i++
+        # (17/10) a gravação nova grava .jpg (RTSFrameRecorder); a de antes, .png (rts.Record.Fast 0)
+        $ext = if (Get-ChildItem $frames -Filter 'f_*.jpg' | Select-Object -First 1) { 'jpg' } else { 'png' }
+        Get-ChildItem $frames -Filter "f_*.$ext" | Sort-Object Name | ForEach-Object {
+          Rename-Item $_.FullName (Join-Path $frames ("s_{0:D5}.$ext" -f $i)); $i++
         }
-        & $ffmpeg -y -loglevel error -framerate 30 -i (Join-Path $frames 's_%05d.png') -c:v libx264 -crf 19 -preset slow -pix_fmt yuv420p $mp4
+        & $ffmpeg -y -loglevel error -framerate 30 -i (Join-Path $frames "s_%05d.$ext") -c:v libx264 -crf 19 -preset medium -pix_fmt yuv420p $mp4
         if ($LASTEXITCODE -eq 0) { Remove-Item $frames -Recurse -Force; Write-Host "vídeo: $mp4" }
       }
     } else {

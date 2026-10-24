@@ -8,6 +8,7 @@
 #include "HAL/PlatformTime.h"
 #include "LandscapeProxy.h"
 #include "RTSGameData.h"
+#include "RTSConvert.h"
 #include "Dom/JsonObject.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -385,11 +386,46 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 			}
 		}
 	};
+	// (16/10) a árvore que o tanque derruba: um objeto da simulação no pé do tronco, com a altura dela (não fecha a copa)
+	const auto AddTree = [&Out](const FVector& Base, float HeightCm, UInstancedStaticMeshComponent* Ism, int32 Index)
+	{
+		Sim::PropSetup P;
+		P.Kind = Sim::PropKind::Tree;
+		P.Pos = RTS::ToSim(FVector2D(Base.X, Base.Y));
+		P.HalfLength = Sim::Fix::FromMilli(400);
+		P.HalfWidth = Sim::Fix::FromMilli(400);
+		P.Height = Sim::Fix::FromMilli(FMath::Clamp(FMath::RoundToInt(HeightCm * 10.0f), 2000, 30000));
+		Out.Props.Add(P);
+		Out.PropPiece.Add(-1);
+		Out.PropIsm.Add(Ism);
+		Out.PropIsmIndex.Add(Index);
+		++Out.TreeProps;
+	};
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		TInlineComponentArray<UStaticMeshComponent*> Meshes(*It);
 		for (UStaticMeshComponent* Comp : Meshes)
 		{
+			if (IsObstacleMesh(Comp->GetStaticMesh(), Info.TreeMeshes))
+			{
+				if (UInstancedStaticMeshComponent* TreeIsm = Cast<UInstancedStaticMeshComponent>(Comp))
+				{
+					const FBox Local = TreeIsm->GetStaticMesh()->GetBoundingBox();
+					for (int32 K = 0; K < TreeIsm->GetInstanceCount(); ++K)
+					{
+						FTransform T;
+						if (TreeIsm->GetInstanceTransform(K, T, /*bWorldSpace=*/true))
+						{
+							AddTree(T.GetLocation(), float(Local.TransformBy(T).GetSize().Z), TreeIsm, K);
+						}
+					}
+				}
+				else
+				{
+					AddTree(Comp->GetComponentLocation(), float(Comp->Bounds.GetBox().GetSize().Z), nullptr, -1);
+				}
+				continue;
+			}
 			if (!IsObstacleMesh(Comp->GetStaticMesh(), Info.ObstacleMeshes))
 			{
 				continue;
@@ -469,6 +505,39 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 					{
 						continue;
 					}
+					// (16/10) o carro civil e a carcaça: o tanque esmaga (um objeto da simulação: a célula fica esmagável, fechada
+					// só pra quem não esmaga); o comprimento do carro vai no +Y da malha (a porta), girado pelo yaw_deg
+					const FString PieceType = P->GetStringField(TEXT("type"));
+					if (PieceType == TEXT("civ_pickup") || PieceType == TEXT("civ_car_burnt"))
+					{
+						const TArray<TSharedPtr<FJsonValue>>* SizeM = nullptr;
+						double CarYaw = 0.0, CarHeight = 1.5;
+						int32 CarRot = 0, PieceId = -1;
+						P->TryGetNumberField(TEXT("rot"), CarRot);
+						CarYaw = 90.0 * CarRot;
+						P->TryGetNumberField(TEXT("yaw_deg"), CarYaw);
+						P->TryGetNumberField(TEXT("height_m"), CarHeight);
+						P->TryGetNumberField(TEXT("id"), PieceId);
+						double Len = 4.6, Wid = 2.0;
+						if (P->TryGetArrayField(TEXT("size_m"), SizeM) && SizeM->Num() >= 2)
+						{
+							Len = FMath::Max((*SizeM)[0]->AsNumber(), (*SizeM)[1]->AsNumber());
+							Wid = FMath::Min((*SizeM)[0]->AsNumber(), (*SizeM)[1]->AsNumber());
+						}
+						Sim::PropSetup Car;
+						Car.Kind = Sim::PropKind::Car;
+						Car.Pos = RTS::ToSim(FVector2D(P->GetNumberField(TEXT("x")), P->GetNumberField(TEXT("y"))) * 100.0);
+						Car.Facing = Sim::Angle::FromMilliDeg(RTS::Milli(CarYaw + 90.0));
+						Car.HalfLength = Sim::Fix::FromMilli(RTS::Milli(Len * 0.5));
+						Car.HalfWidth = Sim::Fix::FromMilli(RTS::Milli(Wid * 0.5));
+						Car.Height = Sim::Fix::FromMilli(RTS::Milli(CarHeight));
+						Out.Props.Add(Car);
+						Out.PropPiece.Add(PieceId);
+						Out.PropIsm.Add(nullptr);
+						Out.PropIsmIndex.Add(-1);
+						++Out.CarProps;
+						continue;
+					}
 					++Blocking;
 					const int32 I0 = int32((*CellAt)[0]->AsNumber()), J0 = int32((*CellAt)[1]->AsNumber());
 					const int32 W = int32((*CellsWH)[0]->AsNumber()), Hh = int32((*CellsWH)[1]->AsNumber());
@@ -493,6 +562,38 @@ bool RTSMapBaker::Bake(UWorld* World, const FRTSMapInfo& Info, FRTSBakedMap& Out
 	if (Out.bWaterGrid)
 	{
 		UE_LOG(LogTemp, Log, TEXT("RTS água: %d células de fundo, %d de margem, %d de vau, %d de gelo"), Out.WaterCells, GridShore, GridFord, GridIce);
+	}
+	// (16/10) os objetos em ordem fixa (o tipo, depois a posição): o índice é o do evento, igual em todo PC
+	{
+		TArray<int32> Order;
+		for (int32 K = 0; K < Out.Props.Num(); ++K)
+		{
+			Order.Add(K);
+		}
+		Order.Sort([&Out](int32 A, int32 B)
+		{
+			const Sim::PropSetup& Pa = Out.Props[A];
+			const Sim::PropSetup& Pb = Out.Props[B];
+			if (Pa.Kind != Pb.Kind) { return uint8(Pa.Kind) < uint8(Pb.Kind); }
+			if (Pa.Pos.X.Raw != Pb.Pos.X.Raw) { return Pa.Pos.X.Raw < Pb.Pos.X.Raw; }
+			if (Pa.Pos.Y.Raw != Pb.Pos.Y.Raw) { return Pa.Pos.Y.Raw < Pb.Pos.Y.Raw; }
+			return A < B;
+		});
+		TArray<Sim::PropSetup> Props;
+		TArray<int32> Piece, IsmIndex;
+		TArray<TWeakObjectPtr<UInstancedStaticMeshComponent>> Ism;
+		for (const int32 K : Order)
+		{
+			Props.Add(Out.Props[K]);
+			Piece.Add(Out.PropPiece[K]);
+			Ism.Add(Out.PropIsm[K]);
+			IsmIndex.Add(Out.PropIsmIndex[K]);
+		}
+		Out.Props = MoveTemp(Props);
+		Out.PropPiece = MoveTemp(Piece);
+		Out.PropIsm = MoveTemp(Ism);
+		Out.PropIsmIndex = MoveTemp(IsmIndex);
+		UE_LOG(LogTemp, Log, TEXT("RTS esmagar: %d carros e %d árvores no mapa viram objetos da simulação (o tanque esmaga e derruba)"), Out.CarProps, Out.TreeProps);
 	}
 	M.ComputeClearance();
 	LoadSurface(Info, Out);

@@ -38,6 +38,12 @@ namespace Sim
 		ForceAttack = 14, // grupo ataca Target mesmo sendo dele ou aliado
 		// a rede (13/10, N5): render-se, ou a queda que o anfitrião manda pela vaga de quem caiu
 		Resign = 15,      // o jogador desiste: tudo dele cai (o ZH, VictoryConditions::killPlayer)
+		// (v4, 22/10) o poder do general: o poder Value (o índice em Ruleset::Powers, até 255) no ponto Point
+		UsePower = 16,
+		// (v4, 23/10) vender o prédio pronto Target (o BuildAssistant::sellObject do ZH): desmonta e devolve parte do custo
+		Sell = 17,
+		// (v4, 23/10) o Dozer do grupo mais perto conserta o prédio Target, dele ou do aliado (o DozerAIUpdate do ZH)
+		Repair = 18,
 	};
 
 	/** Build: o tipo nos 16 bits de baixo e o lado pra onde o prédio olha (0 +X, 1 +Y, 2 −X, 3 −Y) em cima. */
@@ -64,7 +70,7 @@ namespace Sim
 		Vec2 Point;
 		EntityId Target = NoEntity;
 		int32_t Value = 0;            // tipo de unidade/prédio, item da fila ou depósito (economia);
-		                              // Move/AttackMove: MoveValue (formação, direção e largura do arraste)
+		                              // Move/AttackMove: MoveValue (formação, direção e largura do arraste); UsePower: o poder
 		std::vector<EntityId> Units;  // só no SetGroup
 	};
 

@@ -4,7 +4,7 @@
 //  - botão esquerdo faz tudo: clique seleciona; arrastar faz a caixa; com seleção,
 //    clique no chão = andar, clique no inimigo = atacar; Shift soma/tira;
 //    dois cliques = todos iguais na tela;
-//  - botão direito: clique rápido desseleciona, arrastar rola a câmera;
+//  - botão direito: clique rápido desseleciona, arrastar rola a câmera; os dois juntos arrastando = a linha (v4, ELineChord);
 //  - A = próxima ordem é ataque andando; S = parar; Ctrl+número grava grupo,
 //    número chama, dois toques centralizam; Esc = pausa.
 // Também cuida dos botões do menu e das telas de pausa e de fim.
@@ -70,8 +70,21 @@ public:
 	/** Os grupos 1–0 (a tecla K = 0..9: o 1 é o 0, o 0 é o 9), pro HUD novo. */
 	const TMap<int32, TArray<uint32>>& GetGroups() const { return Groups; }
 	bool IsDragging(FVector2D& OutA, FVector2D& OutB) const;
-	/** O arraste com direção (com tropa selecionada): de onde (o ponto de chegada) pra onde (a direção). */
-	bool IsFacingDragging(FVector2D& OutA, FVector2D& OutB) const;
+	/** (v4, 23/10) A linha dos dois botões sendo puxada: do ponto apertado (StartCm) até o cursor (EndCm), no chão; CenterCm é
+	 *  o ponto da ordem (a fileira da frente fica em cima da linha), FacingDeg pra onde olham (puxar da esquerda pra direita na
+	 *  tela = de costas pra câmera), WidthM a largura. bAttack: o ataque andando armado; bFormation: o F segurado. */
+	struct FLineDrag
+	{
+		FVector2D StartCm = FVector2D::ZeroVector;
+		FVector2D EndCm = FVector2D::ZeroVector;
+		FVector2D CenterCm = FVector2D::ZeroVector;
+		float FacingDeg = 0.0f;
+		float WidthM = 0.0f;
+		bool bAttack = false;
+		bool bFormation = false;
+	};
+	/** Falso fora do acorde, ou ainda na zona morta (o cursor a menos de 6 px do ponto apertado). A prévia e a ordem usam esta conta. */
+	bool GetLineDrag(FLineDrag& Out) const;
 	const TArray<uint32>& GetSelection() const { return Selected; }
 	const TArray<FRTSOrderMarker>& GetMarkers() const { return Markers; }
 	bool ShowDebug() const { return bShowDebug; }
@@ -106,6 +119,8 @@ public:
 	bool GetCursorGround(FVector& Out) const;
 	/** O primeiro prédio próprio da seleção (o painel mostra ele). */
 	uint32 SelectedStructure() const;
+	/** (v4, 23/10) O cursor agora é a chave do conserto (o Dozer selecionado sobre o prédio avariado)? Pro teste. */
+	bool IsRepairCursorShown() const { return bRepairCursor; }
 	/** As unidades da seleção que constroem (Dozers) ou que coletam (caminhões). */
 	void SelectedWith(bool bConstructors, TArray<uint32>& Out) const;
 
@@ -113,6 +128,13 @@ public:
 	float AttackMessageAlpha() const { return FMath::Clamp(1.0f - (AttackMessageAge - 2.5f) / 0.5f, 0.0f, 1.0f) * (AttackMessageAge < 3.0f ? 1.0f : 0.0f); }
 	/** Os segundos desde o último "Unidade sob ataque" (o aviso do HUD novo entra deslizando nos primeiros 0,3 s). */
 	float AttackMessageSeconds() const { return AttackMessageAge; }
+
+	// (v4, 23/10) os poderes do general: o botão da coluna ou a tecla (F1–F3) entram no modo de mira, como o de posicionar
+	// prédio; o esquerdo no chão (ou no minimapa) usa, o direito ou o Esc desistem
+	/** O poder sendo mirado (o índice em Rules.Powers; −1 = nenhum): o HUD desenha o círculo do raio no chão. */
+	int32 GetTargetingPower() const { return TargetingPower; }
+	/** A recusa do último pedido de poder (o botão sem estar pronto, o ponto que não vale) e há quantos segundos. */
+	const FText& GetPowerMessage(float& OutAgeS) const;
 
 private:
 	void TickMenu();
@@ -123,7 +145,22 @@ private:
 	void TickAlerts(float DeltaTime);
 	void HandleLeftClick(const FVector2D& Mouse);
 	void HandleBoxSelect(const FVector2D& A, const FVector2D& B);
-	void HandleFacingDrag(const FVector2D& A, const FVector2D& B);
+	// (v4, 23/10) a linha dos dois botões (o acorde esquerdo + direito, como o campo minado do Windows): o estado e a máquina
+	/** None: sem acorde. Active: os dois apertados, puxando. Releasing: um subiu, o outro tem o tempo de graça pra subir junto.
+	 *  Swallow: acabou (mandou ou desistiu); os botões ainda apertados não fazem nada até os dois subirem. */
+	enum class ELineChord : uint8 { None, Active, Releasing, Swallow };
+	void TickLineChord(const FVector2D& Mouse, bool bHasMouse);
+	void CommitLine();
+	void CancelLine(const TCHAR* Why);
+	bool HasOwnTroopsSelected() const;
+	ELineChord LineChord = ELineChord::None;
+	/** Os dois pontos da linha no chão (cm, o XY): a linha fica presa no mapa se a câmera andar. */
+	FVector2D LineStartCm = FVector2D::ZeroVector;
+	FVector2D LineEndCm = FVector2D::ZeroVector;
+	/** A linha saiu da zona morta (o cursor passou de 6 px do ponto apertado, na tela). */
+	bool bLineOpened = false;
+	double LineReleaseAt = 0.0;
+	double LeftDownAt = 0.0;
 	void HandleGroups();
 	void SelectSameTypeOnScreen(uint32 Id);
 	uint32 PickUnit(const FVector2D& Mouse) const;
@@ -144,11 +181,31 @@ private:
 	void UpdateGhost();
 	int32 PlacingDef = -1;
 	int32 PlacingDir = 0;
+	/** (v4, 23/10) O cursor do conserto (a chave do kit, docs/concept/hud/kit/icons/repair.png, recortada da placa e com o contorno
+	 *  escuro, 32 px): feito uma vez, no 1º uso; falso se a plataforma não deixa (fica a mão de sempre). */
+	bool EnsureRepairCursor();
+	void* RepairCursorHandle = nullptr;
+	int8 RepairCursorState = 0;   // 0 ainda não tentou, 1 pronto, −1 não deu
+	bool bRepairCursor = false;
 	bool bTestMouse = false;
 	FVector2D TestMouse = FVector2D::ZeroVector;
 	UPROPERTY() TObjectPtr<AActor> Ghost;
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> GhostMesh;
 	int32 GhostDef = -1;
+	// (v4) o modo de mira do poder do general
+	void BeginTargeting(int32 Power);
+	/** O modo de mira pega o clique esquerdo no chão; true = a entrada foi dele neste quadro. */
+	bool TickTargeting(const FVector2D& Mouse, bool bHasMouse);
+	/** Usa o poder mirado no ponto (cm), se vale; senão guarda o motivo e segue mirando. */
+	bool TryUsePower(const FVector2D& Cm);
+	void SetPowerMessage(const FText& Text);
+	int32 TargetingPower = -1;
+	FText PowerMessage;
+	double PowerMessageAt = -1000.0;
+	/** O último "ataque chegando" já posto no minimapa: os segundos de mundo do aviso e quantos avisos com esse mesmo At
+	 *  já foram postos (os do mesmo quadro têm o mesmo At). */
+	double LastStrikeNoticeAt = -1.0;
+	int32 LastStrikeNoticeCount = 0;
 	URTSMatchSubsystem* Match() const;
 	ARTSHUD* GetRTSHUD() const;
 
@@ -176,8 +233,6 @@ private:
 
 	bool bLeftDown = false;
 	FVector2D LeftDownPos = FVector2D::ZeroVector;
-	/** O esquerdo desceu com tropa selecionada, no chão: arrastar dá a direção (e não a caixa de seleção). */
-	bool bFacingDrag = false;
 	uint32 LastClickedId = 0;
 	double LastClickTime = 0.0;
 	int32 LoggedSelection = 0;

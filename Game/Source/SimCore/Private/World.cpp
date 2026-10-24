@@ -28,13 +28,19 @@ namespace Sim
 		constexpr Fix RepathGoalShift = Fix::FromInt(4);
 		/** Empurrão máximo entre unidades por passo (0,13 m = 3,9 m/s, metade da velocidade do tanque). */
 		constexpr Fix MaxPushPerTick = Fix::FromRatio(13, 100);
-		// as carcaças (13/10): no máximo 256 no mapa (a mais velha sai); o casco é dois círculos no eixo, a ±0,45 R e
+		// as carcaças (13/10): o casco é dois círculos no eixo, a ±0,45 R e
 		// de raio 0,6 R (~2,1 R × 1,2 R, a planta do tanque); ela pesa o mesmo que o vivo do mesmo tipo (a massa ∝
 		// raio²), então o tanque que empurra anda à metade da velocidade (o Felipe: "ela segura o tanque também"); a
 		// batida nunca é reta (±9° no empurrão, pelo par), e a carcaça gira e escorrega pro lado em vez de ir na frente
 		// do tanque o caminho inteiro (o 1º teste: 60 m empurrada de frente); anda até R/4 e gira até 2° por passo;
-		// travada, espera meio segundo pra tentar de novo
-		constexpr size_t MaxWrecks = 256;
+		// travada, espera meio segundo pra tentar de novo.
+		// (22/10) os tetos, pra morte em massa (o exército inteiro de quem perde): passou de 40 sólidas, a mais velha com
+		// pelo menos 12 s começa a afundar já; passou de 64 no total (afundando inclusive), a mais velha sai na hora. Sem
+		// eles o carcaça × carcaça (N²) e o desenho cresciam sem limite; na batalha comum (~20 mortes por minuto, ~55 s de
+		// vida cada) ficam ~18 no mapa e os tetos nem entram
+		constexpr int32_t WreckSolidCap = 40;
+		constexpr size_t WreckHardCap = 64;
+		constexpr TickNumber WreckMinForcedAgeTicks = TickNumber(12 * TicksPerSecond);
 		constexpr Fix WreckSubOffset = Fix::FromRatio(9, 20);
 		constexpr Fix WreckSubRadius = Fix::FromRatio(3, 5);
 		constexpr int64_t WreckMaxTurnBam = 364;
@@ -77,7 +83,7 @@ namespace Sim
 	void World::UnitArrays::Resize(size_t N)
 	{
 		Id.resize(N); Owner.resize(N); Def.resize(N); Pos.resize(N); Hull.resize(N);
-		TurretRel.resize(N); Speed.resize(N); Hp.resize(N); Cooldown.resize(N); Order.resize(N);
+		TurretRel.resize(N); Speed.resize(N); Hp.resize(N); Cooldown.resize(N); Clip.resize(N); Order.resize(N);
 		OrderPoint.resize(N); OrderTarget.resize(N); ForcedAttack.resize(N); Engage.resize(N); FireTarget.resize(N);
 		LastAttacker.resize(N); TurretIdle.resize(N); Path.resize(N); PathIndex.resize(N);
 		PathGoal.resize(N); NeedsPath.resize(N); RepathWait.resize(N); StuckTicks.resize(N);
@@ -86,6 +92,9 @@ namespace Sim
 		Rally.resize(N); HasRally.resize(N); Task.resize(N); TaskTarget.resize(N); TaskDock.resize(N);
 		TaskTimer.resize(N); Cargo.resize(N); AutoGather.resize(N); Blocking.resize(N); TaskPoint.resize(N);
 		ArriveFacing.resize(N); HasArriveFacing.resize(N); SpeedCap.resize(N); IdleTurret.resize(N);
+		CrushSlowLeft.resize(N); CrushSlowTotal.resize(N); CrushSlowFloor.resize(N);
+		IncomeLeft.resize(N); IncomeCount.resize(N); UnloadLeft.resize(N);   // (v4) a zona de lançamento
+		SellLeft.resize(N); RepairAcc.resize(N); AimTicks.resize(N); AimIdle.resize(N);   // (v4, 23/10) vender, consertar, a mira
 	}
 
 	// ---------------------------------------------------------------- montagem
@@ -106,6 +115,11 @@ namespace Sim
 			H.Add(D.HalfY);
 			H.Add(D.Boxes);
 		}
+		H.Add(uint64_t(Props.size()));
+		for (const PropSetup& P : Props)
+		{
+			H.Add(uint8_t(P.Kind)); H.Add(P.Pos); H.Add(P.Facing); H.Add(P.HalfLength); H.Add(P.HalfWidth); H.Add(P.Height); H.Add(P.CrushableLevel);
+		}
 		H.Add(uint64_t(Players.size()));
 		for (const PlayerSetup& P : Players)
 		{
@@ -118,6 +132,7 @@ namespace Sim
 				H.Add(S.Pos);
 				H.Add(S.Facing);
 			}
+			H.Add(P.StartRank);   // (v4)
 		}
 		return H.Value();
 	}
@@ -147,13 +162,16 @@ namespace Sim
 		int32_t Teams = 0;
 		for (const PlayerSetup& P : Setup.Players)
 		{
-			if (P.Team >= MaxPlayers)
+			if (P.Team >= MaxPlayers || P.StartRank > MaxRank)
 			{
-				return false;   // o time é índice da grade de visão: nunca maior que o número de vagas
+				return false;   // o time é índice da grade de visão: nunca maior que o número de vagas; (v4) a patente vai até 5
 			}
 			PlayerState S;
 			S.Team = P.Team;
 			S.Money = RulesData.Economy.StartingMoney;
+			// (v4) a patente de largada (as cenas de teste) começa com o XP do limiar dela
+			S.Rank = uint8_t(std::clamp<int32_t>(P.StartRank, 1, MaxRank));
+			S.XpMilli = int64_t(RulesData.Economy.RankXp[S.Rank - 1]) * 1000;
 			Players.push_back(S);
 			Teams = std::max(Teams, int32_t(P.Team) + 1);
 		}
@@ -187,6 +205,9 @@ namespace Sim
 				}
 			}
 		}
+		// (16/10) os carros e as árvores: a célula deles vira esmagável (antes da passagem do terreno: o prédio que cai
+		// devolve a célula como ela está)
+		InitProps(Setup.Props);
 		TerrainPass = MapData.Pass;
 		MapData.ComputeClearance();
 		for (SupplyDock& Dock : Docks)
@@ -259,6 +280,7 @@ namespace Sim
 		for (const UnitDef& D : RulesData.Units)
 		{
 			AddClearance(MapData.ClearanceFor(D.PathRadius));
+			AddClearance(MobilityOfDef(D));   // (16/10) quem esmaga tem a região dele (passa no carro e na árvore)
 		}
 		for (const Placement& Pl : Places)
 		{
@@ -357,10 +379,14 @@ namespace Sim
 		U.HasArriveFacing[I] = 0;
 		U.SpeedCap[I] = Fix::Zero();
 		U.IdleTurret[I] = 0;
+		U.CrushSlowLeft[I] = 0;
+		U.CrushSlowTotal[I] = 0;
+		U.CrushSlowFloor[I] = 1000;
 		U.TurretRel[I] = 0;
 		U.Speed[I] = Fix::Zero();
 		U.Hp[I] = D.MaxHp;
 		U.Cooldown[I] = 0;
+		U.Clip[I] = D.Weapon.ClipSize;
 		U.Order[I] = OrderType::Idle;
 		U.OrderPoint[I] = Pos;
 		U.OrderTarget[I] = NoEntity;
@@ -393,6 +419,13 @@ namespace Sim
 		U.AutoGather[I] = 0;
 		U.Blocking[I] = 0;
 		U.TaskPoint[I] = Pos;
+		U.IncomeLeft[I] = 0;
+		U.IncomeCount[I] = 0;
+		U.UnloadLeft[I] = 0;
+		U.SellLeft[I] = 0;
+		U.RepairAcc[I] = 0;
+		U.AimTicks[I] = 0;
+		U.AimIdle[I] = 0;
 		const Cell C = MapData.CellOf(Pos);
 		U.LookCell[I] = MapData.InBounds(C.X, C.Y) ? MapData.Index(C.X, C.Y) : -1;
 		LookAt(Players[Owner].Team, DefIndex, U.LookCell[I], +1);
@@ -459,6 +492,12 @@ namespace Sim
 		V.Task = U.Task[I];
 		V.TaskTarget = U.TaskTarget[I];
 		V.Cargo = U.Cargo[I];
+		V.IncomeLeft = U.IncomeLeft[I];
+		V.IncomeCount = U.IncomeCount[I];
+		// (v4, 23/10) a venda e a mira antes do tiro
+		V.SellLeft = std::max(U.SellLeft[I], 0);
+		V.SellTicks = U.SellLeft[I] != 0 ? RulesData.Economy.SellTicks : 0;
+		V.AimTicks = U.AimTicks[I];
 		return V;
 	}
 
@@ -502,6 +541,9 @@ namespace Sim
 		UpdateConstruction();
 		UpdateProduction();
 		UpdateSupply();
+		UpdateAirlift();
+		UpdateRepair();   // (v4, 23/10) o conserto do Dozer e a venda
+		UpdateSell();
 		if (bGridChanged)
 		{
 			// prédio novo ou que caiu: os caminhos antigos podem cruzar a grade mudada
@@ -517,14 +559,20 @@ namespace Sim
 		BuildBins();
 		UpdateTargets();
 		UpdatePaths();
+		PrePos = U.Pos;
+		PreHull = U.Hull;
 		UpdateMovement();
 		BuildBins();
 		SeparateUnits();
+		AgeWrecks();
 		PushWrecks();
+		UpdateCrush();
 		BuildBins();
 		UpdateTurrets();
 		UpdateProjectiles();
 		UpdateWeapons();
+		// (v4) o míssil do poder entra na lista no mesmo passo do WeaponFired dele, como o da Patriot
+		UpdatePowers();
 		ResolveDamage();
 		RemoveDead();
 		UpdateVision();
@@ -588,6 +636,11 @@ namespace Sim
 		const bool bCombat = C.Type == CommandType::Attack || C.Type == CommandType::ForceAttack || C.Type == CommandType::AttackGround;
 		if (C.Type >= CommandType::Produce && !bCombat)
 		{
+			if (C.Type == CommandType::UsePower)
+			{
+				ApplyPowerCommand(C);   // (v4) o poder do general não usa o grupo
+				return;
+			}
 			ApplyEconomyCommand(C, Members);
 			return;
 		}
@@ -596,16 +649,21 @@ namespace Sim
 			// desarmado não ataca (o Dozer e o caminhão ficam onde estão)
 			Members.erase(std::remove_if(Members.begin(), Members.end(), [this](int32_t I) { return !DefOf(I).HasWeapon(); }), Members.end());
 		}
+		if (C.Type == CommandType::Move || C.Type == CommandType::AttackMove)
+		{
+			// prédio não anda (14/10: a defesa de base selecionada junto com os tanques ficava com a ordem de andar)
+			Members.erase(std::remove_if(Members.begin(), Members.end(), [this](int32_t I) { return DefOf(I).IsStructure(); }), Members.end());
+		}
 		if (Members.empty())
 		{
 			return;
 		}
 		if (C.Type == CommandType::Move || C.Type == CommandType::AttackMove || bCombat || C.Type == CommandType::Stop)
 		{
-			// ordem do jogador: o Dozer larga a obra (ela fica parada) e o caminhão para de coletar
+			// ordem do jogador: o Dozer larga a obra (ela fica parada) ou o conserto e o caminhão para de coletar
 			for (const int32_t I : Members)
 			{
-				if (U.Task[I] == UnitTask::Construct)
+				if (U.Task[I] == UnitTask::Construct || U.Task[I] == UnitTask::Repair)
 				{
 					const int32_t S = IndexOf(U.TaskTarget[I]);
 					if (S >= 0 && U.Builder[S] == U.Id[I])
@@ -927,8 +985,8 @@ namespace Sim
 		{
 			Sum += U.Pos[I];
 			MaxRadius = Max(MaxRadius, DefOf(I).Radius);
-			Clearance = std::max(Clearance, MapData.ClearanceFor(DefOf(I).PathRadius));
 		}
+		Clearance = std::max(Clearance, SimMap::ClearanceOf(GroupMobility(Members))) | (GroupMobility(Members) & (SimMap::CrusherBit | SimMap::ToppleBit));
 		const Vec2 Center = Vec2::Make(Sum.X / int64_t(N), Sum.Y / int64_t(N));
 		const Fix Spacing = MaxRadius * Fix::FromMilli(SlotSpacingPerRadiusMilli);
 		const Fix Reach = Spacing * int64_t(ISqrt(uint64_t(N)) + 1);
@@ -951,11 +1009,18 @@ namespace Sim
 		}
 	}
 
-	void World::LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out)
+	void World::LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out) const
 	{
 		// a linha de frente: as fileiras são de través da direção (de frente pro inimigo, não em coluna), a da
 		// frente no ponto apertado e as outras atrás. A largura vem do arraste (o BAR espalha pela linha
 		// puxada); arraste curto, a do grupo: até 4 numa fileira só, senão metade em cada (no máximo 8).
+		// (v4, 23/10) A linha puxada dá o passo, como no BAR (Custom Formations: "evenly spread along the line") e no Total
+		// War: cabem floor(L / passo mínimo) + 1 na fileira; com menos unidades que isso, uma fileira só, de ponta a ponta da
+		// linha (passo L / (N − 1)); com mais, as fileiras cheias vão de ponta a ponta (o passo nunca abaixo do mínimo, 2,34
+		// raios: as 32 unidades do ZH) e a de trás, incompleta, fica no meio com o mesmo passo. Antes, com menos unidades que
+		// a linha comportava, todas juntavam no meio no passo mínimo (3 tanques numa linha de 60 m ocupavam 17 m).
+		// (revisão de 23/10) floor, não round: com round a fileira passava das pontas (6 tanques em 30 m faziam 33,7 m, 1,85 m
+		// além de cada ponta); agora toda vaga fica dentro da linha puxada, a de trás desencontrada também.
 		const int32_t N = int32_t(Members.size());
 		Out.assign(size_t(N), Point);
 		if (N <= 1)
@@ -969,14 +1034,19 @@ namespace Sim
 		{
 			Sum += U.Pos[I];
 			MaxRadius = Max(MaxRadius, DefOf(I).Radius);
-			Clearance = std::max(Clearance, MapData.ClearanceFor(DefOf(I).PathRadius));
 		}
+		Clearance = std::max(Clearance, SimMap::ClearanceOf(GroupMobility(Members))) | (GroupMobility(Members) & (SimMap::CrusherBit | SimMap::ToppleBit));
 		const Vec2 Center = Vec2::Make(Sum.X / int64_t(N), Sum.Y / int64_t(N));
 		const Fix Spacing = MaxRadius * Fix::FromMilli(SlotSpacingPerRadiusMilli);
 		int32_t Cols = N <= 4 ? N : std::min(8, (N + 1) / 2);
-		if (Width > Spacing)
+		// o passo de lado na fileira (Gap) e o de fundo entre as fileiras (Spacing, o mínimo)
+		Fix Gap = Spacing;
+		const bool bDrawn = Width > Spacing;   // a linha puxada manda na largura
+		if (bDrawn)
 		{
-			Cols = int32_t((Width / Spacing).Round()) + 1;   // a largura é de centro a centro dos tanques das pontas
+			Cols = int32_t((Width / Spacing).Floor()) + 1;   // a largura é de centro a centro dos tanques das pontas
+			Cols = std::clamp(Cols, 1, N);
+			Gap = Cols > 1 ? Max(Spacing, Width / int64_t(Cols - 1)) : Spacing;
 		}
 		Cols = std::clamp(Cols, 1, N);
 		const Vec2 Dir = Vec2::FromAngle(Facing);
@@ -1010,16 +1080,70 @@ namespace Sim
 			});
 			for (int32_t Col = 0; Col < Count; ++Col)
 			{
-				const Fix Lat = Spacing * int64_t(2 * Col - (Count - 1)) / 2;
+				const Fix Lat = Gap * int64_t(2 * Col - (Count - 1)) / 2;
 				Vec2 Slot = Point + Side * Lat - Dir * (Spacing * int64_t(Row));
 				if ((Row & 1) != 0)
 				{
-					Slot += Side * (Spacing * 5 / 16);   // a de trás meio desencontrada: cada um atira pelo vão da frente
+					// a de trás meio desencontrada: cada um atira pelo vão da frente; na linha puxada, só até a ponta dela (a
+					// fileira cheia de trás fica alinhada: desencontrada, passaria da ponta)
+					Fix Shift = Gap * 5 / 16;
+					if (bDrawn)
+					{
+						Shift = Min(Shift, Max(Width / 2 - Gap * int64_t(Count - 1) / 2, Fix::Zero()));
+					}
+					Slot += Side * Shift;
 				}
 				Out[size_t(Order[size_t(First + Col)])] = Settle(Slot);
 			}
 		}
 		Uncross(Members, Out);
+	}
+
+	// ---------------------------------------------------------------- (v4, 23/10) a prévia da linha dos dois botões
+
+	bool World::PreviewLineSlots(PlayerIndex P, const std::vector<EntityId>& Units, Vec2 Point, int32_t Value,
+		std::vector<EntityId>& OutIds, std::vector<Vec2>& OutSlots) const
+	{
+		// a mesma conta do comando, passo a passo (ApplyCommand): as portas do Step e do ApplyCommand, o grupo como o SetGroup
+		// monta (os MaxGroupSize primeiros, vivos e do jogador, em ordem de ID, sem repetição), sem os prédios como o Move, e
+		// o LineSlots no ponto preso no mapa. Só lê: o compilador garante (const), e a vaga desenhada é a vaga da ordem
+		OutIds.clear();
+		OutSlots.clear();
+		if (!MoveHasFacingOf(Value) || P >= Players.size() || Players[P].bDefeated || bMatchOver)
+		{
+			return false;
+		}
+		std::vector<EntityId> Group;
+		for (size_t K = 0; K < Units.size() && K < size_t(MaxGroupSize); ++K)
+		{
+			const int32_t I = IndexOf(Units[K]);
+			if (I >= 0 && U.Owner[I] == P)
+			{
+				Group.push_back(Units[K]);
+			}
+		}
+		std::sort(Group.begin(), Group.end());
+		Group.erase(std::unique(Group.begin(), Group.end()), Group.end());
+		std::vector<int32_t> Members;
+		for (const EntityId Id : Group)
+		{
+			const int32_t I = IndexOf(Id);
+			if (I >= 0 && U.Owner[I] == P && !DefOf(I).IsStructure())
+			{
+				Members.push_back(I);
+			}
+		}
+		if (Members.empty())
+		{
+			return false;
+		}
+		LineSlots(Members, ClampToMap(Point), Angle::FromBam(MoveFacingBamOf(Value)), Fix::FromInt(2 * MoveWidthHalfMOf(Value)), OutSlots);
+		OutIds.reserve(Members.size());
+		for (const int32_t I : Members)
+		{
+			OutIds.push_back(U.Id[I]);
+		}
+		return true;
 	}
 
 	void World::GroupSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out)
@@ -1042,8 +1166,8 @@ namespace Sim
 			Lo = Vec2::Make(Min(Lo.X, P.X), Min(Lo.Y, P.Y));
 			Hi = Vec2::Make(Max(Hi.X, P.X), Max(Hi.Y, P.Y));
 			MaxRadius = Max(MaxRadius, DefOf(I).Radius);
-			Clearance = std::max(Clearance, MapData.ClearanceFor(DefOf(I).PathRadius));
 		}
+		Clearance = std::max(Clearance, SimMap::ClearanceOf(GroupMobility(Members))) | (GroupMobility(Members) & (SimMap::CrusherBit | SimMap::ToppleBit));
 		const Vec2 Center = Vec2::Make(Sum.X / int64_t(N), Sum.Y / int64_t(N));
 		const Fix Spacing = MaxRadius * Fix::FromMilli(SlotSpacingPerRadiusMilli);
 
@@ -1254,27 +1378,53 @@ namespace Sim
 		}
 	}
 
-	EntityId World::NearestEnemy(int32_t Self, Fix Radius) const
+	bool World::IsDoomed(int32_t Target) const
+	{
+		int64_t Incoming = 0;
+		for (const Projectile& P : Projectiles)
+		{
+			if (P.Target == U.Id[Target])
+			{
+				Incoming += int64_t(P.Damage) * RulesData.Armor.Get(DefOf(Target).Armor, P.Type) / 100;
+			}
+		}
+		for (const DamageIntent& H : PendingDamage)
+		{
+			if (H.Target == U.Id[Target])
+			{
+				Incoming += int64_t(H.Amount) * RulesData.Armor.Get(DefOf(Target).Armor, H.Type) / 100;
+			}
+		}
+		return Incoming > 0 && Incoming >= U.Hp[Target];
+	}
+
+	EntityId World::NearestEnemy(int32_t Self, Fix Radius, bool bSkipDoomed) const
 	{
 		EntityId Best = NoEntity;
 		int64_t BestD2 = 0;
 		bool bBestIsStructure = false;
 		const bool bIgnoring = U.Ignore[Self] != NoEntity && CurrentTick < U.IgnoreUntil[Self];
+		// (v4) a artilharia (a arma com alcance mínimo, o Tomahawk): não enxerga quem está dentro do mínimo (o centro a menos
+		// dele) e prefere prédio a unidade: o lançador que só anda atacando com a onda escolhe a defesa, não o tanque que passa
+		const Fix MinRange = DefOf(Self).Weapon.MinRange;
+		const bool bArtillery = MinRange.Raw > 0;
 		ForEachNear(U.Pos[Self], Radius + MaxBodyRadius, [&](int32_t J)
 		{
-			if (U.Hp[J] <= 0 || !AreEnemies(U.Owner[Self], U.Owner[J]) || (bIgnoring && U.Id[J] == U.Ignore[Self]) || !SeesUnit(Self, J))
+			if (U.Hp[J] <= 0 || !AreEnemies(U.Owner[Self], U.Owner[J]) || (bIgnoring && U.Id[J] == U.Ignore[Self]) || !SeesUnit(Self, J)
+				|| (bSkipDoomed && IsDoomed(J)))
 			{
 				return;
 			}
 			const int64_t D2 = DistSqRaw(U.Pos[Self], U.Pos[J]);
-			if (D2 > RadiusSqRaw(Radius + DefOf(J).Radius))
+			if (D2 > RadiusSqRaw(Radius + DefOf(J).Radius) || (bArtillery && D2 < RadiusSqRaw(MinRange)))
 			{
 				return;
 			}
-			// o que atira primeiro no que se mexe: prédio só quando não há unidade no alcance
+			// o que atira primeiro no que se mexe: prédio só quando não há unidade no alcance (a artilharia, ao contrário)
 			const bool bStructure = DefOf(J).IsStructure();
+			const bool bBestWrongKind = bArtillery ? (!bBestIsStructure && bStructure) : (bBestIsStructure && !bStructure);
 			const bool bBetter = Best == NoEntity
-				|| (bBestIsStructure && !bStructure)
+				|| bBestWrongKind
 				|| (bBestIsStructure == bStructure && (D2 < BestD2 || (D2 == BestD2 && U.Id[J] < Best)));
 			if (bBetter)
 			{
@@ -1290,6 +1440,13 @@ namespace Sim
 
 	void World::UpdateTargets()
 	{
+		// (v4) o alcance mínimo (o Tomahawk: 20 m, pelo centro): o alvo mais perto que isto sai da mira
+		const auto TooClose = [this](int32_t Self, EntityId T)
+		{
+			const Fix MinRange = DefOf(Self).Weapon.MinRange;
+			const int32_t J = IndexOf(T);
+			return MinRange.Raw > 0 && J >= 0 && DistSqRaw(U.Pos[Self], U.Pos[J]) < RadiusSqRaw(MinRange);
+		};
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			const UnitDef& D = DefOf(I);
@@ -1302,6 +1459,66 @@ namespace Sim
 				continue;
 			}
 			const bool bScan = ((CurrentTick + U.Id[I]) % TargetScanInterval) == 0;
+			if (D.IsStructure())
+			{
+				// a defesa de base (a Patriot, 14/10): não anda nem persegue; mira o inimigo mais perto no alcance (ou o da
+				// ordem de ataque). Em obra ou sem energia (o POWERED do ZH) fica muda
+				U.Engage[I] = NoEntity;
+				if (U.BuildLeft[I] != 0 || (D.bNeedsPower && Players[U.Owner[I]].IsLowPower()) || U.Order[I] == OrderType::AttackGround || IsSelling(I))
+				{
+					if (U.Order[I] != OrderType::AttackGround || IsSelling(I))
+					{
+						U.FireTarget[I] = NoEntity;   // (v4) a vendida também: desmontando, não atira
+					}
+					continue;
+				}
+				auto InReach = [&](EntityId T)
+				{
+					const int32_t J = IndexOf(T);
+					return J >= 0 && DistSqRaw(U.Pos[I], U.Pos[J]) <= RadiusSqRaw(D.Weapon.Range + DefOf(J).Radius) && SeesUnit(I, J) && !TooClose(I, T);
+				};
+				const bool bForcedS = U.Order[I] == OrderType::Attack && U.ForcedAttack[I] != 0;
+				if (U.Order[I] == OrderType::Attack)
+				{
+					const bool bAlive = bForcedS ? IsAliveUnit(U.OrderTarget[I]) && U.OrderTarget[I] != U.Id[I] : IsAliveEnemy(I, U.OrderTarget[I]);
+					if (!bAlive)
+					{
+						U.Order[I] = OrderType::Idle;
+						U.OrderTarget[I] = NoEntity;
+					}
+					else if (InReach(U.OrderTarget[I]))
+					{
+						U.FireTarget[I] = U.OrderTarget[I];
+						continue;
+					}
+				}
+				if (U.FireTarget[I] != NoEntity && (!IsAliveEnemy(I, U.FireTarget[I]) || !InReach(U.FireTarget[I])))
+				{
+					U.FireTarget[I] = NoEntity;
+				}
+				if (!IsAliveEnemy(I, U.LastAttacker[I]))
+				{
+					U.LastAttacker[I] = NoEntity;
+				}
+				// (16/10) sem desperdício: o alvo que os tiros no ar já vão matar fica pra eles; a defesa passa pro próximo
+				if (U.FireTarget[I] != NoEntity && IsDoomed(IndexOf(U.FireTarget[I])))
+				{
+					const EntityId Next = NearestEnemy(I, D.Weapon.Range, true);
+					if (Next != NoEntity)
+					{
+						U.FireTarget[I] = Next;
+					}
+				}
+				if (U.FireTarget[I] == NoEntity && (bScan || U.LastAttacker[I] != NoEntity))
+				{
+					U.FireTarget[I] = NearestEnemy(I, D.Weapon.Range, true);
+					if (U.FireTarget[I] == NoEntity)
+					{
+						U.FireTarget[I] = NearestEnemy(I, D.Weapon.Range);
+					}
+				}
+				continue;
+			}
 			if (U.Order[I] == OrderType::AttackGround)
 			{
 				// atira no chão: nem persegue nem troca de alvo (a torre e a arma vão pelo OrderPoint)
@@ -1399,6 +1616,10 @@ namespace Sim
 				|| !SeesUnit(I, IndexOf(U.FireTarget[I]))))
 			{
 				U.FireTarget[I] = NoEntity;
+			}
+			if (U.FireTarget[I] != NoEntity && TooClose(I, U.FireTarget[I]))
+			{
+				U.FireTarget[I] = NoEntity;   // (v4) dentro do alcance mínimo: a artilharia procura outro (o NearestEnemy pula este)
 			}
 			if (U.FireTarget[I] == NoEntity && (bScan || U.LastAttacker[I] != NoEntity))
 			{
@@ -1502,7 +1723,7 @@ namespace Sim
 				MovementGoal(I, Goal, Stop);
 				--Budget;
 				bool bReached = true;
-				const int32_t Clearance = MapData.ClearanceFor(DefOf(I).PathRadius);
+				const int32_t Clearance = MobilityOf(I);
 				if (!Paths.FindPath(MapData, U.Pos[I], Goal, Clearance, U.Path[I], &bReached))
 				{
 					U.Path[I].clear();
@@ -1555,7 +1776,7 @@ namespace Sim
 			{
 				std::vector<Vec2>& Path = U.Path[I];
 				const Fix CellSize = MapData.CellSize;
-				const int32_t PathClearance = MapData.ClearanceFor(D.PathRadius);
+				const int32_t PathClearance = MobilityOf(I);
 				while (U.PathIndex[I] + 1 < Path.size()
 					&& (DistSqRaw(U.Pos[I], Path[U.PathIndex[I]]) <= RadiusSqRaw(ArriveDistance)
 						|| (DistSqRaw(U.Pos[I], Path[U.PathIndex[I]]) <= RadiusSqRaw(CellSize)
@@ -1580,7 +1801,13 @@ namespace Sim
 				{
 					Desired = (Waypoint - U.Pos[I]).Heading();
 					const int32_t Off = AbsInt(U.Hull[I].DeltaTo(Desired));
-					const Fix Top = U.SpeedCap[I] > Fix::Zero() ? Min(D.MaxSpeed, U.SpeedCap[I]) : D.MaxSpeed;
+					Fix Top = U.SpeedCap[I] > Fix::Zero() ? Min(D.MaxSpeed, U.SpeedCap[I]) : D.MaxSpeed;
+					if (U.CrushSlowLeft[I] > 0 && U.CrushSlowTotal[I] > 0)
+					{
+						// (16/10) esmagando: cai ao piso e volta em rampa (o usa_mbt acelera 263 m/s²: um degrau seria um tranco seco)
+						const int64_t Lost = int64_t(1000 - U.CrushSlowFloor[I]) * U.CrushSlowLeft[I] / U.CrushSlowTotal[I];
+						Top = Top * Fix::FromRatio(1000 - Lost, 1000);
+					}
 					TargetSpeed = Off >= TurnInPlaceBam
 						? Fix::Zero()
 						: Top * Fix::FromRatio(TurnInPlaceBam - Off, TurnInPlaceBam);
@@ -1617,7 +1844,7 @@ namespace Sim
 			else
 			{
 				const Vec2 Advance = Vec2::FromAngle(U.Hull[I]) * U.Speed[I];
-				const int32_t Clearance = MapData.ClearanceFor(D.PathRadius);
+				const int32_t Clearance = MobilityOf(I);
 				const Cell Here = MapData.CellOf(U.Pos[I]);
 				const bool bStuckInside = !MapData.IsWalkable(Here.X, Here.Y, Clearance);
 				auto Walkable = [&](Vec2 P)
@@ -1676,6 +1903,12 @@ namespace Sim
 		}
 	}
 
+	bool World::HoldsGround(int32_t I) const
+	{
+		// (v4, 23/10) atirando parado: a torre num alvo (ou o tiro no chão) e a unidade sem andar
+		return U.Speed[size_t(I)] <= Fix::Zero() && (U.FireTarget[size_t(I)] != NoEntity || U.Order[size_t(I)] == OrderType::AttackGround);
+	}
+
 	void World::SeparateUnits()
 	{
 		// Unidades não se atravessam: cada par que se sobrepõe se afasta. Quem está
@@ -1704,7 +1937,7 @@ namespace Sim
 					return;
 				}
 				const Fix Dist = Delta.Length();
-				const Vec2 Dir = Dist.Raw > 0
+				Vec2 Dir = Dist.Raw > 0
 					? Delta / Dist
 					: Vec2::FromAngle(Angle::FromBam(int32_t((U.Id[I] * 2654435761u) >> 16)));
 				const Fix Overlap = Reach - Dist;
@@ -1713,6 +1946,21 @@ namespace Sim
 				if (bMovingI != bMovingJ)
 				{
 					ShareI = bMovingI ? Fix::FromRatio(1, 4) : Fix::FromRatio(3, 4);
+				}
+				// (v4, 23/10) quem atira parado não sai do lugar pro aliado (o Pathfinder::moveAllies do ZH: "Don't move units
+				// that are attacking"): o outro leva o empurrão inteiro. Antes o reforço que chegava empurrava o tanque parado,
+				// que empurrava o Tomahawk do cerco 6 m pra dentro do alcance da Patriot (o 24d da IA: morria aos 102 s)
+				if (TeamOf(U.Owner[size_t(I)]) == TeamOf(U.Owner[size_t(J)]))
+				{
+					const bool bHoldI = HoldsGround(I);
+					if (bHoldI != HoldsGround(J))
+					{
+						ShareI = bHoldI ? Fix::Zero() : Fix::One();
+						// a batida torta, ±9° pelo par (como na carcaça presa, PushWrecks): quem leva o empurrão inteiro escorrega
+						// pro lado e contorna, nem de frente fica preso atrás
+						const int32_t Skew = ((U.Id[I] * 2654435761u) ^ (U.Id[J] * 40503u)) & 1u ? 1638 : -1638;
+						Dir = Vec2::FromAngle(Angle::FromBam(int32_t(Dir.Heading().Bam) + Skew));
+					}
 				}
 				Push[size_t(I)] += Dir * (Overlap * ShareI);
 				Push[size_t(J)] -= Dir * (Overlap * (Fix::One() - ShareI));
@@ -1737,7 +1985,7 @@ namespace Sim
 			}
 			const Vec2 Next = U.Pos[I] + P;
 			const Cell C = MapData.CellOf(Next);
-			if (MapData.IsWalkable(C.X, C.Y, MapData.ClearanceFor(DefOf(I).PathRadius)))
+			if (MapData.IsWalkable(C.X, C.Y, MobilityOf(I)))
 			{
 				U.Pos[I] = Next;
 			}
@@ -1782,6 +2030,10 @@ namespace Sim
 			Circles(Wr, C, R);
 			const Fix Big = RulesData.Units[Wr.Def].Radius;
 			const int64_t MassW = (Big * Big).Raw;
+			// (22/10) afundando: não sai do lugar (o vivo leva o empurrão inteiro) e o encosto encolhe com o afundar, até o
+			// tanque passar por cima do resto
+			const bool bSinking = Wr.SinkStart > 0;
+			const Fix Keep = Fix::One() - WreckSinkProgress(Wr);
 			ForEachNear(Wr.Pos, Big + MaxUnitRadius, [&](int32_t J)
 			{
 				const UnitDef& DJ = DefOf(J);
@@ -1790,10 +2042,10 @@ namespace Sim
 					return;
 				}
 				const int64_t MassU = (DJ.Radius * DJ.Radius).Raw;
-				const Fix ShareW = Wr.Stuck > 0 ? Fix::Zero() : Fix::FromRatio(MassU, MassU + MassW);
+				const Fix ShareW = Wr.Stuck > 0 || bSinking ? Fix::Zero() : Fix::FromRatio(MassU, MassU + MassW);
 				for (int32_t S = 0; S < 2; ++S)
 				{
-					const Fix Reach = DJ.Radius + R;
+					const Fix Reach = bSinking ? (DJ.Radius + R) * Keep : DJ.Radius + R;
 					const Vec2 Delta = U.Pos[J] - C[S];
 					if (Delta.LengthSqRaw() >= RadiusSqRaw(Reach))
 					{
@@ -1813,11 +2065,18 @@ namespace Sim
 				}
 			});
 		}
-		// carcaça com carcaça (duas mortes no mesmo lugar, ou uma empurrada contra a outra): meio a meio
+		// carcaça com carcaça (duas mortes no mesmo lugar, ou uma empurrada contra a outra): meio a meio; (22/10) a que afunda
+		// não sai do lugar (a outra leva tudo) e o encosto encolhe com o afundar dela; duas afundando não se mexem
 		for (size_t K = 0; K < Wrecks.size(); ++K)
 		{
 			for (size_t L = K + 1; L < Wrecks.size(); ++L)
 			{
+				const bool bSinkK = Wrecks[K].SinkStart > 0;
+				const bool bSinkL = Wrecks[L].SinkStart > 0;
+				if (bSinkK && bSinkL)
+				{
+					continue;
+				}
 				const Fix BigK = RulesData.Units[Wrecks[K].Def].Radius;
 				const Fix BigL = RulesData.Units[Wrecks[L].Def].Radius;
 				if (DistSqRaw(Wrecks[K].Pos, Wrecks[L].Pos) >= RadiusSqRaw(BigK + BigL))
@@ -1828,11 +2087,12 @@ namespace Sim
 				Fix RK, RL;
 				Circles(Wrecks[K], CK, RK);
 				Circles(Wrecks[L], CL, RL);
+				const Fix Keep = Fix::One() - WreckSinkProgress(bSinkK ? Wrecks[K] : Wrecks[L]);
 				for (int32_t A = 0; A < 2; ++A)
 				{
 					for (int32_t B = 0; B < 2; ++B)
 					{
-						const Fix Reach = RK + RL;
+						const Fix Reach = bSinkK || bSinkL ? (RK + RL) * Keep : RK + RL;
 						const Vec2 Delta = CK[A] - CL[B];
 						if (Delta.LengthSqRaw() >= RadiusSqRaw(Reach))
 						{
@@ -1840,6 +2100,22 @@ namespace Sim
 						}
 						const Fix Dist = Delta.Length();
 						const Vec2 Dir = Dist.Raw > 0 ? Delta / Dist : Vec2::FromAngle(Angle::FromBam(int32_t((Wrecks[K].Id * 2654435761u) >> 16)));
+						if (bSinkK || bSinkL)
+						{
+							// a parada não anda: a outra sai inteira
+							const Vec2 Full = Dir * (Reach - Dist);
+							if (bSinkK)
+							{
+								Move[L] -= Full;
+								AddTurn(L, CL[B], -Full);
+							}
+							else
+							{
+								Move[K] += Full;
+								AddTurn(K, CK[A], Full);
+							}
+							continue;
+						}
 						const Vec2 F = Dir * ((Reach - Dist) / 2);
 						Move[K] += F;
 						Move[L] -= F;
@@ -1853,6 +2129,10 @@ namespace Sim
 		for (size_t K = 0; K < Wrecks.size(); ++K)
 		{
 			WreckState& Wr = Wrecks[K];
+			if (Wr.SinkStart > 0)
+			{
+				continue;   // (22/10) afundando: presa no chão
+			}
 			if (!Contact[K])
 			{
 				Wr.Stuck = 0;
@@ -1901,9 +2181,78 @@ namespace Sim
 			}
 			const Vec2 Next = U.Pos[I] + P;
 			const Cell C = MapData.CellOf(Next);
-			if (MapData.IsWalkable(C.X, C.Y, MapData.ClearanceFor(DefOf(I).PathRadius)))
+			if (MapData.IsWalkable(C.X, C.Y, MobilityOf(I)))
 			{
 				U.Pos[I] = Next;
+			}
+		}
+	}
+
+	Fix World::WreckSinkProgress(const WreckState& Wr) const
+	{
+		if (Wr.SinkStart == 0)
+		{
+			return Fix::Zero();
+		}
+		const int32_t Ticks = RulesData.Units[Wr.Def].WreckSinkTicks;
+		return Clamp(Fix::FromRatio(int64_t(CurrentTick - Wr.SinkStart), Ticks > 0 ? Ticks : 1), Fix::Zero(), Fix::One());
+	}
+
+	void World::SinkWreck(size_t K, int32_t Reason)
+	{
+		WreckState& Wr = Wrecks[K];
+		Wr.SinkStart = CurrentTick;
+		Wr.Stuck = 0;
+		Events.push_back({ EventType::WreckSinking, NoEntity, Wr.Id, Wr.Pos, RulesData.Units[Wr.Def].WreckSinkTicks | (Reason << 16) });
+	}
+
+	void World::EraseWreck(size_t K, int32_t Reason)
+	{
+		Events.push_back({ EventType::WreckRemoved, NoEntity, Wrecks[K].Id, Wrecks[K].Pos, Reason });
+		Wrecks.erase(Wrecks.begin() + std::ptrdiff_t(K));
+	}
+
+	void World::AgeWrecks()
+	{
+		if (Wrecks.empty())
+		{
+			return;
+		}
+		// o afundar acabou: sai do mapa (a que sai não pula a seguinte)
+		for (size_t K = 0; K < Wrecks.size();)
+		{
+			const WreckState& Wr = Wrecks[K];
+			if (Wr.SinkStart > 0 && CurrentTick - Wr.SinkStart >= TickNumber(RulesData.Units[Wr.Def].WreckSinkTicks))
+			{
+				EraseWreck(K, 0);
+				continue;
+			}
+			++K;
+		}
+		// a vida acabou: começa a afundar
+		int32_t Solid = 0;
+		for (size_t K = 0; K < Wrecks.size(); ++K)
+		{
+			if (Wrecks[K].SinkStart > 0)
+			{
+				continue;
+			}
+			const int32_t Life = RulesData.Units[Wrecks[K].Def].WreckLifeTicks;
+			if (Life > 0 && CurrentTick - Wrecks[K].Born >= TickNumber(Life))
+			{
+				SinkWreck(K, 0);
+				continue;
+			}
+			++Solid;
+		}
+		// sólidas demais (a morte em massa): as mais velhas que já viveram 12 s afundam já, na ordem de nascimento (a
+		// nova nunca some no meio da luta que a fez)
+		for (size_t K = 0; K < Wrecks.size() && Solid > WreckSolidCap; ++K)
+		{
+			if (Wrecks[K].SinkStart == 0 && CurrentTick - Wrecks[K].Born >= WreckMinForcedAgeTicks)
+			{
+				SinkWreck(K, 1);
+				--Solid;
 			}
 		}
 	}
@@ -1943,6 +2292,210 @@ namespace Sim
 			const int32_t Turn = Diff > Rate ? Rate : (Diff < -Rate ? -Rate : Diff);
 			U.TurretRel[I] = SignedBam(U.TurretRel[I] + Turn);
 		}
+		// (v4, 23/10) a mira antes do tiro (o AIM do TurretAI do ZH com o PreAttackDelay; o lançador do Tomahawk levanta o tubo
+		// junto com o giro): o relógio sobe 1 por passo desde que há alvo no alcance (o da torre, ou o tiro no chão no alcance),
+		// não desde o alinhamento, até o PreAttackTicks da arma; sem alvo, segura o TurretIdleReturn (o RecenterTime do ZH) e
+		// desce à metade (1 a cada 2 passos) até 0; o alvo que volta sobe dali. Os tiros seguintes da rajada não esperam de novo
+		for (int32_t I = 0; I < UnitCount(); ++I)
+		{
+			const UnitDef& D = DefOf(I);
+			const WeaponDef& W = D.Weapon;
+			if (W.PreAttackTicks <= 0 || !D.HasWeapon())
+			{
+				continue;
+			}
+			bool bAim = false;
+			if (U.Order[I] == OrderType::AttackGround)
+			{
+				const int64_t D2 = DistSqRaw(U.Pos[I], U.OrderPoint[I]);
+				bAim = D2 <= RadiusSqRaw(W.Range) && D2 >= RadiusSqRaw(W.MinRange);
+			}
+			else if (const int32_t T = IndexOf(U.FireTarget[I]); T >= 0)
+			{
+				const int64_t D2 = DistSqRaw(U.Pos[I], U.Pos[T]);
+				bAim = D2 <= RadiusSqRaw(W.Range + DefOf(T).Radius) && D2 >= RadiusSqRaw(W.MinRange);
+			}
+			if (bAim)
+			{
+				U.AimTicks[I] = std::min(U.AimTicks[I] + 1, W.PreAttackTicks);
+				U.AimIdle[I] = 0;
+			}
+			else if (U.AimTicks[I] > 0)
+			{
+				++U.AimIdle[I];
+				if (U.AimIdle[I] > D.TurretIdleReturnTicks && ((U.AimIdle[I] - D.TurretIdleReturnTicks) & 1) == 0)
+				{
+					--U.AimTicks[I];
+				}
+			}
+			else
+			{
+				U.AimIdle[I] = 0;
+			}
+		}
+	}
+
+	Fix World::GroundHeightAt(Vec2 P) const
+	{
+		const Cell C = MapData.CellOf(P);
+		if (!MapData.HasHeights() || !MapData.InBounds(C.X, C.Y))
+		{
+			return Fix::Zero();
+		}
+		const size_t K = size_t(MapData.Index(C.X, C.Y));
+		return Fix::FromRatio(int64_t(MapData.MinDm[K]) + int64_t(MapData.MaxDm[K]), 20);
+	}
+
+	bool World::FlyMissile(Projectile& P)
+	{
+		// (16/10, o Felipe: "ele atira mísseis, ... com explosão quando encosta no tanque; simular bem cada coisa")
+		// O míssil guiado em 3D, como o do ZH (MissileAIUpdate: TryToFollowTarget), com a mira na frente: depois de sair
+		// reto da caixa (o impulso), o rumo e a inclinação giram até MissileTurnBam por passo em direção ao ponto onde o
+		// alvo vai estar quando ele chegar (a posição + a velocidade × os passos que faltam), e a velocidade sobe até o
+		// ProjectileStep. Explode no contato (o passo dele passa a menos de 0,6 raio do meio do casco, a 1,2 m do chão),
+		// no chão ou no fim da vida. Com o alvo morto, segue pro último ponto e explode lá.
+		const WeaponDef& W = RulesData.Units[P.Def].Weapon;
+		const int32_t T = IndexOf(P.Target);
+		Fix HitRadius = Fix::FromMilli(1500);
+		Vec2 HitAt = P.Aim;
+		Fix HitZ = P.AimZ;
+		if (T >= 0)
+		{
+			const UnitDef& DT = DefOf(T);
+			const Fix Lift = DT.IsStructure() ? Fix::FromInt(3) : Fix::FromMilli(1200);
+			const Fix Closing = Max(P.Speed, W.MissileLaunchStep);
+			int64_t Ahead = Closing.Raw > 0 ? (Distance(P.Pos, U.Pos[T]) / Closing).Round() : 0;
+			Ahead = Ahead < 0 ? 0 : (Ahead > 90 ? 90 : Ahead);
+			HitAt = U.Pos[T];
+			HitZ = GroundHeightAt(U.Pos[T]) + Lift;
+			HitRadius = DT.IsStructure() ? DT.Radius : DT.Radius * Fix::FromMilli(600);
+			P.Aim = U.Pos[T] + Vec2::FromAngle(U.Hull[T]) * (U.Speed[T] * Fix::FromInt(Ahead));
+			P.AimZ = HitZ;
+		}
+		++P.Age;
+		// (v4, 22/10) a velocidade que ainda deixa fazer a curva até o ponto: o ponto a D, θ fora do rumo, só é alcançável com o
+		// raio de giro v ÷ ω ≤ D ÷ (2 sen θ) (fora dos dois círculos de giro, o caminho de Dubins). Mais perto ou mais de lado
+		// que isso, o míssil não acelera além (e freia até lá, nunca abaixo da velocidade da caixa): a artilharia (o Tomahawk,
+		// 100°/s) sobe e cai no ponto mesmo a 20 m. Sem isso ele orbitava o ponto a 20–30 m até o fim da vida e passava 7–25 m
+		// dele a 40–50 m. Apontado pro ponto (θ ≈ 0) nada muda: a Patriot e o míssil do poder voam como antes
+		Fix Top = W.ProjectileStep;
+		if (W.MissileTurnBam > 0)
+		{
+			const Vec2 Flat = Vec2::FromAngle(P.Yaw) * Cos(P.Pitch);
+			const Fix DirZ = Sin(P.Pitch);
+			const Vec2 To = P.Aim - P.Pos;
+			const Fix ToZ = P.AimZ - P.Z;
+			const Fix CX = Flat.Y * ToZ - DirZ * To.Y;
+			const Fix CY = DirZ * To.X - Flat.X * ToZ;
+			const Fix CZ = Flat.X * To.Y - Flat.Y * To.X;
+			const Fix Side = Sqrt(CX * CX + CY * CY + CZ * CZ);   // D × sen θ
+			if (Side.Raw > 0)
+			{
+				const Fix Omega = Fix::FromRatio(int64_t(W.MissileTurnBam) * 6283185, int64_t(Angle::FullTurn) * 1000000);   // rad por passo
+				const Fix Reach = Omega * (To.Dot(To) + ToZ * ToZ) / (Side * 2);
+				Top = Min(Top, Max(Reach, W.MissileLaunchStep));
+			}
+		}
+		const Fix Free = Min(P.Speed + W.MissileAccel, W.ProjectileStep);   // o de sempre: acelera até a velocidade da arma
+		P.Speed = Free <= Top ? Free : Min(Free, Max(P.Speed - W.MissileAccel, Top));
+		if (P.Age > W.MissileBoostTicks)
+		{
+			const Vec2 To = P.Aim - P.Pos;
+			P.Yaw = P.Yaw.RotatedTowards(To.Heading(), W.MissileTurnBam);
+			P.Pitch = P.Pitch.RotatedTowards(Atan2(P.AimZ - P.Z, To.Length()), W.MissileTurnBam);
+		}
+		const Vec2 From = P.Pos;
+		const Fix FromZ = P.Z;
+		P.Pos += Vec2::FromAngle(P.Yaw) * (P.Speed * Cos(P.Pitch));
+		P.Z += P.Speed * Sin(P.Pitch);
+		// o ponto do passo mais perto do alvo (o segmento From → Pos contra o meio do casco, em 3D)
+		const Vec2 Seg = P.Pos - From;
+		const Fix SegZ = P.Z - FromZ;
+		const Vec2 Rel = HitAt - From;
+		const Fix RelZ = HitZ - FromZ;
+		const Fix SegLenSq = Seg.Dot(Seg) + SegZ * SegZ;
+		const Fix Along = SegLenSq.Raw > 0 ? Clamp((Rel.Dot(Seg) + RelZ * SegZ) / SegLenSq, Fix::Zero(), Fix::One()) : Fix::Zero();
+		const Vec2 Near = From + Seg * Along;
+		const Fix NearZ = FromZ + SegZ * Along;
+		const Vec2 Miss = HitAt - Near;
+		const Fix MissZ = HitZ - NearZ;
+		if (Miss.Dot(Miss) + MissZ * MissZ <= HitRadius * HitRadius)
+		{
+			if (T >= 0)
+			{
+				PendingDamage.push_back({ P.Shooter, P.Target, P.Damage, P.Type, P.Owner });
+			}
+			Events.push_back({ EventType::ProjectileHit, P.Shooter, T >= 0 ? P.Target : NoEntity, Near, int32_t(P.Id) });
+			if (W.HasSplash())
+			{
+				ApplySplash(Near, P, T >= 0 ? P.Target : NoEntity);   // (v4) o alvo já levou o cheio; a área vai pros outros
+			}
+			return false;
+		}
+		if (P.Z <= GroundHeightAt(P.Pos) || P.Age >= W.MissileLifeTicks)
+		{
+			// no chão (errou, ou o tiro forçado no chão) ou no fim da vida: explode onde está
+			Events.push_back({ EventType::ProjectileHit, P.Shooter, NoEntity, P.Pos, int32_t(P.Id) });
+			if (W.HasSplash())
+			{
+				ApplySplash(P.Pos, P, NoEntity);
+			}
+			return false;
+		}
+		return true;
+	}
+
+	void World::ApplySplash(Vec2 At, const Projectile& P, EntityId Exclude)
+	{
+		// (v4, 22/10) o dano em área: a distância é da borda (o casco da unidade, o lote do prédio), a queda é em linha reta e
+		// inteira (cheio até SplashFull, SplashEdgePct % em Splash, nada além: sem degrau no Full). Só os inimigos do dono do
+		// tiro levam (sem fogo amigo por enquanto: a batalha lê limpa e a IA não precisa se cuidar); a fundação leva (tem 1 PV)
+		// e não dá XP (o ResolveDamage confere). A soma do XP não depende da ordem, então a ordem das caixas da vizinhança vale
+		const WeaponDef& W = RulesData.Units[P.Def].Weapon;
+		if (P.Owner >= Players.size() || !W.HasSplash())
+		{
+			return;
+		}
+		// a busca cobre a quina do maior prédio (o centro dele pode estar a meia diagonal da borda que a explosão toca)
+		Fix Reach = MaxBodyRadius;
+		for (const UnitDef& D : RulesData.Units)
+		{
+			if (D.IsStructure())
+			{
+				Reach = Max(Reach, D.HalfX + D.HalfY);
+			}
+		}
+		const Fix Span = W.Splash - W.SplashFull;
+		ForEachNear(At, W.Splash + Reach, [&](int32_t J)
+		{
+			if (U.Hp[J] <= 0 || U.Id[J] == Exclude || !AreEnemies(P.Owner, U.Owner[J]))
+			{
+				return;
+			}
+			Fix D;
+			if (DefOf(J).IsStructure())
+			{
+				Fix HX;
+				Fix HY;
+				HalfExtents(U.Def[J], DirOf(J), HX, HY);
+				D = RectDistance(At, U.Pos[J], HX, HY);
+			}
+			else
+			{
+				D = Max(Distance(At, U.Pos[J]) - DefOf(J).Radius, Fix::Zero());
+			}
+			if (D > W.Splash)
+			{
+				return;
+			}
+			const int64_t Pct = D <= W.SplashFull ? 100
+				: (Span.Raw > 0 ? 100 - int64_t(100 - W.SplashEdgePct) * (D - W.SplashFull).Raw / Span.Raw : W.SplashEdgePct);
+			const int32_t Amount = int32_t(int64_t(P.Damage) * Pct / 100);
+			if (Amount > 0)
+			{
+				PendingDamage.push_back({ P.Shooter, U.Id[J], Amount, P.Type, P.Owner });
+			}
+		});
 	}
 
 	void World::UpdateProjectiles()
@@ -1951,6 +2504,14 @@ namespace Sim
 		Flying.reserve(Projectiles.size());
 		for (Projectile& P : Projectiles)
 		{
+			if (P.bMissile)
+			{
+				if (FlyMissile(P))
+				{
+					Flying.push_back(P);
+				}
+				continue;
+			}
 			const int32_t T = IndexOf(P.Target);
 			if (T >= 0)
 			{
@@ -1961,9 +2522,13 @@ namespace Sim
 			{
 				if (T >= 0)
 				{
-					PendingDamage.push_back({ P.Shooter, P.Target, P.Damage, P.Type });
+					PendingDamage.push_back({ P.Shooter, P.Target, P.Damage, P.Type, P.Owner });
 				}
-				Events.push_back({ EventType::ProjectileHit, P.Shooter, P.Target, P.Aim, 0 });
+				Events.push_back({ EventType::ProjectileHit, P.Shooter, P.Target, P.Aim, int32_t(P.Id) });
+				if (RulesData.Units[P.Def].Weapon.HasSplash())
+				{
+					ApplySplash(P.Aim, P, T >= 0 ? P.Target : NoEntity);   // (v4) o projétil reto com área (nenhum hoje)
+				}
 				continue;
 			}
 			P.Pos += (P.Aim - P.Pos).Normalized() * P.Step;
@@ -1972,61 +2537,133 @@ namespace Sim
 		Projectiles.swap(Flying);
 	}
 
+	void World::AfterShot(int32_t I, const WeaponDef& W)
+	{
+		// a rajada (o ClipSize do ZH, a Patriot: 4 mísseis a cada 250 ms e 2 s de recarga): o último tiro espera a recarga
+		if (W.ClipSize > 0)
+		{
+			if (--U.Clip[I] <= 0)
+			{
+				U.Clip[I] = W.ClipSize;
+				U.Cooldown[I] = W.ClipReloadTicks;
+				return;
+			}
+		}
+		U.Cooldown[I] = W.ReloadTicks;
+	}
+
 	void World::UpdateWeapons()
 	{
+		// o tiro sai: o do tanque da boca, reto; o míssil (16/10, a Patriot) de uma das 4 caixas (2 × 2), inclinado, com o
+		// rumo aberto em leque pela caixa: os 4 da rajada saem separados e se juntam no alvo
+		const auto Fire = [this](int32_t I, const WeaponDef& W, EntityId Target, Vec2 Aim)
+		{
+			const int32_t Tube = W.ClipSize > 0 ? (W.ClipSize - U.Clip[I]) & 3 : 0;
+			AfterShot(I, W);
+			Projectile P;
+			P.Id = NextProjectileId++;
+			P.Shooter = U.Id[I];
+			P.Target = Target;
+			P.Aim = Aim;
+			P.Step = W.ProjectileStep;
+			P.Damage = W.Damage;
+			P.Type = W.Type;
+			P.Def = U.Def[I];
+			P.Owner = U.Owner[I];   // (v4) o XP vai pro dono mesmo com o atirador morto
+			const Vec2 Fwd = Vec2::FromAngle(TurretWorld(I));
+			if (!W.IsMissile())
+			{
+				P.Pos = U.Pos[I] + Fwd * DefOf(I).Radius;
+			}
+			else
+			{
+				const int32_t Col = (Tube & 1) ? 1 : -1;   // esquerda, direita
+				const int32_t Row = Tube >> 1;            // baixo, cima
+				const Vec2 Right = Vec2::Make(-Fwd.Y, Fwd.X);
+				P.bMissile = 1;
+				if (W.HasLaunchMouth())
+				{
+					// (v4, 23/10) da boca do tubo levantado (o Tomahawk): o pivô da torre no casco, a boca à frente dele no giro da
+					// torre, os tubos alternando de lado, na altura da boca
+					const Vec2 HullFwd = Vec2::FromAngle(U.Hull[I]);
+					const Vec2 HullRight = Vec2::Make(-HullFwd.Y, HullFwd.X);
+					P.Pos = U.Pos[I] + HullFwd * W.LaunchPivot.X + HullRight * W.LaunchPivot.Y + Fwd * W.LaunchForward + Right * (W.LaunchSide * int64_t(Col));
+					P.Z = GroundHeightAt(U.Pos[I]) + W.LaunchUp;
+				}
+				else
+				{
+					P.Pos = U.Pos[I] + Fwd * (DefOf(I).Radius / 4) + Right * Fix::FromMilli(550 * Col);
+					P.Z = GroundHeightAt(U.Pos[I]) + W.MissileLaunchHeight + Fix::FromMilli(500 * Row);
+				}
+				P.AimZ = GroundHeightAt(Aim);
+				P.Yaw = Angle::FromBam(int32_t(TurretWorld(I).Bam) + Col * (W.MissileSpreadBam >> Row));
+				P.Pitch = W.MissileLaunchPitch;
+				P.Speed = W.MissileLaunchStep;
+			}
+			Projectiles.push_back(P);
+			Events.push_back({ EventType::WeaponFired, U.Id[I], Target, Aim, int32_t(P.Id) });
+			// (16/10) a ajuda entre as defesas (o AssistedTargetingUpdate do ZH): as do mesmo tipo e do mesmo dono a até
+			// AssistRange, livres e que alcançam o alvo, passam a mirar nele (o laser no desenho)
+			const UnitDef& DI = DefOf(I);
+			const int32_t T = IndexOf(Target);
+			if (DI.IsStructure() && DI.AssistRange.Raw > 0 && T >= 0)
+			{
+				ForEachNear(U.Pos[I], DI.AssistRange, [&](int32_t J)
+				{
+					if (J == I || U.Def[J] != U.Def[I] || U.Owner[J] != U.Owner[I] || U.FireTarget[J] != NoEntity || U.BuildLeft[J] != 0
+						|| (DefOf(J).bNeedsPower && Players[U.Owner[J]].IsLowPower()) || U.Order[J] == OrderType::AttackGround
+						|| DistSqRaw(U.Pos[I], U.Pos[J]) > RadiusSqRaw(DI.AssistRange)
+						|| DistSqRaw(U.Pos[J], U.Pos[T]) > RadiusSqRaw(DefOf(J).Weapon.Range + DefOf(T).Radius) || !SeesUnit(J, T))
+					{
+						return;
+					}
+					U.FireTarget[J] = Target;
+					Events.push_back({ EventType::DefenseAssist, U.Id[I], U.Id[J], U.Pos[T], int32_t(Target) });
+				});
+			}
+		};
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			if (U.Cooldown[I] > 0)
 			{
 				--U.Cooldown[I];
 			}
-			if (U.Order[I] == OrderType::AttackGround && U.Cooldown[I] == 0 && DefOf(I).HasWeapon())
+			if (DefOf(I).IsStructure() && (U.BuildLeft[I] != 0 || (DefOf(I).bNeedsPower && Players[U.Owner[I]].IsLowPower()) || IsSelling(I)))
+			{
+				continue;   // a defesa em obra, sem energia ou (v4) sendo vendida não atira
+			}
+			// (v4, 23/10) com a mira antes do tiro, só depois do relógio cheio (UpdateTurrets)
+			const bool bAimed = DefOf(I).Weapon.PreAttackTicks <= 0 || U.AimTicks[I] >= DefOf(I).Weapon.PreAttackTicks;
+			if (U.Order[I] == OrderType::AttackGround && U.Cooldown[I] == 0 && DefOf(I).HasWeapon() && bAimed)
 			{
 				// o tiro forçado no chão: no alcance e com a torre alinhada, o projétil vai até o ponto e não acerta ninguém
 				const WeaponDef& W = DefOf(I).Weapon;
 				const Vec2 Aim = U.OrderPoint[I];
-				if (DistSqRaw(U.Pos[I], Aim) <= RadiusSqRaw(W.Range) && AbsInt(TurretWorld(I).DeltaTo((Aim - U.Pos[I]).Heading())) <= W.AimToleranceBam)
+				const int64_t D2 = DistSqRaw(U.Pos[I], Aim);
+				// (v4) dentro do alcance mínimo a artilharia não atira nem no chão
+				if (D2 <= RadiusSqRaw(W.Range) && D2 >= RadiusSqRaw(W.MinRange) && AbsInt(TurretWorld(I).DeltaTo((Aim - U.Pos[I]).Heading())) <= W.AimToleranceBam)
 				{
-					U.Cooldown[I] = W.ReloadTicks;
-					Projectile P;
-					P.Shooter = U.Id[I];
-					P.Target = NoEntity;
-					P.Pos = U.Pos[I] + Vec2::FromAngle(TurretWorld(I)) * DefOf(I).Radius;
-					P.Aim = Aim;
-					P.Step = W.ProjectileStep;
-					P.Damage = W.Damage;
-					P.Type = W.Type;
-					Projectiles.push_back(P);
-					Events.push_back({ EventType::WeaponFired, U.Id[I], NoEntity, Aim, 0 });
+					Fire(I, W, NoEntity, Aim);
 				}
 				continue;
 			}
 			const int32_t T = IndexOf(U.FireTarget[I]);
-			if (T < 0 || U.Cooldown[I] > 0)
+			if (T < 0 || U.Cooldown[I] > 0 || !bAimed)
 			{
 				continue;
 			}
 			const WeaponDef& W = DefOf(I).Weapon;
-			if (DistSqRaw(U.Pos[I], U.Pos[T]) > RadiusSqRaw(W.Range + DefOf(T).Radius))
+			const int64_t D2 = DistSqRaw(U.Pos[I], U.Pos[T]);
+			if (D2 > RadiusSqRaw(W.Range + DefOf(T).Radius) || D2 < RadiusSqRaw(W.MinRange))
 			{
-				continue;
+				continue;   // fora do alcance, ou (v4) dentro do mínimo da artilharia
 			}
 			const Angle Bearing = (U.Pos[T] - U.Pos[I]).Heading();
 			if (AbsInt(TurretWorld(I).DeltaTo(Bearing)) > W.AimToleranceBam)
 			{
 				continue;   // a torre ainda está girando: só atira alinhada (Vanguard ADR-0031)
 			}
-			U.Cooldown[I] = W.ReloadTicks;
-			Projectile P;
-			P.Shooter = U.Id[I];
-			P.Target = U.Id[T];
-			P.Pos = U.Pos[I] + Vec2::FromAngle(TurretWorld(I)) * DefOf(I).Radius;
-			P.Aim = U.Pos[T];
-			P.Step = W.ProjectileStep;
-			P.Damage = W.Damage;
-			P.Type = W.Type;
-			Projectiles.push_back(P);
-			Events.push_back({ EventType::WeaponFired, U.Id[I], U.Id[T], U.Pos[T], 0 });
+			Fire(I, W, U.Id[T], U.Pos[T]);
 		}
 	}
 
@@ -2047,6 +2684,26 @@ namespace Sim
 			if (Amount <= 0)
 			{
 				continue;
+			}
+			// (v4, 22/10) a patente do general, só pela luta: o acerto vale C = o dano até a vida que o alvo tinha (o golpe
+			// que passa da morte não conta; a vida cai a cada acerto do mesmo passo), em valor C × custo ÷ vida cheia. Quem
+			// acertou ganha 1 XP por XpDealtDivisor $ e o dono do alvo 1 por XpTakenDivisor $ (perder ensina menos). Obra
+			// inacabada, alvo próprio ou aliado e o que não custa nada valem 0 (a fundação de 1 PV não vira fazenda de XP)
+			const int32_t HpBefore = U.Hp[T];
+			const int32_t Credit = std::min(Amount, std::max(HpBefore, 0));
+			const UnitDef& DT = DefOf(T);
+			if (Credit > 0 && U.BuildLeft[T] == 0 && H.SourcePlayer < Players.size() && AreEnemies(H.SourcePlayer, U.Owner[T]) && DT.Cost > 0 && DT.MaxHp > 0)
+			{
+				const EconomyRules& E = RulesData.Economy;
+				const int64_t Value1000 = int64_t(Credit) * DT.Cost * 1000;
+				if (E.XpDealtDivisor > 0)
+				{
+					Players[H.SourcePlayer].XpMilli += Value1000 / (int64_t(DT.MaxHp) * E.XpDealtDivisor);
+				}
+				if (E.XpTakenDivisor > 0)
+				{
+					Players[U.Owner[T]].XpMilli += Value1000 / (int64_t(DT.MaxHp) * E.XpTakenDivisor);
+				}
 			}
 			U.Hp[T] -= Amount;
 			if (H.Source != NoEntity)
@@ -2074,12 +2731,34 @@ namespace Sim
 			Events.push_back({ EventType::UnitDamaged, H.Source, H.Target, U.Pos[T], Amount });
 		}
 		PendingDamage.clear();
+		CheckRanks();
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			if (U.Hp[I] <= 0)
 			{
-				// a obra cancelada (BuildLeft −1) some sem explosão
+				// a obra cancelada (BuildLeft −1) some sem explosão; (v4) o prédio vendido (SellLeft −1) também, com o dinheiro que voltou
+				if (U.SellLeft[I] < 0)
+				{
+					Events.push_back({ EventType::StructureSold, NoEntity, U.Id[I], U.Pos[I], SellRefund(U.Id[I]) | (int32_t(U.Owner[I]) << 24) });
+					continue;
+				}
 				Events.push_back({ U.BuildLeft[I] < 0 ? EventType::StructureCancelled : EventType::UnitDied, U.LastAttacker[I], U.Id[I], U.Pos[I], U.Owner[I] });
+			}
+		}
+	}
+
+	void World::CheckRanks()
+	{
+		// (v4) uma subida por limiar, em ordem (um passo de muito XP sobe mais de uma, com um evento cada); quem caiu não sobe.
+		// O limiar ≤ 0 acima da 1ª patente fecha a escada ali (as regras sem patente)
+		const EconomyRules& E = RulesData.Economy;
+		for (size_t P = 0; P < Players.size(); ++P)
+		{
+			PlayerState& S = Players[P];
+			while (!S.bDefeated && S.Rank < MaxRank && E.RankXp[S.Rank] > 0 && S.XpMilli >= int64_t(E.RankXp[S.Rank]) * 1000)
+			{
+				++S.Rank;
+				Events.push_back({ EventType::RankUp, NoEntity, NoEntity, PlayerStart(PlayerIndex(P)), int32_t(P) | (int32_t(S.Rank) << 8) });
 			}
 		}
 	}
@@ -2127,10 +2806,12 @@ namespace Sim
 				Wr.Def = U.Def[I];
 				Wr.Pos = U.Pos[I];
 				Wr.Hull = U.Hull[I];
+				Wr.Born = CurrentTick;
 				Wrecks.push_back(Wr);
-				if (Wrecks.size() > MaxWrecks)
+				// (22/10) o teto de todas (morte em massa): a mais velha sai na hora, com o evento (o desenho a afunda depressa)
+				while (Wrecks.size() > WreckHardCap)
 				{
-					Wrecks.erase(Wrecks.begin());
+					EraseWreck(0, 1);
 				}
 			}
 		}
@@ -2155,7 +2836,7 @@ namespace Sim
 		Compact(U.Hull, Keep); Compact(U.TurretRel, Keep); Compact(U.Speed, Keep); Compact(U.Hp, Keep);
 		Compact(U.Cooldown, Keep); Compact(U.Order, Keep); Compact(U.OrderPoint, Keep);
 		Compact(U.OrderTarget, Keep); Compact(U.ForcedAttack, Keep); Compact(U.Engage, Keep); Compact(U.FireTarget, Keep);
-		Compact(U.LastAttacker, Keep); Compact(U.TurretIdle, Keep); Compact(U.Path, Keep);
+		Compact(U.LastAttacker, Keep); Compact(U.TurretIdle, Keep); Compact(U.Path, Keep); Compact(U.Clip, Keep);
 		Compact(U.PathIndex, Keep); Compact(U.PathGoal, Keep); Compact(U.NeedsPath, Keep);
 		Compact(U.RepathWait, Keep); Compact(U.StuckTicks, Keep); Compact(U.StuckAnchor, Keep);
 		Compact(U.EngageAnchor, Keep); Compact(U.Ignore, Keep); Compact(U.IgnoreUntil, Keep);
@@ -2164,6 +2845,9 @@ namespace Sim
 		Compact(U.TaskTarget, Keep); Compact(U.TaskDock, Keep); Compact(U.TaskTimer, Keep); Compact(U.Cargo, Keep);
 		Compact(U.AutoGather, Keep); Compact(U.Blocking, Keep); Compact(U.TaskPoint, Keep);
 		Compact(U.ArriveFacing, Keep); Compact(U.HasArriveFacing, Keep); Compact(U.SpeedCap, Keep); Compact(U.IdleTurret, Keep);
+		Compact(U.CrushSlowLeft, Keep); Compact(U.CrushSlowTotal, Keep); Compact(U.CrushSlowFloor, Keep);   // a freada de quem atropelou anda junto com a unidade
+		Compact(U.IncomeLeft, Keep); Compact(U.IncomeCount, Keep); Compact(U.UnloadLeft, Keep);   // (v4)
+		Compact(U.SellLeft, Keep); Compact(U.RepairAcc, Keep); Compact(U.AimTicks, Keep); Compact(U.AimIdle, Keep);   // (v4, 23/10)
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
 			IdToIndex[U.Id[I]] = int32_t(I);
@@ -2405,12 +3089,19 @@ namespace Sim
 			{
 				H.Add(Id);
 			}
+			// (v4) a patente e os relógios dos poderes
+			H.Add(P.XpMilli);
+			H.Add(P.Rank);
+			for (const TickNumber At : P.PowerReadyAt)
+			{
+				H.Add(At);
+			}
 		}
 		H.Add(uint64_t(U.Id.size()));
 		for (size_t I = 0; I < U.Id.size(); ++I)
 		{
 			H.Add(U.Id[I]); H.Add(U.Owner[I]); H.Add(U.Def[I]); H.Add(U.Pos[I]); H.Add(U.Hull[I]);
-			H.Add(U.TurretRel[I]); H.Add(U.Speed[I]); H.Add(U.Hp[I]); H.Add(U.Cooldown[I]);
+			H.Add(U.TurretRel[I]); H.Add(U.Speed[I]); H.Add(U.Hp[I]); H.Add(U.Cooldown[I]); H.Add(U.Clip[I]);
 			H.Add(uint8_t(U.Order[I])); H.Add(U.OrderPoint[I]); H.Add(U.OrderTarget[I]); H.Add(U.ForcedAttack[I]); H.Add(U.Engage[I]);
 			H.Add(U.FireTarget[I]); H.Add(U.LastAttacker[I]); H.Add(U.TurretIdle[I]);
 			H.Add(uint64_t(U.Path[I].size()));
@@ -2447,12 +3138,386 @@ namespace Sim
 		{
 			H.Add(P.Shooter); H.Add(P.Target); H.Add(P.Pos); H.Add(P.Aim); H.Add(P.Step);
 			H.Add(P.Damage); H.Add(uint8_t(P.Type));
+			H.Add(P.Id); H.Add(P.bMissile); H.Add(P.Z); H.Add(P.AimZ); H.Add(P.Yaw); H.Add(P.Pitch); H.Add(P.Speed); H.Add(P.Age); H.Add(P.Def);
+			H.Add(P.Owner);   // (v4)
+		}
+		H.Add(NextProjectileId);
+		H.Add(uint64_t(Props.size()));
+		for (const PropState& P : Props)
+		{
+			H.Add(P.State); H.Add(P.Side); H.Add(P.FallDir); H.Add(P.FallLength); H.Add(P.At); H.Add(P.By);
+		}
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			H.Add(U.CrushSlowLeft[I]); H.Add(U.CrushSlowTotal[I]); H.Add(U.CrushSlowFloor[I]);
 		}
 		H.Add(uint64_t(Wrecks.size()));
 		for (const WreckState& Wr : Wrecks)
 		{
-			H.Add(Wr.Id); H.Add(Wr.Def); H.Add(Wr.Pos); H.Add(Wr.Hull); H.Add(Wr.Stuck);
+			H.Add(Wr.Id); H.Add(Wr.Def); H.Add(Wr.Pos); H.Add(Wr.Hull); H.Add(Wr.Stuck); H.Add(Wr.Born); H.Add(Wr.SinkStart);
+		}
+		// (v4) a zona de lançamento (o avião e a empilhadeira) e os ataques de poder no ar
+		for (size_t I = 0; I < U.Id.size(); ++I)
+		{
+			H.Add(U.IncomeLeft[I]); H.Add(U.IncomeCount[I]); H.Add(U.UnloadLeft[I]);
+			H.Add(U.SellLeft[I]); H.Add(U.RepairAcc[I]); H.Add(U.AimTicks[I]); H.Add(U.AimIdle[I]);   // (v4, 23/10)
+		}
+		H.Add(uint64_t(Strikes.size()));
+		for (const Strike& S : Strikes)
+		{
+			H.Add(S.Owner); H.Add(S.Power); H.Add(S.Total); H.Add(S.Fired); H.Add(S.Center); H.Add(S.From); H.Add(S.Radius); H.Add(S.Phase); H.Add(S.NextAt);
 		}
 		return H.Value();
+	}
+
+	// ---------------------------------------------------------------- o esmagar e o derrubar (16/10)
+
+	bool KnocksOver(const UnitDef& D, Fix SpeedPerTick, int64_t EnergyJ)
+	{
+		// (v4, 23/10) ½·m·v² contra a energia que o objeto absorve até cair (World.h); a conta inteira em J, sem float
+		if (D.MassKg <= 0 || SpeedPerTick.Raw <= 0)
+		{
+			return false;
+		}
+		const Fix V = SpeedPerTick * int64_t(TicksPerSecond);   // m/s
+		return ((V * V) * int64_t(D.MassKg)).Floor() >= EnergyJ * 2;
+	}
+
+	namespace
+	{
+		// o freio (a 2ª opinião: o carro tira 5–10% da energia do tanque; 85% já exagera, pra ler): o piso e a volta
+		constexpr int32_t CarSlowFloorPermille = 850;
+		constexpr int32_t CarSlowTicks = 15;          // 0,5 s
+		constexpr int32_t TreeSlowFloorPermille = 950;
+		constexpr int32_t TreeSlowTicks = 6;          // 0,2 s
+		constexpr int32_t RegionRelabelTicks = 30;
+		// o objeto entra no casco: a caixa (meio comprimento × meia largura) no rumo do casco
+		bool InHull(Vec2 P, Vec2 Center, Angle Hull, Fix HalfLength, Fix HalfWidth, Fix Pad, Fix& OutAlong, Fix& OutSide)
+		{
+			const Vec2 Fwd = Vec2::FromAngle(Hull);
+			const Vec2 Rel = P - Center;
+			OutAlong = Rel.Dot(Fwd);
+			OutSide = Rel.X * (-Fwd.Y) + Rel.Y * Fwd.X;
+			return Abs(OutAlong) <= HalfLength + Pad && Abs(OutSide) <= HalfWidth + Pad;
+		}
+	}
+
+	int32_t World::MobilityOfDef(const UnitDef& D) const
+	{
+		// (v4, 23/10) quem não esmaga mas derruba a palmeira pelo choque na velocidade de cruzeiro (o caminhão, o Tomahawk) passa
+		// pela célula da árvore (não pela do carro: a roda não sobe nele); o toque derruba a árvore em qualquer velocidade
+		// (UpdateCrush: a mesma conta, nunca o casco dentro do tronco de pé)
+		const int32_t Bits = D.CrusherLevel >= 2 ? SimMap::CrusherBit : (KnocksOver(D, D.MaxSpeed, TreeToppleEnergyJ) ? SimMap::ToppleBit : 0);
+		return MapData.ClearanceFor(D.PathRadius) | Bits;
+	}
+
+	int32_t World::MobilityOf(int32_t Index) const
+	{
+		return MobilityOfDef(DefOf(Index));
+	}
+
+	int32_t World::GroupMobility(const std::vector<int32_t>& Members) const
+	{
+		int32_t Clearance = 1;
+		bool bAllCrush = !Members.empty();
+		bool bAllTopple = !Members.empty();   // (v4) a árvore só abre pro grupo se todos a esmagam ou derrubam
+		for (const int32_t I : Members)
+		{
+			const int32_t M = MobilityOf(I);
+			Clearance = std::max(Clearance, SimMap::ClearanceOf(M));
+			bAllCrush = bAllCrush && (M & SimMap::CrusherBit) != 0;
+			bAllTopple = bAllTopple && (M & (SimMap::CrusherBit | SimMap::ToppleBit)) != 0;
+		}
+		return Clearance | (bAllCrush ? SimMap::CrusherBit : (bAllTopple ? SimMap::ToppleBit : 0));
+	}
+
+	void World::InitProps(const std::vector<PropSetup>& Setup)
+	{
+		PropDefs = Setup;
+		Props.assign(PropDefs.size(), PropState());
+		PropCells.assign(PropDefs.size(), std::vector<int32_t>());
+		PropStanding.assign(MapData.Pass.size(), 0);
+		PropStandingCars.assign(MapData.Pass.size(), 0);
+		const Fix Margin = Fix::FromMilli(500);
+		for (size_t K = 0; K < PropDefs.size(); ++K)
+		{
+			const PropSetup& P = PropDefs[K];
+			std::vector<int32_t>& Cells = PropCells[K];
+			if (P.Kind == PropKind::Tree)
+			{
+				const Cell C = MapData.CellOf(P.Pos);
+				if (MapData.InBounds(C.X, C.Y))
+				{
+					Cells.push_back(MapData.Index(C.X, C.Y));
+				}
+			}
+			else
+			{
+				// o carro: as células com o centro dentro da caixa dele + 0,5 m (um carro de 4,6 × 2 m pega ~2 células de 4 m)
+				const Fix Reach = Max(P.HalfLength, P.HalfWidth) + Margin;
+				const Cell Lo = MapData.CellOf(P.Pos - Vec2::Make(Reach, Reach));
+				const Cell Hi = MapData.CellOf(P.Pos + Vec2::Make(Reach, Reach));
+				for (int32_t Y = Lo.Y; Y <= Hi.Y; ++Y)
+				{
+					for (int32_t X = Lo.X; X <= Hi.X; ++X)
+					{
+						Fix A, S;
+						if (MapData.InBounds(X, Y) && InHull(MapData.CellCenter(Cell{ X, Y }), P.Pos, P.Facing, P.HalfLength, P.HalfWidth, Margin, A, S))
+						{
+							Cells.push_back(MapData.Index(X, Y));
+						}
+					}
+				}
+				if (Cells.empty())
+				{
+					const Cell C = MapData.CellOf(P.Pos);
+					if (MapData.InBounds(C.X, C.Y))
+					{
+						Cells.push_back(MapData.Index(C.X, C.Y));
+					}
+				}
+			}
+			for (const int32_t Idx : Cells)
+			{
+				// (v4, 23/10) a célula do carro fica só de quem esmaga; a só da árvore, também de quem a derruba pelo choque
+				const CellPass Was = CellPass(MapData.Pass[size_t(Idx)]);
+				if (Was == CellPass::Open || Was == CellPass::Crushable || Was == CellPass::Toppleable)
+				{
+					PropStanding[size_t(Idx)] = uint8_t(std::min(int32_t(PropStanding[size_t(Idx)]) + 1, 255));
+					if (P.Kind == PropKind::Car)
+					{
+						PropStandingCars[size_t(Idx)] = uint8_t(std::min(int32_t(PropStandingCars[size_t(Idx)]) + 1, 255));
+					}
+					MapData.Pass[size_t(Idx)] = uint8_t(PropStandingCars[size_t(Idx)] > 0 ? CellPass::Crushable : CellPass::Toppleable);
+				}
+			}
+		}
+	}
+
+	void World::ReleaseProp(int32_t Prop)
+	{
+		bool bChanged = false;
+		const bool bCar = PropDefs[size_t(Prop)].Kind == PropKind::Car;
+		for (const int32_t Idx : PropCells[size_t(Prop)])
+		{
+			uint8_t& N = PropStanding[size_t(Idx)];
+			if (N == 0)
+			{
+				continue;
+			}
+			--N;
+			uint8_t& Cars = PropStandingCars[size_t(Idx)];
+			if (bCar && Cars > 0)
+			{
+				--Cars;
+			}
+			// (v4) o que sobrou de pé diz a célula: carro, só árvore ou nada (o prédio em cima, Blocked, fica)
+			const CellPass Now = N == 0 ? CellPass::Open : (Cars > 0 ? CellPass::Crushable : CellPass::Toppleable);
+			for (uint8_t* Pass : { &TerrainPass[size_t(Idx)], &MapData.Pass[size_t(Idx)] })
+			{
+				const CellPass Was = CellPass(*Pass);
+				if ((Was == CellPass::Crushable || Was == CellPass::Toppleable) && Was != Now)
+				{
+					*Pass = uint8_t(Now);
+					bChanged = true;
+				}
+			}
+		}
+		if (bChanged)
+		{
+			// abrir célula só encurta caminho: ninguém precisa refazer o dele (a 2ª opinião: sem a tempestade de caminhos)
+			MapData.ComputeClearance();
+			bRegionsStale = true;
+		}
+	}
+
+	Angle World::FreeFall(Vec2 From, Angle Want, Fix Height, Fix& OutLength) const
+	{
+		// o rumo pedido e, se bater em prédio, penhasco ou pedra, ±22,5°, ±45°, ±67,5° e ±90° (nessa ordem fixa); se todos
+		// batem, o que vai mais longe (a árvore fica encostada)
+		static constexpr int32_t Offsets[] = { 0, 4096, -4096, 8192, -8192, 12288, -12288, 16384, -16384 };
+		const Fix Step = MapData.CellSize / 2;
+		Angle Best = Want;
+		Fix BestLen = Fix::FromInt(-1);
+		for (const int32_t Off : Offsets)
+		{
+			const Angle Dir = Angle::FromBam(int32_t(Want.Bam) + Off);
+			const Vec2 V = Vec2::FromAngle(Dir);
+			Fix Len = Fix::Zero();
+			while (Len < Height)
+			{
+				const Fix Next = Min(Len + Step, Height);
+				const Cell C = MapData.CellOf(From + V * Next);
+				const CellPass P = MapData.PassAt(C.X, C.Y);
+				if (P == CellPass::Blocked)
+				{
+					break;
+				}
+				Len = Next;
+			}
+			if (Len >= Height)
+			{
+				OutLength = Height;
+				return Dir;
+			}
+			if (Len > BestLen)
+			{
+				BestLen = Len;
+				Best = Dir;
+			}
+		}
+		OutLength = Max(BestLen, Fix::Zero());
+		return Best;
+	}
+
+	void World::RelabelRegions()
+	{
+		for (size_t K = 0; K < RegionClearances.size(); ++K)
+		{
+			Pathfinder::LabelRegions(MapData, RegionClearances[K], RegionLabels[K]);
+		}
+		bRegionsStale = false;
+		RegionsLabeledAt = CurrentTick;
+	}
+
+	void World::UpdateCrush()
+	{
+		if (!PropDefs.empty())
+		{
+			// o contato: o objeto de pé dentro da caixa do casco de quem esmaga e se mexeu neste passo (andou, girou ou foi
+			// empurrado: o tanque que gira parado em cima do carro esmaga); o objeto pela ordem do índice, o esmagador de
+			// menor Id ganha (o mesmo em todo PC)
+			const Fix Pad = Fix::Zero();
+			for (size_t K = 0; K < PropDefs.size(); ++K)
+			{
+				const PropSetup& P = PropDefs[K];
+				PropState& St = Props[K];
+				const bool bTree = P.Kind == PropKind::Tree;
+				if ((bTree && St.State != 0) || (!bTree && St.State == 3))
+				{
+					continue;
+				}
+				const Fix Reach = (bTree ? P.HalfLength : P.HalfLength + P.HalfWidth) + MaxUnitRadius * 2;
+				// o carro: os 3 pontos do ZH no eixo dele (frente, meio, traseira, a ±1/4 do comprimento)
+				const Vec2 Axis = Vec2::FromAngle(P.Facing);
+				const Vec2 Points[3] = { P.Pos + Axis * (P.HalfLength / 2), P.Pos, P.Pos - Axis * (P.HalfLength / 2) };
+				EntityId PointBy[3] = { NoEntity, NoEntity, NoEntity };
+				int32_t PointUnit[3] = { -1, -1, -1 };
+				Fix PointSide[3];
+				EntityId TreeBy = NoEntity;
+				int32_t TreeUnit = -1;
+				Fix TreeAlong, TreeSide;
+				ForEachNear(P.Pos, Reach, [&](int32_t J)
+				{
+					const UnitDef& DJ = DefOf(J);
+					// o carro só pra quem esmaga (o nível do ZH); (v4, 23/10) a árvore também pra quem bate com energia pra derrubar.
+					// (revisão de 23/10) A energia é a da velocidade de cruzeiro, a mesma que abre a célula da árvore no caminho
+					// (MobilityOfDef): quem tem massa e motor pra derrubá-la no choque também a empurra até cair num toque lento
+					// (separado pelo aliado parado, ou freado na curva). Pela velocidade da hora, o caminhão a menos de 2,8 m/s
+					// entrava na célula aberta e atravessava o tronco de pé
+					const bool bCrushes = DJ.CrusherLevel > int32_t(P.CrushableLevel);
+					if (DJ.IsStructure() || !(bCrushes || (bTree && KnocksOver(DJ, DJ.MaxSpeed, TreeToppleEnergyJ))) || size_t(J) >= PrePos.size())
+					{
+						return;
+					}
+					if (U.Pos[J] == PrePos[size_t(J)] && U.Hull[J] == PreHull[size_t(J)])
+					{
+						return;   // parado: não esmaga (o ZH também exige o esmagador andando)
+					}
+					if (bTree)
+					{
+						Fix A, S;
+						if (InHull(P.Pos, U.Pos[J], U.Hull[J], DJ.HullHalfLength, DJ.HullHalfWidth, P.HalfLength, A, S) && (TreeBy == NoEntity || U.Id[J] < TreeBy))
+						{
+							TreeBy = U.Id[J];
+							TreeUnit = J;
+							TreeAlong = A;
+							TreeSide = S;
+						}
+						return;
+					}
+					for (int32_t Pt = 0; Pt < 3; ++Pt)
+					{
+						Fix A, S;
+						if (InHull(Points[Pt], U.Pos[J], U.Hull[J], DJ.HullHalfLength, DJ.HullHalfWidth, Pad, A, S) && (PointBy[Pt] == NoEntity || U.Id[J] < PointBy[Pt]))
+						{
+							PointBy[Pt] = U.Id[J];
+							PointUnit[Pt] = J;
+							PointSide[Pt] = S;
+						}
+					}
+				});
+				if (bTree)
+				{
+					if (TreeUnit < 0)
+					{
+						continue;
+					}
+					const int32_t J = TreeUnit;
+					const UnitDef& DJ = DefOf(J);
+					// a normal da face do casco que bateu + 0,5 × a frente: de frente cai pra frente, de raspão pro lado
+					const Vec2 Fwd = Vec2::FromAngle(U.Hull[J]);
+					const Vec2 Right = Vec2::Make(-Fwd.Y, Fwd.X);
+					const bool bEnd = (Abs(TreeAlong) - DJ.HullHalfLength) > (Abs(TreeSide) - DJ.HullHalfWidth);
+					const Vec2 Normal = bEnd ? (TreeAlong.Raw >= 0 ? Fwd : -Fwd) : (TreeSide.Raw >= 0 ? Right : -Right);
+					const Vec2 Push = Normal + Fwd * Fix::Half();
+					Fix Length;
+					St.FallDir = FreeFall(P.Pos, Push == Vec2::Zero() ? U.Hull[J] : Push.Heading(), P.Height, Length);
+					St.FallLength = Length;
+					St.State = 1;
+					St.At = CurrentTick;
+					St.By = U.Id[J];
+					ReleaseProp(int32_t(K));
+					if (U.CrushSlowLeft[J] < TreeSlowTicks)
+					{
+						U.CrushSlowLeft[J] = U.CrushSlowTotal[J] = TreeSlowTicks;
+						U.CrushSlowFloor[J] = U.CrushSlowLeft[J] > 0 ? std::min(U.CrushSlowFloor[J], TreeSlowFloorPermille) : TreeSlowFloorPermille;
+					}
+					const int64_t SpeedCm = (U.Speed[J] * Fix::FromInt(int64_t(TicksPerSecond) * 100)).Round();
+					Events.push_back({ EventType::PropToppled, U.Id[J], EntityId(K), P.Pos,
+						int32_t(St.FallDir.Bam) | int32_t((SpeedCm < 0 ? 0 : (SpeedCm > 32767 ? 32767 : SpeedCm)) << 16) });
+					continue;
+				}
+				// o carro: o meio esmaga os dois lados; a frente e a traseira, o seu
+				const uint8_t Before = St.State;
+				for (int32_t Pt = 0; Pt < 3; ++Pt)
+				{
+					const int32_t J = PointUnit[Pt];
+					if (J < 0)
+					{
+						continue;
+					}
+					const uint8_t Bits = Pt == 0 ? 1 : (Pt == 2 ? 2 : 3);
+					const uint8_t New = uint8_t(Bits & ~St.State);
+					if (New == 0)
+					{
+						continue;
+					}
+					St.State = uint8_t(St.State | New);
+					St.Side = PointSide[Pt].Raw > 0 ? 1 : 0;
+					St.At = CurrentTick;
+					St.By = U.Id[J];
+					U.CrushSlowLeft[J] = U.CrushSlowTotal[J] = CarSlowTicks;
+					U.CrushSlowFloor[J] = CarSlowFloorPermille;
+					Events.push_back({ EventType::PropCrushed, U.Id[J], EntityId(K), Points[Pt], int32_t(New) | (int32_t(St.Side) << 2) | (int32_t(U.Hull[J].Bam) << 16) });
+				}
+				if (Before == 0 && St.State != 0)
+				{
+					// achatou: a célula abre já no primeiro esmagar (a carcaça que morrer em cima não trava)
+					ReleaseProp(int32_t(K));
+				}
+			}
+		}
+		for (int32_t I = 0; I < UnitCount(); ++I)
+		{
+			if (U.CrushSlowLeft[I] > 0 && --U.CrushSlowLeft[I] == 0)
+			{
+				U.CrushSlowFloor[I] = 1000;
+			}
+		}
+		if (bRegionsStale && CurrentTick - RegionsLabeledAt >= TickNumber(RegionRelabelTicks))
+		{
+			RelabelRegions();
+		}
 	}
 }

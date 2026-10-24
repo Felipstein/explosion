@@ -11,6 +11,10 @@
 
 #include "CoreMinimal.h"
 #include "Sim/SimMap.h"
+#include "Sim/World.h"
+#include "UObject/WeakObjectPtrTemplates.h"
+
+class UInstancedStaticMeshComponent;
 
 class UWorld;
 struct FRTSMapInfo;
@@ -55,6 +59,16 @@ struct FRTSBakedMap
 	float GroundZCm(const FVector2D& Cm) const;
 	/** Normal do chão no ponto (diferenças centrais), pra inclinar o tanque. */
 	FVector GroundNormal(const FVector2D& Cm) const;
+
+	/** (16/10) Os carros e as árvores que o tanque esmaga e derruba (docs/ESMAGAR_E_DERRUBAR.md), em ordem fixa (o índice
+	 *  é o do evento), e de onde cada um é desenhado: a peça da vila (o id no village.json, −1 nenhuma) ou a instância da
+	 *  árvore no mapa. */
+	TArray<Sim::PropSetup> Props;
+	TArray<int32> PropPiece;
+	TArray<TWeakObjectPtr<UInstancedStaticMeshComponent>> PropIsm;
+	TArray<int32> PropIsmIndex;
+	int32 TreeProps = 0;
+	int32 CarProps = 0;
 };
 
 namespace RTSMapBaker

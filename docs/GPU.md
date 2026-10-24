@@ -18,7 +18,8 @@ finally { powershell -NoProfile -File $q leave -Owner "..." }
 ```
 
 A fila escreve a trava abaixo e espera qualquer Unreal com janela de fora, então quem ainda usa só a
-trava continua respeitado. O `FXLab/Tools/fxlab.ps1 shot` usa a fila.
+trava continua respeitado. Desde 14/10 isso inclui o **jogo empacotado** (`RTSGame.exe` sem `-nullrhi`):
+quando o Felipe joga a versão do pacote, todos esperam, como manda "teste dele é dele". O `FXLab/Tools/fxlab.ps1 shot` usa a fila.
 
 ## A regra (a trava)
 

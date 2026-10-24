@@ -6,8 +6,29 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
+#include "RTSUnitActor.h"
+
+namespace
+{
+	/** O topo (cm) das unidades e prédios que cobrem o ponto (com 1,5 m de folga); sem nenhum, bem abaixo do chão. Eles não
+	 *  têm colisão: vale a caixa das peças de cada um. */
+	float UnitTopZCm(const UWorld* World, const FVector2D& Cm)
+	{
+		float Top = -1.0e9f;
+		for (TActorIterator<ARTSUnitActor> It(World); It; ++It)
+		{
+			const FBox Box = It->GetComponentsBoundingBox(true);
+			if (Box.IsValid && Cm.X >= Box.Min.X - 150.0 && Cm.X <= Box.Max.X + 150.0 && Cm.Y >= Box.Min.Y - 150.0 && Cm.Y <= Box.Max.Y + 150.0)
+			{
+				Top = FMath::Max(Top, float(Box.Max.Z));
+			}
+		}
+		return Top;
+	}
+}
 
 ARTSCameraPawn::ARTSCameraPawn()
 {
@@ -58,6 +79,11 @@ float ARTSCameraPawn::CurvePitch(float D) const
 	}
 	const float T = FMath::Clamp((D - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
 	return FMath::Lerp(DefaultPitchDeg, FarPitchDeg, FMath::SmoothStep(0.0f, 1.0f, T));
+}
+
+float ARTSCameraPawn::GetFieldOfViewDeg() const
+{
+	return Camera ? Camera->FieldOfView : FieldOfViewDeg;
 }
 
 void ARTSCameraPawn::JumpTo(const FVector2D& Cm)
@@ -129,6 +155,15 @@ void ARTSCameraPawn::ApplyInput(const FInput& In, float DeltaSeconds)
 	{
 		bGliding = false;   // o jogador pegou a câmera
 	}
+	const bool bAnyInput = !In.PanAxis.IsNearlyZero() || !In.DragPan.IsNearlyZero() || In.bReset || In.YawDelta != 0.0f || In.PitchDelta != 0.0f || In.ZoomSteps != 0.0f;
+	if (bScenarioView)
+	{
+		if (!bAnyInput)
+		{
+			return;   // a vista da cena fica, mesmo mais perto que o zoom do jogador
+		}
+		bScenarioView = false;
+	}
 	if (In.bReset)
 	{
 		// volta o giro (pelo caminho mais curto), a inclinação e o zoom do padrão
@@ -137,11 +172,16 @@ void ARTSCameraPawn::ApplyInput(const FInput& In, float DeltaSeconds)
 		TargetDistanceM = DefaultDistanceM;
 	}
 	Yaw += In.YawDelta;
-	// o botão do meio deita por cima da curva; o total fica entre quase horizontal e quase de cima
+	// o botão do meio deita por cima da curva; o total vai de quase de cima até olhar pro céu (abaixo da MinFreePitchDeg a
+	// vista gira em volta do olho: a inclinação negativa é o quanto ela sobe acima do horizonte)
 	const float Curve = CurvePitch(TargetDistanceM);
-	FreePitch = FMath::Clamp(FreePitch + In.PitchDelta, MinFreePitchDeg - Curve, MaxFreePitchDeg - Curve);
+	FreePitch = FMath::Clamp(FreePitch + In.PitchDelta, -MaxLookUpDeg - Curve, MaxFreePitchDeg - Curve);
 	// zoom em passos multiplicativos (cada clique da roda ~12%)
-	TargetDistanceM = FMath::Clamp(TargetDistanceM * FMath::Pow(0.88f, In.ZoomSteps), MinDistanceM, MaxDistanceM);
+	// (16/10, o Felipe pelo Look) -RTSCameraHigh: só de teste, o zoom sobe até 20 km pra ver as nuvens de cima (2,5–11,5 km);
+	// acima do zoom do jogo, cada clique anda 1,43× (umas 14 voltas da roda até o teto)
+	static const bool bHighCamera = FParse::Param(FCommandLine::Get(), TEXT("RTSCameraHigh"));
+	const float ZoomStep = bHighCamera && TargetDistanceM >= MaxDistanceM ? 0.7f : 0.88f;
+	TargetDistanceM = FMath::Clamp(TargetDistanceM * FMath::Pow(ZoomStep, In.ZoomSteps), MinDistanceM, bHighCamera ? 20000.0f : MaxDistanceM);
 
 	// a rolagem segue a vista: "frente" é pra onde a câmera olha, no chão
 	const FVector Forward = FRotator(0.0f, Yaw, 0.0f).Vector();
@@ -184,33 +224,33 @@ void ARTSCameraPawn::UpdateCamera(float DeltaSeconds)
 	YawShown += (Yaw - YawShown) * K;
 	FreePitchShown += (FreePitch - FreePitchShown) * K;
 	const float Curve = bMenuMode ? 24.0f : CurvePitch(DistanceM);
-	Pitch = FMath::Clamp(Curve + FreePitchShown, MinFreePitchDeg, MaxFreePitchDeg);
+	Pitch = FMath::Clamp(Curve + FreePitchShown, bMenuMode ? MinFreePitchDeg : -MaxLookUpDeg, MaxFreePitchDeg);
 	const float Ground = GroundZ(FVector2D(Focus.X, Focus.Y));
 	SmoothedGroundZ = DeltaSeconds > 0.0f ? FMath::FInterpTo(SmoothedGroundZ, Ground, DeltaSeconds, 4.0f) : Ground;
-	const FRotator View(-Pitch, YawShown, 0.0f);
+	// o olho orbita até a inclinação mínima; dali pra baixo ele fica e só a vista sobe (o FPS)
+	const float OrbitPitch = FMath::Max(Pitch, MinFreePitchDeg);
+	const FRotator View(-OrbitPitch, YawShown, 0.0f);
 	const FVector Target(Focus.X, Focus.Y, SmoothedGroundZ);
 	// a câmera gira em volta do ponto olhado na mesma distância: deitada, ela desce perto do chão
 	// (a vista das artes); nunca abaixo do relevo embaixo dela
 	FVector Eye = Target - View.Vector() * DistanceM * 100.0f;
-	const float Floor = GroundZ(FVector2D(Eye.X, Eye.Y)) + 300.0f;
+	// (17/10 noite) e acima do topo do prédio ou do tanque embaixo dele (+2 m): de perto (10 m, "quase encostando no tanque")
+	// o olho entrava na parede (a vitrine do teste via o prédio por dentro)
+	const float Floor = FMath::Max(GroundZ(FVector2D(Eye.X, Eye.Y)) + 300.0f, bMenuMode ? -1.0e9f : UnitTopZCm(GetWorld(), FVector2D(Eye.X, Eye.Y)) + 200.0f);
 	if (!bMenuMode && Eye.Z < Floor)
 	{
 		Eye.Z = Floor;
 	}
-	SetActorLocationAndRotation(Eye, bMenuMode ? View : (Target - Eye).Rotation());
-	// (13/10, a caça ao mergulho da câmera: o BlastLab viu a vista deitada e embaixo do chão por ~0,7 s no fim da cena
-	// carcaca) o log quando a câmera fica baixa ou deitada, com tudo o que entra na conta
-	if (!bMenuMode && (Pitch < 12.0f || Eye.Z - Ground < 1500.0f || !FMath::IsFinite(Eye.Z)))
+	FRotator ViewRot = bMenuMode ? View : (Target - Eye).Rotation();
+	if (!bMenuMode && Pitch < MinFreePitchDeg)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("RTS câmera baixa: foco (%.0f, %.0f) chão %.0f suave %.0f, inclinação %.1f (livre %.1f), distância %.1f m, olho (%.0f, %.0f, %.0f)"),
-			Focus.X, Focus.Y, Ground, SmoothedGroundZ, Pitch, FreePitchShown, DistanceM, Eye.X, Eye.Y, Eye.Z);
+		// a vista sobe a partir da mirada no ponto olhado (sem salto na passagem), até MaxLookUpDeg acima do horizonte
+		ViewRot.Pitch = FMath::Min(ViewRot.Pitch + (MinFreePitchDeg - Pitch), MaxLookUpDeg);
 	}
-	// o campo de visão: mais fechado de longe, mais aberto com a câmera deitada
-	const float Zoom = FMath::Clamp((DistanceM - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
-	const float Low = FMath::Clamp((25.0f - Pitch) / 20.0f, 0.0f, 1.0f);
-	const float Fov = FMath::Lerp(FMath::Lerp(FieldOfViewDeg, FarFieldOfViewDeg, Zoom), LowPitchFieldOfViewDeg, FMath::SmoothStep(0.0f, 1.0f, Low));
-	Camera->SetFieldOfView(bMenuMode ? FieldOfViewDeg : Fov);
-	// o tremor: ruído (não seno), ~25 Hz, apagando em ~0,35 s
+	// o tremor: ruído (não seno), ~25 Hz, apagando em ~0,35 s; no olho, pros lados e pra cima da vista.
+	// (14/10, o "mergulho" que o Felipe e o BlastLab viram: a câmera é a raiz do ator, então o deslocamento "relativo"
+	// dela era a posição no mundo: em toda explosão a vista ia pro centro do mapa, no chão e de lado, enquanto durava
+	// o tremor)
 	if (ShakeCm > 0.0f)
 	{
 		ShakeAge += DeltaSeconds;
@@ -218,13 +258,19 @@ void ARTSCameraPawn::UpdateCamera(float DeltaSeconds)
 		if (Env < 0.02f)
 		{
 			ShakeCm = 0.0f;
-			Camera->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
 		}
 		else
 		{
 			const float T = ShakeAge * 25.0f + ShakeSeed;
-			const FVector Off(0.0f, FMath::PerlinNoise1D(T) * ShakeCm * Env, FMath::PerlinNoise1D(T + 37.1f) * ShakeCm * Env);
-			Camera->SetRelativeLocationAndRotation(Off, FRotator(0.0f, 0.0f, FMath::PerlinNoise1D(T + 71.3f) * 0.15f * Env));
+			const FRotationMatrix M(ViewRot);
+			Eye += M.GetScaledAxis(EAxis::Y) * (FMath::PerlinNoise1D(T) * ShakeCm * Env) + M.GetScaledAxis(EAxis::Z) * (FMath::PerlinNoise1D(T + 37.1f) * ShakeCm * Env);
+			ViewRot.Roll += FMath::PerlinNoise1D(T + 71.3f) * 0.15f * Env;
 		}
 	}
+	SetActorLocationAndRotation(Eye, ViewRot);
+	// o campo de visão: mais fechado de longe. Deitar não mexe nele (17/10, o Felipe: "tem que ser sem essa mecanica de
+	// aumentar fov", liso como o WorldForge, que só gira em volta do ponto; a LowPitchFieldOfViewDeg ficou sem uso)
+	const float Zoom = FMath::Clamp((DistanceM - DefaultDistanceM) / FMath::Max(MaxDistanceM - DefaultDistanceM, 1.0f), 0.0f, 1.0f);
+	const float Fov = FMath::Lerp(FieldOfViewDeg, FarFieldOfViewDeg, Zoom);
+	Camera->SetFieldOfView(bMenuMode ? FieldOfViewDeg : Fov);
 }

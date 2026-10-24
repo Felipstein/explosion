@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS World Props",
+	"Description": "O desenho das peças do mundo que o tanque derruba (docs/WORLDFORGE.md §12.8): por enquanto os fios de luz soltos quando o poste cai (balançam, arrebentam acima de 1,5× o comprimento e deitam no chão). Só desenho; nada volta pra simulação. Feito no WorldForge; o jogo chama.",
+	"Category": "RTS",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "RTSWorldProps",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

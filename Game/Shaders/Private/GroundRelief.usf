@@ -34,10 +34,39 @@ float RangeCm;
 float GrooveCm;         // o sulco fresco
 float BermCm;           // a bordinha fresca
 float BermWidthCm;      // a largura da bordinha fresca (cresce com a idade)
+float BandScale;        // a folga da curva (16/10, a v3): a faixa e a bordinha vêm gravadas ÷ isso no perfil
+float BermScale;
+float HaloCm;           // o halo revirado além da trilha (16/10, a v3; Prose 1985): só no A; 0 = sem
 float2 WorldMinCm;      // o canto do caderno no mundo (o ruído fica preso no chão quando o caderno anda)
 float2 SunDir;          // pra onde fica o sol, no chão (unitário)
 float SunTan;           // tangente da elevação do sol
 float PenumbraCm;       // a borda da sombra (o sol não é um ponto)
+
+// (16/10) o tipo de chão (o surface.png do WorldForge: R asfalto, G terra batida, B pedra, A molhado; a areia é o resto)
+Texture2D SurfaceTex;
+float2 SurfaceMinCm;
+float SurfaceInvSizeCm;
+int UseSurface;
+float4 SurfDepth;       // o sulco por tipo: x areia, y terra, z pedra, w asfalto
+float4 SurfBerm;        // a bordinha
+float4 SurfClaw;        // a garra
+float3 SurfWet;         // o molhado na areia e na terra (o barro): × o sulco, a bordinha e a garra
+
+// os pesos (x areia, y terra, z pedra, w asfalto; somam 1) e o barro (o molhado na parte macia)
+float4 SurfaceWeights(float2 WorldCm, out float Mud)
+{
+	Mud = 0.0;
+	if (UseSurface == 0)
+	{
+		return float4(1, 0, 0, 0);
+	}
+	const float4 S = SurfaceTex.SampleLevel(LinearSampler, (WorldCm - SurfaceMinCm) * SurfaceInvSizeCm, 0);
+	const float Sum = S.r + S.g + S.b;
+	const float3 N = Sum > 1.0 ? float3(S.r, S.g, S.b) / Sum : float3(S.r, S.g, S.b);
+	const float4 W = float4(saturate(1.0 - N.x - N.y - N.z), N.y, N.z, N.x);
+	Mud = S.a * (W.x + W.y);
+	return W;
+}
 
 float HashN(float2 P)
 {
@@ -66,7 +95,7 @@ void HeightCS(uint3 Id : SV_DispatchThreadID)
 	const int2 P = Origin + int2(Id.xy);
 	const float2 UV = (float2(P) + 0.5) * Texel;
 	const float4 C = ProfileTex.SampleLevel(LinearSampler, UV, 0);
-	const float Band = C.r;
+	const float Band = C.r * BandScale;
 	const float Age = saturate(1.0 - C.b);
 	// a bordinha alarga com a idade (9 cm → 20 cm): o carimbo é o da fresca, então ela cresce por uma
 	// dilatação de 1,2 × idade × a largura, sem perder a altura do pico
@@ -77,13 +106,41 @@ void HeightCS(uint3 Id : SV_DispatchThreadID)
 		const float2 D = float2(K == 0 ? 1 : (K == 1 ? -1 : 0), K == 2 ? 1 : (K == 3 ? -1 : 0));
 		Wide = max(Wide, ProfileTex.SampleLevel(LinearSampler, UV + D * Texel * R, 0).g);
 	}
-	const float Berm = max(C.g, 0.85 * Wide);
+	const float Berm = max(C.g, 0.85 * Wide) * BermScale;
+	// (16/10) o tipo de chão embaixo: o sulco e a bordinha de cada um (o barro mais fundo e espremido)
+	float Mud;
+	const float4 Sw = SurfaceWeights(WorldMinCm + (float2(P) + 0.5) * TexelCm, Mud);
+	const float DepthK = dot(Sw, SurfDepth) * lerp(1.0, SurfWet.x, Mud);
+	const float BermK = dot(Sw, SurfBerm) * lerp(1.0, SurfWet.y, Mud);
 	// a marca nunca é uniforme (areia mais firme ou mais solta): 2 oitavas a 1,6 por metro, presas no mundo
 	const float2 W = (WorldMinCm + (float2(P) + 0.5) * TexelCm) * 0.016;
 	const float N = (ValueNoise(W) * 0.667 + ValueNoise(W * 2.03 + 17.1) * 0.333);
-	const float H = (-GrooveCm * (1.0 - 0.45 * Age) * 0.75 * Band + BermCm * (1.0 - 0.3 * Age) * Berm) * (0.65 + 0.7 * N);
-	const float Churn = saturate(max(Band, 0.6 * Berm));
-	OutTex[P] = float4(saturate(0.5 + H / (2.0 * RangeCm)), Churn > 0.01 ? Age : 1.0, 1.0, Churn);
+	const float H = (-GrooveCm * (1.0 - 0.45 * Age) * 0.75 * Band * DepthK + BermCm * (1.0 - 0.3 * Age) * Berm * BermK) * (0.65 + 0.7 * N);
+	// o revolvido (o A: a MF pinta a areia mexida por ele): a pedra marca metade, o asfalto nada (a areia trazida de fora
+	// fica pra depois: o formato do Look, 16/10)
+	const float Churn = saturate(max(Band, 0.6 * Berm)) * (Sw.x + Sw.y + 0.5 * Sw.z);
+	// (16/10, o formato do Look) a borracha no B, em todo chão (a MF só lê onde é asfalto ou laje): 0,3 no reto, até 1 na
+	// curva e no pivô (a faixa passa de 1 na curva: a folga BandScale); só na v3 (na v2 o B é a sombra do SunCS)
+	const float Curve01 = BandScale > 1.001 ? saturate((Band - 1.0) / (BandScale - 1.0)) : 0.0;
+	const float Rubber = saturate(Band) * (0.3 + 0.7 * Curve01);
+	// o halo: a terra revirada até HaloCm além da faixa e da bordinha, de 0,5 a 0 (a MF faz o tom e a rugosidade)
+	float Halo = 0.0;
+	if (HaloCm > 0.0)
+	{
+		[unroll] for (int Dk = 0; Dk < 8; ++Dk)
+		{
+			const float An = float(Dk) * 0.78539816;
+			const float2 Dir = float2(cos(An), sin(An));
+			[unroll] for (int Kk = 0; Kk < 3; ++Kk)
+			{
+				const float Rc = HaloCm * (float(Kk) + 0.5) / 3.0;
+				const float4 Sp = ProfileTex.SampleLevel(LinearSampler, UV + Dir * Texel * (Rc / TexelCm), 0);
+				Halo = max(Halo, 0.5 * (1.0 - Rc / HaloCm) * saturate(max(Sp.r * BandScale, Sp.g * BermScale)));
+			}
+		}
+		Halo *= Sw.x + Sw.y;   // (16/10) o revirado só na areia e na terra
+	}
+	OutTex[P] = float4(saturate(0.5 + H / (2.0 * RangeCm)), (Churn > 0.01 || Rubber > 0.01) ? Age : 1.0, BandScale > 1.001 ? Rubber : 1.0, max(Churn, Halo));
 }
 
 float CraterAt(float2 UV)
@@ -136,5 +193,6 @@ void SunCS(uint3 Id : SV_DispatchThreadID)
 	// a média de 5 pontos a meio texel: a sombra macia, sem degrau de texel (o Look borra duas vezes)
 	const float2 E = Texel * 0.5;
 	const float Sun = (SunAt(UV) * 2.0 + SunAt(UV + float2(E.x, 0)) + SunAt(UV - float2(E.x, 0)) + SunAt(UV + float2(0, E.y)) + SunAt(UV - float2(0, E.y))) / 6.0;
-	OutTex[P] = float4(C.r, C.g, Sun, C.a);
+	// (16/10) na v3 o B é a borracha (a luz é a assada, GroundSunLit): fica a da 1ª passada
+	OutTex[P] = float4(C.r, C.g, BandScale > 1.001 ? C.b : Sun, C.a);
 }

@@ -84,6 +84,16 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - o custo da passada da névoa, a medir com a placa livre.
 - [ ] **Minimapa também na sala de espera:** mapa com as bases e a escolha da largada.
 - [~] **Multiplayer de verdade** (jogo, 10/10: LAN pronta, sem o teste do Felipe). Feito: menu MULTIPLAYER (LAN), sala com até 8, cor por jogador, névoa do anfitrião, a montagem do anfitrião pra todos, lockstep com a impressão digital, volta de todos pra sala, mapa com 4 bases (`docs/MULTIPLAYER.md` Parte 7). Em 11/10: times na sala (aliados lado a lado, vitória do time), IA nas vagas, espectador de quem cai, névoa em 3 tipos (explorada, preta, desligada), a seta "enemy base" fora. Em 13/10 (N5, sem o teste do Felipe): a pausa pra todos, render-se e a queda com espera de 60 s e votação, como no ZH (`docs/MULTIPLAYER.md` Parte 7). Falta: reconexão, barras de carregamento, sinal no mapa, dar dinheiro, o online (último do jogo). Ver a seção 1.
+- [~] **A v4 (22–23/10, a Arte fazendo sozinha; sem o teste do Felipe, sem commit).** O pedido dele em 6 itens. O design e as
+  contas em `docs/V4_ARSENAL.md`:
+  - [~] a fumaça do Patriot sem as faixas cinza (os materiais da fumaça coletados pelo GC);
+  - [~] a poeira das lagartas fraquinha, lisa e sem a linha (`docs/POEIRA_DAS_LAGARTAS.md` §v4);
+  - [~] o dinheiro inicial de 10 a 50 mil no menu e na sala da LAN;
+  - [~] as carcaças afundam e somem aos ~48 s (a marca no chão fica);
+  - [~] a Supply Drop Zone (o avião a cada 70 s), a patente do general, o Cruise Missile Strike, o Tomahawk, o dano em área;
+  - [~] (23/10 à noite, a sessão sim, simulação 20, sem o teste do Felipe) **vender** (o botão Sell de todo prédio pronto; a zona de lançamento só tem ele: não produz, sem ponto de encontro): a fila volta na hora, a energia, a defesa e os poderes param já, o prédio desmonta 6 s como a obra ao contrário e some sem explodir com o "+$" de 50% do custo (o SellPercentage do ZH); **o conserto do Dozer** (o cursor da chave sobre o prédio avariado, o clique manda; 2% da vida cheia por segundo, de graça, um Dozer por prédio, como o DozerAIUpdate do ZH; o conserto sozinho do Dozer à toa ficou de fora: mexeria nos Dozers da IA); **o caminhão e o Tomahawk derrubam o poste e a palmeira** pelo choque (½·m·v² contra ~40 kJ do poste e ~60 kJ da palmeira; o carro eles seguem contornando); **a mira do Tomahawk** (o relógio `pre_attack_s` de 1 s desde o alvo no alcance, o míssil nascendo na boca do tubo levantado a 45°). As cenas: `v4_vender`, `v4_conserto`, `v4_cliques` (o conserto e o vender pelos cliques: "conserto_*" e "vender_*"; saíram do teste da base, que vendia a única usina dela), `v4_linha`, `v4_caminhao_postes`, `v4_tomahawk_palmeira`. Na revisão da noite: **quem atira parado segura o lugar** (o `moveAllies` do ZH: o aliado que chega contorna em vez de empurrar; o reforço empurrava o Tomahawk do cerco pra dentro do alcance da Patriot), e os testes da IA rodam com a mira de 1 s do jogo; a linha nunca passa da ponta puxada (o que não cabe no passo mínimo vai pra fileira de trás);
+  - [~] a IA usando tudo (20 partidas IA × IA: mediana 15,9 min, antes 5,4–6,5);
+  - [~] o sol a 18° (receita `uma_i1_s18c` no `World_TestSalt2`).
 - [~] **War Factory funcionando, com a mecânica original do ZH** (jogo, 10/10, sem o teste do Felipe): Command Center + Dozer, energia, construção, depósitos e caminhão, a fila da fábrica, a carga que cai, vitória por base, modelos provisórios. O que está feito: `docs/ECONOMIA.md` Parte 5. Ver a seção 1.
 
 ---
@@ -125,6 +135,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - **As mips dos cadernos** (o Look pediu, 16/10): o SunLit e o relevo da v3 nascem com a cadeia de mips, refeita por compute só no que mudou, até a mip 6, uma vez por quadro (`GroundMips.usf`). A MF do Look lê o SunLit com o Sample normal; o relevo ela troca de 4 leituras à mão pra 1 Sample. A cratera fica sem mip por enquanto.
     - O custo, A/B no mesmo binário (`-Cvars 'rts.Ground.Mips 0'`): com os dois cadernos a cada quadro, +0,4 ms (35,2 × 34,8). Com um caderno por quadro (o detalhe e o meio alternados) e até 4 retângulos, nenhum medível (34,5 × 34,6).
     - O `game.ps1` ganhou `-Cvars 'nome valor, ...'`, que entra no `-ExecCmds` (pros A/B de qualquer sessão).
+  - **A v3 liga pelo mapa** (o Look e o WorldForge pediram, 16/10): o mapa com `"ground_v3": true` no `Maps.json` liga a v3 sozinho (o World_TestGroundV3 e o World_TestGroundV3Dune já marcados; o TestSalt2 novo, quando o WorldForge remontar com o GROUNDV3); `-RTSNoGroundV3` desliga pro A/B, e `-RTSGroundV3` segue ligando em qualquer mapa.
   - **A luz da trilha velha:** o sulco perde até 45% em minutos, mas a luz só era refeita onde havia marca nova. Agora uma volta lenta refaz um ladrilho de 512 a cada 0,5 s, com a fila vazia (o detalhe inteiro em ~32 s, o meio em ~8 s). O sol que muda agora também é conferido com a fila vazia.
 - [~] **As cenas de teste:**
   - a câmera que anda (`camera.keys`);
@@ -219,6 +230,167 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
     - no simtest, o colega leva tiro em 4 passos, e o tiro no chão chega 8 vezes no ponto sem ferir ninguém, com o mesmo hash nas 3 compilações;
     - no jogo, Ctrl + clique esquerdo: na unidade ou no prédio, de qualquer dono, ataca; no chão, atira no ponto até mandarem outra coisa. O tiro no chão cava a cratera da arma;
     - o cenário de teste é o `tiro_chao`.
+- [ ] **v3, pedidos de 16/10 de manhã (o Felipe, antes de dormir: "pra fazerem depois que acabarem o que precisam fazer"; ele não estará pra decidir, então fazer como na noite de 16/10: estudo com fontes, 2ª opinião, prova no jogo lado a lado, A/B pra ele escolher, registrado aqui).** A regra dele pra todos: "tudo que tem um pouco mais de complexidade tem que ser construído pensando num jogo AAA que vai deixar arrepiando, a beleza, a construção e tudo relacionado".
+  1. **As torres de defesa da base funcionando, atacando inimigos:** bem pensadas, construídas, estruturadas, pesquisadas, analisadas e discutidas. (A Patriot já existe no jogo; vale pra ela e pras próximas defesas.) **Dono:** o jogo (a regra na simulação, a IA, o alvo); o Fluxo (o disparo, o míssil, o acerto); a Arte (o HUD e os ícones).
+     - **O Felipe, 16/10 às 10h:** "ele não atira projéteis igual tank, ele atira mísseis, mísseis projetando até fumaças e com explosão quando encosta no tanque, precisa pensar nisso, simular bem cada coisa; o BlastLab tinha simulado já fumaças na mão bonitas, mas tem que melhorar". **O jogo:** o míssil de verdade na simulação (sai da caixa, acelera, faz a curva atrás do alvo e explode no contato), com a posição de cada míssil a cada passo pro desenho seguir. **O Fluxo:** o corpo do míssil, a chama, o rastro de fumaça e a explosão no tanque.
+     - **O Felipe, 16/10 à tarde (de novo):** "não esqueça que o Patriot solta mísseis com fumaça e não borrões brancos igual tiro de tanque ... o BlastLab fazia um míssil modelado bem provisório com uma fumaça gerada atrás bem simulada, bem bonita, que era até interagível com aviões: onde passava empurrava a fumaça; mas eu não tô falando pra pegar nada de lá nem enviesar, tô falando pra ser inteligente, fazer algo bem pensado, bem estruturado, bem consultado, bem inspirado, algoritmos, matemática, bem simulado, bem gerado".
+       - **O rastro tem de ser fumaça simulada**, que espalha, deriva com o vento e é empurrada por quem passa (os veículos e as explosões). Não pode ser um risco branco.
+       - **O dono, combinado com o Fluxo (16/10):** o rastro inteiro é do jogo (`RTSMissileSmoke`); o Fluxo fica com a chama, a luz, o lançamento, o acerto, a ogiva e o laser, e desliga as fitas dele quando a fumaça do jogo está ligada (`SetExternalMissileSmoke`).
+       - **O jogo, 16/10 à tarde (escrito e conferido no espelho; na compilação 28, sem commit):** o estudo com as fontes em `docs/FUMACA_DO_MISSIL.md`.
+         - **Os puffs gaussianos** soltos a cada 0,45 m do caminho da simulação. A fumaça por metro é a vazão / a velocidade (5,5× mais densa perto da caixa).
+         - **A física:** o jato que abre; a subida do gás quente (a térmica em linha de Briggs); o vento do mapa no perfil logarítmico; os redemoinhos grandes sem divergência; o espalhamento de Richardson–Obukhov. A densidade cai sozinha, pela massa que se conserva.
+         - **Quem empurra:** o tanque (o ar em volta do casco e a esteira), o tiro e o outro míssil (o túnel), a ogiva e a morte (a bola de fogo abre a fumaça e o anel sobe e suga) e a boca do canhão.
+         - **A luz na unidade da cena:** o sol e o céu de verdade; a sombra de um puff no outro; o contraluz; a sombra no chão tão escura quanto a dos prédios.
+         - **Na frente de uma unidade,** a fumaça fica com no máximo τ 0,5.
+         - **A nuvem branca da ré da caixa** na largada.
+         - **A vida pelo preset:** 5, 8, 12 e 16 s. `-RTSNoMissileSmoke` volta pras fitas, pro A/B.
+       - **O 1º vídeo (compilação 28, `fumaca_atravessa1`, 14:13):**
+         - **Já lê como rastro de verdade:** puffs com borda em couve-flor, curva e deriva.
+         - **Os defeitos:**
+           - virou cortina em cima das duas baterias e do nosso tanque aos 6–8 s;
+           - a luz saiu chapada (o lado de costas pro sol não escurecia);
+           - a sombra no chão não apareceu (o quadrado ficava debaixo das dunas de verdade);
+           - custou 4,5 ms de CPU com 1.635 puffs.
+       - **A v2 (compilação 29):**
+         - menos densa (τ 1,6; até 3× perto da caixa) e mais curta (3; 4,5; 6; 8 s pelo preset, a turbulência acelerando de 2 a 5 s);
+         - a nuvem da largada menor; na frente de unidade e de prédio, no máximo τ 0,25;
+         - a sombra dentro da espessura do rastro;
+         - a sombra no chão pela profundidade da cena, que cai certa nas dunas e escurece o tanque que passa por baixo;
+         - os puffs com sorteio de lado e de tamanho;
+         - a luz em meio quadro e o custo de cada parte no log.
+       - **A v3/v4 (compilação 30, 15:14; os materiais consertados às 15:47):**
+         - o sol lido da luz do mapa pela CPU (o log: elevação 8°, (72 323; 31 702; 8 516) lux);
+         - a malha mais barata;
+         - `rts.MissileSmoke.Debug` 1/2.
+         - **O conserto dos materiais:** das 15:14 às 15:47 eles não compilavam (um `.w` num parâmetro float3), e quem testou míssil nessa janela viu a grade cinza.
+         - **A prova da sombra (`fumaca_sombra`, o rastro de través ao sol):** ela cai ao lado do rastro, esticada pelo sol baixo. Na força normal é sutil (o céu do fim de tarde enche a sombra); com `Debug 2`, 4× mais escura, fica clara. As imagens: `captures/game/entrega_v3/fumaca_sombra_normal_x_4x.jpg`.
+         - **O custo medido:** 2,3–3,2 ms de CPU com ~1.300 puffs no ultra (a malha 0,9–1,9). Ainda alto: o passo seguinte é a simulação na GPU.
+       - **A compilação 31 (17:21), pelo teste do Fluxo (patriot_v2):**
+         - **A caixa da Patriot estava ao contrário:** o modelo tem as bocas no −X da malha. A ficha visual ganhou `turret_yaw_offset_deg` (180 na Patriot), e o míssil, as tampas e o clarão saem pela boca.
+         - **A leitura pela soma:** o limite de τ 0,25 valia por puff, e o rastro virava um banco de nuvem em cima dos tanques. Agora o τ é somado no raio da câmera até cada unidade e rareia na proporção. No `patriot31` os tanques ficam limpos; a bateria aparece por baixo da nuvem da largada.
+       - **A luz do mundo (16/10 à noite, compilações 33–35; sem commit), pela regra nova do CLAUDE.md** (toda fumaça tem volume, recebe a sombra do mapa, faz sombra e é acesa pelo fogo e pelas explosões):
+         - **As luzes perto** (o `RTSSceneLights` do Fluxo: as explosões, o fogo, os tiros):
+           - somadas por puff a cada quadro, com a mesma conta que acende o chão;
+           - vão pro material na cor do vértice (RGBE), com a direção na normal;
+           - a mesma fase e as mesmas oitavas do sol.
+           - O "calor da explosão" que brilhava sozinho saiu.
+           - **Medido no `fumaca_predio2_dbg3`:** até ~296 mil lux num puff, 4× o sol; milhares de puffs acesos acima de 1% do sol.
+         - **A sombra do mapa** (o `RTSSunShadow` da Arte, trazido pro jogo na 33):
+           - lida por pixel na fumaça, multiplica o sol em todas as oitavas;
+           - a sombra da fumaça no chão não escurece de novo o chão que já está na sombra (a sombra dupla).
+           - **A prova:** `captures/game/fumaca_predio2_dbg3`, com o `rts.MissileSmoke.Debug 3`, onde vermelho é sombra. A nuvem da largada no pé da Patriot, dentro da sombra da usina, fica vermelha; o resto do rastro, ao sol.
+         - **A ponte do jogo pro mapa do sol:**
+           - todos os veículos por `SetVehicles` a cada quadro: lagarta, roda e carcaça, com a caixa pelas malhas;
+           - os prédios prontos e já vistos por `AddShadowCaster`;
+           - as áreas que mudam por `RefreshShadowArea`: a palmeira e o poste depois de deitar, o carro depois de amassar, a pedra partida.
+       - **A v6 do visual (17/10 de madrugada, compilação 44 + material; sem commit; o padrão é a v6, a v5 fica no `rts.MissileSmoke.Look 5`):**
+         - **O porquê:** o Felipe pediu um vídeo de lado ("a fumaça tá ruim de ver nessa imagem, bem ruim"), e o vídeo mostrou uma parede branca larga e lisa.
+         - **O estudo do detalhe** (fontes no `docs/FUMACA_DO_MISSIL.md`) achou três causas:
+           - o ruído próprio de cada quadrado, girando, que vira média com ~5 sobrepostos;
+           - a normal de esfera lisa;
+           - o céu igual em cima e embaixo, e o "pó" do lado errado.
+         - **A v6:**
+           - o ruído preso ao mundo, no plano da vista e levado pelo vento: os quadrados sobrepostos leem o mesmo detalhe;
+           - a normal das bolotas grandes (o gradiente do ruído);
+           - a erosão de borda pelo limiar;
+           - o céu pelo hemisfério da normal, com o chão embaixo;
+           - o miolo grosso aceso como superfície;
+           - o rastro com 3/4 da vida e menos engorda.
+         - **As voltas:** a 6a riscava, com o ruído no chão esticado nos quadrados em pé; a 6b/6c ficavam em fiapos, com o ruído fino serrilhando sem mip; a 6d ficou boa.
+         - **A prova:** `captures/game/entrega_v3/fumaca_missil_v5_x_v6.jpg` e os vídeos `fumaca_missil_de_lado_v5_antes.mp4` e `_v6_nova.mp4`. A v6 sai mais fina, com bolotas sombreadas e os tanques limpos; ainda é mais macia que a couve-flor do vídeo de referência.
+       - **O diesel (16/10 à noite, compilações 34–36; sem commit):** o estudo e o plano em `docs/DIESEL_DO_TANQUE.md`.
+         - A fuligem é um tipo de puff na mesma fumaça, com a física, a luz, a sombra e a leitura.
+         - **O motor de cada veículo:** o acelerador, o turbo que atrasa e as marchas. A baforada sai na arrancada e nas trocas.
+         - **A ficha** (`visual.exhaust` no Units.json): o tanque, o Dozer (as duas chaminés) e o caminhão.
+         - **As voltas até aparecer (compilações 36–40):**
+           - a gravação começava depois da arrancada;
+           - o cruzeiro estava no número de um caminhão moderno;
+           - a cena tinha os veículos indo pra longe da câmera, e a regra de leitura cortava a fuligem que cobria a traseira deles (o registro mostrou o τ de 2,4 virando 0,57);
+           - a esteira do próprio veículo dilui o gás em ~0,5 s.
+         - **Hoje:** o diesel velho e sujo (k ~8 na baforada, ~1,7 no cruzeiro [E]) e o albedo medido do diesel (0,20).
+         - **A prova:** `captures/game/diesel_lado2`, com os veículos cruzando de lado. Atrás do Dozer sai a nuvem marrom-escura da fuligem com a poeira; o tanque na sombra da usina solta a fumaça acinzentada, acesa só pelo céu.
+         - **A leitura honesta:** com o sol de 8° deste mapa a areia fica fraca (o sol rasante), e a fuligem, que é volume, pega o sol cheio. Ela lê marrom-escura, não preta como no vídeo de referência. Mais preta que isso é escolha de gosto, fora da física.
+         - **A decisão do Felipe (17/10, ~01h):** "já que os tanques tecnológicos e o trator da USA não têm diesel, então pode tirar; a gente foca nisso quando chega nos tanques mais pesados a diesel". Saíram os três `visual.exhaust` do Units.json (o tanque, o Dozer e o caminhão).
+           - O sistema fica no código, parado sem ficha.
+           - Volta com a China e a GLA, com a fuligem que se vê (mais preta e por cima da poeira); ele disse que não via ("só vejo poeira atrás").
+     - **Feito no jogo (16/10, a simulação 15, compilado às 10:31; sem commit):**
+       - **O voo:** o míssil sai de uma das 4 caixas inclinado 35° a 20 m/s, as 4 da rajada em leque; acelera a 120 m/s² até 110 m/s; guia a 200°/s mirando onde o tanque vai estar; explode no contato.
+       - **O teste fora do jogo:** 16 voos, ~0,7 s cada, subindo ~5 m, 16 acertos; igual nas 3 compilações.
+       - **A ponte pro desenho:** `GetMissiles()`, cada míssil interpolado no quadro.
+       - **O provisório:** um risco quente por passo, até o desenho do Fluxo, que já propôs `MissileLaunch`, `MissileMove` e `MissileHit` (o item 4 dele, depois do tiro na areia).
+       - **A cena:** `patriot_missil`, no World_TestSandV2Dune.
+  2. **O tanque passando por cima dos carros civis na cidade e esmagando**, amassando, "bem bonito e de arrepiar" (o esmagar do ZH, `CrushableLevel`). **Dono:** o jogo (a regra na simulação, em ponto fixo, e o evento); o Look (o carro amassado: a malha e o material da carcaça, achatado e torcido); o Fluxo (o som visual: vidro, poeira, faísca do metal).
+  3. **O tanque passando por árvores, arbustos e pedras:** derruba a árvore, quebra ou amassa; amassa o arbusto no chão; quebra a pedra pequena ou sobe por cima da grande. **Dono:** o jogo (o evento e o "derrubado" na simulação); o WorldForge (as árvores, os arbustos e as pedras do mapa, a queda e o tombo); o Look (a vegetação amassada e deitada, o capim que fica morto deitado na trilha).
+  4. **Cada chão com o seu atributo, sob o tanque** (o pedido de 16/10 continua aqui): a areia macia, empurrada e desabando; a terra bem marcada, com a graminha morta deitada; o barro bem moldado; **o asfalto: a lagarta não afunda e não levanta areia; deixa a marca de borracha** (a análise de como o asfalto marca de verdade: a borracha escura nas curvas e no pivô, a poeira assentada que a lagarta limpa, o rastro de areia trazida de fora). **Dono:** o jogo (o perfil e o que levanta por tipo, pelo `surface.png`); o Look (a cor e a rugosidade de cada marca no material, a borracha no asfalto); a Arte (a poeira por tipo: nenhuma no asfalto limpo, já para no asfalto).
+     - **Andamento (16/10, manhã):** o formato combinado entre o jogo e o Look.
+       - **O jogo (escrito, compilação pendente):** o sulco, a bordinha e a garra por tipo, pelo surface.png (areia 1, terra 0,5, pedra 0,06, asfalto 0; o molhado vira barro). No asfalto R = 0,5, sem sulco. O B do relevo vira a borracha em todo chão (0,3 no reto, até 1 no pivô). `rts.Ground.Surface 0` desliga.
+       - **O WorldForge:** a entrada `UseRubber` no material (padrão 0).
+       - **O Look:** a borracha no code_v3 do `look_mf.py` (albedo ~0,035, rugosidade 0,6, some com a idade), onde a Surf diz asfalto e na laje. Liga quando o jogo puser UseRubber = 1 com o B novo.
+       - **Falta:** a prova no jogo depois da compilação, a areia trazida de fora pro asfalto (depois) e os blocos da sapata na borracha.
+     - **O jogo, 16/10 (os itens 2, 3 e 5):**
+       - **O estudo:** com o fonte do ZH e a 2ª opinião, em `docs/ESMAGAR_E_DERRUBAR.md`.
+       - **A simulação 16** (testada fora do jogo, igual nas 3 compilações):
+         - o tanque esmaga o carro e derruba a palmeira, e passa por cima no caminho; o caminhão e o Dozer contornam (o Dozer derruba palmeira);
+         - o freio leve: 85% voltando em 0,5 s;
+         - a palmeira cai pra frente e desvia do prédio.
+       - **O provisório do desenho:** o carro achata e torce; a palmeira cai pela vara que tomba e fica deitada; o tanque dá o tranco.
+       - **Pela 2ª opinião:** os postes, as caixas, as pedras e os arbustos ficam só no desenho, porque não mudam o caminho. Vêm depois.
+       - **Mais, 16/10 (compilando):**
+         - o poste cai pela vara quando o tanque bate, e o fio arrebenta com o clarão azul e as faíscas;
+         - as peças pequenas da vila (caixa, barril, pneu, caixa d'água, antena, varal, cerca) amassam sob qualquer veículo.
+         - **O desenho:** os dois só no desenho, pelas posições do passo.
+         - **O teste esm_carro1 (antes disso):** o carro achatou; o tanque passou por dentro do poste e das caixas, e é isso que estes dois consertam.
+       - **16/10 à tarde, com o WorldForge e o Fluxo (sem commit):**
+         - **O fio (compilação 28):** o vão do poste derrubado vira fio solto, o plugin `RTSWorldProps` do WorldForge (Verlet: balança, arrebenta acima de 1,5× o comprimento e deita no chão), com a ponta seguindo a cruzeta do poste que cai.
+           - **O arco provisório:** o clarão pequeno que pisca e o metal quente laranja caindo, na quebra e na ponta viva no chão, em rajadas como o religador da rede (de novo a +0,6 s e +2,2 s); a marquinha queimada na areia.
+           - **O arco final** é do Fluxo (`docs/ESTUDO_ESMAGAR_E_POSTE.md`), trocando o `WireArc`.
+         - **A palmeira (compilação 28):** o toco fica de pé e o tronco cai pela quebra a 0,8 m até a ponta tocar o chão; a copa atrasa, chicoteia no impacto e assenta pelo material do WorldForge (CustomPrimitiveData 1–4). A cena é a `palmeira_toco` (World_TestTrample).
+         - **A pedra pequena (compilação 29):** a do RockSmall parte no lugar sob o tanque e o Dozer (a `_Broken` do WorldForge), com o pó fino e um tranco. A grande fica.
+         - **O carro (compilação 29):** o efeito do Fluxo (`CarCrushStart`/`CarCrushEnd`: o vidro que estoura e pisca ao sol, as lanternas, os pneus, a poeira e o raspão), pela passagem da lagarta; o pisca-alerta em metade dos carros.
+         - **O capim (compilação 28):** as plantas da montagem (etiqueta `WorldForgeTrample`) leem o caderno da batalha e a trilha fresca: o WorldForge deita e escurece pelo material (`UseTrample`).
+       - **A defesa (o item 1, a simulação 17, compilando):**
+         - a ajuda entre as baterias, o AssistedTargeting do ZH, com o laser vermelho provisório entre elas;
+         - a defesa larga o alvo que os mísseis no ar já vão matar.
+         - **O teste:** duas Patriot, 8 tiros cada, o tanque cai; igual nas 3 compilações.
+       - **As cenas:** `esmagar_carro` e `derrubar_palmeira`.
+       - **O estado:** compilando, sem commit.
+  4b. **O sulco por tipo de chão (o item 4), 16/10:**
+     - **A regra:** por pixel, pelo surface.png do mapa. A areia fica como a trilha aprovada; a terra rasa e nítida; o barro fundo e espremido; a pedra quase nada; o asfalto sem sulco, com a borracha no B do relevo (o formato do Look: forte na curva e no pivô).
+     - **A tabela com as fontes:** em `docs/CHAO_V3_ESTUDO.md` §12.
+     - **O desligar:** `rts.Ground.Surface 0`.
+     - **O estado:** compilando, sem commit.
+  5. **O tanque derrubando os postes de energia da cidade, com o choque elétrico:** "bem realista, bem pensado, bem colocado, bem desenhado, bonito e realista de AAA, de arrepiar, não algo mal feito". (Já estava pedido em 13/10, item de baixo.) **Dono:** o jogo (o empurrão e o evento); o WorldForge (os postes e os fios com física); o Fluxo e a Arte (o arco, as faíscas e o clarão, pelo EmberGen ou pelo FXLab).
+- [ ] **A câmera olha pra cima, como num FPS, na partida** (o Felipe, 16/10: "pode olhar pra cima também, como se fosse um FPS, é o que eu vou permitir na gameplay do jogo, igual como o WorldForge funciona hoje quando seguro o scroll e giro"). Hoje a inclinação livre para em 3° abaixo do horizonte (`MinFreePitchDeg`). **Dono:** o jogo (a câmera). **O Look acompanha:** com o céu inteiro à vista (até o zênite, que antes nunca aparecia), o azul do alto, as nuvens em cima do mapa e o sol entram na conta; a exposição ao deitar e o céu destravado passam a valer pra olhar pra cima também.
+- [~] **A torre do tanque morto com física de verdade** (o Felipe, 16/10 de manhã, "pode ser um dos últimos"): hoje ela "voa pra cima, gira estranho, cai estranho e depois fica voando, não cai no chão, não tem física nenhuma". Tem que interagir com o chão e com o que estiver em volta, cair, quicar, rolar e parar, como no mundo real. **Dono:** o jogo (o arremesso da torre é o `RTSUnitActor`); o Fluxo (o rastro de fumaça e as faíscas da torre voando, `BlastDebris.cpp:610`).
+  - **O jogo, v4 (23/10, o Felipe de novo: "ela só voa e fica voando dps"):** a torre virou um corpo rígido de verdade (`RTSLooseTurret.h/.cpp`: impulsos sequenciais do Box2D, a inércia da caixa da torre, o chão do mapa assado sob cada ponto, a restituição que cai com a velocidade da batida e o atrito da areia), com o pivô no centro de massa (o rastro de fuligem sai do corpo), a marca no chão nas batidas fortes e o afundar a partir de onde ela parou. A cena `torre_fisica` (Scenarios.json) e o A/B `-TurretPhys=0` (o voo da v2). Da revisão: parada encostada num obstáculo, ela acorda e cai quando ele mexe ou some, em vez de ficar no ar; a carcaça tirada logo depois da morte espera a torre parar pra afundar com ela; a marca da batida de uma morte que ninguém viu espera a carcaça aparecer. **O estado:** no código, sem compilar nem provar no jogo, sem commit. O sopro de poeira em volume da batida é a fase 2 (no BlastFx).
+- [ ] **Pra depois, quando for o foco (o Felipe, 16/10 de manhã; a conversa no Look):**
+  - **O prédio que se degrada e desmorona pelo lado do dano:** o lado que tomou o tiro queima e cai primeiro; o míssil no canto derruba aquele canto; a poeira e a fumaça do desabamento bem bonitas. "Bem realista ... pra arrepiar, e não de qualquer jeito". Depende do modelo dele (feito pra fraturar: paredes e lajes em partes, interior); o caminho técnico é o prédio pré-fraturado (Chaos), o dano pelo ponto do impacto e a fumaça gravada (EmberGen). Conversar com ele quando chegar o modelo.
+  - **A água de filme:** o tiro na água, as explosões e a nuke na água, os navios. "Um fluido MUITO TOP ... efeitos de filme". Entra na etapa da água (a física e a mecânica dela). O caminho dos AAA: a superfície reagindo em tempo real e as explosões grandes gravadas; a simulação de líquido pede uma ferramenta nova (o LiquiGen da JangaFX ou o Houdini), decisão e custo dele.
+  - **O WorldForge como criador de mundos com o clima e o céu:** a hora do sol, o céu, as nuvens, a tempestade, a chuva, por mapa, como um criador de mundos de RTS. Sem tempestade no meio da partida (decisão dele). Depois do primeiro mapa jogável.
+  - **Civis e pássaros:** provisórios por script estão aprovados ("pode ser provisório o civil, não tem problema, está aprovado"). Os civis correndo da batalha, os pássaros levantando voo com a explosão.
+  - **As marcas que contam a batalha (o Felipe: "faça então", 16/10; o estudo em `docs/MARCAS_DA_BATALHA.md`):** a ordem: 1) a batalha no minimapa e na tela do fim (jogo, ~0 ms); 2) os furos da memória (jogo); 3) a textura do mapa inteiro com o caminho batido, o combustível, o queimado largo e a densidade de crateras (o jogo grava, o Look lê no material); 4) a carcaça pegando poeira com a idade (Look). **Perguntas pra ele:** a ruína do prédio andável e lenta ou bloqueada? A carcaça pode ser destruída? O Dozer limpa carcaça e entulho? Acumulam durante a partida (as crateras, o queimado e as trilhas já existem; faltam as carcaças empurráveis, o entulho, as cápsulas e os destroços que ficam até o fim). O mapa começar destruído seria uma opção do WorldForge, outra coisa.
+    - **O jogo, 16/10 (compilado às 12:09; sem commit):**
+      - **O caderno de acúmulo do mapa inteiro** (`GroundBattle`, RGBA8 2048² a 50 cm, com `BattleBounds`, no Landscape e nas lajes):
+        - R o tráfego, 1/32 por passada;
+        - G o combustível fresco, desbotando em ~5 min;
+        - B o queimado largo;
+        - A a densidade de crateras.
+      - **P1:** a batalha no minimapa, uma camada a cada segundo por cima da foto; só o que o jogador viu.
+      - **P2.1:** o tiro no chão e o acerto no casco na névoa ficam guardados e aparecem quando a área é vista.
+      - **A cena:** `batalha_marcas`, 8 contra 8 por 60 s; no fim ela grava o caderno e a camada.
+      - **Falta:**
+        - a tela do fim: feita (compilações 28 e 30). O campo de batalha fica à direita do resultado, acima do painel do HUD: a foto do mapa com as marcas. A prova: `patriot_fim2`.
+        - o grosso no chão (P2.2);
+        - a leitura do Look no code_v3 (depois do céu);
+        - o resto dos furos (P2.3 a P2.5).
+  - **O céu (os testes de 16/10):**
+    - **A sombra das nuvens:** "n vi nada" (o Felipe). Não era a ligação, era o tamanho: a mancha de 150–220 m é maior que a tela do jogo (~95 m), então a tela inteira ficava na luz ou na sombra.
+      - O ZH (código liberado) usava ~83 m andando a 3 m/s.
+      - Em teste (Look): 60 m e 40 m, 30% de área na sombra, 5 m/s, com vídeo (`docs/CEU_E_NUVENS.md` §11.2).
+    - **O sol na tela:** o −1 e o −1,6 EV não bastam (15% estourado no melhor; o chão de costas pro sol escurece) e o disco do sol não aparece.
+      - Em teste (Look): a exposição local comprimindo só o céu com a câmera deitada.
+      - Dois testes pra achar o que tapa o disco (a nuvem ou a névoa).
+    - **A vista acima das nuvens:** mostra o mapa como ilha no vazio e pede terreno até o horizonte (WorldForge).
 - [ ] **v3: o tanque derruba poste e árvore** (pedido do Felipe, 13/10 de manhã: "depois que acabar tudo"; fora da v2, a decisão dele à noite):
   - o tanque empurra e derruba os postes e as árvores (as palmeiras);
   - o WorldForge vai criar os fios com física, então o poste que cai puxa o fio, que balança e arrebenta;
@@ -235,6 +407,10 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - máscara no material e cor por dono; a máscara vem da arte;
   - o `M_UnitPBR` é compartilhado com o BlastLab: combinar, reimportar com o app fechado e respeitar a trava da placa;
   - a carcaça perde a cor.
+- [ ] **O raio-X do tanque só quando ele some de verdade** (o Felipe, 16/10 à tarde, vendo as gravações: "qualquer coisinha que o nosso tanque anda já renderiza aquele xray azul ... até mesmo uma pequena duna de areia, arbustos no chão, o que estraga um pouco o visual bonito da gameplay; ... só exibir raio-X se o nosso tanque ficar completamente oculto atrás de algo, se a visibilidade dele ficar bem fraca"). **Dono:** o jogo.
+  - **O plano:** a cada ~0,15 s, a fração escondida de cada tanque seu ou aliado, por raios da câmera até 8 pontos do casco, contra o chão, as casas, os prédios e as copas. Capim, arbusto, poste e caixa não contam. O contorno liga com ≥ 70% escondido e desliga abaixo de 50%, sem piscar.
+  - **Feito (compilação 27, 13:01; sem commit):** na duna (`poeira_rec_lado`) e na rua da vila (`vila_rua`) o contorno não acende mais.
+  - **A prova (15:15):** o tanque escondido inteiro atrás do sobrado acende o contorno (`raiox_atras_baixa3`, câmera a 35°); o da rua, à vista, não. Com a câmera alta (55°) o mesmo tanque aparece por cima da casa e fica apagado. As imagens estão em `captures/game/entrega_v3/raiox_*.jpg`.
 - [ ] **Seleção final:**
   - anel fino no chão, desenhado na cena: o tanque fica por cima do anel, não o anel por cima do tanque;
   - só no selecionado e sob o mouse; inimigo sem anel (só sob o mouse ou quando vira alvo);
@@ -331,7 +507,9 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
     - o mais forte na frente quando houver mais tipos;
     - [x] **a formação segurando F** (simulação versão 8, teste "formação com F"): o grupo vai no passo do mais lento, mantendo a forma, como o Felipe decidiu em 11/10 ("segurando uma tecla, como no C&C; sem segurar, cada um na sua velocidade"). Grupo espalhado demais é apertado até um bloco. Falta testar no jogo;
     - [x] **as torres em leque** (simulação versão 8): as da ponta olham até 25° pra fora e as do meio pra frente; em fila indiana, alternam esquerda e direita. Vale andando e parado, e na área de reunião também (testes "ponto de encontro" e "formação com F"). Falta ver no jogo;
-    - [x] **o arraste com direção** (decisão do Felipe, 12/10: o clique rápido do esquerdo continua mandando andar). Com tropa selecionada, arrastar o esquerdo põe a linha de frente no ponto apertado, virada pra direção do arraste; o comprimento do arraste é a largura da linha (abaixo de 12 m, só a direção). Shift + arrastar, ou começar em cima de uma unidade nossa, faz a caixa de seleção. Funciona com o F e com o ataque andando. Teste "arraste com direção" na simulação (versão 8). Limite conhecido: com a linha virada de lado em relação à marcha, os tanques entram no mesmo corredor e alguns param antes da vaga (o certo é marchar em formação e só abrir perto). Falta testar no jogo.
+    - [~] **a linha com os dois botões + a prévia** (v4, 23/10; substitui o arraste com direção de 12/10, em que o esquerdo arrastado com tropa selecionada virava a linha quando o Felipe queria a caixa). Esquerdo + direito juntos, arrastando, em qualquer ordem: a linha vai do ponto apertado até o cursor, com a fileira da frente em cima dela. Da esquerda pra direita, a frente fica de costas pra câmera; ao contrário, vira pra ela (a regra do Total War). Enquanto puxa, cada unidade aparece como um anel no chão com um risquinho pra frente, no lugar exato onde vai parar: é a mesma conta do comando (`World::PreviewLineSlots`, teste "prévia da linha" na simulação). Soltar os dois manda. O Esc, ou soltar um e segurar o outro, desiste. O esquerdo arrastado sozinho é sempre a caixa, e o direito sozinho rola. Funciona com o F e com o ataque andando (os anéis ficam vermelhos). No teste da partida, os passos são "linha_previa", "linha_ordem", "linha_chegada", "linha_esc", "linha_solta_um", "acorde_parado", "direito_rola" e "caixa_com_tropa". Falta o teste dele, clicando. Limites conhecidos:
+      - [~] (v4, 23/10 à noite, simulação 20, sem o teste do Felipe) **a linha espalhada:** com menos unidades do que a linha comporta, elas ficam numa fileira só, de ponta a ponta da linha puxada (o BAR e o Total War); com mais, as fileiras cheias vão de ponta a ponta, nunca abaixo do passo mínimo (2,34 raios), e a de trás fica no meio. Antes juntavam no meio no passo mínimo (3 tanques numa linha de 60 m ocupavam 17 m). A prévia segue sendo a vaga da ordem, bit a bit (simtest "linha espalhada"; a cena `v4_linha`). (Revisão da noite) Cabem floor(L / passo mínimo) + 1 por fileira: nenhuma vaga passa da ponta da linha puxada (6 tanques em 40 m: 5 de ponta a ponta e 1 atrás; antes a fileira de 6 passava 1 m de cada ponta), e a de trás só desencontra até a ponta;
+      - a linha de lado em relação à marcha: os tanques entram no mesmo corredor.
   - A fila da IA pela praia (t7) é a mesma coisa, no caminho.
 
 ### Desempenho e estabilidade
@@ -499,15 +677,33 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [~] **A areia encostada nas paredes da vila** (16/10, `WALL_SAND`):
   - a da maquete (35 cm) sumiu na câmera do jogo; a forte (75 cm, rampa de ~1,8 m) também quase não aparece (folha em `docs/aprovados/mundos/2026-10-16_areia_paredes_ab_para_escolher.jpg`).
   - **A minha recomendação: não seguir nesse formato.** Os montes do r1_raid_slabs são grandes e com crista nítida, e o Landscape a 0,5 m por vértice não desenha essa crista. O caminho é um carimbo de malha (a duna de parede como peça, com a crista) ou o chão com tesselação; fica pra decisão dele.
-- [~] **Os bolsões de dunas** (16/10, `DUNE_POCKETS=1`, mapa `World_TestV3Dunes`; o estudo com fontes no `WORLDFORGE.md` §12.7):
-  - barcanas baixas (1–2 m), só no deserto aberto e plano, longe de base, estrada e depósito;
-  - a forma pelo vento do mapa, o lugar justo pela simetria;
-  - de cima leem como barcanas de verdade (crescente, chifres, a face em sombra do lado certo); a inclinação medida bate com o estudo (barlavento 9–17°, face 27–32°, 0,05% acima de 34°).
-  - Na câmera do jogo são poucas (16 no mapa, em chão plano) e quase não entram no quadro. A folha: `docs/aprovados/mundos/2026-10-16_dunas_para_escolher.jpg`.
-  - A moldura de dunas de hoje tem o pé a ~23° e o vale em V (sombras de ~67 m): a correção está no estudo, ainda sem código.
+- [x] **Os bolsões de dunas** (16/10, aprovadas: "ok ta aprovado"; o padrão do deserto, `DUNE_POCKETS=0` tira; antes `World_TestV3Dunes`; o estudo com fontes no `WORLDFORGE.md` §12.7):
+  - a 1ª versão (barcanas desenhadas por fórmula) foi reprovada duas vezes: "muito padronizada e única" e "ainda tá muito padronizado, não tem nada natural aí";
+  - **o passo atrás (16/10 à tarde): a areia simulada** (`DuneSim.h`, o modelo de lajes de Werner/Paris 2019; a bancada em `WorldForge/Tools/dunesim`). O vento leva a areia num ladrilho de 1 km e as dunas nascem sozinhas, cada uma diferente. As formas entram nos bolsões inteiras, cada uma uma vez só, com as vizinhas dela no mesmo arranjo;
+  - a 1ª foto no jogo (a duna achatada a 0,45, face de ~17°) quase não mostrava a duna: agora a duna inteira em meia escala (largura e altura juntas), a face a 30°;
+  - medido no mapa do jogo: 45 dunas de até 2,6 m de crista, ~7% do chão onde pode (o campo esparso real: 8–12%), os dois lados com a mesma área de duna (3.327 × 3.245 m²), máximo de 32,6°, nada acima de 34°;
+  - cada forma entra no máximo duas vezes, a segunda espelhada e a 200 m ou mais da primeira;
+  - o mapa de teste é o `World_TestDunesSim` (nome novo: o `World_TestV3Dunes` ficava preso pelos testes abertos), a base nova (areia 3 + chão v3) só com as dunas a mais; o A/B no jogo é `dunas_sim_67/100` × `dunas_base_67/100`.
 - [~] **Os mapas de teste do WorldForge no jogo** (16/10, com o ok do jogo):
   - `World_TestV3`, `World_TestSandV2` (a areia v2 pro Look) e `World_TestGroundV3` (o chão v3 do Look);
-  - no `Maps.json`, no laço do `game.ps1 worlds` e nos cenários. O World_TestSalt2 não mudou.
+  - no `Maps.json`, no laço do `game.ps1 worlds` e nos cenários.
+- [x] **O World_TestSalt2 na base nova** (16/10, o Felipe pelo Look: a areia 3, "vai de 3", e as trilhas v3, "um baita avanço, tá aprovado"):
+  - remontado com a areia de duna e o chão v3, e ligado no jogo com `"ground_v3": true` no `Maps.json`;
+  - no jogo bate com o World_TestGroundV3Dune: diferença média de 0,9/255 (`captures/game/salt2v3_look_zoom` × `gv3d_look_zoom`);
+  - o `captures/dist` não mudou.
+- [~] **A laje no mapa do jogo e o acabamento por estrada** (16/10, o Felipe pelo Look: "gostei da laje 3D, tá aprovado, mas lembre-se que tinha mais de uma variação" e "também não descartei a original que é colada no chão"):
+  - a laje virou o padrão do deserto no WorldForge (`ROAD_SLAB=0` tira);
+  - o painel ganhou, por estrada, o "Acabamento do asfalto": Auto (o desgaste por trecho, a vila inteira), Colada (sem laje, o asfalto v2 no chão), Inteira, Gasta e Destruída. Vai nas edições do mapa (`"style"` na estrada); testado em `WorldForge/Tools/test_road_style.py`;
+  - a faixa continua o decalque (a da laje aprovada); a faixa nova do Look espera a palavra dele;
+  - o World_TestSalt2 com a laje: na fila com o ok do jogo (16/10), com a conferência do tanque em cima da laje.
+- [~] **O tanque derruba e amassa: o desenho do WorldForge** (16/10; o estudo e o que já está feito no `WORLDFORGE.md` §12.8; a regra e o evento são do jogo, `docs/ESMAGAR_E_DERRUBAR.md`):
+  - o capim e a moita deitando na trilha (`TRAMPLE=1`, o mapa `World_TestTrample`; o jogo liga o `UseTrample`);
+  - o toco e o tronco quebrado das palmeiras, com a copa que chicoteia e assenta no chão;
+  - o fio solto que balança, arrebenta e deita (o plugin `RTSWorldProps`);
+  - falta: a prova no jogo, a pedra pequena quebrando e o acabamento fino (o tronco estalando).
+- [x] **As três areias no painel do WorldForge** (16/10, o Felipe: "pq não deixar as 3 opções no WorldForge e no jogo?"):
+  - "Areia (no acabamento)" no deserto: Duna (o padrão), Amarela (a v2, pra sol alto) e Clássica (reserva);
+  - vai no JSON do mapa (`"sand": 1|2|3`); a montagem e o jogo usam a do mapa.
 - [ ] **Lote plano da War Factory em cada base,** sem seixo nem marola, com a estrada chegando na porta e a saída marcada.
 - [ ] **Tipo de chão por camada** (areia, cascalho, terra, rocha, salina, asfalto): dá a cor da poeira e dos torrões.
 - [ ] **"Memória do chão"** no material do terreno, pros rastros de esteira, o queimado e a cratera.

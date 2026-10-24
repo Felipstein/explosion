@@ -43,11 +43,46 @@ namespace Sim
 		int32_t Boxes = 0;
 	};
 
+	/** (16/10) Um objeto do mapa que muda o caminho e o tanque esmaga ou derruba (docs/ESMAGAR_E_DERRUBAR.md). */
+	enum class PropKind : uint8_t
+	{
+		Car = 0,   // o carro civil: achata (frente, traseira ou os dois) e fica no mapa, aberto pra todos
+		Tree = 1,  // a palmeira, a árvore: cai e fica deitada, aberta pra todos
+	};
+
+	/** (v4, 23/10) O derrubar pelo choque (o caminhão, o Tomahawk: a física, não o nível do ZH). O veículo de massa m a v derruba
+	 *  o objeto quando a energia do choque, ½·m·v², passa da que o objeto absorve até cair (estimativas [E]; a fratura do poste de
+	 *  madeira não é bem documentada: SAE 980214 e 2011-01-0288): o poste de 30 cm parte com ~40 kJ (um carro de 1,5 t a ~26 km/h
+	 *  já parte nas batidas reais); a palmeira de ~35 cm na areia, de raiz rasa, tomba com ~60 kJ (o momento crítico das árvores
+	 *  arrancadas, ~140 N·m por kg de tronco, Peltola, e o giro até romper a raiz). O caminhão de 15 t derruba a palmeira acima
+	 *  de 2,8 m/s e o poste acima de 2,3; o Tomahawk de 30 t, acima de 2,0 e 1,6. O tanque e o Dozer seguem a regra do ZH (o
+	 *  CrusherLevel: passam por cima em qualquer velocidade).
+	 *  (revisão de 23/10) A conta vale na velocidade de cruzeiro (MaxSpeed): ela diz QUEM derruba (o caminho abre a célula da
+	 *  árvore pra ele), e esse derruba em qualquer toque andando ou empurrado, como o tanque, porque o motor que o leva a
+	 *  cruzeiro empurra o tronco até cair; pela velocidade da hora, o toque lento deixava o casco atravessar o tronco de pé. */
+	constexpr int64_t TreeToppleEnergyJ = 60000;
+	constexpr int64_t PoleToppleEnergyJ = 40000;
+	/** O veículo D a SpeedPerTick (m por passo) derruba o que absorve EnergyJ? Sem massa nos dados, nunca. */
+	SIMCORE_API bool KnocksOver(const UnitDef& D, Fix SpeedPerTick, int64_t EnergyJ);
+
+	struct PropSetup
+	{
+		PropKind Kind = PropKind::Car;
+		Vec2 Pos;
+		Angle Facing;            // o comprimento do carro vai neste rumo
+		Fix HalfLength;          // o carro: meio comprimento; a árvore: o raio do tronco
+		Fix HalfWidth;
+		Fix Height;              // a árvore: até onde a queda chega
+		uint8_t CrushableLevel = 1;   // esmaga quem tem CrusherLevel maior (o ZH)
+	};
+
 	struct PlayerSetup
 	{
 		uint8_t Team = 0;
 		bool bIsAI = false;
 		std::vector<StartingUnit> Units;
+		/** (v4) A patente de largada (1..5; as cenas de teste): começa com o XP do limiar dela. */
+		uint8_t StartRank = 1;
 	};
 
 	struct SIMCORE_API MatchSetup
@@ -58,6 +93,8 @@ namespace Sim
 		std::vector<PlayerSetup> Players;
 		/** Os depósitos de suprimento do mapa (vêm do mapa; hoje fixos no Maps.json). */
 		std::vector<SupplyDockSetup> Docks;
+		/** (16/10) Os carros e as árvores do mapa, em ordem fixa (o índice é o Id do objeto nos eventos). */
+		std::vector<PropSetup> Props;
 		/** Névoa de guerra: cada time só enxerga o que as unidades dele veem. */
 		bool bFogOfWar = true;
 		/** Aceita comandos de depuração (SetFog): sim no skirmish local, não no online. */
@@ -87,6 +124,7 @@ namespace Sim
 		Unloading,     // parado no centro de suprimentos
 		WaitCenter,    // carregado, sem centro pra entregar
 		WaitDock,      // sem depósito ao alcance: espera perto do centro e procura de novo (ZH)
+		Repair,        // (v4, 23/10) Dozer: indo até o prédio avariado (TaskTarget) ou consertando (o DozerAIUpdate do ZH)
 	};
 
 	/** Por que o prédio não cabe ali (o fantasma vermelho do HUD diz o motivo). Regras do ZH (BuildAssistant). */
@@ -102,8 +140,9 @@ namespace Sim
 		BlocksExit,    // na faixa de saída de uma fábrica (ou a saída dele cai em cima de algo)
 		Occupied,      // tem unidade inimiga em cima
 		NotVisible,    // o centro não está à vista agora (o ZH não constrói na névoa)
-		MissingPrereq, // falta o prédio pré-requisito
+		MissingPrereq, // falta o prédio pré-requisito (ou a patente)
 		NoMoney,
+		LimitReached,  // (v4) o jogador já tem o teto desse tipo (MaxPerPlayer, fundações inclusive)
 	};
 
 	struct PlayerState
@@ -118,6 +157,11 @@ namespace Sim
 		int32_t PowerUsed = 0;
 		/** Já teve um prédio que conta pra vitória (daí em diante, perde quem fica sem eles). */
 		bool bHasBase = false;
+		/** (v4, 22/10) A patente do general: o XP em milésimos (o crédito de cada acerto fica exato), a patente (1..5) e o
+		 *  passo em que cada poder fica pronto de novo (0 = pronto assim que liga). */
+		int64_t XpMilli = 0;
+		uint8_t Rank = 1;
+		TickNumber PowerReadyAt[MaxPowers] = {};
 		bool IsLowPower() const { return PowerUsed > PowerMade; }
 	};
 
@@ -175,6 +219,15 @@ namespace Sim
 		UnitTask Task = UnitTask::None;
 		EntityId TaskTarget = NoEntity;
 		int32_t Cargo = 0;
+		// (v4) a zona de lançamento: passos até o próximo pouso do avião e quantos pousos ela já recebeu (a rota que amadurece)
+		int32_t IncomeLeft = 0;
+		int32_t IncomeCount = 0;
+		// (v4, 23/10) vender: os passos que faltam da desmontagem (0 = não está sendo vendido) e o total dela
+		int32_t SellLeft = 0;
+		int32_t SellTicks = 0;
+		/** (v4) A mira antes do tiro (o lançador que levanta): os passos de mira, de 0 até o PreAttackTicks da arma; o desenho
+		 *  levanta o tubo pelo mesmo número (em fase com o tiro, também na LAN). */
+		int32_t AimTicks = 0;
 	};
 
 	class SIMCORE_API World
@@ -194,25 +247,119 @@ namespace Sim
 
 		/** Uma carcaça (13/10, o Felipe: "a carcaça tem física"): o veículo morto fica no mapa, e o vivo que encosta
 		 *  empurra (ela pesa a metade dele) e é segurado por ela (anda mais devagar empurrando; contra o penhasco ou o
-		 *  prédio ela trava). O empurrão fora do centro gira o casco. Id = o do veículo que morreu. */
+		 *  prédio ela trava). O empurrão fora do centro gira o casco. Id = o do veículo que morreu.
+		 *  (22/10) Ela vive WreckLife sólida, depois afunda em SinkTicks passos (imóvel; o casco de colisão encolhe) e some
+		 *  (os eventos WreckSinking e WreckRemoved). O desenho tira o quanto afundou daqui, sem relógio próprio: no passo
+		 *  T da simulação o afundar está em (T − SinkStart) ÷ SinkTicks (o que vale também pausado e no replay). */
 		struct WreckView
 		{
 			EntityId Id = NoEntity;
 			uint16_t Def = 0;
 			Vec2 Pos;
 			Angle Hull;
+			/** O passo em que virou carcaça e o em que começou a afundar (0 = sólida). */
+			TickNumber Born = 0;
+			TickNumber SinkStart = 0;
+			int32_t SinkTicks = 1;
 		};
 		int32_t WreckCount() const { return int32_t(Wrecks.size()); }
 		WreckView Wreck(int32_t Index) const
 		{
 			const WreckState& W = Wrecks[size_t(Index)];
-			return WreckView{ W.Id, W.Def, W.Pos, W.Hull };
+			return WreckView{ W.Id, W.Def, W.Pos, W.Hull, W.Born, W.SinkStart, RulesData.Units[W.Def].WreckSinkTicks };
 		}
+
+		/** (16/10) Um tiro em voo, pro desenho seguir: o míssil (a Patriot) anda em 3D a cada passo (a altura Z acima do
+		 *  zero do mapa, o rumo e a inclinação); o do tanque vai reto no plano. Id = o Value do WeaponFired e do ProjectileHit. */
+		struct ProjectileView
+		{
+			uint32_t Id = 0;
+			EntityId Shooter = NoEntity;
+			EntityId Target = NoEntity;
+			Vec2 Pos;
+			Fix Z;
+			Angle Yaw;
+			Angle Pitch;
+			Fix Speed;            // m por passo
+			int32_t Age = 0;      // passos desde o disparo
+			bool bMissile = false;
+			/** (v4) De quem é a arma (o tipo do atirador, ou a munição do poder: o atirador pode já ter morrido, ou nem existir). */
+			uint16_t Def = 0;
+		};
+		/** (16/10) Os carros e as árvores: o estado de cada um pro desenho (quem entra no meio, o replay, a névoa). */
+		struct PropView
+		{
+			PropKind Kind = PropKind::Car;
+			Vec2 Pos;
+			Angle Facing;
+			Fix HalfLength;
+			Fix HalfWidth;
+			Fix Height;
+			/** O carro: as partes esmagadas (1 frente, 2 traseira); a árvore: 1 derrubada. 0 = de pé. */
+			uint8_t State = 0;
+			/** O lado da lagarta que passou por cima (o carro: 1 = o lado direito do tanque). */
+			uint8_t Side = 0;
+			Angle FallDir;
+			Fix FallLength;
+			TickNumber At = 0;
+			EntityId By = NoEntity;
+		};
+		int32_t PropCount() const { return int32_t(PropDefs.size()); }
+		PropView PropAt(int32_t Index) const
+		{
+			const PropSetup& D = PropDefs[size_t(Index)];
+			const PropState& S = Props[size_t(Index)];
+			return PropView{ D.Kind, D.Pos, D.Facing, D.HalfLength, D.HalfWidth, D.Height, S.State, S.Side, S.FallDir, S.FallLength, S.At, S.By };
+		}
+		int32_t ProjectileCount() const { return int32_t(Projectiles.size()); }
+		ProjectileView ProjectileAt(int32_t Index) const
+		{
+			const Projectile& P = Projectiles[size_t(Index)];
+			return ProjectileView{ P.Id, P.Shooter, P.Target, P.Pos, P.Z, P.Yaw, P.Pitch, P.Speed, P.Age, P.bMissile != 0, P.Def };
+		}
+		/** A altura do chão da simulação no ponto (m; o meio entre a menor e a maior da célula), zero sem alturas. O
+		 *  desenho põe o míssil no chão de verdade somando a altura dele acima desta. */
+		Fix GroundHeightAt(Vec2 P) const;
 		bool FindUnit(EntityId Id, UnitView& Out) const;
 
 		int32_t PlayerCount() const { return int32_t(Players.size()); }
 		const PlayerState& Player(PlayerIndex P) const { return Players[P]; }
 		bool AreEnemies(PlayerIndex A, PlayerIndex B) const { return Players[A].Team != Players[B].Team; }
+
+		// --- (v4, 22/10) a patente e os poderes do general
+		/** O XP inteiro do jogador (o crédito fica em milésimos; aqui, arredondado pra baixo). */
+		int32_t Xp(PlayerIndex P) const { return int32_t(Players[P].XpMilli / 1000); }
+		/** A patente do jogador (1..5). */
+		int32_t Rank(PlayerIndex P) const { return Players[P].Rank; }
+		/** O passo em que o poder K fica pronto de novo (0 = nunca usado: pronto assim que liga). */
+		TickNumber PowerReadyAt(PlayerIndex P, int32_t K) const { return K >= 0 && K < MaxPowers ? Players[P].PowerReadyAt[K] : 0; }
+		/** O jogador pode usar o poder K agora? O poder existe, a patente chegou, a espera acabou e ele tem um prédio pronto e
+		 *  vivo que liga os poderes (o ponto, o comando confere à parte). */
+		bool IsPowerReady(PlayerIndex P, int32_t K) const;
+		/** O jogador tem um prédio pronto e vivo que liga os poderes (o Command Center)? */
+		bool HasPowerGranter(PlayerIndex P) const;
+		/** (v4) Um ataque de poder no ar (o anel vermelho do HUD): o dono, o poder, os mísseis (o total e os que já saíram), o
+		 *  centro, o raio do girassol e o passo do próximo míssil. Some da lista quando o último sai (os mísseis seguem como
+		 *  tiros: ProjectileAt, com Shooter = NoEntity). */
+		struct StrikeView
+		{
+			PlayerIndex Owner = 0;
+			int32_t Power = 0;
+			int32_t Total = 0;
+			int32_t Fired = 0;
+			Vec2 Center;
+			Fix Radius;
+			TickNumber NextAt = 0;
+		};
+		int32_t StrikeCount() const { return int32_t(Strikes.size()); }
+		StrikeView StrikeAt(int32_t Index) const
+		{
+			const Strike& S = Strikes[size_t(Index)];
+			return StrikeView{ S.Owner, S.Power, S.Total, S.Fired, S.Center, S.Radius, S.NextAt };
+		}
+		/** O ponto de mira do míssil K (0..Total−1) do ataque Index: o girassol fixo, igual ao da simulação (o HUD marca os
+		 *  pontos antes de os mísseis saírem). */
+		Vec2 StrikeAimPoint(int32_t Index, int32_t K) const;
 
 		bool IsMatchOver() const { return bMatchOver; }
 		/** Time vencedor; −1 = empate ou partida em andamento. */
@@ -253,8 +400,19 @@ namespace Sim
 		void FootprintCells(uint16_t Def, int32_t Dir, Vec2 Center, int32_t& X0, int32_t& Y0, int32_t& X1, int32_t& Y1) const;
 		/** O jogador pode pôr o prédio ali? (o HUD pinta o fantasma; o comando Build confere de novo). */
 		PlaceResult CanPlace(PlayerIndex P, uint16_t Def, int32_t Dir, Vec2 Center) const;
+		/** (v4, 23/10) A prévia da linha dos dois botões: as vagas que um Move/AttackMove com direção (MoveHasFacingOf(Value))
+		 *  daria AGORA ao grupo Units do jogador P, pela mesma conta do comando (o filtro do SetGroup e do Move, o ClampToMap e o
+		 *  LineSlots). Const: nada muda (o hash fica). OutIds e OutSlots na ordem do grupo (IDs crescentes); falso = o comando
+		 *  não daria vaga a ninguém (sem direção, jogador caído, partida no fim, grupo sem unidade que anda). */
+		bool PreviewLineSlots(PlayerIndex P, const std::vector<EntityId>& Units, Vec2 Point, int32_t Value,
+			std::vector<EntityId>& OutIds, std::vector<Vec2>& OutSlots) const;
 		/** O jogador tem os pré-requisitos do tipo (prédios prontos)? */
 		bool HasPrerequisites(PlayerIndex P, uint16_t Def) const;
+		/** (v4, 23/10) O jogador pode vender o prédio (dele, pronto, vivo e ainda não sendo vendido)? E quanto volta ($). */
+		bool CanSell(PlayerIndex P, EntityId Structure) const;
+		int32_t SellRefund(EntityId Structure) const;
+		/** (v4) O Dozer do jogador pode consertar o prédio (dele ou do aliado, pronto, vivo, avariado, sem estar sendo vendido)? */
+		bool CanRepair(PlayerIndex P, EntityId Structure) const;
 		/** Ritmo da produção e da obra pela energia (ZH): 1000 = normal, 500 = metade. */
 		int32_t PowerFactorPermille(PlayerIndex P) const;
 
@@ -271,6 +429,7 @@ namespace Sim
 			std::vector<Fix> Speed;
 			std::vector<int32_t> Hp;
 			std::vector<int32_t> Cooldown;
+			std::vector<int32_t> Clip;           // tiros que faltam na rajada (a arma com ClipSize)
 			std::vector<OrderType> Order;
 			std::vector<Vec2> OrderPoint;
 			std::vector<EntityId> OrderTarget;   // alvo da ordem de ataque
@@ -309,6 +468,21 @@ namespace Sim
 			std::vector<uint8_t> HasArriveFacing;
 			std::vector<Fix> SpeedCap;           // em formação (F): o passo do mais lento do grupo; zero = livre
 			std::vector<int32_t> IdleTurret;     // pra onde a torre sem alvo olha (bam, relativa ao casco): o leque do grupo
+			// (16/10) o freio do esmagar: passos que faltam, o total e o piso (milésimos da velocidade máxima)
+			std::vector<int32_t> CrushSlowLeft;
+			std::vector<int32_t> CrushSlowTotal;
+			std::vector<int32_t> CrushSlowFloor;
+			// (v4, 22/10) a zona de lançamento: passos até o próximo pouso, os pousos já recebidos (a rota que amadurece) e
+			// os passos até a empilhadeira levar o próximo palete (0 = parada)
+			std::vector<int32_t> IncomeLeft;
+			std::vector<int32_t> IncomeCount;
+			std::vector<int32_t> UnloadLeft;
+			// (v4, 23/10) vender: os passos da desmontagem que faltam (0 = não; −1 = vendido, sai neste passo); o conserto do Dozer:
+			// o resto da conta da vida (o passo não perde fração); a mira antes do tiro: os passos de mira e os sem alvo
+			std::vector<int32_t> SellLeft;
+			std::vector<int32_t> RepairAcc;
+			std::vector<int32_t> AimTicks;
+			std::vector<int32_t> AimIdle;
 
 			void Resize(size_t N);
 		};
@@ -335,7 +509,64 @@ namespace Sim
 			Fix Step;              // m por passo; 0 = chega no passo seguinte
 			int32_t Damage = 0;
 			DamageType Type = DamageType::ArmorPiercing;
+			// (16/10) o míssil: voa em 3D (Z em m, o rumo e a inclinação), acelera e guia
+			uint32_t Id = 0;
+			uint8_t bMissile = 0;
+			Fix Z;
+			Fix AimZ;
+			Angle Yaw;
+			Angle Pitch;
+			Fix Speed;
+			int32_t Age = 0;
+			uint16_t Def = 0;      // a arma de quem atirou (o atirador pode morrer com o míssil no ar)
+			/** (v4) O dono do tiro: o XP vai pra ele mesmo com o atirador já morto (e o míssil do poder, que não tem atirador). */
+			PlayerIndex Owner = NoPlayer;
 		};
+		/** O próximo Id de tiro (nunca reusado). */
+		uint32_t NextProjectileId = 1;
+		/** O voo de um míssil num passo; falso = explodiu (o acerto ou o chão já foram contados). */
+		bool FlyMissile(Projectile& P);
+		/** (v4) O dano em área da arma W explodindo em At: cada inimigo de SourcePlayer a até W.Splash (da borda do casco ou do
+		 *  lote) leva Damage × a queda (cheio até SplashFull, em linha reta até SplashEdgePct % em Splash); Exclude (o alvo do
+		 *  acerto direto, que já levou o cheio) fica de fora. */
+		void ApplySplash(Vec2 At, const Projectile& P, EntityId Exclude);
+
+		// (16/10) o esmagar e o derrubar
+		struct PropState
+		{
+			uint8_t State = 0;
+			uint8_t Side = 0;
+			Angle FallDir;
+			Fix FallLength;
+			TickNumber At = 0;
+			EntityId By = NoEntity;
+		};
+		std::vector<PropSetup> PropDefs;
+		std::vector<PropState> Props;
+		/** As células de cada objeto (o carro: o centro dentro da caixa + 0,5 m; a árvore: a do tronco). */
+		std::vector<std::vector<int32_t>> PropCells;
+		/** Objetos de pé em cada célula (a célula esmagável abre quando chega a 0); (v4) e os carros entre eles (com carro de pé a
+		 *  célula é a do carro, só de quem esmaga; só com árvore, a da árvore, também de quem derruba pelo choque). */
+		std::vector<uint8_t> PropStanding;
+		std::vector<uint8_t> PropStandingCars;
+		/** Onde cada unidade estava antes de andar no passo (o contato só vale com o tanque se mexendo). */
+		std::vector<Vec2> PrePos;
+		std::vector<Angle> PreHull;
+		/** As regiões ligadas ficaram velhas (uma célula esmagável abriu): refeitas no máximo a cada RegionRelabelTicks. */
+		bool bRegionsStale = false;
+		TickNumber RegionsLabeledAt = 0;
+		/** A mobilidade da unidade: a folga dela, com o bit de quem esmaga (o carro e a árvore). */
+		int32_t MobilityOf(int32_t Index) const;
+		int32_t MobilityOfDef(const UnitDef& D) const;
+		/** A do grupo: a maior folga, e o bit só se todos esmagam (o caminhão no meio dos tanques não passa no carro). */
+		int32_t GroupMobility(const std::vector<int32_t>& Members) const;
+		void InitProps(const std::vector<PropSetup>& Setup);
+		void UpdateCrush();
+		/** A célula esmagável do objeto Prop volta a ser só terreno (o carro achatou, a árvore caiu). */
+		void ReleaseProp(int32_t Prop);
+		/** O rumo de queda livre de prédio a partir de Want (±22,5° ... ±90°) e até onde ela vai. */
+		Angle FreeFall(Vec2 From, Angle Want, Fix Height, Fix& OutLength) const;
+		void RelabelRegions();
 
 		struct DamageIntent
 		{
@@ -343,7 +574,27 @@ namespace Sim
 			EntityId Target = NoEntity;
 			int32_t Amount = 0;
 			DamageType Type = DamageType::ArmorPiercing;
+			/** (v4) O dono de quem causou (o crédito de XP); NoPlayer = ninguém. */
+			PlayerIndex SourcePlayer = NoPlayer;
 		};
+
+		/** (v4, 22/10) Um ataque de poder em andamento (o Cruise Missile Strike): Total mísseis, um a cada IntervalTicks a partir
+		 *  de NextAt, vindo da direção From (unitária: de quem atirou pro ponto), em volta de Center no raio Radius; Phase gira o
+		 *  girassol dos pontos de mira (sai do passo do uso, sem sorteio). */
+		struct Strike
+		{
+			PlayerIndex Owner = 0;
+			uint8_t Power = 0;
+			int32_t Total = 0;
+			int32_t Fired = 0;
+			Vec2 Center;
+			Vec2 From;
+			Fix Radius;
+			uint16_t Phase = 0;
+			TickNumber NextAt = 0;
+		};
+		/** Os ataques no ar, na ordem em que foram usados (entram no hash). */
+		std::vector<Strike> Strikes;
 
 		// sistemas, na ordem do passo
 		void ApplyCommand(const Command& C);
@@ -351,13 +602,20 @@ namespace Sim
 		void UpdateTargets();
 		void UpdatePaths();
 		void UpdateMovement();
+		/** (v4) Atirando parado (o alvo na torre ou o tiro no chão, sem andar): não cede o lugar pro aliado no SeparateUnits. */
+		bool HoldsGround(int32_t I) const;
 		void SeparateUnits();
+		/** (22/10) As carcaças envelhecem (antes do empurrar): o afundar que acabou sai do mapa; a vida que acabou começa a
+		 *  afundar; com sólidas demais, as mais velhas (de pelo menos 12 s) afundam já. Sempre na ordem de nascimento. */
+		void AgeWrecks();
 		/** O vivo empurra a carcaça e ela segura o vivo (depois do separar). */
 		void PushWrecks();
 		void UpdateTurrets();
 		void UpdateWeapons();
 		void UpdateProjectiles();
 		void ResolveDamage();
+		/** (v4) Quem passou do limiar da próxima patente sobe (uma vez em cada), com o evento RankUp. */
+		void CheckRanks();
 		void RemoveDead();
 		void UpdateVision();
 		void CheckVictory();
@@ -367,6 +625,18 @@ namespace Sim
 		void UpdateConstruction();
 		void UpdateProduction();
 		void UpdateSupply();
+		/** (v4) O avião de carga das zonas de lançamento e a empilhadeira (WorldEconomy.cpp; logo depois do UpdateSupply). */
+		void UpdateAirlift();
+		/** (v4, 23/10) O conserto do Dozer (o DozerAIUpdate do ZH) e a venda andando (WorldEconomy.cpp; logo depois do avião). */
+		void UpdateRepair();
+		void UpdateSell();
+		/** O prédio está sendo vendido (ou acabou de ser): pra simulação ele já saiu (energia, fila, defesa, poderes, pré-requisito). */
+		bool IsSelling(int32_t Index) const { return U.SellLeft[Index] != 0; }
+		// (v4) os poderes do general (WorldPowers.cpp)
+		/** O comando UsePower: confere tudo e, valendo, põe o ataque no ar (a espera começa aqui). */
+		void ApplyPowerCommand(const Command& C);
+		/** Os mísseis dos ataques em andamento saem na hora deles (logo depois do UpdateWeapons). */
+		void UpdatePowers();
 		/** Põe o prédio no mapa: as células dele viram bloqueio e os caminhos são refeitos. */
 		EntityId PlaceStructure(PlayerIndex Owner, uint16_t Def, int32_t Dir, Vec2 Center, bool bComplete);
 		/** Marca (ou libera) as células do prédio na grade e recalcula a folga. */
@@ -422,7 +692,11 @@ namespace Sim
 		bool IsAliveUnit(EntityId Other) const;
 		const UnitDef& DefOf(int32_t Index) const { return RulesData.Units[U.Def[Index]]; }
 		Angle TurretWorld(int32_t Index) const { return Angle::FromBam(int32_t(U.Hull[Index].Bam) + U.TurretRel[Index]); }
-		EntityId NearestEnemy(int32_t Self, Fix Radius) const;
+		/** Depois de um tiro: a espera do próximo (com a rajada, o último da rajada espera a recarga). */
+		void AfterShot(int32_t I, const WeaponDef& W);
+		EntityId NearestEnemy(int32_t Self, Fix Radius, bool bSkipDoomed = false) const;
+		/** (16/10) Os tiros já no ar vão matar o alvo (a vida ≤ o dano a caminho, com a armadura)? */
+		bool IsDoomed(int32_t Target) const;
 		/** Começa a perseguir Target (guarda de onde saiu, pra coleira). */
 		void StartEngage(int32_t Index, EntityId Target);
 		Vec2 ClampToMap(Vec2 P) const;
@@ -436,7 +710,7 @@ namespace Sim
 		void FormationSlots(const std::vector<int32_t>& Members, Vec2 Point, std::vector<Vec2>& Out);
 		/** O arraste com direção: uma linha de frente virada pra Facing, a fileira da frente no ponto, as outras atrás;
 		 *  Width = a largura da fileira (zero = a do grupo). */
-		void LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out);
+		void LineSlots(const std::vector<int32_t>& Members, Vec2 Point, Angle Facing, Fix Width, std::vector<Vec2>& Out) const;
 		/** Região ligada da célula C pra uma folga (0 = não andável, ou folga sem mapa de regiões). */
 		int32_t RegionAt(int32_t Clearance, Cell C) const;
 		/** P se ele já está na região; senão a célula da região mais perto; senão Fallback. */
@@ -501,8 +775,19 @@ namespace Sim
 			/** Travada (o empurrão bateu no penhasco ou no prédio): passos até tentar de novo; travada, o vivo leva o
 			 *  empurrão inteiro. */
 			uint8_t Stuck = 0;
+			/** (22/10) O passo em que nasceu e o em que começou a afundar (0 = sólida: o afundar nunca começa no passo 0, porque a
+			 *  carcaça nasce no fim de um passo e só envelhece do seguinte em diante). */
+			TickNumber Born = 0;
+			TickNumber SinkStart = 0;
 		};
+		/** Em ordem de nascimento (a mais velha primeiro): os tetos e o hash dependem dessa ordem. */
 		std::vector<WreckState> Wrecks;
+		/** A carcaça K começa a afundar neste passo (Reason: 0 a vida acabou, 1 sólidas demais), com o evento. */
+		void SinkWreck(size_t K, int32_t Reason);
+		/** A carcaça K sai do mapa (Reason: 0 afundou inteira, 1 o teto de todas), com o evento; as outras ficam na ordem. */
+		void EraseWreck(size_t K, int32_t Reason);
+		/** O quanto a carcaça já afundou neste passo: 0 sólida … 1. */
+		Fix WreckSinkProgress(const WreckState& Wr) const;
 		/** Raio de visão do tipo, em células (teto e quadrado). */
 		void SightCells(uint16_t Def, int32_t& OutRadius, int64_t& OutRadiusSq) const;
 		void LookAt(uint8_t Team, uint16_t Def, int32_t Cell, int32_t Delta);

@@ -67,6 +67,7 @@ namespace RTSHudSkin
 	const FName SkPower(TEXT("skin:power"));                    // 201×274
 	const FName SkPanelWide(TEXT("skin:panel_wide"));           // 928×223
 	const FName SkPanelLong(TEXT("skin:panel_long"));           // 1626×214
+	const FName SkTimerGlow(TEXT("skin:timer_glow"));           // 680×420, a luz azul atrás do medalhão do relógio (art/tools/make_timer_medallion.py)
 
 	const FMargin SkMSlot(40.0f);
 	const FMargin SkMGroup(34.0f, 30.0f);
@@ -1124,7 +1125,12 @@ void FRTSHudPainter::DrawCommandPanel(const FRTSHudState& State)
 			SlotBoxes.Add(Slot.Id, Box);
 		}
 	};
-	for (int32 I = 0; I < 2 * MC; ++I)
+	if (State.Timer.bShow)
+	{
+		// (v4, 23/10) o relógio no lugar da grade principal (o CB_CONTEXT_OCL_TIMER do ZH): a esquerda sem casas, a direita igual
+		DrawTimer(State, Left, ActX - (Sep + Gap) * 0.5f, PTop, PH);
+	}
+	for (int32 I = 0; !State.Timer.bShow && I < 2 * MC; ++I)
 	{
 		Place(I < State.Main.Num() ? State.Main[I] : FRTSHudSlot(), Left + (I % MC) * Step, MainY + (I / MC) * StepY);
 	}
@@ -1132,6 +1138,89 @@ void FRTSHudPainter::DrawCommandPanel(const FRTSHudState& State)
 	{
 		Place(I < State.Actions.Num() ? State.Actions[I] : FRTSHudSlot(), ActX + (I % 3) * Step, MainY + (I / 3) * StepY);
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// (v4, 23/10) o relógio do prédio que trabalha sozinho (a Supply Drop Zone e o avião de carga): a esquerda do painel do meio
+// sem a grade, na composição que o Felipe escolheu (a imagem 4 do GPT, docs/aprovados/jogo/
+// 2026-10-23_timer_drop_zone_gpt_b_ESQUERDA_APROVADA.jpg): o medalhão de aço com a luz azul atrás; ao lado, o rótulo dourado
+// espaçado, o tempo no tamanho do relógio do topo (nunca maior), a linha cinza e a barra no rebaixo da vida do cartão. É o
+// CB_CONTEXT_OCL_TIMER do ZH (ControlBarOCLTimer.cpp: o texto e a barra só mudam quando o segundo mostrado muda; quem preenche
+// já manda a barra em degraus de 1 s). As medidas saíram do alvo, na planta do painel de 7 colunas (204 de altura); noutra
+// altura tudo encolhe junto.
+
+FVector2D FRTSHudPainter::TextSpaced(const FString& Str, float X, float CY, float Px, const FLinearColor& C, float Tracking)
+{
+	// letra por letra, com Tracking × o tamanho entre elas (as maiúsculas espaçadas não pedem o kerning)
+	float CX = X;
+	for (int32 I = 0; I < Str.Len(); ++I)
+	{
+		const FString Ch = Str.Mid(I, 1);
+		if (Ch != TEXT(" "))
+		{
+			TextMid(Ch, CX, CY, Px, C, EWeight::Bold);
+		}
+		CX += Measure(Ch, Px, EWeight::Bold).X + Tracking * Px * S;
+	}
+	return FVector2D(CX - X, Measure(Str, Px, EWeight::Bold).Y);
+}
+
+void FRTSHudPainter::DrawTimer(const FRTSHudState& State, float Left, float Right, float PTop, float PH)
+{
+	const FRTSHudTimer& T = State.Timer;
+	const float Drop = PanelDrop(State);
+	const float K = PH / 204.0f;
+	// o medalhão quase na altura inteira do painel (no alvo ele encosta nas bordas), com o vão à esquerda pra luz
+	const float R = 96.0f * K;
+	const float CXp = Left + 148.0f * K;
+	const FVector2D C(SX(CXp, EAnchor::Left), SY(PTop + PH * 0.5f, true) + Drop);
+	const float Rs = R * S;
+
+	// a luz azul atrás (a textura cobre 3,4 R × 2,1 R: o pico colado no aro, mais comprida do lado de fora). Sem energia ela
+	// quase apaga; com o avião a caminho ela respira devagar (o READY da coluna de poderes respira assim)
+	const float GlowA = T.bPaused ? 0.12f : (T.bInbound ? 0.55f + 0.45f * Pulse(0.9f) : 0.88f);
+	Image(SkTimerGlow, C.X - 1.7f * Rs, C.Y - 1.05f * Rs, 3.4f * Rs, 2.1f * Rs, FLinearColor(1.0f, 1.0f, 1.0f, GlowA), false);
+	// o medalhão: a peça de 512 px tem o aro no raio 250 (o resto é a sombra de fora); parado, mais escuro
+	const float MD = 2.0f * Rs * 512.0f / 500.0f;
+	const float Lit = T.bPaused ? 0.70f : 1.0f;
+	Image(T.Medallion, C.X - MD * 0.5f, C.Y - MD * 0.5f, MD, MD, FLinearColor(Lit, Lit, Lit, 1.0f), false);
+
+	// o texto: o rótulo (dourado; âmbar com o avião a caminho e na parada), o tempo (o tamanho do relógio do topo: 36 no 1x1,
+	// 32 com mais jogadores) e a linha dos paletes
+	const float ClockPx = State.Players.Num() == 2 ? 36.0f : 32.0f;
+	const float TX = SX(CXp + R + 27.0f * K, EAnchor::Left);
+	const auto Row = [&](float Y) { return SY(PTop + Y * K, true) + Drop; };
+	TextSpaced(T.Title, TX, Row(42.0f), 20.0f * K, (T.bInbound || T.bPaused) ? KAmber : KGoldText, 0.40f);
+	TextMid(T.Time, TX - 1.0f * S, Row(80.0f), ClockPx * K, KTextMain, EWeight::Bold);
+	TextMid(T.Line, TX, Row(118.0f), 25.0f * K, KTextSub, EWeight::SemiBold);
+
+	// a barra no rebaixo da vida do cartão (a mesma pele), da esquerda pra direita: o nosso azul vivo com o brilho em cima
+	// (como no alvo); parada, em âmbar
+	const float BX = TX, BY = Row(144.0f), BW = SX(Right - 26.0f * K, EAnchor::Left) - TX, BH = 32.0f * K * S;
+	if (BW < 40.0f * S)
+	{
+		return;
+	}
+	Skin(SkUnitCard, BX, BY, BW, BH, FMargin(10.0f), BH / 47.0f, FLinearColor::White, SkCardHealthSlot);
+	const float In = FMath::Max(2.0f, BH * 0.15f);
+	const float FX = BX + In, FY = BY + In, FW = (BW - 2.0f * In) * FMath::Clamp(T.Fill, 0.0f, 1.0f), FH = BH - 2.0f * In;
+	if (FW < 0.5f)
+	{
+		return;
+	}
+	const FLinearColor Body = T.bPaused ? FLinearColor(FColor(226, 146, 30)) : FLinearColor(FColor(52, 150, 248));
+	const FLinearColor Hi = FMath::Lerp(Body, FLinearColor::White, 0.45f);
+	const FLinearColor Lo(Body.R * 0.70f, Body.G * 0.70f, Body.B * 0.70f, 1.0f);
+	const float Split = FY + FH * 0.35f;
+	FillPoly({ {FX, FY}, {FX + FW, FY}, {FX + FW, Split}, {FX, Split} }, [=](const FVector2D& P)
+	{
+		return FMath::Lerp(Hi, Body, FMath::Clamp((P.Y - FY) / FMath::Max(1.0f, Split - FY), 0.0f, 1.0f));
+	});
+	FillPoly({ {FX, Split}, {FX + FW, Split}, {FX + FW, FY + FH}, {FX, FY + FH} }, [=](const FVector2D& P)
+	{
+		return FMath::Lerp(Body, Lo, FMath::Clamp((P.Y - Split) / FMath::Max(1.0f, FY + FH - Split), 0.0f, 1.0f));
+	});
+	Rect(FX, FY, FW, FMath::Max(1.0f, S), FLinearColor(1.0f, 1.0f, 1.0f, 0.35f));
 }
 
 void FRTSHudPainter::DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W, float H)

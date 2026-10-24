@@ -4,6 +4,7 @@
 #include "Engine/Texture2D.h"
 #include "EngineModule.h"
 #include "GlobalShader.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "PixelShaderUtils.h"
 #include "RenderGraphBuilder.h"
@@ -58,6 +59,17 @@ namespace
 	void RenderFog(FPostOpaqueRenderParameters& P)
 	{
 		const FFogRenderState& S = GRenderState;
+		// (17/10, o Look) com rts.FogStyle 1 ou 2 a névoa de guerra é desenhada pelo Look (a sombra de nuvem na luz do sol ou
+		// o desfoque no pós): este passe não multiplica. A CVar é do RTSLook; 0 = como antes.
+		static TConsoleVariableData<int32>* StyleVar = nullptr;
+		if (!StyleVar)
+		{
+			StyleVar = IConsoleManager::Get().FindTConsoleVariableDataInt(TEXT("rts.FogStyle"));
+		}
+		if (StyleVar && StyleVar->GetValueOnRenderThread() != 0)
+		{
+			return;
+		}
 		if (!S.bEnabled || !S.Resource || S.Strength <= 0.0f || !P.GraphBuilder || !P.ColorTexture || !P.DepthTexture)
 		{
 			return;

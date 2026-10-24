@@ -31,6 +31,7 @@
 class AActor;
 class UCanvas;
 class UMaterialInstanceDynamic;
+class UPrimitiveComponent;
 class UTexture2D;
 class UTextureRenderTarget2D;
 
@@ -41,9 +42,25 @@ class RTSGAME_API URTSGroundMemory : public UObject
 
 public:
 	/** Os cadernos cobrindo o retângulo do mapa (cm), e o decal que pinta por cima do chão. */
-	bool Init(UWorld* World, const FVector2D& InMapMinCm, const FVector2D& InMapSizeCm, float GroundZMinCm, float GroundZMaxCm, float WindYawDeg);
-	/** A cada quadro, pra cada veículo de lagarta: risca a fita das duas lagartas por onde ele andou. */
-	void TrackUnit(uint32 Id, const FVector2D& PosCm, float YawDeg, float GaugeCm, float WidthCm, bool bShown);
+	/** bMapGroundV3: o mapa veio com o chão v3 (o Maps.json): a v3 liga sem a chave. */
+	bool Init(UWorld* World, const FVector2D& InMapMinCm, const FVector2D& InMapSizeCm, float GroundZMinCm, float GroundZMaxCm, float WindYawDeg,
+		bool bMapGroundV3 = false);
+	/** (23/10, v4) O jeito da marca: o padrão é a lagarta (o tanque aprovado, intocado). O pneu (o caminhão de suprimento e o Tomahawk; o
+	 *  bloco "wheels" do Units.json) rola e compacta em vez de revirar a areia com a garra: a passada escurece menos (Dark), o sulco e a
+	 *  bordinha são mais rasos (Depth; o revolvido vem deles), o perfil vai na largura do pneu (WidthK = a largura ÷ os 64 cm da lagarta
+	 *  pra que ele foi feito) e as garras da banda são mais miúdas (LugK: garras por metro × as do M1, de 19,4 cm). */
+	struct FTrackStyle
+	{
+		float Dark = 1.0f;
+		float Depth = 1.0f;
+		float WidthK = 1.0f;
+		float LugK = 1.0f;
+		/** (23/10, v4) O trecho da fita nas retas × o da lagarta (1 m; a curva parte a cada 6° do mesmo jeito): o pneu, 2 (metade das
+		 *  fitas guardadas e redesenhadas; o caminhão de suprimento passa a partida inteira no mesmo vaivém). */
+		float SegmentK = 1.0f;
+	};
+	/** A cada quadro, pra cada veículo de lagarta (ou de rodas, com o Style do pneu): risca a fita dos dois lados por onde ele andou. */
+	void TrackUnit(uint32 Id, const FVector2D& PosCm, float YawDeg, float GaugeCm, float WidthCm, bool bShown, const FTrackStyle& Style = FTrackStyle());
 	void ForgetUnit(uint32 Id);
 	/** Tiro ou explosão: o queimado (Crater 0, o carimbo somado) ou a cratera do atlas (Crater > 0: a bacia, o halo
 	 *  escuro, a borda, os raios e os torrões), esticados pra longe de quem atirou (From; sem atirador, giro sorteado). */
@@ -56,6 +73,12 @@ public:
 	/** O chão afunda de verdade (13/10, com o Look e o WorldForge): o deslocamento Nanite do Landscape, a MF lendo a altura
 	 *  da cratera e do sulco nos cadernos (DispOn no material). Ligado no Alta e no Ultra; -RTSDisp=0/1 força, pro A/B. */
 	void SetDisplacement(bool bOn);
+	/** (16/10) A batalha no minimapa: a camada pintada (cor e alfa) do caderno de acúmulo, refeita a cada segundo; ela
+	 *  cobre o mapa inteiro (os limites do caderno grosso). */
+	UTextureRenderTarget2D* GetBattleOverlay() const { return BattleOverlay; }
+	/** (16/10) O tipo de chão do mapa (o surface.png do WorldForge: R asfalto, G terra, B pedra, A molhado; Res × Res a
+	 *  CellM metros, a linha 0 no −Y): o sulco, a bordinha e a garra de cada chão (a v3; rts.Ground.Surface 0 desliga). */
+	void SetSurface(const TArray<FColor>& Pixels, int32 Res, const FVector2D& MinM, float CellM);
 	/** Grava as marcas novas (uma passada por caderno), desbota a esteira e segue a câmera. */
 	void Update(float DeltaSeconds, const FVector2D& FocusCm, float YawDeg);
 	void Shutdown();
@@ -71,6 +94,12 @@ private:
 		float Along0 = 0.0f, Along1 = 0.0f;
 		float Strength = 0.0f;
 		float Time = 0.0f;
+		/** (16/10, a v3) a curva no começo e no fim da fita (0 reto ou raio ≥ 30 m, 1 raio ≤ 6 m ou o pivô) e o lado de
+		 *  fora: +1 o L (o lado −Lat), −1 o R, 0 reto. */
+		float Curve0 = 0.0f, Curve1 = 0.0f;
+		int8 Outer = 0;
+		/** (23/10) O pneu (FTrackStyle): o fundo do sulco e da bordinha e a largura do perfil, × os da lagarta (1 = a lagarta). */
+		float Depth = 1.0f, WidthK = 1.0f;
 	};
 	struct FTrackSide
 	{
@@ -78,6 +107,10 @@ private:
 		float U = 0.0f;
 		float Along = 0.0f;
 		float Yaw = 0.0f;
+		/** A curva alisada da última fita (a próxima começa dela: a largura não pula de uma fita pra outra). */
+		float Curve = 0.0f;
+		/** A curvatura com sinal (1/m; + = o lado de fora é o L), alisada pela distância andada (~3 m). */
+		float Kappa = 0.0f;
 		bool bValid = false;
 	};
 	struct FTrackPair
@@ -107,13 +140,28 @@ private:
 	{
 		UTextureRenderTarget2D* Target = nullptr;
 		UTextureRenderTarget2D* Profile = nullptr;
+		/** (16/10, a garra da v3) o andado da lagarta sob a faixa (G16: o U da fita em m ÷ AlongRangeM); só o detalhe. */
+		UTextureRenderTarget2D* Along = nullptr;
 		UTextureRenderTarget2D* Relief = nullptr;
-		/** A altura das crateras (R16F, cm), na resolução do relevo (o grosso: na do caderno). */
+		/** A altura das crateras (RG16F, cm: R a cheia, G a que faz sombra do sol, sem os torrões), na resolução do relevo
+		 *  (o grosso: na do caderno). */
 		UTextureRenderTarget2D* Crater = nullptr;
 		/** O carimbo do perfil, já filtrado no tamanho do texel deste caderno (sem serrilhar a bordinha). */
 		UTexture2D* ProfileStamp = nullptr;
+		/** A luz do sol assada (a v3, -RTSGroundV3): R SunLit, G SkyAO (RG16F, a janela da esteira); nulo sem a chave. */
+		UTextureRenderTarget2D* SunLit = nullptr;
+		/** A grade fina da luz: SS × SS amostras por texel (2 no Alta, 4 no Ultra). */
+		int32 SunLitSS = 1;
 		/** A próxima linha do relevo a refazer (o relevo envelhece aos poucos, uma faixa por quadro). */
 		int32 RollRow = 0;
+		/** O próximo ladrilho da volta lenta da luz assada (a trilha velha: o relevo envelhece, a luz acompanha). */
+		int32 SunLitRollTile = 0;
+		/** (16/10) onde há cratera neste caderno, em 64 × 64 casas (a trilha sozinha muda ~20 cm de altura: a luz dela só
+		 *  precisa do contexto longo, 7 m do lado do sol, perto de cratera, que faz sombra de 1 m de fundo). */
+		uint64 CraterRows[64] = {};
+		/** (16/10, a v3) o que mudou desde as últimas mips, em texels de cada caderno (vazio = nada). */
+		TArray<FIntRect, TInlineAllocator<8>> ReliefMipDirty;
+		TArray<FIntRect, TInlineAllocator<8>> SunLitMipDirty;
 		FVector2D MinCm = FVector2D::ZeroVector;
 		FVector2D SizeCm = FVector2D(1.0, 1.0);
 		int32 Res = 0;
@@ -133,6 +181,9 @@ private:
 	/** O relevo: R8G8B8A8 com escrita da placa (UAV); o perfil: RGB10A2 (o frescor desbota sem travar no 8 bits). */
 	UTextureRenderTarget2D* MakeReliefTarget(int32 Res);
 	UTextureRenderTarget2D* MakeProfileTarget(int32 Res);
+	UTextureRenderTarget2D* MakeAlongTarget(int32 Res);
+	/** O andado das fitas no caderno Along (a garra da luz assada lê). */
+	void DrawAlong(UCanvas* Canvas, const FSheet& Sheet, const TArray<int32>& Indices) const;
 	/** A altura das crateras: R16F com escrita da placa, em cm (zero = o chão). */
 	UTextureRenderTarget2D* MakeCraterTarget(int32 Res);
 	/** Lê um atlas de marcas (Config/RTS/Ground/<tipo>_<opção>.png, 16 bits, e o .json com a escala). */
@@ -147,7 +198,37 @@ private:
 	void Recenter(FSheet& Sheet, const FVector2D& CenterCm);
 	/** O retângulo (em texels do relevo) que as marcas novas tocaram; vazio se nenhuma. */
 	FIntRect DirtyRect(const FSheet& Sheet) const;
-	void UpdateRelief(FSheet& Sheet, const FIntRect& Rect);
+	/** bLight: a luz assada também (a v3); o envelhecer aos poucos não refaz a luz. */
+	void UpdateRelief(FSheet& Sheet, const FIntRect& Rect, bool bLight = true);
+	/** A luz assada (16/10, a v3 do chão): os retângulos a refazer (em texels do caderno de luz, até 512), com uma cota
+	 *  por quadro: o recentrar do caderno pede o caderno inteiro, que sai em vários quadros. */
+	struct FSunLitJob
+	{
+		FSheet* Sheet = nullptr;
+		FIntRect Rect;
+		float WriteDropCm = 100.0f;
+		/** A queda mais funda que pode fazer sombra ali (a varredura começa MaxDrop ÷ tan antes, do lado do sol). */
+		float ContextDropCm = 100.0f;
+	};
+	TArray<FSunLitJob> SunLitQueue;
+	/** WriteDropCm: o quanto a altura mudou (a trilha ~20 cm; a cratera e o redesenho, tudo). */
+	void QueueSunLit(FSheet& Sheet, const FIntRect& ReliefRect, float WriteDropCm = 100.0f, float ContextDropCm = 100.0f);
+	/** As casas de cratera do caderno: marca o carimbo; e se alguma cai no retângulo (texels do relevo) mais ExtraCm. */
+	void MarkCraterCells(FSheet& Sheet, const FVector2D& AtCm, double RadiusCm) const;
+	bool CraterNear(const FSheet& Sheet, const FIntRect& ReliefRect, double ExtraCm) const;
+	/** O contexto do lado do sol pra um retângulo de trilha: o longo com cratera perto, o curto (a trilha) sem. */
+	float ContextFor(const FSheet& Sheet, const FIntRect& ReliefRect) const;
+	/** As marcas novas deste quadro, uma caixa por fita ou cicatriz (as vizinhas juntas): a luz refaz só onde mudou. */
+	void QueueSunLitNew(FSheet& Sheet);
+	void RunSunLit(float DeltaSeconds);
+	/** As mips do relevo e da luz assada no que mudou no quadro de antes (a v3; os cadernos nascem com a cadeia). */
+	void FlushMips();
+	bool SunLitRollFlip = false;
+	UTextureRenderTarget2D* MakeSunLitTarget(int32 Res);
+	FVector2f SunLitSunDir = FVector2f(0.0f, 0.0f);
+	float SunLitSunTan = 0.0f;
+	/** A volta lenta: um ladrilho de 512 da luz refeito a cada SunLitRollSeconds, com a fila vazia. */
+	float SunLitRollClock = 0.0f;
 	/** A direção e a elevação do sol, da luz direcional do mapa (o diretor do Look adota a dele). */
 	void ReadSun();
 	/** As texturas e os limites pro material do chão (o Landscape: a função do Look lê pelos nomes). Cada pedaço
@@ -155,6 +236,16 @@ private:
 	 *  limites pra todos. Achando o parâmetro UseCrater (a MF do Look no chão), desliga o decal de piso. */
 	void PushToLandscape(bool bBounds);
 	TSet<TWeakObjectPtr<AActor>> PushedProxies;
+	/** As lajes da estrada do WorldForge (etiqueta WorldForgeRoadSlab, 16/10): malhas Nanite com o mesmo CODE da MF e os
+	 *  mesmos nomes de parâmetro do chão; cada uma ganha uma instância dinâmica e os cadernos, pra esteira e a cratera
+	 *  aparecerem na estrada também. */
+	void PushToSlabs(bool bBounds);
+	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> SlabMIDs;
+	TSet<TWeakObjectPtr<UPrimitiveComponent>> PushedSlabs;
+	/** (16/10, o WorldForge: o capim deitado no caminho) os ISM das plantas da montagem (etiqueta WorldForgeTrample) com o
+	 *  caderno da batalha e a trilha fresca; as instâncias dinâmicas ficam no SlabMIDs. */
+	void PushToTrample(bool bBounds);
+	TSet<TWeakObjectPtr<UPrimitiveComponent>> PushedTrample;
 	bool bDispOn = false;
 	bool bDispForced = false;
 	float PushClock = 0.0f;
@@ -164,18 +255,32 @@ private:
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> CoarseTarget;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailTarget;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailProfile;
+	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailAlong;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailRelief;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> MidTarget;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> MidProfile;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> MidRelief;
 	UPROPERTY() TObjectPtr<UTexture2D> TrackStamp;
 	UPROPERTY() TObjectPtr<UTexture2D> BlotStamp;
+	/** (16/10) O caderno de acúmulo do mapa inteiro (docs/MARCAS_DA_BATALHA.md): R o tráfego, G o combustível fresco, B o
+	 *  queimado largo, A a densidade de crateras; e a camada dele pro minimapa. */
+	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> BattleTarget;
+	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> BattleOverlay;
+	float BattleOverlayClock = 0.0f;
+	bool bBattleDirty = false;
+	void DrawBattle(UCanvas* Canvas, const FVector2D& Size, bool bDecay);
+	/** (16/10) O tipo de chão do mapa na placa (o relevo e a garra leem). */
+	UPROPERTY() TObjectPtr<UTexture2D> SurfaceTex;
+	FVector2f SurfaceMinCm = FVector2f(0.0f, 0.0f);
+	float SurfaceSizeCm = 0.0f;
 	UPROPERTY() TObjectPtr<UTexture2D> CraterStamp;
 	UPROPERTY() TObjectPtr<UTexture2D> ProfileStampDetail;
 	UPROPERTY() TObjectPtr<UTexture2D> ProfileStampMid;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> CoarseCrater;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailCrater;
 	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> MidCrater;
+	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> DetailSunLit;
+	UPROPERTY() TObjectPtr<UTextureRenderTarget2D> MidSunLit;
 	UPROPERTY() TObjectPtr<UTexture2D> CraterAtlasTex[3];
 	UPROPERTY() TObjectPtr<UTexture2D> WreckAtlasTex;
 	UPROPERTY() TObjectPtr<UTexture2D> BlotAtlasTex;

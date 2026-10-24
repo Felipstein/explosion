@@ -20,7 +20,7 @@ namespace
 		const TCHAR* Name;
 		bool bShadow;
 	};
-	const FPiece Pieces[] = {
+	const FPiece DebrisPieces[] = {
 		{ TEXT("SM_Debris_Wheel"), true },
 		{ TEXT("SM_Debris_Track"), true },
 		{ TEXT("SM_Debris_Plate"), true },
@@ -30,6 +30,10 @@ namespace
 		{ TEXT("SM_Debris_Chunk2"), true },
 		{ TEXT("SM_Debris_Chunk3"), false },
 	};
+	// (22/10) as 5 primeiras (a roda, a lagarta, a chapa, a escotilha, a caixa) são da carcaça: afundam e somem com ela
+	constexpr int32 LargePieceKinds = 5;
+	// a peça grande desce até o topo dela ficar abaixo do chão, com folga (ela pousa torta e meio enterrada)
+	constexpr float PieceSinkMarginCm = 10.0f;
 	constexpr double CellCm = 6400.0;
 	// o teto: ~250 mortes; passou disso, as novas ficam sem destroço (o queimado e a carcaça ficam)
 	constexpr int32 MaxPieces = 1500;
@@ -62,7 +66,7 @@ void ARTSDebrisField::LoadMeshes()
 		return;
 	}
 	bLoaded = true;
-	for (const FPiece& P : Pieces)
+	for (const FPiece& P : DebrisPieces)
 	{
 		// (o importador de GLB põe as malhas numa subpasta com o nome do arquivo)
 		const FString Path = FString::Printf(TEXT("/Game/Structures/debris/SM_Debris/StaticMeshes/%s.%s"), P.Name, P.Name);
@@ -192,7 +196,7 @@ void ARTSDebrisField::AddStones(const TArray<FVector>& Large, const TArray<FVect
 	SetActorTickEnabled(!Pending.IsEmpty());
 }
 
-void ARTSDebrisField::AddWreck(const FVector2D& AtCm, float HullYawDeg, const FVector2D& FromCm, TFunctionRef<float(const FVector2D&)> GroundZ)
+void ARTSDebrisField::AddWreck(const FVector2D& AtCm, float HullYawDeg, const FVector2D& FromCm, TFunctionRef<float(const FVector2D&)> GroundZ, uint32 WreckId)
 {
 	LoadMeshes();
 	if (Placed + Pending.Num() >= MaxPieces || !GetWorld())
@@ -246,7 +250,60 @@ void ARTSDebrisField::AddWreck(const FVector2D& AtCm, float HullYawDeg, const FV
 		Q.AtSeconds = Now + R.FRandRange(0.9f, 1.6f);   // quando pousa
 		Q.Mesh = K;
 		Q.Transform = FTransform(Rot, Loc, FVector(R.FRandRange(0.9f, 1.15f)));
+		Q.WreckId = K < LargePieceKinds ? WreckId : 0u;   // (22/10) as grandes vão com a carcaça; as lascas ficam
 		Pending.Add(Q);
+	}
+	SetActorTickEnabled(!Pending.IsEmpty());
+}
+
+void ARTSDebrisField::SinkWreck(uint32 WreckId, float P01)
+{
+	TArray<FWreckPiece>* Pieces = WreckId ? WreckPieces.Find(WreckId) : nullptr;
+	if (!Pieces)
+	{
+		return;
+	}
+	// o mesmo smoothstep do casco (RTSUnitActor::SetWreckSink); só mexe a instância quando desce mais de 1 cm
+	const float P = FMath::Clamp(P01, 0.0f, 1.0f);
+	const float Ease = P * P * (3.0f - 2.0f * P);
+	for (FWreckPiece& Pc : *Pieces)
+	{
+		const float Cm = Pc.DepthCm * Ease;
+		UInstancedStaticMeshComponent* C = Components.IsValidIndex(Pc.Component) ? Components[Pc.Component].Get() : nullptr;
+		if (!C || FMath::Abs(Cm - Pc.ShownCm) < 1.0f)
+		{
+			continue;
+		}
+		Pc.ShownCm = Cm;
+		FTransform T = Pc.Base;
+		T.AddToTranslation(FVector(0.0, 0.0, -Cm));
+		C->UpdateInstanceTransform(Pc.Instance, T, true);
+	}
+}
+
+void ARTSDebrisField::RemoveWreck(uint32 WreckId)
+{
+	if (!WreckId)
+	{
+		return;
+	}
+	// as que ainda não pousaram não pousam mais
+	Pending.RemoveAll([WreckId](const FPending& P) { return P.WreckId == WreckId; });
+	if (TArray<FWreckPiece>* Pieces = WreckPieces.Find(WreckId))
+	{
+		for (const FWreckPiece& Pc : *Pieces)
+		{
+			if (UInstancedStaticMeshComponent* C = Components.IsValidIndex(Pc.Component) ? Components[Pc.Component].Get() : nullptr)
+			{
+				// escondida no lugar (escala zero): tirar a instância mudaria o índice das outras; a vaga fica pra próxima
+				FTransform T = Pc.Base;
+				T.SetScale3D(FVector::ZeroVector);
+				C->UpdateInstanceTransform(Pc.Instance, T, true);
+				FreeSlots.FindOrAdd(Pc.Component).Add(Pc.Instance);
+			}
+		}
+		Placed = FMath::Max(Placed - Pieces->Num(), 0);   // o teto conta só as que estão no chão
+		WreckPieces.Remove(WreckId);
 	}
 	SetActorTickEnabled(!Pending.IsEmpty());
 }
@@ -285,6 +342,7 @@ void ARTSDebrisField::Place(const FPending& P)
 		Index = &CellComponents.Add(Key, Components.Add(C));
 	}
 	Batch.FindOrAdd(*Index).Add(P.Transform);
+	BatchOwners.FindOrAdd(*Index).Add(P.WreckId);
 	++Placed;
 }
 
@@ -301,12 +359,53 @@ void ARTSDebrisField::Tick(float DeltaSeconds)
 		}
 	}
 	// todas as que pousaram neste quadro de uma vez por componente (14/10, o Look: uma a uma, cada entrada invalidava o
-	// cache da sombra virtual da célula de novo)
+	// cache da sombra virtual da célula de novo); (22/10) primeiro nas vagas das peças que já sumiram, e as grandes guardam
+	// onde ficaram, pra afundar e sumir com a carcaça
 	for (TPair<int32, TArray<FTransform>>& It : Batch)
 	{
-		Components[It.Key]->AddInstances(It.Value, false, true);
+		UInstancedStaticMeshComponent* C = Components[It.Key];
+		const TArray<uint32>* Owners = BatchOwners.Find(It.Key);
+		TArray<int32>* Free = FreeSlots.Find(It.Key);
+		const auto Track = [this, C, &It](int32 Instance, const FTransform& T, uint32 WreckOf)
+		{
+			if (WreckOf == 0)
+			{
+				return;
+			}
+			FWreckPiece Pc;
+			Pc.Component = It.Key;
+			Pc.Instance = Instance;
+			Pc.Base = T;
+			const FVector E = C->GetStaticMesh() ? C->GetStaticMesh()->GetBounds().BoxExtent : FVector(50.0);
+			Pc.DepthCm = float(2.0 * E.GetMax() * T.GetScale3D().GetMax()) + PieceSinkMarginCm;
+			WreckPieces.FindOrAdd(WreckOf).Add(Pc);
+		};
+		TArray<FTransform> Fresh;
+		TArray<uint32> FreshOwners;
+		for (int32 K = 0; K < It.Value.Num(); ++K)
+		{
+			const uint32 WreckOf = Owners && Owners->IsValidIndex(K) ? (*Owners)[K] : 0u;
+			if (Free && Free->Num() > 0)
+			{
+				const int32 Slot = Free->Pop();
+				C->UpdateInstanceTransform(Slot, It.Value[K], true);
+				Track(Slot, It.Value[K], WreckOf);
+				continue;
+			}
+			Fresh.Add(It.Value[K]);
+			FreshOwners.Add(WreckOf);
+		}
+		if (Fresh.Num())
+		{
+			const TArray<int32> Indices = C->AddInstances(Fresh, true, true);
+			for (int32 K = 0; K < Indices.Num() && K < FreshOwners.Num(); ++K)
+			{
+				Track(Indices[K], Fresh[K], FreshOwners[K]);
+			}
+		}
 	}
 	Batch.Reset();
+	BatchOwners.Reset();
 	if (Pending.IsEmpty())
 	{
 		SetActorTickEnabled(false);

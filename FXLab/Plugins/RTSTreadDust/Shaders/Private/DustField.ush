@@ -1,0 +1,202 @@
+// O campo da poeira das lagartas como VOLUME (16/10 noite, o redesenho; a regra do CLAUDE.md: toda fumaça e poeira tem
+// volume, recebe a sombra do mapa, projeta sombra e é acesa pelo fogo; um sistema só). Quem marcha é o raymarch das
+// explosões (o BlastRaymarch do Fluxo): a poeira é mais um meio no MarchJoint, com a MESMA luz (InitLights, a fase HG
+// dupla, as oitavas, o passo de Hillaire). Este arquivo dá o meio e a luz que o campo pré-calculou:
+// - RTSDustAt: a extinção (1/m, a 0,125 m) e a cor de espalhamento (o albedo de espalhamento simples, rgb, a 0,5 m);
+// - RTSDustLightAt: a transmitância até o sol pela própria poeira (SunT, a que as oitavas amaciam), a sombra do mapa
+//   (MapV: casa, palmeira, duna, tanque; multiplica o sol em TODAS as oitavas, sem amaciar), a do céu e a luz das
+//   explosões e do fogo que chega ali (lux ÷ 128 000, a escala do raymarch).
+// Quem inclui define RTS_DUST_FIELD_GLOBALS 1 antes (os parâmetros vêm do FRTSDustFieldParameters, RTSDustField.h).
+//
+// O campo: tijolos de 2 m (16³ voxels de 0,125 m, guardados com 1 voxel de borda: 18³; a gravação tem 0,1 m) num atlas,
+// achados por uma tabela de páginas sobre uma janela de 128×128×32 tijolos (256×256×64 m) em volta do foco. A luz e a cor:
+// células de 0,5 m (4³ por tijolo, guardadas 6³). Tudo em metros relativos ao canto da janela.
+
+#if defined(RTS_DUST_FIELD_GLOBALS) && RTS_DUST_FIELD_GLOBALS
+Texture3D<uint> RTSDustPT;          // o atlas do tijolo + 1 (0 = vazio)
+Texture3D<uint> RTSDustPTCoarse;    // 1 = alguma poeira nos 4×4×4 tijolos (8 m) daqui (o salto dos vazios)
+Texture3D<float> RTSDustAtlas;      // Σ σ (1/m), a 0,125 m
+Texture3D<float4> RTSDustColor;     // rgb = o albedo de espalhamento simples (a média dos puffs pesada por σ), a 0,5 m
+Texture3D<float4> RTSDustLightA;    // r = T até o sol pela poeira, g = T do céu, b = V do mapa no chão embaixo, a = V do mapa
+Texture3D<float4> RTSDustLightB;    // rgb = a luz das explosões e do fogo (lux ÷ 128 000)
+Texture3D<float> RTSDustNoise;      // o ruído de Worley que ladrilha (9,6 m), o mesmo da erosão
+SamplerState RTSDustSampler;        // bilinear, clamp
+SamplerState RTSDustNoiseSampler;   // bilinear, wrap
+float3 RTSDustCamToWindowM;         // a câmera no quadro da janela (m)
+int3 RTSDustWindowBricks;           // 128, 128, 32
+float3 RTSDustAtlasInvSize;         // 1 / texels do atlas da densidade
+float3 RTSDustLightInvSize;         // 1 / texels do atlas da luz
+float RTSDustDetail;                // a erosão fina na marcha (1/m; 0 = só o campo)
+float RTSDustTime;                  // s (o ruído sobe 0,3 m/s, como na v26)
+float RTSDustValid;                 // 0 = sem poeira neste quadro
+float3 RTSDustSunDirW;              // pro sol (a sombra curta de cada amostra)
+float RTSDustVoxM;                  // o voxel da densidade: 0,125 m (Ultra) ou 0,25 m (Alta)
+int RTSDustVoxStore;                // os voxels guardados por eixo num tijolo: 2 m ÷ o voxel + a borda de cada lado
+
+#define RTS_DUST_BRICK_M 2.0
+#define RTS_DUST_CELL_M 0.5
+#define RTS_DUST_ATLAS_BRICKS_X 32
+#define RTS_DUST_ATLAS_BRICKS_Y 32
+
+uint3 RTSDustSlotOrigin(uint Slot)
+{
+	return uint3(Slot % RTS_DUST_ATLAS_BRICKS_X, (Slot / RTS_DUST_ATLAS_BRICKS_X) % RTS_DUST_ATLAS_BRICKS_Y,
+		Slot / (RTS_DUST_ATLAS_BRICKS_X * RTS_DUST_ATLAS_BRICKS_Y));
+}
+
+// o tijolo do ponto (m, no quadro da janela): o atlas dele + 1, ou 0 se vazio ou fora
+uint RTSDustBrickAt(float3 Pw, out float3 InBrick)
+{
+	const int3 B = int3(floor(Pw / RTS_DUST_BRICK_M));
+	InBrick = Pw - float3(B) * RTS_DUST_BRICK_M;
+	if (any(B < 0) || any(B >= RTSDustWindowBricks))
+	{
+		return 0;
+	}
+	return RTSDustPT.Load(int4(B, 0));
+}
+
+// a extinção (1/m) num ponto do quadro da janela, só do campo (sem o detalhe)
+float RTSDustFieldAtW(float3 Pw)
+{
+	float3 InB;
+	const uint S = RTSDustBrickAt(Pw, InB);
+	if (S == 0)
+	{
+		return 0.0;
+	}
+	// o voxel i do tijolo cobre [i, i+1) em InB / o voxel; no atlas ele é o texel 1 + i (a borda vem antes)
+	const float3 T = float3(RTSDustSlotOrigin(S - 1) * (uint)RTSDustVoxStore) + 1.0 + InB / RTSDustVoxM;
+	// a borda da janela some em 16 m (22/10: o corte reto da janela aparecia como "a linha onde a poeira começa")
+	const float2 Wm = float2(RTSDustWindowBricks.xy) * RTS_DUST_BRICK_M;
+	const float Edge = saturate(min(min(Pw.x, Pw.y), min(Wm.x - Pw.x, Wm.y - Pw.y)) / 16.0);
+	return RTSDustAtlas.SampleLevel(RTSDustSampler, T * RTSDustAtlasInvSize, 0) * Edge;
+}
+
+// a cor (o albedo rgb) num ponto, na grade de 0,5 m
+float3 RTSDustColorAtW(float3 Pw)
+{
+	float3 InB;
+	const uint S = RTSDustBrickAt(Pw, InB);
+	if (S == 0)
+	{
+		return 0.0;
+	}
+	const float3 T = (float3(RTSDustSlotOrigin(S - 1) * 6) + 1.0 + InB / RTS_DUST_CELL_M) * RTSDustLightInvSize;
+	return RTSDustColor.SampleLevel(RTSDustSampler, T, 0).rgb;
+}
+
+// O meio, pro raymarch: a extinção (1/m), a cor de espalhamento e o albedo (a cor já é o albedo rgb: Albedo = 1)
+bool RTSDustAt(float3 PosCamRelM, out float SigT, out float3 ScatCol, out float Albedo)
+{
+	SigT = 0.0;
+	ScatCol = 0.0;
+	Albedo = 1.0;
+	if (RTSDustValid < 0.5)
+	{
+		return false;
+	}
+	const float3 Pw = PosCamRelM + RTSDustCamToWindowM;
+	const float F = RTSDustFieldAtW(Pw);
+	if (F < 1e-4)
+	{
+		return false;
+	}
+	// a erosão fina na hora da marcha (as nuvens do Horizon, Schneider 2015/2017: a forma do campo, a borda comida por um
+	// ruído de alta frequência): o mesmo Worley, 4× mais fino (bolos de 0,15–0,6 m) e subindo como o da erosão. Tira
+	// RTSDustDetail·(1 − n) da extinção: o ralo vira bolo e fresta, o miolo denso (σ 10–30) quase não sente
+	SigT = F;
+	if (RTSDustDetail > 0.0)
+	{
+		const float N = RTSDustNoise.SampleLevel(RTSDustNoiseSampler, (Pw - float3(0.0, 0.0, RTSDustTime * 0.3)) * (4.0 / 9.6), 0);
+		SigT = max(F - RTSDustDetail * (1.0 - N), 0.0);
+	}
+	ScatCol = RTSDustColorAtW(Pw);
+	return SigT > 1e-4;
+}
+
+// A luz que o campo pré-calculou neste quadro (células de 0,5 m): SunT (a poeira até o sol), MapV (a sombra do mapa),
+// SkyT, e a luz das explosões e do fogo (lux ÷ 128 000) com a transmitância pela poeira. No raymarch:
+// sol = KeyI × MapV × lerp(1, SunT, Ap) × fase (o MapV fora do lerp das oitavas)
+void RTSDustLightAt(float3 PosCamRelM, out float SunT, out float MapV, out float SkyT, out float3 LocalIrr)
+{
+	SunT = 1.0;
+	MapV = 1.0;
+	SkyT = 1.0;
+	LocalIrr = 0.0;
+	if (RTSDustValid < 0.5)
+	{
+		return;
+	}
+	const float3 Pw = PosCamRelM + RTSDustCamToWindowM;
+	float3 InB;
+	const uint S = RTSDustBrickAt(Pw, InB);
+	if (S == 0)
+	{
+		return;
+	}
+	const float3 T = (float3(RTSDustSlotOrigin(S - 1) * 6) + 1.0 + InB / RTS_DUST_CELL_M) * RTSDustLightInvSize;
+	const float4 A = RTSDustLightA.SampleLevel(RTSDustSampler, T, 0);
+	// a sombra própria em duas escalas: a longa da célula (de 0,5 m em diante) × a curta deste ponto, na resolução fina
+	// (3 amostras nos primeiros 0,5 m até o sol). É o que dá o topo aceso e a reentrância escura de cada bolo
+	float TauN = 0.0;
+	[unroll] for (int K = 0; K < 3; K++)
+	{
+		TauN += RTSDustFieldAtW(Pw + RTSDustSunDirW * (0.5 * (float(K) + 0.5) / 3.0)) * (0.5 / 3.0);
+	}
+	SunT = A.r * exp(-TauN);
+	// o céu em duas escalas também: a célula de 0,5 m pra cima × a poeira nos primeiros 0,5 m acima deste ponto (3
+	// amostras). É o que escurece a reentrância embaixo de cada bolo (o céu é ~70–80 % da luz da poeira)
+	float TauUN = 0.0;
+	[unroll] for (int Ku = 0; Ku < 3; Ku++)
+	{
+		TauUN += RTSDustFieldAtW(Pw + float3(0.0, 0.0, 0.5 * (float(Ku) + 0.5) / 3.0)) * (0.5 / 3.0);
+	}
+	MapV = A.a;
+	SkyT = A.g * exp(-TauUN);
+	LocalIrr = RTSDustLightB.SampleLevel(RTSDustSampler, T, 0).rgb;
+}
+
+// O salto dos vazios (o pedido do Fluxo, 16/10): onde não há tijolo, a distância (m, ao longo de Rd) até sair do vazio
+// (a célula de 8 m inteira se ela não tem poeira, senão o tijolo de 2 m); 0 = o tijolo tem poeira: o passo normal
+float RTSDustSkipM(float3 PosCamRelM, float3 Rd)
+{
+	if (RTSDustValid < 0.5)
+	{
+		return 1e6;
+	}
+	const float3 Pw = PosCamRelM + RTSDustCamToWindowM;
+	float3 InB;
+	if (RTSDustBrickAt(Pw, InB) != 0)
+	{
+		return 0.0;
+	}
+	const float CoarseM = 4.0 * RTS_DUST_BRICK_M;
+	const int3 C = int3(floor(Pw / CoarseM));
+	const bool bCoarseEmpty = any(C < 0) || any(C >= RTSDustWindowBricks / 4) || RTSDustPTCoarse.Load(int4(C, 0)) == 0;
+	const float CellM = bCoarseEmpty ? CoarseM : RTS_DUST_BRICK_M;
+	const float3 Base = floor(Pw / CellM) * CellM;
+	const float3 R = Rd + float3(abs(Rd) < 1e-6) * 1e-6;
+	const float3 T = (Base + float3(R > 0.0) * CellM - Pw) / R;
+	return max(min(min(T.x, T.y), T.z), 0.0) + 0.01;
+}
+
+// A luz do sol que volta da areia embaixo do ponto: a sombra do mapa no chão × a transmitância pela poeira até o chão
+// (a areia na sombra não devolve sol, e a poeira de baixo tapa o que volta)
+float RTSDustGroundVisAt(float3 PosCamRelM)
+{
+	if (RTSDustValid < 0.5)
+	{
+		return 1.0;
+	}
+	const float3 Pw = PosCamRelM + RTSDustCamToWindowM;
+	float3 InB;
+	const uint S = RTSDustBrickAt(Pw, InB);
+	if (S == 0)
+	{
+		return 1.0;
+	}
+	const float3 T = (float3(RTSDustSlotOrigin(S - 1) * 6) + 1.0 + InB / RTS_DUST_CELL_M) * RTSDustLightInvSize;
+	return RTSDustLightA.SampleLevel(RTSDustSampler, T, 0).b;
+}
+#endif

@@ -86,8 +86,43 @@ public:
 	void EndMissile();
 	/** O lançamento na boca da caixa: o clarão, a língua, o jato de ré pela grelha de trás e os pedaços da tampa. */
 	void StartLaunch(const FVector& MouthCm, const FVector& Dir, int32 Seed);
-	/** O acerto do míssil no tanque: o clarão branco-azulado, as faíscas radiais, as fagulhas e as lascas. */
-	void StartMissileHit(const FVector& PointCm, const FVector& Normal, int32 Seed);
+	/** O acerto do míssil no tanque: o clarão branco-azulado, as faíscas radiais, as fagulhas e as lascas. (23/10, a ogiva v2)
+	 *  Scale = K = (W/4 kg)^⅓, a receita aprovada é a da ogiva de 4 kg: o tamanho e a duração do clarão, a vida das faíscas e a
+	 *  queda da luz × K, a luz × K² (vai com a área), as velocidades iguais (Hopkinson-Cranz conserva a velocidade). bGlowSprite: o
+	 *  brilho laranja em sprite; (23/10, a 2ª revisão) a ogiva v2 passa false sempre (o fogo é um volume do raymarch: o corpo da ogiva,
+	 *  a morte ou a clássica; sem vaga no raymarch ficam o clarão, as faíscas e a luz). A luz segue a curva da bola só com
+	 *  FireLightTauS > 0 (o diretor põe quando a bola é da ogiva). Com 1 e true, a de antes, exata. */
+	void StartMissileHit(const FVector& PointCm, const FVector& Normal, int32 Seed, float Scale = 1.0f, bool bGlowSprite = true);
+	/**
+	 * (23/10, a explosão com vida; BlastFxHitLife.h) O acerto do míssil com a direção: o diretor põe antes do StartMissileHit. Com HitAim
+	 * zero, o StartMissileHit de hoje, exato.
+	 *  - HitAim = ℓ (pra onde a explosão sai), HitIncoming = d (o rumo do míssil em 3D), HitNormal = a normal da face, HitTiltDeg = o leque
+	 *    dos estilhaços inclinado pra frente (Gurney, atan(Vm/Vf)): as lascas e o eixo dos jatos de faíscas saem por ℓ inclinado pra frente;
+	 *  - bHitJets (a camada Sparks): as faíscas em 3–7 jatos (55%), num leque rente à face (30%) e voltando (15%), 50·K² com teto 90, a
+	 *    vida sem o ×K (a faísca é a oxidação do ferro: Kimura);
+	 *  - HitEmbers: os pedaços em brasa (a camada Embers), no leque do míssil; ao cair ficam piscando 2–4 s (sem luz) e vão pra fila de
+	 *    pousos do diretor (o puff de areia e o fiapo). (A revisão) Os HitEmberSmoke primeiros soltam o fio de fumaça em voo enquanto
+	 *    queimam: o ponto vai pro diretor a cada quadro e o jogo desenha a fuligem em volume (RTSMissileSmoke), sem a fita chapada;
+	 *  - HitLightAtCm: a luz no centro da bola (zero = a de hoje, à frente do ponto).
+	 */
+	FVector HitAim = FVector::ZeroVector, HitIncoming = FVector::ZeroVector, HitNormal = FVector::ZeroVector;
+	float HitTiltDeg = 0.0f;
+	bool bHitJets = false;
+	int32 HitEmbers = 0, HitEmberSmoke = 0;
+	FVector HitLightAtCm = FVector::ZeroVector;
+	/** (23/10, a vida) Os brilhos dos estilhaços no casco: pontos de 0,15–0,3 m que acendem 1–2 quadros (o clarão de impacto no aço dura
+	 *  microssegundos: o quadro; JHU), nas faces das peças viradas pra bola (o diretor sorteia os pontos e as normais). */
+	void StartHullGlints(const TArray<FVector>& PointsCm, const TArray<FVector>& NormalsW, int32 Seed);
+	/**
+	 * (23/10, a vida) O míssil no chão: o StartGroundImpact na escala da carga, antes de chamar. DirtK = K = (W/4 kg)^⅓ (os tamanhos × K,
+	 * as quantidades × K² com o teto do preset), DirtSpeedK (as velocidades; 1 = iguais, √K no ataque de mísseis: o regime da gravidade),
+	 * DirtElevDeg (o eixo do jato a tantos graus do chão; 0 = os 75° de hoje), DirtPuffs (os N torrões maiores levantam um puff de areia
+	 * quando caem: a fila de pousos), bDirtOnly (sem o clarão, as faíscas e a luz: o acerto do míssil já tem os dele). Os padrões dão o
+	 * tiro na areia de hoje, exato.
+	 */
+	float DirtK = 1.0f, DirtSpeedK = 1.0f, DirtElevDeg = 0.0f;
+	int32 DirtPuffs = 0;
+	bool bDirtOnly = false;
 	/** O laser de mira entre as baterias (o LaserFromAssisted do ZH): um risco vermelho fino de A a B. */
 	void StartLaser(const FVector& FromCm, const FVector& ToCm, float LifeS);
 
@@ -129,6 +164,14 @@ public:
 	float BallScale = -1.0f;
 	FLinearColor TrailTint = FLinearColor(0.95f, 0.92f, 0.88f, 1.0f);
 	float GlowScale = 1.0f;
+	/**
+	 * (23/10, a ogiva v2) A luz do acerto do míssil quando a bola em volume é da própria ogiva (o corpo que nasceu, ou o aceso de
+	 * outra ogiva em que o acerto se fundiu): em vez da queda do clarão (exp(−t/τ)), a curva física da luz da bola, a que a clássica
+	 * toca (a gravação da Carga Pesada sem a compressão do WebGL): cheia até o pico (FireLightHoldS) e depois
+	 * exp(−(Δt/FireLightTauS)^1,4). O diretor põe os dois no relógio do corpo antes do StartMissileHit; 0 = a queda do clarão (a
+	 * morte e a clássica acendem a própria luz: sem a luz em dobro).
+	 */
+	float FireLightHoldS = 0.0f, FireLightTauS = 0.0f;
 	/** A fração das peças da morte (16/10, o orçamento da morte em massa: o diretor põe 0,5 da 5ª morte em 3 s em diante). */
 	float DetailK = 1.0f;
 
@@ -184,6 +227,7 @@ private:
 		int32 Trail = -1;
 		int32 Bounces = 0;
 		bool bRest = false;
+		uint8 Land = 0;                         // (23/10, a vida) 1: o torrão grande que levanta um puff no 1º toque (a fila de pousos)
 	};
 	struct FComet
 	{
@@ -194,7 +238,14 @@ private:
 		bool bStraight = false;
 		float HeadM = -1.0f;
 		FLinearColor Color = FLinearColor(0.0f, 0.0f, 0.0f, -1.0f);
+		// (23/10, a vida) 1: o pedaço em brasa da ogiva, que segue caindo depois de apagar e pousa (a brasa que pisca e a fila de pousos);
+		// 2: já pousou. 0 = os cometas de sempre (apagam ao bater na areia)
+		uint8 Land = 0;
+		// (a revisão da vida) ≠ 0: o pedaço solta o fio de fumaça em voo enquanto queima (o ponto vai pro diretor, UBlastFxDirector::PushEmberSmoke)
+		uint32 SmokeId = 0;
 	};
+	/** (23/10, a vida) O pedaço pousou: a brasa que fica piscando (se ainda queimava) e o aviso pro diretor (a fila de pousos). */
+	void Landed(const FVector& PosM, float SizeM, uint8 Kind, bool bHot, const FVector& VelMs = FVector::ZeroVector);
 	/** Faísca: espinho (rápido, curto, risco esticado) ou fagulha (lenta, cai piscando). */
 	struct FSpark
 	{
@@ -261,6 +312,8 @@ private:
 	bool bPlatesSettled = false, bGlowsDone = false, bTrailsDone = false;
 	// a luz do tiro: o pico (cd), a queda (s), a idade, a cor e o cometa que ela segue (-1 = parada em LightAt)
 	float LightPeak = 0.0f, LightTau = 0.05f, LightAge = 0.0f;
+	// (23/10) a forma da queda: cheia por LightHold s, depois exp(−((t − LightHold)/τ)^LightPow) (0 e 1 = o exp(−t/τ) de sempre)
+	float LightHold = 0.0f, LightPow = 1.0f;
 	// a compensação pela exposição (16/10): a de agora e a aplicada nos materiais
 	float ExpoComp = 1.0f, ExpoApplied = -1.0f, GlowNow = 1.0f;
 	// o chão perto do centro do efeito, consultado uma vez (16/10, o custo de processador: cada faísca consultava 4 nós do

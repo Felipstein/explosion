@@ -1,0 +1,199 @@
+// A luz do sol assada no chão (16/10, a v3 do chão: docs/CHAO_V3_ESTUDO.md §4 e §5.2). Na partida o sol não anda e o
+// relevo fino só muda onde a esteira passou ou o tiro caiu: a luz dele é calculada uma vez, no carimbo, numa grade fina
+// (supersampling), e guardada linear (a média de um texel é o que um pixel distante vê). O material do chão (a MF do
+// Look) gira a normal até o N·L da Unreal dar esta luz (a "normal de iluminação"): a sombra das unidades segue certa.
+//   - SweepCS: a varredura no rumo do sol (Timonen & Westerholm, com uma direção só). Cada fio anda uma linha da borda
+//     de onde vem o sol até a outra, carregando o horizonte S(x) = max(h(x), S(x − Δ) − Δ·tan(sol)); o ponto está na
+//     sombra quando S(x) > h(x). Exata, O(1) por texel, sem teto de distância. Escreve SunLit = max(0, N·L)·V ÷ sen(sol).
+//   - ResolveCS: a média da grade fina em cada texel do caderno (R) e a oclusão do céu (G, SkyAO: 4 direções, raio
+//     ~30 cm, pelo seno do horizonte).
+// A altura é a da esteira (o R do caderno de relevo, ±RangeCm em torno de 0,5) somada à das crateras (RG16F, cm). A
+// varredura do sol usa o G das crateras (a bacia e a borda, sem os torrões: a decisão (b) do Look, 16/10, pra não
+// voltar o "pontinho preto" e não dobrar a sombra das pedras de malha); a oclusão do céu usa o R, a altura cheia.
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D ReliefTex;
+Texture2D CraterTex;
+SamplerState LinearSampler;
+float RangeCm;
+float2 SunDir;          // pra onde fica o sol, no UV do caderno (unitário)
+float SunTan;
+float SunSin;
+float SunCos;
+float PenumbraCm;       // a altura de deficit em que a sombra fica inteira (a borda macia)
+float MaxLit;           // o limite do claro (o controle de arte do estudo: ~1,2)
+// a garra (16/10, a v3, §5.2): as barras da sapata atravessando a faixa, só na altura do sol (sem normal), pelo andado da
+// lagarta; somem com o frescor² (o vento enche a garra antes do sulco)
+Texture2D ProfileTex;   // R a faixa (÷ BandScale), B o frescor
+Texture2D AlongTex;     // R o U da fita ÷ AlongRangeCm
+int UseClaw;
+float ClawCm;           // de pico a pico
+float ClawPitchCm;
+float AlongRangeCm;
+float BandScale;
+float2 SheetMinCm;      // (16/10) o canto e o lado do caderno no mundo: o tipo de chão de cada ponto
+float SheetSizeCmF;
+
+// (16/10) o tipo de chão (o surface.png do WorldForge: R asfalto, G terra batida, B pedra, A molhado; a areia é o resto)
+Texture2D SurfaceTex;
+float2 SurfaceMinCm;
+float SurfaceInvSizeCm;
+int UseSurface;
+float4 SurfDepth;       // o sulco por tipo: x areia, y terra, z pedra, w asfalto
+float4 SurfBerm;        // a bordinha
+float4 SurfClaw;        // a garra
+float3 SurfWet;         // o molhado na areia e na terra (o barro): × o sulco, a bordinha e a garra
+
+// os pesos (x areia, y terra, z pedra, w asfalto; somam 1) e o barro (o molhado na parte macia)
+float4 SurfaceWeights(float2 WorldCm, out float Mud)
+{
+	Mud = 0.0;
+	if (UseSurface == 0)
+	{
+		return float4(1, 0, 0, 0);
+	}
+	const float4 S = SurfaceTex.SampleLevel(LinearSampler, (WorldCm - SurfaceMinCm) * SurfaceInvSizeCm, 0);
+	const float Sum = S.r + S.g + S.b;
+	const float3 N = Sum > 1.0 ? float3(S.r, S.g, S.b) / Sum : float3(S.r, S.g, S.b);
+	const float4 W = float4(saturate(1.0 - N.x - N.y - N.z), N.y, N.z, N.x);
+	Mud = S.a * (W.x + W.y);
+	return W;
+}
+
+// a grade fina da varredura (o caderno inteiro × SS), em texels finos
+float2 FineTexelUV;
+float FineTexelCm;
+int2 GridOrigin;
+int2 GridSize;
+int2 WriteMin;          // a região escrita (exclusivo no Max)
+int2 WriteMax;
+int MajorY;             // 1: a varredura anda em Y
+int StepSign;           // ±1 no eixo maior
+float Slope;            // o avanço no eixo menor por texel do maior (com sinal)
+int LineBase;           // o primeiro fio, no eixo menor (relativo à grade)
+int LineCount;
+float StepCm;           // o chão andado por passo
+RWTexture2D<float> FineOut;   // origem em WriteMin
+
+// o resolve
+Texture2D<float> FineIn;
+RWTexture2D<float2> SunLitOut;
+int SS;
+int2 BaseMin;
+int2 BaseSize;
+float2 BaseTexelUV;
+float BaseTexelCm;
+float AORadiusCm;
+
+float HeightAt(float2 UV)
+{
+	const float Track = (ReliefTex.SampleLevel(LinearSampler, UV, 0).r - 0.5) * 2.0 * RangeCm;
+	return Track + CraterTex.SampleLevel(LinearSampler, UV, 0).r;
+}
+
+// a do sol: a esteira, a garra e a forma das crateras
+float SunHeightAt(float2 UV)
+{
+	const float Track = (ReliefTex.SampleLevel(LinearSampler, UV, 0).r - 0.5) * 2.0 * RangeCm;
+	float H = Track + CraterTex.SampleLevel(LinearSampler, UV, 0).g;
+	if (UseClaw != 0)
+	{
+		const float4 Pf = ProfileTex.SampleLevel(LinearSampler, UV, 0);
+		const float Band = saturate(Pf.r * BandScale);
+		if (Band > 0.01)
+		{
+			const float U = AlongTex.SampleLevel(LinearSampler, UV, 0).r * AlongRangeCm;
+			// (16/10) a garra de cada chão: nítida na terra e no barro, nenhuma na pedra e no asfalto
+			float Mud;
+			const float4 Sw = SurfaceWeights(SheetMinCm + UV * SheetSizeCmF, Mud);
+			const float ClawK = dot(Sw, SurfClaw) * lerp(1.0, SurfWet.z, Mud);
+			H -= ClawCm * ClawK * Band * Pf.b * Pf.b * (0.5 + 0.5 * cos(6.28318531 * U / ClawPitchCm));
+		}
+	}
+	return H;
+}
+
+[numthreads(64, 1, 1)]
+void SweepCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (int(Id.x) >= LineCount)
+	{
+		return;
+	}
+	const int Minor0 = LineBase + int(Id.x);
+	const int MajorLen = MajorY != 0 ? GridSize.y : GridSize.x;
+	const int MinorLen = MajorY != 0 ? GridSize.x : GridSize.y;
+	const int MajorStart = StepSign > 0 ? 0 : MajorLen - 1;
+	const float3 L = float3(SunDir * SunCos, SunSin);
+	const float Drop = StepCm * SunTan;
+	float S = -1.0e9;
+	for (int K = 0; K < MajorLen; ++K)
+	{
+		const int Major = MajorStart + StepSign * K;
+		// o avanço no menor é o mesmo pra todos os fios no passo K: a parte inteira sai dele, uma vez, e cada célula tem um
+		// fio só (16/10: com Minor0 + K·Slope em float, perto de 512/1024/2048 dois fios vizinhos arredondavam pra mesma
+		// célula e a de lado ficava sem escrever, com o lixo da memória: os pontilhados no rumo do sol)
+		const float KS = float(K) * Slope;
+		const float KI = floor(KS);
+		const int Minor = Minor0 + int(KI);
+		const float MinorF = float(Minor) + (KS - KI);
+		// o ponto exato da linha (o menor fracionário), no centro do texel do maior
+		const float2 P = MajorY != 0 ? float2(float(GridOrigin.x) + MinorF + 0.5, float(GridOrigin.y + Major) + 0.5)
+			: float2(float(GridOrigin.x + Major) + 0.5, float(GridOrigin.y) + MinorF + 0.5);
+		const float2 UV = P * FineTexelUV;
+		const float H = SunHeightAt(UV);
+		S = max(H, S - Drop);
+		if (Minor < 0 || Minor >= MinorLen)
+		{
+			continue;   // fora da grade no menor: o horizonte segue, a escrita não
+		}
+		const int2 Cell = MajorY != 0 ? int2(GridOrigin.x + Minor, GridOrigin.y + Major) : int2(GridOrigin.x + Major, GridOrigin.y + Minor);
+		if (any(Cell < WriteMin) || any(Cell >= WriteMax))
+		{
+			continue;
+		}
+		// a normal pela diferença central (um texel fino pra cada lado)
+		const float Hx = SunHeightAt(UV + float2(FineTexelUV.x, 0.0)) - SunHeightAt(UV - float2(FineTexelUV.x, 0.0));
+		const float Hy = SunHeightAt(UV + float2(0.0, FineTexelUV.y)) - SunHeightAt(UV - float2(0.0, FineTexelUV.y));
+		const float3 N = normalize(float3(-Hx / (2.0 * FineTexelCm), -Hy / (2.0 * FineTexelCm), 1.0));
+		const float V = 1.0 - saturate((S - H) / max(PenumbraCm, 0.05));
+		FineOut[Cell - WriteMin] = min(max(0.0, dot(N, L)) * V / max(SunSin, 0.02), MaxLit);
+	}
+}
+
+[numthreads(8, 8, 1)]
+void ResolveCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(int2(Id.xy) >= BaseSize))
+	{
+		return;
+	}
+	const int2 B = BaseMin + int2(Id.xy);
+	float Sum = 0.0;
+	for (int J = 0; J < SS; ++J)
+	{
+		for (int I = 0; I < SS; ++I)
+		{
+			Sum += FineIn[(B - BaseMin) * SS + int2(I, J)];
+		}
+	}
+	const float Lit = Sum / float(SS * SS);
+	// a oclusão do céu: o seno do horizonte em 4 direções, 3 amostras até o raio
+	const float2 UV = (float2(B) + 0.5) * BaseTexelUV;
+	const float H0 = HeightAt(UV);
+	float Occ = 0.0;
+	[unroll] for (int D = 0; D < 4; ++D)
+	{
+		const float2 Dir = D == 0 ? float2(1, 0) : (D == 1 ? float2(-1, 0) : (D == 2 ? float2(0, 1) : float2(0, -1)));
+		float Best = 0.0;
+		[unroll] for (int K = 1; K <= 3; ++K)
+		{
+			const float Dist = AORadiusCm * float(K) / 3.0;
+			const float Dh = HeightAt(UV + Dir * (Dist / BaseTexelCm) * BaseTexelUV) - H0;
+			Best = max(Best, Dh * rsqrt(Dh * Dh + Dist * Dist));
+		}
+		Occ += Best;
+	}
+	SunLitOut[B] = float2(Lit, saturate(1.0 - 0.5 * Occ / 4.0));
+}

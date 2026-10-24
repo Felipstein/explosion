@@ -148,6 +148,33 @@ void ARTSHUD::DrawEconomyTopBar(URTSMatchSubsystem* Match)
 	}
 	// relógio: o tempo de partida correndo
 	DrawLabel(FString::Printf(TEXT("%d:%02d"), int32(Match->MatchSeconds()) / 60, int32(Match->MatchSeconds()) % 60), X0 + BarW * 0.5f + 70.0f, 8.0f, 16, EcoText, true, true);
+	// (v4) a patente do general: "Rank 2 · 140/900 XP" (o XP dentro da patente; na última, o total) e, embaixo da faixa dos
+	// jogadores, os poderes ligados com a tecla e o estado (o HUD de hoje não tem a coluna; F1–F3 valem nos dois)
+	{
+		const int32 Rank = Match->PlayerRank(Me);
+		const int32 From = Match->RankXpThreshold(Rank);
+		const int32 To = Match->RankXpThreshold(Rank + 1);
+		const int32 Xp = Match->PlayerXp(Me);
+		const FString RankText = Rank >= Sim::MaxRank || To <= From
+			? FText::Format(LOCTEXT("OldRankMax", "Rank {0}  ·  {1} XP"), Rank, Xp).ToString()
+			: FText::Format(LOCTEXT("OldRank", "Rank {0}  ·  {1}/{2} XP"), Rank, Xp - From, To - From).ToString();
+		DrawLabel(RankText, X0 + BarW * 0.5f + 130.0f, 10.0f, 14, EcoMoney, false, true);
+		float PY = 74.0f;
+		for (int32 Slot = 0; Slot < 3; ++Slot)
+		{
+			const int32 PowerIndex = Match->PowerAtSlot(Slot);
+			URTSMatchSubsystem::FPowerInfo P;
+			if (PowerIndex < 0 || !Match->GetPowerInfo(PowerIndex, P))
+			{
+				break;
+			}
+			const FText Why = Match->PowerRefusal(PowerIndex);
+			const FString Line = FString::Printf(TEXT("F%d  %s  ·  %s"), Slot + 1, *P.Name,
+				Why.IsEmpty() ? *LOCTEXT("OldPowerReady", "READY").ToString() : *Why.ToString());
+			DrawLabel(Line, X0 + BarW * 0.5f + 130.0f, PY, 12, Why.IsEmpty() ? EcoMoney : EcoDim, false, Why.IsEmpty());
+			PY += 18.0f;
+		}
+	}
 	// quem está em campo, numa faixa embaixo da barra (DECISOES.md: o relógio no meio; você e os
 	// aliados à esquerda, num bloco azul só; os inimigos à direita, na caixa escura; o derrotado
 	// cinza com um X vermelho). Cada cartão: o quadrado e o nome da cor, na cor do jogador
@@ -194,7 +221,22 @@ void ARTSHUD::DrawDefeats(URTSMatchSubsystem* Match)
 {
 	const float W = Canvas->SizeX;
 	const double Now = GetWorld()->GetTimeSeconds();
-	float Y = 96.0f;
+	// (v4) no HUD novo o topo 1x1 tem 80 px da planta (escala com a tela): os letreiros ficam logo embaixo dele
+	float Y = bNewHud ? FMath::Max(96.0f, 92.0f * FMath::Min(Canvas->SizeY / 1080.0f, Canvas->SizeX / 1920.0f)) : 96.0f;
+	// (v4) a patente nova, 6 s em dourado no meio, com o que ela liberou ("PROMOTED - RANK 2: Cruise Missile Strike"); o
+	// aviso do HUD novo só tem lugar pra "PROMOTED - RANK 2"
+	const URTSMatchSubsystem::FHudNotice* Promoted = nullptr;
+	for (const URTSMatchSubsystem::FHudNotice& N : Match->HudNotices())
+	{
+		Promoted = N.Kind == URTSMatchSubsystem::FHudNotice::EKind::Promoted && Now - N.At < 6.0 ? &N : Promoted;
+	}
+	if (Promoted)
+	{
+		const float Age = float(Now - Promoted->At);
+		const float A = FMath::Clamp(FMath::Min(Age / 0.3f, (6.0f - Age) / 0.8f), 0.0f, 1.0f);
+		DrawLabel(PromotionText(Match, Promoted->Value), W * 0.5f, Y, 18, Alpha(EcoMoney, A), true, true);
+		Y += 30.0f;
+	}
 	// "Vermelho foi derrotado" pra todos, 5 s, na cor de quem caiu
 	for (const FRTSDefeatNotice& N : Match->DefeatNotices())
 	{
@@ -255,7 +297,10 @@ void ARTSHUD::DrawObserverPanel(URTSMatchSubsystem* Match)
 	const float RowH = 30.0f;
 	const float H = 46.0f + RowH * N;
 	const float X0 = Canvas->SizeX - PanelW - PanelMargin;
-	const float Y0 = Canvas->SizeY - H - PanelMargin;
+	// (16/10) no HUD novo o canto de baixo à direita é do cartão do comandante (a lista caía por cima dele): ela vai pro
+	// alto, embaixo do dinheiro (o HUD novo é desenhado em 1920 × 1080 e escala pela tela)
+	const float NewHudS = FMath::Min(Canvas->SizeY / 1080.0f, Canvas->SizeX / 1920.0f);
+	const float Y0 = bNewHud ? 110.0f * NewHudS : Canvas->SizeY - H - PanelMargin;   // (v4: o painel do comandante ganhou a linha da patente, 97 px)
 	DrawPanel(X0, Y0, PanelW, H, EcoPanel);
 	DrawLabel(LOCTEXT("ObserverTitle", "PLAYERS").ToString(), X0 + 14.0f, Y0 + 10.0f, 14, EcoText, false, true);
 	DrawLabel(LOCTEXT("ObserverCols", "team        units   buildings   money").ToString(), X0 + 150.0f, Y0 + 14.0f, 10, EcoDim);
@@ -305,6 +350,13 @@ void ARTSHUD::DrawCommandPanel(ARTSPlayerController* PC, URTSMatchSubsystem* Mat
 	const int32 Money = Match->Money(Me);
 	const float BW = (PanelW - 36.0f) * 0.5f;
 	const float BH = 48.0f;
+	// (v4) o que falta pro botão apagado: a patente vem com o número ("requires Rank 3")
+	const int32 MyRank = Match->PlayerRank(Me);
+	const auto Missing = [MyRank](const FRTSDefInfo& D)
+	{
+		return D.RequiresRank > MyRank ? FText::Format(LOCTEXT("NeedsRank", "requires Rank {0}"), D.RequiresRank).ToString()
+			: LOCTEXT("NeedsBuilding", "requires another building").ToString();
+	};
 
 	if (StructureId != 0)
 	{
@@ -340,9 +392,21 @@ void ARTSHUD::DrawCommandPanel(ARTSPlayerController* PC, URTSMatchSubsystem* Mat
 			Match->GetDef(D.Produces[K], P);
 			const bool bPrereq = Match->HasPrerequisites(D.Produces[K]);
 			const bool bAfford = Money >= P.Cost;
-			const FString Sub = bPrereq ? FString::Printf(TEXT("%s  ·  %.0fs"), *Dollars(P.Cost), P.BuildSeconds) : LOCTEXT("NeedsBuilding", "requires another building").ToString();
+			const FString Sub = bPrereq ? FString::Printf(TEXT("%s  ·  %.0fs"), *Dollars(P.Cost), P.BuildSeconds) : Missing(P);
 			DrawPanelButton(FName(*FString::Printf(TEXT("eco_produce_%d"), D.Produces[K])), P.Name.ToUpper(), Sub,
 				X0 + 14.0f + (K % 2) * (BW + 8.0f), Y0 + 58.0f + (K / 2) * (BH + 6.0f), BW, BH, bPrereq && bAfford);
+		}
+		// (v4) a zona de lançamento: o relógio do avião de carga e o que ele traz
+		URTSMatchSubsystem::FAirliftInfo Air;
+		if (Match->GetAirlift(StructureId, Air))
+		{
+			const int32 Left = FMath::Max(0, FMath::CeilToInt(Air.LeftS));
+			const FString When = !Air.bStarted ? LOCTEXT("OldAirliftWaiting", "Airlift: waiting for clearance").ToString()
+				: FText::Format(Air.bInbound ? LOCTEXT("OldAirliftInbound", "Airlift inbound  {0}") : (Air.bPaused ? LOCTEXT("OldAirliftPaused", "Low power: airlift paused  {0}")
+					: LOCTEXT("OldAirliftNext", "Next airlift  {0}")), FText::FromString(FString::Printf(TEXT("%d:%02d"), Left / 60, Left % 60))).ToString();
+			DrawLabel(When, X0 + 14.0f, Y0 + 58.0f, 14, Air.bPaused ? EcoBad : EcoMoney, false, true);
+			DrawLabel(FText::Format(LOCTEXT("OldAirliftLoad", "{0} pallets  ·  {1}  ·  {2} crates on the pad"), Air.NextPallets, FText::FromString(Dollars(Air.NextValue)), Air.BoxesOnPad).ToString(),
+				X0 + 14.0f, Y0 + 84.0f, 12, EcoDim);
 		}
 		// a fila, em ordem: clique tira (e devolve o dinheiro, ZH)
 		TArray<uint16> Queue;
@@ -391,7 +455,7 @@ void ARTSHUD::DrawCommandPanel(ARTSPlayerController* PC, URTSMatchSubsystem* Mat
 			Match->GetDef(D.Constructs[K], B);
 			const bool bPrereq = Match->HasPrerequisites(D.Constructs[K]);
 			const bool bAfford = Money >= B.Cost;
-			const FString Sub = bPrereq ? FString::Printf(TEXT("%s  ·  %.0fs"), *Dollars(B.Cost), B.BuildSeconds) : LOCTEXT("NeedsBuilding", "requires another building").ToString();
+			const FString Sub = bPrereq ? FString::Printf(TEXT("%s  ·  %.0fs"), *Dollars(B.Cost), B.BuildSeconds) : Missing(B);
 			DrawPanelButton(FName(*FString::Printf(TEXT("eco_build_%d"), D.Constructs[K])), B.Name.ToUpper(), Sub,
 				X0 + 14.0f + (K % 2) * (BW + 8.0f), Y0 + 40.0f + (K / 2) * (BH + 6.0f), BW, BH, bPrereq && bAfford);
 		}
@@ -451,7 +515,10 @@ void ARTSHUD::DrawPlacementGhost(ARTSPlayerController* PC, URTSMatchSubsystem* M
 	DrawLabel(FString::Printf(TEXT("%s  %s"), *D.Name, *Dollars(D.Cost)), M.X + 22.0f, M.Y + 14.0f, 14, EcoText, false, true);
 	if (!bOk)
 	{
-		DrawLabel(URTSMatchSubsystem::PlaceReason(R), M.X + 22.0f, M.Y + 36.0f, 14, EcoBad, false, true);
+		// (v4) o teto vem com o número: "Limit reached (2)"
+		const FString Reason = R == ERTSPlace::LimitReached && D.MaxPerPlayer > 0
+			? FText::Format(LOCTEXT("PlaceLimitReachedN", "Limit reached ({0})"), D.MaxPerPlayer).ToString() : URTSMatchSubsystem::PlaceReason(R);
+		DrawLabel(Reason, M.X + 22.0f, M.Y + 36.0f, 14, EcoBad, false, true);
 	}
 }
 
@@ -517,7 +584,7 @@ void ARTSHUD::DrawMoneyPopups(URTSMatchSubsystem* Match, float DeltaSeconds)
 void ARTSHUD::DrawDockHover(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
 	FVector Ground;
-	if (PC->GetPlacingDef() >= 0 || !PC->GetCursorGround(Ground))
+	if (PC->GetPlacingDef() >= 0 || PC->GetTargetingPower() >= 0 || !PC->GetCursorGround(Ground))
 	{
 		return;
 	}

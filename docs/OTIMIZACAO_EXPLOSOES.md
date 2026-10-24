@@ -27,6 +27,46 @@ otimização". Aqui: a morte de tanque e as explosões, medidas em ms no pior ca
 | Quadro na janela das mortes | 47,3 ms (p95 87,4) | 39,6 ms (p95 55,0) | |
 | Destroços por preset: no Média (`sg.EffectsQuality` 2) metade das chapas, cometas, espinhos e fagulhas; no Baixa (≤ 1) um quarto; Alta e Ultra inteiros. Decidido no nascimento. O custo é de processador, então a placa não o corta (o Média roda num notebook de 2014). | ~0,6 ms por morte | ~0,3 no Média, ~0,15 no Baixa (proporcional; falta medir) | só no Média e no Baixa, com a mesma leitura (`captures/game/ab_media.jpg`) |
 
+## O raymarch por passe e os A/B (14/10, madrugada)
+
+Perfil com um marcador por passe, no pior caso (11 mortes, câmera a 50 m, Alta). Os quatro testes em gravação de passo
+fixo (`-Record`) são comparáveis entre si: `captures/game/fx_ab_*/perfil.csv` e `batalha.mp4`.
+
+| Passe (média / p95 na janela das mortes, ms) | Atual | 42 passos (`-RmSteps=42`) | Marcha em 0,42 (`-RmRes=0.42`) |
+|---|---|---|---|
+| Cache de luz | 1,40 / 4,29 | 1,40 / 4,25 | 1,38 / 4,21 |
+| Sombra no chão | 0,37 / 0,96 | 0,38 / 0,96 | 0,37 / 0,97 |
+| **Marcha** | **5,30 / 16,33** | **4,29 / 12,87** | **4,25 / 12,92** |
+| Acúmulo + composição | 0,34 / 0,58 | 0,34 / 0,74 | 0,32 / 0,49 |
+| **Raymarch inteiro** | **7,39 / 21,86** | **6,41 / 18,46** | **6,31 / 18,50** |
+
+- **A imagem:** recortes em tamanho real no pico (`captures/game/ab_passos_zoom.jpg`, `ab_res_zoom.jpg`). As três dão
+  a mesma nuvem, com diferença média de 3–4 níveis em 255. A cintilação quadro a quadro dentro das nuvens também é a
+  mesma: 4,77 atual, 4,82 com 42 passos, 4,69 em 0,42.
+- **Os dois juntos e os 4 caches (03:50):**
+
+| Passe (média / p95, ms) | Atual | 42 passos + 0,42 | 4 caches |
+|---|---|---|---|
+| Cache de luz | 1,40 / 4,29 | 1,39 / 4,35 | **0,54 / 1,70** |
+| Marcha | 5,30 / 16,33 | **3,46 / 10,36** | 5,23 / 15,94 |
+| Raymarch inteiro | 7,39 / 21,86 | 5,55 / 16,04 | 6,47 / 18,89 |
+
+  A mesma nuvem, com cintilação 4,77 / 4,75 / 4,79 e diferença de 3–4 níveis em 255 (`captures/game/ab_combo_lc4.jpg`).
+- **Os presets da fumaça** (`RTSShaders/BlastRaymarch.cpp`, por `sg.EffectsQuality`; as opções de linha de comando passam por cima):
+
+| Preset | Passos | Marcha | Caches de luz |
+|---|---|---|---|
+| Ultra (Cinematic) | 56 | 0,5 | 12 |
+| Alta | 42 | 0,42 | 4 |
+| Média | 32 | 0,38 | 2 |
+| Baixa | 24 | 0,33 | 1 |
+
+  No Alta, o pior quadro do raymarch cai de ~22 pra ~13 ms (estimativa somando os dois A/B). O Média e o Baixa ainda vão ser conferidos no próprio preset.
+- **A 1ª morte da partida travava ~2 s.** Os aquecimentos do diretor tinham opacidade 0, e o raymarch pula opacidade 0.
+  Por isso o atlas (198 MB), a subida da gravação, a sombra no sol e o 1º uso de cada passe caíam na 1ª morte.
+  - Conserto (compilado às 02:55, sem teste na placa por causa da pausa): uma morte nova invisível (opacidade 0,001) no aquecimento.
+  - A sombra no sol, depois de ligada, custa ~0,04 ms por quadro.
+
 ## O que falta, em ordem
 
 **O pior caso na placa é o raymarch.** Ele custa 11–21 ms por quadro entre 1,1 e 2,4 s depois das mortes, quando as 11 nuvens estão no tamanho máximo (28 quadros acima de 10 ms). Na média da janela, os outros passes sobem menos de 0,6 ms cada; o Lumen tem picos isolados de 15–25 ms.

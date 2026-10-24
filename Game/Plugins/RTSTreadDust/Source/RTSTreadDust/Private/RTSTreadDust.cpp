@@ -38,6 +38,7 @@
 namespace RTSTreadDustVolume
 {
 	bool LoadKickOnce(const FString& Name);      // RTSTreadDustVolume.cpp
+	double ImpactGain();                         // RTSTreadDustVolume.cpp (rts.TreadDust.ImpactGain)
 }
 
 namespace
@@ -68,6 +69,33 @@ namespace
 	}
 
 	const FVector2D Corners[4] = { { -0.5, -0.5 }, { 0.5, -0.5 }, { 0.5, 0.5 }, { -0.5, 0.5 } };
+
+	// (23/10, a explosão com vida do jogo) os puffs de impacto não são de veículo nenhum: a fonte deles fica fora da lista (a névoa já foi
+	// conferida por quem chama, nenhum veículo é "o próprio", a odometria não vale: ARTSTreadDust::ImpactSrcId) e as camadas deles, se o
+	// perfil não as tem (o perfil é a cópia do FXLab: pack_tread_dust.py), nascem com estes padrões
+	const TCHAR* const ImpactLayerNames[3] = { TEXT("impact"), TEXT("impact_surge"), TEXT("impact_linger") };
+	FRTSTreadLayer DefaultImpactLayer(int32 Kind)
+	{
+		// a camada "impact": o véu de areia do choque, os pontinhos, os pousos e a torre (sai a 2–4 m/s e para em 0,5–1 m: o arrasto 4; o
+		// BF3 e o cEssex: nasce a ~50%, entra rápido, fica baixa e assenta) e o sumiço pela densidade da v26 (as bordas primeiro). A
+		// "impact_surge": a onda de base do ataque sem a gravação (a cortina desaba e o anel rola rente ao chão como corrente de gravidade:
+		// a frente para em R_L, v0 = arrasto·(R_L − r0): o arrasto 0,8 dá 3–9 m/s de saída). A "impact_linger": a poeira que fica depois da
+		// gravação do ataque (rola devagar, arrasto 0,3, abre 1,6×, envelhece a gravação 5× mais devagar: a nuvem rala que paira minutos, no
+		// tempo do jogo comprimido). As três derivam no vento do mapa (windGain 1; a K2 das lagartas fica com 0, a aprovada)
+		FRTSTreadLayer L;
+		const int32 K = FMath::Clamp(Kind, 0, 2);
+		L.Name = ImpactLayerNames[K];
+		L.XMin = 0.0; L.XMax = 0.0; L.YOff = 0.0; L.YJit = 0.0; L.Z0 = 0.0;
+		L.Spacing = 1.0; L.SpacingJit = 1.0; L.Life = 4.0; L.LifeJit = 0.0; L.MaskDense = 0.0; L.MaskEnd = 0.0;
+		L.BakeStart = K == 2 ? 1.0 : 0.1; L.BakeStartJit = 0.25; L.BakeRate = K == 2 ? 0.2 : 1.0; L.Scale = 1.0; L.ScaleJit = 0.0;
+		L.GrowTo = K == 0 ? 1.3 : 1.6;
+		L.Alpha = 1.0; L.Attack = 0.05; L.Decay = K == 1 ? 0.4 : 0.5; L.Inherit = 0.0; L.Drag = K == 0 ? 4.0 : (K == 1 ? 0.8 : 0.3);
+		L.Kick = 0.0; L.Side = 0.0; L.Up = 0.0; L.Sink = 0.0;
+		L.Orient = 0.0; L.Flip = 0.0; L.RotMax = 0.1; L.PivotBottom = 1.0; L.CamOffset = 0.0; L.Erode = 0.0;
+		L.Shadow = 0.15; L.BaseShade = 0.3; L.BaseShadeWorld = 1.6; L.SunSide = 0.0; L.WindGain = 1.0;
+		L.ErodeFade = 3.0; L.GrowFade = 0.15; L.RiseFade = 0.1; L.FadeTau = 1.2; L.FadeAlphaFrom = 0.9;
+		return L;
+	}
 }
 
 bool FRTSTreadProfile::Load(const FString& Path)
@@ -170,7 +198,7 @@ bool FRTSTreadProfile::Load(const FString& Path)
 				{ TEXT("baseShadeWorld"), &L.BaseShadeWorld }, { TEXT("sunSide"), &L.SunSide }, { TEXT("sunSideWidth"), &L.SunSideWidth }, { TEXT("spacingPoisson"), &L.SpacingPoisson }, { TEXT("bakeJitFrames"), &L.BakeJitFrames }, { TEXT("scaleLogMin"), &L.ScaleLogMin },
 				{ TEXT("scaleLogMax"), &L.ScaleLogMax }, { TEXT("rotFreeAfter"), &L.RotFreeAfter }, { TEXT("erodeFromBirth"), &L.ErodeFromBirth },
 				{ TEXT("erodeFade"), &L.ErodeFade }, { TEXT("growFade"), &L.GrowFade }, { TEXT("riseFade"), &L.RiseFade },
-				{ TEXT("fadeTau"), &L.FadeTau }, { TEXT("fadeAlphaFrom"), &L.FadeAlphaFrom },
+				{ TEXT("fadeTau"), &L.FadeTau }, { TEXT("fadeAlphaFrom"), &L.FadeAlphaFrom }, { TEXT("windGain"), &L.WindGain },
 			};
 			for (const auto& Fd : F)
 			{
@@ -302,6 +330,19 @@ bool ARTSTreadDust::Init()
 		UE_LOG(LogTemp, Error, TEXT("RTSTreadDust: falta o perfil %s"), *ProfilePath);
 	}
 	UE_LOG(LogTemp, Display, TEXT("RTSTreadDust: perfil %s"), *ProfilePath);
+	// (23/10) as camadas dos puffs de impacto do jogo (AddImpactPuffs): as do perfil, ou os padrões, no fim da lista (as chaves das camadas
+	// dos veículos não mudam)
+	if (P.Layers.Num() > 0)
+	{
+		for (int32 Kind = 0; Kind < 3; ++Kind)
+		{
+			ImpactLayers[Kind] = P.Layers.IndexOfByPredicate([Kind](const FRTSTreadLayer& L) { return L.Name == ImpactLayerNames[Kind]; });
+			if (ImpactLayers[Kind] < 0)
+			{
+				ImpactLayers[Kind] = P.Layers.Add(DefaultImpactLayer(Kind));
+			}
+		}
+	}
 	// o A/B da interação: -TreadDustInteract=0/1 e -TreadDustBlast=aprovado|kg
 	int32 InterArg = -1;
 	if (FParse::Value(FCommandLine::Get(), TEXT("-TreadDustInteract="), InterArg))
@@ -474,16 +515,19 @@ double ARTSTreadDust::SunVisAt(const FVector& Pm, const FVector& ToSun) const
 	for (const FRTSTreadSource& S : Sources)
 	{
 		if (bFogHides && !S.bVisible) continue;
+		// (23/10) o veículo de rodas: as mesmas duas caixas na escala dele (o tanque, 1: as de sempre)
+		const bool bW = S.WheelHalfGaugeM > 0.0;
+		const double Kx = bW ? S.HalfLenM / 3.95 : 1.0, Ky = bW ? S.HalfWidthM / 1.88 : 1.0, Kz = bW ? S.HeightM / 2.48 : 1.0;
 		const FVector D = Pm - S.PosM;
-		if (D.Z > 2.48 && ToSun.Z > 0.0) continue;
-		const double Reach = 4.37 + FMath::Max(0.0, 2.48 - D.Z) * CotEl;
+		if (D.Z > 2.48 * Kz && ToSun.Z > 0.0) continue;
+		const double Reach = 4.37 * FMath::Max(Kx, Ky) + FMath::Max(0.0, 2.48 * Kz - D.Z) * CotEl;
 		if (D.X * D.X + D.Y * D.Y > Reach * Reach) continue;
 		const FVector F = S.FwdM, R(S.FwdM.Y, -S.FwdM.X, 0.0);
 		const double O[3] = { FVector::DotProduct(D, F), FVector::DotProduct(D, R), D.Z };
 		const double V[3] = { FVector::DotProduct(ToSun, F), FVector::DotProduct(ToSun, R), ToSun.Z };
 		for (const FHullBox& B : Boxes)
 		{
-			const double Lo[3] = { B.X0, B.Y0, B.Z0 }, Hi[3] = { B.X1, B.Y1, B.Z1 };
+			const double Lo[3] = { B.X0 * Kx, B.Y0 * Ky, B.Z0 * Kz }, Hi[3] = { B.X1 * Kx, B.Y1 * Ky, B.Z1 * Kz };
 			double T0 = 0.0, T1 = 1e9;
 			bool bHit = true;
 			for (int32 A = 0; A < 3 && bHit; ++A)
@@ -506,6 +550,10 @@ void ARTSTreadDust::Emit(const FRTSTreadSource& Src, double Dt)
 	const FVector F = Src.FwdM;
 	const FVector R(F.Y, -F.X, 0.0);
 	const FVector2D& Ld = Load.FindOrAdd(Src.Id, FVector2D(Src.Sand[0], Src.Sand[1]));
+	// (23/10, as rodas; INTEGRACAO.md "As rodas") o caminhão de suprimento e o lançador soltam a MESMA nuvem aprovada do tanque (a gravação,
+	// a luz, o sumiço), da roda de trás de cada lado, com a física do pneu que o jogo preenche: o lado e a massa do puff (DustScale,
+	// DustAmount) e o rastro em comprimentos dele (TrailLenM). O que nasce ao longo da lagarta (a cortina) não sai da roda
+	const bool bWheels = Src.WheelHalfGaugeM > 0.0;
 	for (int32 Li = 0; Li < P.Layers.Num(); ++Li)
 	{
 		const FRTSTreadLayer& L = P.Layers[Li];
@@ -514,11 +562,20 @@ void ARTSTreadDust::Emit(const FRTSTreadSource& Src, double Dt)
 		{
 			continue;
 		}
+		if (IsImpactLayer(Li))
+		{
+			continue;                                // (23/10) as camadas dos acertos de míssil não saem dos veículos (AddImpactPuffs)
+		}
+		if (bWheels && L.XMax > -2.40)
+		{
+			continue;                                // (23/10) a cortina (nasce ao longo da lagarta) não sai da roda
+		}
 		const double SpacingMul = Quality == 0 && L.Name == TEXT("K2") ? 2.0 : 1.0;
 		for (int32 K = 0; K < 2; ++K)
 		{
 			const double SideSign = K == 0 ? -1.0 : 1.0;
-			const double Vk = Src.Speed + SideSign * Src.YawRate * 1.425;   // a lagarta de dentro da curva anda menos
+			// a lagarta (ou a roda) de dentro da curva anda menos: ±ω·a meia bitola
+			const double Vk = Src.Speed + SideSign * Src.YawRate * (bWheels ? Src.WheelHalfGaugeM : 1.425);
 			const double DirK = Vk < 0.0 ? -1.0 : 1.0;
 			const double V = FMath::Abs(Vk);
 			const double Ramp = L.V1 > L.V0 ? FMath::Clamp((V - L.V0) / (L.V1 - L.V0), 0.0, 1.0) : (V > 0.3 ? 1.0 : 0.0);
@@ -529,6 +586,8 @@ void ARTSTreadDust::Emit(const FRTSTreadSource& Src, double Dt)
 			const double Ground = L.FollowLoad > 0.5 ? W + L.LoadGain * FMath::Max(0.0, Lk - W) : W;
 			const double Amount = Ramp * Ground;
 			const int64 Key = int64(Src.Id) * 64 + Li * 2 + K;
+			// (23/10) a roda: menos puffs por metro, cada um mais denso (o tanque, ×1)
+			const double SpacingSrc = bWheels ? FMath::Max(Src.DustSpacing, 0.1) : 1.0;
 			double& Ac = LayerAcc.FindOrAdd(Key);
 			if (Amount < 0.025)
 			{
@@ -536,15 +595,20 @@ void ARTSTreadDust::Emit(const FRTSTreadSource& Src, double Dt)
 				continue;
 			}
 			Ac += V * Dt;
-			double& Next = LayerNext.FindOrAdd(Key, L.Spacing * SpacingMul);
+			double& Next = LayerNext.FindOrAdd(Key, L.Spacing * SpacingMul * SpacingSrc);
 			while (Ac >= Next / Amount)
 			{
 				Ac -= Next / Amount;
 				// o espaçamento: exponencial com a mesma média (Poisson, sem período) ou o sorteio uniforme de antes
-				Next = L.SpacingPoisson > 0.5 ? L.Spacing * SpacingMul * -FMath::Loge(FMath::Max(Rand(), 1e-4))
-					: L.Spacing * SpacingMul * Rnd(1.0, FMath::Max(1.0, L.SpacingJit));
-				const double X = Rnd(L.XMin, L.XMax) * DirK;
-				const double Y = SideSign * L.YOff + Rnd(-L.YJit, L.YJit);
+				Next = L.SpacingPoisson > 0.5 ? L.Spacing * SpacingMul * SpacingSrc * -FMath::Loge(FMath::Max(Rand(), 1e-4))
+					: L.Spacing * SpacingMul * SpacingSrc * Rnd(1.0, FMath::Max(1.0, L.SpacingJit));
+				// a roda: o quarto de trás do pneu de trás (pra frente) ou o da frente do pneu da frente (de ré), como a motriz e a guia
+				// da lagarta (x da motriz de −3,48 a −3,84: o raio dela), e o meio do pneu ± metade da meia largura (a lagarta: ±0,16 de 0,32)
+				const double X = bWheels
+					? (DirK > 0.0 ? Rnd(Src.WheelRearXM - Src.WheelRadiusM, Src.WheelRearXM) : Rnd(Src.WheelFrontXM, Src.WheelFrontXM + Src.WheelRadiusM))
+					: Rnd(L.XMin, L.XMax) * DirK;
+				const double Yj = bWheels ? 0.5 * Src.WheelHalfWidthM : L.YJit;
+				const double Y = SideSign * (bWheels ? Src.WheelHalfGaugeM : L.YOff) + Rnd(-Yj, Yj);
 				if (bAlong)
 				{
 					const double Wx = FMath::Lerp(Wr, Wf, FMath::Clamp((X - -2.40) / (2.55 - -2.40), 0.0, 1.0));
@@ -585,6 +649,17 @@ void ARTSTreadDust::Emit(const FRTSTreadSource& Src, double Dt)
 				}
 				Cd.RotFree = Rnd(-PI, PI);
 				Cd.A = FMath::Min(1.0, Amount);
+				Cd.Len = P.HullLen;
+				if (bWheels)
+				{
+					// o puff da roda: o lado e a massa dele (a profundidade óptica do miolo vai com A; a massa, com A·S²)
+					Cd.S *= Src.DustScale;
+					Cd.A *= Src.DustAmount;
+					Cd.Len = Src.TrailLenM > 0.0 ? Src.TrailLenM : P.HullLen;
+					// o rastro no tempo (a poeira assenta em segundos, não em metros): o mais rápido deixa o rastro mais longo, com o puff
+					// da mesma idade (só no comprimento, o caminhão a 10,5 m/s perdia a poeira com 0,8 s, nova e pequena)
+					Cd.Len = FMath::Max(Cd.Len, V * Src.TrailTimeS);
+				}
 				Cd.bDouble = SpacingMul > 1.0;
 				Cd.Back = -F * DirK;
 				Cd.GroundZ = Src.PosM.Z;
@@ -627,6 +702,64 @@ void ARTSTreadDust::AddBlast(const FRTSDustBlast& B)
 		E.Reach += 0.5;
 	}
 	Blasts.Add(E);
+}
+
+void ARTSTreadDust::AddImpactPuffs(const TArray<FImpactPuff>& Puffs, uint32 PuffSeed)
+{
+	// (23/10, a explosão com vida do jogo; o jogo monta o véu, os pontinhos, o pouso e a onda de base) cada puff
+	// vira um cartão da camada de impacto, com a cor do chão onde nasce; o sorteio à parte (a poeira das lagartas não muda)
+	if (!Init() || !bEnabled || Puffs.IsEmpty())
+	{
+		return;
+	}
+	FRandomStream Rng(int32(PuffSeed & 0x7fffffffu));
+	for (const FImpactPuff& Ip : Puffs)
+	{
+		const int32 Kind = FMath::Clamp(Ip.Layer, 0, 2);
+		const int32 Li = ImpactLayers[ImpactLayers[Kind] >= 0 ? Kind : 0];
+		if (!P.Layers.IsValidIndex(Li) || Ip.Mass <= 0.0 || Ip.SizeM <= 0.0)
+		{
+			continue;
+		}
+		const FRTSTreadLayer& L = P.Layers[Li];
+		FCard Cd;
+		Cd.P = Ip.PosM + FVector(0.0, 0.0, L.Z0);
+		Cd.GroundZ = Ip.PosM.Z;
+		Cd.V = Ip.VelM;
+		Cd.Life = FMath::Max(Ip.LifeS, 0.1);
+		Cd.Age = -FMath::Max(Ip.DelayS, 0.0);
+		Cd.S = Ip.SizeM / FMath::Max(Atlas.SideM * L.Scale, 1e-3);
+		Cd.Rot = L.RotMax * (2.0 * double(Rng.FRand()) - 1.0);
+		Cd.Flip = L.Flip != 0.0 ? L.Flip : (Rng.FRand() < 0.5f ? -1.0 : 1.0);
+		Cd.Bake0 = (Ip.BakeT0 >= 0.0 ? Ip.BakeT0 : L.BakeStart) + L.BakeStartJit * double(Rng.FRand());
+		Cd.RotFree = PI * (2.0 * double(Rng.FRand()) - 1.0);
+		// (23/10, a areia do acerto) a massa sem o corte em 1: no volume ela é linear (o corte fica só nos cartões, no Draw)
+		Cd.A = FMath::Clamp(Ip.Mass, 0.0, 16.0);
+		Cd.Back = FVector::ZeroVector;
+		Cd.Col = GroundAlbedoAt(Cd.P);
+		Cd.Layer = Li;
+		Cd.Src = ImpactSrcId;
+		Cd.Odo0 = 0.0;
+		Cd.Len = P.HullLen;
+		Cards.Add(Cd);
+	}
+}
+
+int32 ARTSTreadDust::NumImpactCards() const
+{
+	int32 N = 0;
+	for (const FCard& C : Cards)
+	{
+		N += C.Src == ImpactSrcId ? 1 : 0;
+	}
+	return N;
+}
+
+void ARTSTreadDust::SetWind(double YawDeg, double SpeedMs)
+{
+	// (23/10) o vento único do mapa (o mesmo do MPC_Wind, da fumaça e do BlastFx): só as camadas com windGain derivam nele
+	const double R = FMath::DegreesToRadians(YawDeg);
+	MapWind = FVector2D(FMath::Cos(R), FMath::Sin(R)) * FMath::Max(SpeedMs, 0.0);
 }
 
 double ARTSTreadDust::BlastXi(const FBlastEv& B, double R) const
@@ -852,9 +985,16 @@ void ARTSTreadDust::Step(double Dt)
 		FCard& C = Cards[Index];
 		const FRTSTreadLayer& L = P.Layers[C.Layer];
 		const int32 CardIndex = Index + 1;
+		if (C.Age < 0.0)
+		{
+			C.Age += Dt;                             // (23/10) o puff de impacto que ainda não nasceu (a chegada do choque): parado e invisível
+			return;
+		}
 		C.Age += Dt;
 		const double Dk = FMath::Exp(-L.Drag * Dt);
-		C.V = FVector(C.V.X * Dk + P.WindX * (1.0 - Dk), C.V.Y * Dk + P.WindY * (1.0 - Dk), C.V.Z * Dk - L.Sink * (1.0 - Dk));
+		// o vento: o do perfil (todas as camadas, 0 no aprovado) mais o do mapa × o windGain da camada (23/10: as dos acertos; a K2, 0)
+		const double Wx = P.WindX + MapWind.X * L.WindGain, Wy = P.WindY + MapWind.Y * L.WindGain;
+		C.V = FVector(C.V.X * Dk + Wx * (1.0 - Dk), C.V.Y * Dk + Wy * (1.0 - Dk), C.V.Z * Dk - L.Sink * (1.0 - Dk));
 		FVector Extra = FVector::ZeroVector;
 		if (L.WakeRise > 0.0 || L.WakePull > 0.0 || L.WakeGrow > 0.0)
 		{
@@ -863,9 +1003,9 @@ void ARTSTreadDust::Step(double Dt)
 				const FRTSTreadSource& S = Sources[*Si];
 				const double Behind = Odo.FindRef(S.Id) - C.Odo0;
 				const double V = FMath::Abs(S.Speed);
-				if (V > 0.3 && Behind < L.WakeLen * P.HullLen)
+				if (V > 0.3 && Behind < L.WakeLen * C.Len)
 				{
-					const double Fall = 1.0 - Behind / (L.WakeLen * P.HullLen);
+					const double Fall = 1.0 - Behind / (L.WakeLen * C.Len);
 					const FVector Rr(S.FwdM.Y, -S.FwdM.X, 0.0);
 					const double Lat = FVector::DotProduct(C.P - S.PosM, Rr);
 					Extra = FVector(0.0, 0.0, L.WakeRise * V * Fall) - Rr * (Lat * L.WakePull * V * Fall);
@@ -918,7 +1058,7 @@ void ARTSTreadDust::Step(double Dt)
 		const FRTSTreadLayer& L = P.Layers[C.Layer];
 		if (L.MaskEnd > 0.0)
 		{
-			const double D = (Odo.FindRef(C.Src) - C.Odo0) / P.HullLen;
+			const double D = (Odo.FindRef(C.Src) - C.Odo0) / C.Len;
 			if (D >= L.MaskEnd || (L.FadeTau <= 0.0 && 1.0 - SmoothStep(D, L.MaskDense, L.MaskEnd) < 0.05)) return true;
 		}
 		return C.Age >= C.Life;
@@ -1038,8 +1178,11 @@ void ARTSTreadDust::Draw(const FVector& CamM, const FVector& CamRight, const FVe
 		const FCard& C = *Order[I].C;
 		const FRTSTreadLayer& L = P.Layers[C.Layer];
 		const double K = C.Age / FMath::Max(C.Life, 1e-3);
-		double A = L.Alpha * C.A * SmoothStep(K, 0.0, FMath::Max(L.Attack, 1e-3)) * (1.0 - SmoothStep(K, L.Decay, 1.0));
-		double Mf = L.MaskEnd > 0.0 ? SmoothStep((Odo.FindRef(C.Src) - C.Odo0) / P.HullLen, L.MaskDense, L.MaskEnd) : 0.0;
+		// (23/10) o puff de impacto leva massa (A até 16, linear no volume); o cartão não passa de opaco: corta antes do andamento (a
+		// entrada e o sumiço ficam com a forma de sempre, em vez de opaco até o fim e sumindo num instante)
+		const double Ca = C.Src == ImpactSrcId ? FMath::Min(1.0, C.A * RTSTreadDustVolume::ImpactGain()) : C.A;
+		double A = L.Alpha * Ca * SmoothStep(K, 0.0, FMath::Max(L.Attack, 1e-3)) * (1.0 - SmoothStep(K, L.Decay, 1.0));
+		double Mf = L.MaskEnd > 0.0 ? SmoothStep((Odo.FindRef(C.Src) - C.Odo0) / C.Len, L.MaskDense, L.MaskEnd) : 0.0;
 		if (L.FadeTau > 0.0)
 		{
 			Mf = FMath::Max(Mf, SmoothStep(K, 0.6, 1.0));   // tanque parado: o sumiço anda pela idade
@@ -1081,7 +1224,7 @@ void ARTSTreadDust::Draw(const FVector& CamM, const FVector& CamRight, const FVe
 		if (L.RotFreeAfter > 0.0)
 		{
 			// depois de rotFreeAfter cascos o cartão vai girando até o giro livre (sem pular)
-			const double Behind = (Odo.FindRef(C.Src) - C.Odo0) / P.HullLen;
+			const double Behind = (Odo.FindRef(C.Src) - C.Odo0) / C.Len;
 			CardRot = FMath::Lerp(C.Rot, C.RotFree, SmoothStep(Behind, L.RotFreeAfter, L.RotFreeAfter + 0.35));
 		}
 		const double Cs = FMath::Cos(CardRot), Sn = FMath::Sin(CardRot);

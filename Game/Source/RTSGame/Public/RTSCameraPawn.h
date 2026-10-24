@@ -42,11 +42,27 @@ public:
 	void JumpTo(const FVector2D& Cm);
 	/** O teste rápido: giro e distância na hora (sem a suavização), pra foto sempre igual. PitchDeg ≥ 0 força a
 	 *  inclinação (a foto lado a lado com a maquete; o jogador fica na curva do zoom). */
-	void SetView(float YawDeg, float InDistanceM, float PitchDeg = -1.0f)
+	/** A inclinação da curva do zoom nessa distância (graus), pra quem quer misturar com uma inclinação forçada. */
+	float CurvePitchAt(float InDistanceM) const { return CurvePitch(InDistanceM); }
+	/** (16/10) A vista de agora, pra câmera da cena que põe o tanque seguido num ponto da tela (follow_screen). */
+	float GetViewPitchDeg() const { return Pitch; }
+	float GetViewYawDeg() const { return YawShown; }
+	float GetViewDistanceM() const { return DistanceM; }
+	float GetFieldOfViewDeg() const;
+	void SetView(float YawDeg, float InDistanceM, float PitchDeg = -1.0f, float LookUpDeg = 0.0f)
 	{
 		Yaw = YawShown = YawDeg;
 		DistanceM = TargetDistanceM = InDistanceM;
-		if (PitchDeg >= 0.0f)
+		// (16/10, o Fluxo: as fotos na posição dos game shots, a 25–30 m) a vista da cena vale fora do zoom do jogador até
+		// a próxima entrada dele
+		bScenarioView = true;
+		if (LookUpDeg > 0.0f)
+		{
+			// (16/10, o Look: o céu inteiro em vídeo) a vista acima do horizonte: a inclinação negativa da câmera que olha
+			// pra cima (o olho fica e a vista sobe)
+			FreePitch = FreePitchShown = -FMath::Min(LookUpDeg, MaxLookUpDeg) - CurvePitch(InDistanceM);
+		}
+		else if (PitchDeg >= 0.0f)
 		{
 			FreePitch = FreePitchShown = PitchDeg - CurvePitch(InDistanceM);
 		}
@@ -89,6 +105,9 @@ public:
 	/** O botão do meio deita a câmera por cima da curva (como o WorldForge), até quase a horizontal. */
 	UPROPERTY(Config) float MinFreePitchDeg = 3.0f;
 	UPROPERTY(Config) float MaxFreePitchDeg = 80.0f;
+	/** (16/10, o Felipe: "pode olhar pra cima também, como se fosse um FPS") passando da MinFreePitchDeg, o olho para onde
+	 *  está e a vista gira em volta dele, até isto acima do horizonte (o céu, as nuvens e o sol na partida). */
+	UPROPERTY(Config) float MaxLookUpDeg = 85.0f;
 	/** O campo de visão: um pouco mais fechado de longe (menos distorção na borda), mais aberto com a câmera deitada (a vista das artes). */
 	UPROPERTY(Config) float FieldOfViewDeg = 50.0f;
 	UPROPERTY(Config) float FarFieldOfViewDeg = 46.0f;
@@ -122,6 +141,8 @@ private:
 	float SmoothedGroundZ = 0.0f;
 	bool bMenuMode = false;
 	bool bGliding = false;
+	/** A vista posta pela cena (SetView): o limite do zoom fica de fora até o jogador mexer na câmera. */
+	bool bScenarioView = false;
 	FVector2D GlideTarget = FVector2D::ZeroVector;
 	float MenuTime = 0.0f;
 	FBox2D BoundsCm = FBox2D(FVector2D(-51200.0, -51200.0), FVector2D(51200.0, 51200.0));

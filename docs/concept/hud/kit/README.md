@@ -28,6 +28,8 @@ São a textura de verdade de cada painel. O conteúdo (texto, foto, ícone, barr
 | `spy_badge_ring.png`, `spy_badge_eye.png` | 64×64 | O selo da espionagem no canto do emblema: o aro (o tempo escurece) e o olho (`art/tools/make_hud_glyphs.py`) | Inteira |
 | `defeated_x.png` | 64×64 | O X do derrotado | Inteira |
 | `radiation.png`, `radiation_red.png` | 64×64 | O trevo das superarmas (vermelho quando falta pouco) | Inteira |
+| `timer_medallion_airlift.png` | 512×512 | (23/10) O medalhão do relógio da Supply Drop Zone selecionada (o painel do meio sem a grade, a imagem 4 do GPT aprovada): o aro de aço no raio 250, o emblema do paraquedas do `icons/paradrop.png` (`art/tools/make_timer_medallion.py`, as medidas do alvo) | Inteira |
+| `timer_glow.png` | 680×420 | (23/10) A luz azul atrás do medalhão (3,4 × 2,1 raios; mais comprida do lado de fora, como no alvo); o painel apaga sem energia | Inteira |
 
 ## Ícones (`icons/`, 256×256, 12/10)
 
@@ -50,6 +52,7 @@ Cada ícone já vem com o próprio quadrado do botão (metal escuro com rebites)
 
 - **`photos/buttons/`** (256×256, 12/10): o veículo limpo sobre fundo escuro, no estilo das fotos da paleta aprovada (`../pieces/main_grid_palette.webp`). Arquivos: `usa_battle_tank`, `usa_dozer`, `usa_chinook`, `usa_war_factory`. Recortados de `captures/concept/hud/kit/photos_buttons_gpt.webp`.
 - **`photos/card/`** (728×300, 12/10): o retrato largo do cartão, no estilo de `../pieces/unit_card.webp` (foto, deserto desfocado, luz neutra). A foto quadrada do GPT foi estendida pros lados pelo Gemini (originais em `captures/concept/hud/kit/card_gemini/`). Arquivos: os mesmos quatro nomes.
+  - `usa_drop_zone.png` (23/10): o GPT não tem a foto do nosso modelo; sai do próprio jogo (a cena `hud_drop_zone_portrait_b`, sem o HUD, o giro de 15° com o poste de luz fora da frente, os paraquedas descendo no pátio aos 44,4 s: `captures/game/timer_hud_drop_zone_portrait_b_b/04_cena_044s.png`) com o acabamento das fotos do kit (o tilt-shift, a luz quente, a saturação e a vinheta medidos nelas): `python art/tools/make_card_portrait.py <foto> 900 300 1320 usa_drop_zone.png 0.12 0.80`.
 
 ## Fonte
 

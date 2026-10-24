@@ -56,6 +56,8 @@ private:
 	void DrawMinimap(const FRTSHudState& State);
 	void DrawGroups(const FRTSHudState& State);
 	void DrawCommandPanel(const FRTSHudState& State);
+	/** (v4) O relógio (FRTSHudTimer) no lugar da grade principal: de Left até o sulco Right, na planta, no painel PTop/PH. */
+	void DrawTimer(const FRTSHudState& State, float Left, float Right, float PTop, float PH);
 	/** A altura (na planta) do painel central: 180 com 9 colunas, mais alto com as casas maiores. */
 	static float CommandPanelHeight(const FRTSHudState& State);
 	void DrawCard(const FRTSHudState& State);
@@ -109,6 +111,8 @@ private:
 	FVector2D Text(const FString& Str, float X, float Y, float Px, const FLinearColor& C, EWeight W = EWeight::SemiBold, EAlign Al = EAlign::Left, bool bShadow = true);
 	/** O texto centrado na altura CY (pra caber no meio das faixas da pele). */
 	FVector2D TextMid(const FString& Str, float X, float CY, float Px, const FLinearColor& C, EWeight W = EWeight::SemiBold, EAlign Al = EAlign::Left, bool bShadow = true);
+	/** As maiúsculas espaçadas (o rótulo do relógio), em Bold: letra por letra, Tracking × o tamanho entre elas, no meio de CY. */
+	FVector2D TextSpaced(const FString& Str, float X, float CY, float Px, const FLinearColor& C, float Tracking);
 	FVector2D Measure(const FString& Str, float Px, EWeight W) const;
 	FSlateFontInfo Font(float Px, EWeight W) const;
 	static FLinearColor HealthColor(float H);

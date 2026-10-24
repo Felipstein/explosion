@@ -39,6 +39,13 @@ public:
 	virtual bool IsTickableWhenPaused() const override { return true; }
 
 private:
+	/** (16/10) A câmera que segue uma unidade na cena: quem e onde o foco está. */
+	uint32 FollowId = 0;
+	/** (16/10) A câmera da cena já entrou (a gravação começa daí, sem os segundos da câmera normal com o HUD). */
+	bool bSceneCameraSet = false;
+	FVector2D FollowCm = FVector2D::ZeroVector;
+	bool bFollowInit = false;
+
 	struct FStep
 	{
 		FString Name;
@@ -79,6 +86,10 @@ private:
 	void PumpInput();
 	void QueueClick(const FVector2D& Pixel, FKey Button = EKeys::LeftMouseButton);
 	void QueueDrag(const FVector2D& From, const FVector2D& To);
+	/** (v4, 23/10) O acorde da linha: o 1º botão desce em From, o 2º desce, 8 movimentos até To e, com bRelease, sobe o esquerdo
+	 *  e depois o direito (um evento por quadro, como a mão). bRightFirst: o direito desce antes. */
+	void QueueChord(const FVector2D& From, const FVector2D& To, bool bRightFirst, bool bRelease);
+	void QueueUp(const FVector2D& At, FKey Button);
 	void QueueKey(FKey K);
 	FVector2D ToSlate(const FVector2D& Pixel) const;
 	FVector2D ViewportFrac(const FVector2D& Frac) const;
@@ -95,6 +106,18 @@ private:
 	/** -RTSScenario: o teste rápido (a partida pronta, fotos em segundos fixos de simulação). */
 	bool bScenario = false;
 	void BuildScenario();
+	/** (v4, 23/10) -RTSAutoTest=aivsai (com -RTSSelfAI): a partida longa IA x IA no jogo; a câmera corre pro último ataque de
+	 *  mísseis e pra última luta e fotografa (-RTSTestMinutes=, padrão 20). */
+	bool bAIvsAI = false;
+	void BuildAIvsAI();
+	bool WatchTick();
+	float WatchNextShot = 0.0f;
+	float WatchShotAt = -1.0f;
+	FString WatchShotName;
+	int32 WatchStrikeSerial = 0;
+	int32 WatchCycle = 0;
+	TArray<float> WatchBurst;
+	bool bWatchStarted = false;
 	bool bLan = false;
 	/** lanclient: a nossa tela entra na sala de um anfitrião sem tela (o robô joga por ele). */
 	bool bLanClient = false;
@@ -108,6 +131,8 @@ private:
 	/** -RTSNetAI=<n>: IAs que o anfitrião põe na sala; -RTSTestTeams: 2 contra 2 (a gente e a IA de um lado). */
 	int32 NetAIs = 0;
 	bool bTeams = false;
+	/** (v4) -RTSTestMoney=<n>: o dinheiro inicial escolhido pelos botões (o menu ou a sala) e conferido na partida (0 = não mexe). */
+	int32 TestMoney = 0;
 	bool bSpectatorLogged = false;
 	/** O botão da cor da minha linha na sala. */
 	FName MyColorButton() const;
@@ -118,6 +143,8 @@ private:
 	float TotalTime = 0.0f;
 	int32 Failures = 0;
 	TArray<FInputEvent> Pending;
+	/** Quadros desde que a fila de entrada esvaziou: com 3, o controle já leu o último evento (ele chega no quadro seguinte). */
+	int32 InputQuietFrames = 0;
 	TSet<FKey> Pressed;
 	TSharedPtr<FRTSTestInputGate> Gate;
 	bool bDummyInjecting = false;
@@ -137,8 +164,29 @@ private:
 	float NextReinforce = 0.0f;
 	float NextWave = 0.0f;
 	int32 MoneyBefore = 0;
+	// (v4, 23/10) a linha dos dois botões: as vagas da prévia (quem e onde), a frente, e a câmera, as ordens, a seleção e os
+	// destinos de antes de cada passo
+	TArray<uint32> LineIds;
+	TArray<FVector2D> LineSlotsCm;
+	float LineFacingDeg = 0.0f;
+	FVector2D LineCamCm = FVector2D::ZeroVector;
+	int32 LineOrders = 0;
+	TArray<uint32> LineSelection;
+	int32 LineFrameStart = 0;
+	bool bLineQueued = false;
+	float LineStillFor = 0.0f;
+	float LineLastTimer = 0.0f;
+	TMap<uint32, FVector2D> LineOrderPoints;
 	int32 VitrineShots = 0;
 	float RetryAt = 0.0f;
+	// (v4, 23/10) o conserto do Dozer e o vender pelos cliques (o cenário com "clicks": "repair_sell", o v4_cliques): a usina
+	// avariada (pelos próprios tanques, o Ctrl), o Dozer, a vida quando o conserto começou e o dinheiro quando a venda começou
+	uint32 RepairPlant = 0;
+	uint32 RepairDozer = 0;
+	int32 RepairHpStart = 0;
+	int32 SellMoneyStart = 0;
+	/** Os passos do conserto e do vender (BuildScenario; fora da base, que segue igual pros outros donos). */
+	void AddRepairAndSellSteps();
 	bool bActive = false;
 	/** -RTSRecord: grava uma foto por quadro do combate (com -benchmark -fps=30, passo fixo) pra virar vídeo. */
 	bool bRecord = false;

@@ -101,6 +101,9 @@ public:
 	/** A névoa da próxima partida (o anfitrião escolhe na sala; os outros vêem). */
 	ERTSFogMode GetFogMode() const { return ERTSFogMode(FogMode); }
 	void SetFogMode(ERTSFogMode Mode);
+	/** (v4) O dinheiro inicial da próxima partida (o anfitrião escolhe na sala; os outros vêem), sem o × do -RTSFast. */
+	int32 GetStartingMoney() const { return StartingMoney; }
+	void SetStartingMoney(int32 Money);
 	/** O time de uma vaga: a sua (qualquer um) ou a de qualquer vaga (o anfitrião). Volta pro 0 depois do 4. */
 	void CycleTeam(uint8 Slot);
 	/** O anfitrião: troca a cor de uma vaga de IA. */
@@ -202,7 +205,29 @@ public:
 	/** O voto pra derrubar quem sumiu (a vaga que a partida espera). */
 	void VoteDrop(uint8 Slot);
 
+	// ---------------------------------------------------------------- o chat da partida (17/10)
+	/** Uma linha do chat: quem mandou (a vaga), o texto, se foi só pros aliados e quando chegou (FPlatformTime). */
+	struct FChatLine
+	{
+		uint8 Slot = 0;
+		FString Text;
+		bool bTeam = false;
+		double Time = 0.0;
+	};
+	/** Manda uma linha. Fora da simulação (não mexe no lockstep): o cliente manda pro anfitrião e o anfitrião repassa;
+	 *  só pros aliados vai só pra quem é do mesmo time. Sem rede (a escaramuça), fica só aqui. */
+	void SendChat(const FString& Text, bool bTeam);
+	const TArray<FChatLine>& ChatLines() const { return Chat; }
+
 private:
+	TArray<FChatLine> Chat;
+	TSet<uint32> ChatSeen;                  // (a vaga << 16) | o número: a mesma linha chega 3 vezes (UDP)
+	uint16 NextChatId = 1;
+	void AddChat(uint8 Slot, const FString& Text, bool bTeam);
+	/** Anfitrião: repassa a linha pra quem deve ver (menos quem mandou). */
+	void RelayChat(uint8 FromSlot, uint16 Id, bool bTeam, const FString& Text);
+	/** Quem vê a linha de uma vaga: todos, ou só quem é do mesmo time (time 0 = sem aliados). */
+	bool SeesChat(uint8 Viewer, uint8 FromSlot, bool bTeam) const;
 	struct FPeer
 	{
 		TSharedPtr<FInternetAddr> Addr;
@@ -258,6 +283,7 @@ private:
 	uint8 MyColor = 0;
 	uint8 MyTeam = 0;
 	uint8 FogMode = uint8(ERTSFogMode::Explored);
+	int32 StartingMoney = 10000;
 	int32 MapSlots = MaxPlayers;
 	/** As vagas de computador (só no anfitrião; viajam na sala como membros). */
 	struct FAiSlot

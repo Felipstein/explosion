@@ -2017,6 +2017,66 @@ Na ordem. Os pedidos novos do Felipe entram **no fim**, sem mudar o que já esta
    (as lascas finas em volta do pilar de pedra, perto da estrada do World_TestSalt2). Achar qual espalhamento põe essas
    malhas, qual o lado aberto de cada escaneada, e assentar pela face de cima (a normal do chão, só o giro no eixo
    vertical e uma inclinação pequena), nunca mostrando o oco.
+   - A causa (16/10): não são pedras soltas, são os paredões escaneados (`namaqualand_cliff_01/02`, o espalhamento
+     `Cliff`), uma casca oca atrás, reta e comprida. Em volta de um pilar ou de uma quina redonda a peça reta fica
+     tangente à parede e as pontas sobram no ar, de lado, mostrando o oco por dentro.
+   - O conserto (em teste): ao assentar (`SliceScatterMeshes`, o ramo `bCliff`), as costas da peça têm de estar no
+     morro no comprimento todo: o chão logo atrás das pontas, do meio e de entre eles cobre ao menos 55% da altura.
+     Senão ela encolhe (até 5 vezes, 15% cada) e, se nem assim, não entra. O log conta os encolhidos e os tirados.
+   - A 1ª prova (`dirt_gasta_67_paredao_p2`, 16/10 noite): no mapa, 951 encolhidos e 299 tirados de 4.602. As lascas
+     grandes em volta do topo do pilar sumiram, mas sobraram placas finas boiando perto do pé dele: com 55% da altura
+     encostada, a metade de cima da casca ficava solta. A 2ª regra: o morro atrás chega a 1,2 m do topo
+     da peça, 9 pontos ao longo dela, e encolhe no máximo 3 vezes (mais que isso vira plaquinha).
+   - A 2ª prova (`dirt_gasta_67_paredao2`): no mapa, 1.602 encolhidos e 801 tirados de 4.602 (o paredão 2, de 20 m,
+     perde 32%). O pilar ficou sem nenhuma placa; a parede grande do quadro segue igual. Na borda do platô vista do alto
+     (`rd_oeste_alto_paredao2` contra `rd_oeste_alto_v2l`) o "muro" de cascas espetadas virou pedras menores coladas na
+     borda, sem parede pelada. Fica atrás da chave `CLIFF_BACKED=1` até a palavra dele (o World_TestSalt2 sem ela).
+   - **REPROVADO (17/10), regressão:** tirar e encolher as peças deixou o mapa pobre ("as pedras têm que continuar, só
+     que posicionadas e encaixadas direito na geração"). O rumo: nunca remover; procurar o encaixe de cada peça (o giro
+     seguindo a parede, empurrada pra dentro do morro, um pouco menor só se precisar) e ficar com o melhor.
+   - **O escopo (17/10, o Felipe):** "não é só no morro, é o mapa inteiro com esse problema, principalmente até nos
+     lagos". Depois do encaixe dos paredões, varrer o mapa todo: toda pedra e rocha espalhada (não só o `Cliff`), na
+     beira dos lagos com atenção (pedra boiando, meio enterrada torta, o oco à vista). Como no Minecraft: nada gerado
+     voando nem atravessado.
+   - **A 2ª volta (17/10 tarde), o encaixe sem tirar** (`pedras_encaixe_pilar` e `pedras_encaixe_borda`):
+     - nenhuma peça foi tirada (4.602); 2.398 foram giradas, empurradas ou levemente reduzidas, e 267 ficaram sem encaixe
+       perfeito;
+     - a borda do platô ficou quase igual à original;
+     - no pilar, as lascas grandes do topo sumiram, mas na base ainda sai uma placa fina pra fora. **Não serve.**
+   - **A pesquisa (17/10, um agente com as fontes):**
+     - **A malha** (as nossas são da Poly Haven, CC0): a borda aberta dos paredões não fica só atrás. Ela sobe pelas duas
+       pontas e corre pelo topo:
+       - `cliff_01`: 33 m de borda, 16,5 nas pontas e 9,7 no topo;
+       - `cliff_02`: 58 m de borda, 15,4 nas pontas e 13,5 no topo.
+       Enterrar as costas não esconde o oco. O `boulder_02` tem o fundo aberto, até 12% da altura; as outras pedras são
+       fechadas.
+     - **Os AAA:**
+       - nunca jogam a casca oca num terreno qualquer;
+       - no Far Cry 5 (GDC 2018), o paredão nasce das encostas do próprio terreno;
+       - no Minecraft, o terreno se ajusta à peça: `beard_thin` enche debaixo e `bury` enterra em volta;
+       - na Unreal, o Landscape Patch prende o terreno numa malha;
+       - o Horizon (GDC 2017) tem camadas de altura separadas pra terreno, objetos e água.
+       Não há percentual publicado de quanto enterrar.
+     - **O jeito de medir** (inferência), por peça:
+       - a folga embaixo, até 2–5 cm;
+       - a borda aberta pelo menos 10 cm abaixo do chão;
+       - nenhuma parte do topo com o chão por cima;
+       - enterrada de 10 a 35%.
+       Uma peça reta numa quina de raio R sobra L²/8R nas pontas: o `cliff_02` (20 m) só cabe com raio de 31 m ou mais, o
+       `cliff_01` (8 m) com 8 m ou mais. Abaixo disso, pedras fechadas ou terreno ajustado.
+     - **Na água:** a pedra assenta contra o fundo, e o topo da submersa fica no máximo 0,5–1 m abaixo da água.
+   - **O plano (17/10):**
+     1. **A ficha de cada malha**, medida na própria montagem (`RockFicha` no `WorldForgeEditorLib.cpp`): a borda aberta,
+        o anel da base e o topo 8×8.
+     2. **A auditoria de cada peça assentada** (`AuditScatter`): voando, oco à vista, atravessada, enterrada e água. Sai
+        no log `FORGE pedras auditoria` e num CSV por malha em `Saved/WorldForge/rock_audit`.
+     3. **A escada de conserto, sem tirar:**
+        1. deslizar ao longo da encosta;
+        2. girar;
+        3. trocar a peça pela curva (20 m, depois 8 m, depois pedras fechadas);
+        4. ajustar o chão em volta da peça, como o `bury` do Minecraft, antes do Landscape e da simulação lerem a altura.
+     4. **A emenda:** pedrisco ao pé dos paredões, como no Far Cry 5.
+     5. **A meta:** auditoria zerada em mais de uma semente e fotos ampliadas das 10 piores peças.
 9. Pedido do Felipe de 16/10 (pra alguma hora): **a faixa branca da beira passa por cima da areia** onde a laje quebrou ("tem
    fita na areia [...] isso não existe, tem que tá degradado"). A foto: `docs/aprovados/mundos/2026-10-16_faixa_na_areia_PROBLEMA.jpg`.
    - A causa: a faixa é um decalque (`road_paint`, os pedaços de 2,2 m) e projeta em tudo, o Landscape também. O `on_slab`

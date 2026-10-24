@@ -61,6 +61,15 @@ namespace Sim
 			break;
 		case CommandType::Resign:
 			break;
+		case CommandType::UsePower:
+			W.U32(uint32_t(C.Value));
+			W.I64(C.Point.X.Raw);
+			W.I64(C.Point.Y.Raw);
+			break;
+		case CommandType::Sell:
+		case CommandType::Repair:
+			W.U32(C.Target);   // (v4) o prédio
+			break;
 		}
 	}
 
@@ -160,7 +169,20 @@ namespace Sim
 		case CommandType::AttackGround:
 			return R.I64(Out.Point.X.Raw) && R.I64(Out.Point.Y.Raw);
 		case CommandType::ForceAttack:
+		case CommandType::Sell:
+		case CommandType::Repair:
 			return R.U32(Out.Target);
+		case CommandType::UsePower:
+		{
+			// (v4) o poder (até 255) e o ponto
+			uint32_t V = 0;
+			if (!R.U32(V) || V > 0xFF || !R.I64(Out.Point.X.Raw) || !R.I64(Out.Point.Y.Raw))
+			{
+				return false;
+			}
+			Out.Value = int32_t(V);
+			return true;
+		}
 		}
 		return false;   // tipo desconhecido
 	}

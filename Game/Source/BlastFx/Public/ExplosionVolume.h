@@ -147,6 +147,14 @@ public:
 	float LoopLife = 0.0f;
 	/** (17/10) Viva até esta idade (s), qualquer que seja a gravação: a do raymarch em loop (a carcaça) não acaba sozinha. 0 = pela gravação. */
 	float HoldAge = 0.0f;
+	/** (23/10, a explosão com vida: a nuvem viva da ogiva) A gravação para neste tempo (s da gravação): o último quadro válido fica na tela
+	 *  (nenhum quadro novo sobe pra placa) e o ruído de detalhe segue andando (HoldExtraS, no relógio do raymarch). 0 = toca até o fim. */
+	float BakeHoldS = 0.0f;
+	/** O tempo da gravação depois da parada (s da gravação; 0 sem a parada): o raymarch soma ao relógio do ruído, senão vira carimbo. */
+	float HoldExtraS() const
+	{
+		return BakeHoldS > 0.0f ? FMath::Max(RawBakeTime() - BakeHoldS, 0.0f) : 0.0f;
+	}
 
 	/**
 	 * O clarão da detonação (um fogo contínuo não tem): a luz curta que acende o
@@ -240,13 +248,23 @@ public:
 	/** Tempo da gravação que está sendo mostrado. */
 	float BakeTime() const
 	{
+		float Raw = RawBakeTime();
+		if (BakeHoldS > 0.0f)
+		{
+			Raw = FMath::Min(Raw, BakeHoldS);       // (23/10) a nuvem viva: o último quadro válido parado
+		}
+		return LoopPeriod > 0.0f ? FMath::Fmod(FMath::Max(Raw, 0.0f), LoopPeriod) : Raw;
+	}
+	/** O tempo da gravação pelo relógio (os dois andamentos), sem a parada nem o loop. */
+	float RawBakeTime() const
+	{
 		const float Ts = FMath::Max(TimeScale > 0.0f ? TimeScale : SizeScale, 0.01f);
 		float Raw = Age / Ts;
 		if (SlowAfterS > 0.0f && SlowTimeScale > 0.0f && Raw > SlowAfterS)
 		{
 			Raw = SlowAfterS + (Age - SlowAfterS * Ts) / SlowTimeScale;
 		}
-		return LoopPeriod > 0.0f ? FMath::Fmod(FMath::Max(Raw, 0.0f), LoopPeriod) : Raw;
+		return Raw;
 	}
 
 	/** Os dois quadros em volta de T e a fração (com a emenda do loop). */

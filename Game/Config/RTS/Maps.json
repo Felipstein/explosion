@@ -3,6 +3,7 @@
 	"maps": [
 		{
 			"name": "World_TestSalt2",
+			"ground_v3": true,
 			"title": "Deserto (salina)",
 			"size_m": 1024,
 			"cell_m": 4,
@@ -38,7 +39,1096 @@
 			"wind_yaw": -68,
 			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
 			"world_info": "Villages/World_TestSalt2.map.json",
-			"look_recipe": "uma_i1",
+			"_look_recipe_v4": "22/10, v4 (o Felipe: \"subir um pouco o sol, ele está muito muito deitado; veja nos game shots\"): a uma_i1 com o sol a 18° (era 8°), a exposição +1,23 EV, o céu ×1,7 e a saturação 0,95; medido contra o r1: p50 0,37 → 0,45, saturação 0,41 (o r1 0,45). A uma_i1 continua lá pra voltar.",
+			"look_recipe": "uma_i1_s18c",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestV3Paint",
+			"title": "Deserto (teste da faixa pintada v2 na laje)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestV3Paint.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestV3Paint.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestV3Paint.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestV3Paint.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestV3Dunes",
+			"ground_v3": true,
+			"title": "Deserto (teste da v3 do mundo com os bolsoes de dunas)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestV3Dunes.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestV3Dunes.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestV3Dunes.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestV3Dunes.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestDunesSim",
+			"ground_v3": true,
+			"title": "Deserto (teste das dunas simuladas, a base nova)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestV3Dunes.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestV3Dunes.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestV3Dunes.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestV3Dunes.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestRoadDirt",
+			"ground_v3": true,
+			"title": "Deserto (teste da sujeira na beira da estrada, 16/10)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestRoadDirt.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestRoadDirt.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestRoadDirt.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestRoadDirt.map.json",
+			"look_recipe": "desert_golden_hour_v2_aprovada",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestHills",
+			"ground_v3": true,
+			"title": "Deserto (teste dos morros e descidas, 16/10)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestHills.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestHills.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestHills.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestHills.map.json",
+			"look_recipe": "desert_golden_hour_v2_aprovada",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestNatural",
+			"ground_v3": true,
+			"title": "Deserto (teste do chão natural: o lençol ondulado e as nebkhas, 16/10)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestNatural.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestNatural.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestNatural.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestNatural.map.json",
+			"look_recipe": "desert_golden_hour_v2_aprovada",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestTrample",
+			"ground_v3": true,
+			"title": "Deserto (teste do capim deitado na trilha)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestV3Dunes.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestV3Dunes.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestV3Dunes.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestV3Dunes.map.json",
+			"look_recipe": "desert_golden_hour_v2_aprovada",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestGroundV3Dune",
+			"ground_v3": true,
+			"title": "Deserto (teste do chao v3 com a areia de duna)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestGroundV3Dune.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestGroundV3Dune.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestGroundV3Dune.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestGroundV3Dune.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestSandV2Dune",
+			"title": "Deserto (teste da areia v2 com o albedo de duna 0,45/0,26/0,15)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestSandV2Dune.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestSandV2Dune.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestSandV2Dune.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestSandV2Dune.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestGroundV3",
+			"ground_v3": true,
+			"title": "Deserto (teste do chao da v3: areia v2 + luz assada)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestGroundV3.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestGroundV3.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestGroundV3.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestGroundV3.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestV3",
+			"title": "Deserto (teste da v3 do mundo: laje, pedra, areia nas paredes)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestV3.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestV3.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestV3.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestV3.map.json",
+			"look_recipe": "desert_golden_dust",
+			"skirmish_gap_m": 520,
+			"obstacle_meshes": [
+				"boulder",
+				"namaqualand_rocks",
+				"namaqualand_cliff",
+				"DatePalm",
+				"concrete_road_barrier"
+			],
+			"skirmish": {
+				"base": "usa_command_center",
+				"units_per_player": [
+					[
+						"usa_dozer",
+						1
+					]
+				],
+				"_about": "Com base, como o ZH (PlayerTemplate.ini: CC pronto + 1 Dozer). Sem 'base', volta o skirmish de só tanques."
+			},
+			"supply_docks": [
+				[
+					-343,
+					-290
+				],
+				[
+					343,
+					290
+				],
+				[
+					-150,
+					60
+				],
+				[
+					150,
+					-60
+				],
+				[
+					-214,
+					328
+				],
+				[
+					259,
+					-247
+				]
+			],
+			"_supply_docks": "Fixos até o WorldForge exportar os depósitos (decisão do Felipe, 10/10): um perto de cada base (ao lado, fora da porta do CC) e dois no meio, espelhados pelo giro de 180°. Conferidos na carga: o que cair em penhasco ou água vai pro lugar livre mais perto (log). Os das bases conferidos na grade (-RTSDumpGrid, 10/10): a 74 m da largada, livres. Os das bases novas (10/10): a 74 m delas também, no lado livre (leste e norte).",
+			"dock_size_m": [
+				26.33,
+				32.12
+			],
+			"dock_boxes": 400,
+			"_starts": "As bases, na ordem das vagas da sala (2 jogadores usam as 2 primeiras). As 2 de cima (noroeste e sudeste) entraram em 10/10 pra partida de 4 na LAN: conferidas na grade (-RTSDumpGrid), área livre de 88 m em volta e ligadas às outras pelo chão."
+		},
+		{
+			"name": "World_TestSandV2",
+			"title": "Deserto (teste da areia v2)",
+			"size_m": 1024,
+			"cell_m": 4,
+			"sample_m": 2,
+			"max_slope": 0.78,
+			"water_below_m": -1.5,
+			"starts": [
+				[
+					-282.6,
+					-335.7
+				],
+				[
+					282.6,
+					335.7
+				],
+				[
+					-288.0,
+					328.0
+				],
+				[
+					272.0,
+					-320.0
+				]
+			],
+			"_skirmish_gap_m": "Só tanques ainda (sem base): o skirmish começa no caminho entre as bases, nos pontos a esta distância (pelo caminho) um do outro. Nas bases (878 m em linha reta, ~1200 m pelo caminho) o contato só vinha aos ~2:50; a linha reta pro meio caía em cima do maciço (testes t1/t2, 08/10).",
+			"_village": "A vila do WorldForge (11/10, uma só, no centro): o village.json que ele grava ao montar o mapa, copiado pelo game.ps1 worlds. As peças que bloqueiam viram células fechadas; o hash é conferido com a etiqueta do mapa montado.",
+			"village": "Villages/World_TestSandV2.json",
+			"_surface": "O tipo de chão do WorldForge (13/10): o surface.png (R asfalto, G terra batida, B rocha, a 1 m) e o .json ao lado, que ele grava ao montar o mapa, copiados pelo game.ps1 worlds. Só desenho: a areia não sobe no asfalto, a esteira não cava a rua. Sem o arquivo, tudo é areia.",
+			"surface": "Surface/World_TestSandV2.png",
+			"_grid": "A grade da simulação do WorldForge (13/10): o grid.png (R a água: 0 seco, 1 margem, 2 vau, 3 fundo, 4 gelo; G o corpo) e o grid.json com os corpos e o hash, a 4 m, copiados pelo game.ps1 worlds. O fundo bloqueia a unidade de chão; a margem, o vau e o gelo passam. Sem o arquivo, a água vem da altura (water_below_m).",
+			"grid": "Grid/World_TestSandV2.png",
+			"_wind_yaw": "Pra onde o vento sopra (graus, 0 = +X da Unreal): o vento único do mapa (MPC_Wind: a fumaça, a poeira, as palmeiras, o enchimento do rastro). Tem que ser o do WorldForge, que assa as ondulações da areia v2 com ele (WindYaw = 87 − 155 ± 20 pela semente; o Look, 13/10): o world_info abaixo, quando existir, manda; até o WorldForge reexportar este mapa, −68 (o centro da regra).",
+			"wind_yaw": -68,
+			"_world_info": "O map.json do WorldForge (exports/<mapa>/map.json), copiado pelo game.ps1 worlds junto da vila: o wind_yaw dele passa por cima do de cima.",
+			"world_info": "Villages/World_TestSandV2.map.json",
+			"look_recipe": "desert_golden_dust",
 			"skirmish_gap_m": 520,
 			"obstacle_meshes": [
 				"boulder",

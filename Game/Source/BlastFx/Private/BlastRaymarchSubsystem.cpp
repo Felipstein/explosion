@@ -12,7 +12,10 @@
 #include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "BlastFxGround.h"
+#include "BlastFxDirector.h"
+#include "BlastFxHitLife.h"
 #include "RTSDustField.h"
+#include "RTSSmokeShadow.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Engine/DirectionalLight.h"
@@ -51,6 +54,61 @@ namespace
 	// e a poeira do tiro (14/10, a v3: a areia do sopro do disparo, da onda de choque e do tiro no chão; a DustImpact da
 	// JangaFX convertida em 96³, 40 m, 3 s)
 	const TCHAR* OwnBakes[] = { TEXT("eg_tq_v2"), TEXT("jg_dust_impact_96"), TEXT("eg_poeira3_96"), TEXT("jg_ground_96"), TEXT("sim_chao_anel"), TEXT("sim_chao_cortina"), TEXT("sim_boca"), TEXT("sim_carcaca") };   // (16/10: o anel e o jato do tiro na areia; o anel simulado, v7; a cortina de ejeção, v8)
+	// (23/10, a explosão com vida) as gravações dedicadas do acerto de míssil (o casco de lado, o teto, o chão e o chão do ataque), sendo
+	// simuladas agora: entram só se o arquivo existe (sem o erro no registro); sem elas, o acerto toca a Carga Pesada em escala, como hoje
+	// (UBlastFxDirector::MissileHitLife, a camada blast.HitLife.Bake). O game.ps1 liga os arquivos do BlastLab (LinkFile), como os outros
+	// (23/10 noite) mais a warhead_lado_m (a espelhada: a outra mão do lobo) e a warhead_chao_s (só o fogo e a fuligem do chão: a ogiva da
+	// metade leve do ataque em cima da strike_chao, -StrikeWarhead=1)
+	const TCHAR* OptionalBakes[] = { TEXT("warhead_lado"), TEXT("warhead_lado_m"), TEXT("warhead_teto"), TEXT("warhead_chao"), TEXT("warhead_chao_s"), TEXT("strike_chao") };
+	// (23/10 noite) quais carregam: as que têm o arquivo em Intermediate/Raymarch, e lá o game.ps1 Worlds só liga o que ganhou da reserva no
+	// A/B do jogo (a prova: docs/ESTUDO_MISSIL_PATRIOT.md, "As gravações dedicadas no jogo"). -HitBakes=a,b,... escolhe (all = todas as que
+	// existem, none = nenhuma: a reserva exata); -HitBakeFile=nome:arquivo,... toca outro arquivo (o nome em Intermediate/Raymarch ou o
+	// caminho inteiro do BlastLab, sem link a mais no pacote) com o nome do jogo: o A/B das variantes na mesma corrente
+	const TCHAR* DefaultHitBakes = TEXT("all");
+	bool HitBakeWanted(const TCHAR* Own)
+	{
+		static const FString List = [] { FString V = DefaultHitBakes; FParse::Value(FCommandLine::Get(), TEXT("HitBakes="), V, false); return V; }();
+		if (List == TEXT("all"))
+		{
+			return true;
+		}
+		TArray<FString> Names;
+		List.ParseIntoArray(Names, TEXT(","));
+		return Names.Contains(FString(Own));
+	}
+	FString HitBakeFile(const TCHAR* Own)
+	{
+		static const TMap<FString, FString> Files = []
+		{
+			TMap<FString, FString> M;
+			FString V;
+			if (FParse::Value(FCommandLine::Get(), TEXT("HitBakeFile="), V, false))
+			{
+				TArray<FString> Pairs;
+				V.ParseIntoArray(Pairs, TEXT(","));
+				for (const FString& P : Pairs)
+				{
+					FString K, F;
+					if (P.Split(TEXT(":"), &K, &F))
+					{
+						M.Add(K, F);
+					}
+				}
+			}
+			return M;
+		}();
+		const FString* F = Files.Find(FString(Own));
+		const FString Name = F ? *F : FString(Own);
+		// um caminho inteiro (o A/B direto do arquivo do BlastLab: nada de link a mais em Intermediate/Raymarch, que vai inteira pro pacote)
+		// ou o nome em Intermediate/Raymarch
+		return FPaths::IsRelative(Name) ? FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), Name + TEXT(".brm2")) : Name;
+	}
+	// (23/10 noite) o custo da subida (-RmUploadLog=1): a cada 1 s, os quadros que subiram pra placa, os MB no segundo e o pior quadro
+	bool UploadLog()
+	{
+		static const bool bOn = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("RmUploadLog="), V); return V != 0; }();
+		return bOn;
+	}
 
 	/** DA_HeavyCharge_v<n> → n; as outras gravações (os corpos da EmberGen) ficam no volume da Unreal. */
 	int32 VariantOf(const AExplosionVolume* E)
@@ -123,7 +181,7 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			return *Hit;
 		}
 		FString Error;
-		BlastRaymarch::FBakeRef B = BlastRaymarch::FBakeData::Load(FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), File), Error);
+		BlastRaymarch::FBakeRef B = BlastRaymarch::FBakeData::Load(FPaths::IsRelative(File) ? FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), File) : File, Error);
 		if (!B)
 		{
 			UE_LOG(LogTemp, Error, TEXT("BlastFx raymarch: %s"), *Error);
@@ -152,6 +210,50 @@ void UBlastRaymarchSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			GLoadedSources.Add(FName(Own));
 			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: gravação %s (%d³, %.1f m, %d quadros)"), Own, B->Res, B->Domain, B->Frames);
 		}
+	}
+	// (a revisão da vida) só com a vida ligada (-HitLifeV=2 e a ogiva v2, a camada blast.HitLife.Bake) e fora da Baixa: cada gravação fica na
+	// memória (70–350 MB) e a maior manda nas vagas e no atlas (o PoolRes e o MaxBricks) de todas as explosões. Com -HitLifeV=1 ou
+	// -MissileBlastV=1 o raymarch fica o de antes, exato; trocar o preset ou a camada no meio da partida só vale na próxima (sem elas, a Carga
+	// Pesada em escala)
+	const bool bOptional = BlastFxHitLife::On(BlastFxHitLife::Bake) && BlastFxHitLife::Preset() >= 1;
+	int64 OptionalBytes = 0;
+	for (const TCHAR* Own : OptionalBakes)
+	{
+		if (!bOptional)
+		{
+			break;
+		}
+		if (!HitBakeWanted(Own))
+		{
+			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: gravação dedicada %s desligada (-HitBakes=)"), Own);
+			continue;
+		}
+		const FString File = HitBakeFile(Own);
+		if (!FPaths::FileExists(File))
+		{
+			continue;
+		}
+		if (BlastRaymarch::FBakeRef B = LoadBake(File))
+		{
+			SourceOf.Add(FName(Own), Sources.Add(B));
+			GLoadedSources.Add(FName(Own));
+			OptionalBytes += B->Data.Num();
+			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: gravação dedicada %s = %s (%d³, %.1f m, %d quadros, %.2f s, até %d blocos, %.0f MB)"), Own, *File, B->Res, B->Domain,
+				B->Frames, B->Duration, B->MaxBricks, double(B->Data.Num()) / (1024.0 * 1024.0));
+		}
+	}
+	{
+		// o atlas de blocos (o quadro mais cheio das gravações carregadas × 32 vagas; BlastRaymarch.h AtlasSide) e a RAM das dedicadas
+		int32 MaxB = 0;
+		for (const BlastRaymarch::FBakeRef& B : Sources)
+		{
+			MaxB = B ? FMath::Max(MaxB, B->MaxBricks) : MaxB;
+		}
+		const int32 Side = BlastRaymarch::AtlasSide(MaxB);
+		const double AtlasMB = double(Side) * Side * Side * (BlastRaymarch::BrickA * BlastRaymarch::BrickA * BlastRaymarch::BrickA * 4
+			+ BlastRaymarch::BrickF * BlastRaymarch::BrickF * BlastRaymarch::BrickF * 4) / (1024.0 * 1024.0);
+		UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: custo das gravações: dedicadas %.0f MB de RAM; o atlas %d³ blocos (o maior quadro %d), %.0f MB de placa"),
+			double(OptionalBytes) / (1024.0 * 1024.0), Side, MaxB, AtlasMB);
 	}
 	Extension = FSceneViewExtensions::NewExtension<FBlastRaymarchExtension>();
 	UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch: ligado (gravações %s %s %s)"),
@@ -191,7 +293,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	}
 
 	// as explosões vivas, da mais perto pra mais longe
-	struct FLive { FInstance I; int32 Variant; double D2; };
+	struct FLive { FInstance I; int32 Variant; double D2; bool bOff = false; };
 	TArray<FLive> Live;
 	for (TActorIterator<AExplosionVolume> It(GetWorld()); It; ++It)
 	{
@@ -212,6 +314,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 		L.I.Scale = E->SizeScale;
 		L.I.YawRad = E->RaymarchYawRad;
 		L.I.Frame = L.I.Bake->FrameOfTime(E->BakeTime());
+		L.I.NoiseExtraS = E->HoldExtraS();      // (23/10) a nuvem viva: o quadro parado, o ruído andando
 		L.I.Seed = E->Seed;
 		L.I.Keep = E->Opacity;
 		L.I.Thickness = E->Thickness;
@@ -243,7 +346,9 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 			UE_LOG(LogTemp, Display, TEXT("BlastLab raymarch: deformação ligada (t = %.2f s da gravação)"), E->BakeTime());
 		}
 		L.D2 = FVector::DistSquared(Eye, L.I.FootCm);
-		// (17/10 tarde) as fora da tela vão pro fim da fila (o render já não as desenha; aqui elas não tomam vaga nem quadro)
+		// (17/10 tarde) as fora da tela vão pro fim da fila (o render já não as desenha). (17/10 noite, o Felipe: a briga revelada
+		// fora da câmera derrubava o quadro) e não pedem vaga nem sobem quadro: antes subiam ~1–3 MB por quadro cada uma, e com
+		// só elas vivas o render saía antes de espalhar os blocos (o Pending crescia e caía de uma vez na próxima da tela)
 		if (bHaveView)
 		{
 			const FVector C = L.I.FootCm + FVector(0.0, 0.0, 50.0 * L.I.Bake->Domain * L.I.Scale);
@@ -252,6 +357,7 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 			if (Dist > R && FMath::Acos(FMath::Clamp(FVector::DotProduct(D / Dist, ViewFwd), -1.0, 1.0)) > ViewHalf + FMath::Asin(FMath::Min(R / Dist, 1.0)))
 			{
 				L.D2 += 1e14;
+				L.bOff = true;
 			}
 		}
 		Live.Add(MoveTemp(L));
@@ -297,6 +403,10 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	}
 	for (const FLive& L : Live)
 	{
+		if (L.bOff)
+		{
+			continue;
+		}
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		Needed.Add(Key(L.Variant, F0));
 		Needed.Add(Key(L.Variant, L.I.Bake->NextFrame(F0)));
@@ -356,6 +466,10 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	};
 	for (FLive& L : Live)
 	{
+		if (L.bOff)
+		{
+			continue;
+		}
 		const int32 F0 = FMath::Clamp(FMath::FloorToInt32(L.I.Frame), 0, L.I.Bake->Frames - 1);
 		L.I.Slot0 = SlotFor(L.Variant, F0);
 		L.I.Slot1 = SlotFor(L.Variant, L.I.Bake->NextFrame(F0));
@@ -368,13 +482,47 @@ void UBlastRaymarchSubsystem::Tick(float DeltaTime)
 	// chão por este mapa (no modo volume a Arte esconde a sombra própria dela): sem explosão, o passe e a sombra seguem
 	// rodando enquanto houver poeira
 	const bool bDust = RTSDustField::GetStats().X > 0;
-	if (List.IsEmpty() && !bDust && bWasEmpty)
+	// (23/10) e o rastro do míssil (RTSSmokeShadow): a sombra dele entra no mesmo mapa, então o mapa e o passe seguem rodando
+	// enquanto houver puff de rastro, mesmo sem explosão nem poeira
+	const bool bTrail = RTSSmokeShadow::NumPuffs_GameThread() > 0;
+	if (List.IsEmpty() && !bDust && !bTrail && bWasEmpty)
 	{
 		return;
 	}
-	bWasEmpty = List.IsEmpty() && !bDust;
+	bWasEmpty = List.IsEmpty() && !bDust && !bTrail;
+	if (UploadLog())
+	{
+		// (23/10 noite) o que sobe pra placa neste quadro (os bytes do quadro na gravação: a tabela, o macro e os blocos das duas resoluções)
+		static double WinStart = 0.0, WinMB = 0.0, WinPeak = 0.0, WinDt = 0.0, WinDtMax = 0.0;
+		static int32 WinFrames = 0, WinTicks = 0, WinLive = 0;
+		WinDt += DeltaTime;
+		WinDtMax = FMath::Max(WinDtMax, double(DeltaTime));
+		double MB = 0.0;
+		for (const FUpload& U : Uploads)
+		{
+			if (!U.bEvict && U.Bake)
+			{
+				const int64 End = U.Frame + 1 < U.Bake->Frames ? U.Bake->Offsets[U.Frame + 1] : U.Bake->Data.Num();
+				MB += double(End - U.Bake->Offsets[U.Frame]) / (1024.0 * 1024.0);
+				++WinFrames;
+			}
+		}
+		WinMB += MB;
+		WinPeak = FMath::Max(WinPeak, MB);
+		WinLive = FMath::Max(WinLive, List.Num());
+		++WinTicks;
+		const double Now = GetWorld()->GetTimeSeconds();
+		if (Now - WinStart >= 1.0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("BlastFx raymarch subida: %d quadros em %d ticks, %.1f MB (%.2f MB/tick, pior %.2f MB), até %d explosões, blocos no atlas %d; quadro do jogo %.1f ms (pior %.1f)"),
+				WinFrames, WinTicks, WinMB, WinMB / FMath::Max(WinTicks, 1), WinPeak, WinLive, UsedBricks, 1000.0 * WinDt / FMath::Max(WinTicks, 1), 1000.0 * WinDtMax);
+			WinStart = Now;
+			WinMB = WinPeak = WinDt = WinDtMax = 0.0;
+			WinFrames = WinTicks = WinLive = 0;
+		}
+	}
 	SubmitFog();
-	SubmitShadow(!List.IsEmpty() || bDust);
+	SubmitShadow(!List.IsEmpty() || bDust || bTrail);
 	Extension->Submit_GameThread(MoveTemp(List), MoveTemp(Uploads), Noise->GetResource(), Worley ? Worley->GetResource() : nullptr, PoolRes, MaxBricks);
 }
 
@@ -409,7 +557,10 @@ void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
 			ShadowTarget = NewObject<UTextureRenderTarget2D>(this, TEXT("BlastRaymarchShadow"));
 			ShadowTarget->bCanCreateUAV = true;
 			ShadowTarget->ClearColor = FLinearColor::Black;
-			ShadowTarget->InitCustomFormat(Res, Res, PF_R32_FLOAT, true);
+			// (23/10) o alvo final em 512² (texel de 0,375 m na mesma janela de 192 m): a sombra do rastro do míssil (σ ~0,4 m) a
+			// 0,75 m dobrava ~25% da gaussiana (e^(−π²σ²/2Δ²)) e tremia andando. A marcha das explosões segue em 256² (o mapa de
+			// passagem); o ShadowMap da light function é 1/(janela), igual em qualquer resolução
+			ShadowTarget->InitCustomFormat(RTSSmokeShadow::OutRes, RTSSmokeShadow::OutRes, PF_R32_FLOAT, true);
 			ShadowTarget->UpdateResourceImmediate(true);
 			ShadowFunction = UMaterialInstanceDynamic::Create(Function, this);
 			ShadowFunction->SetTextureParameterValue(TEXT("Shadow"), ShadowTarget);
@@ -447,7 +598,18 @@ void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
 			Center.Z = 0.0;
 		}
 	}
-	const FVector ToSun = -ShadowSun->GetDirection();
+	FVector ToSun = -ShadowSun->GetDirection();
+	// (17/10 noite, as faixas cinza em degrau que o Felipe viu atrás do Patriot: a areia do tiro e do acerto com o sol a 8° do céu
+	// "uma luz só") a sombra dos volumes usa no mínimo 20° de elevação, no mesmo rumo do sol: com o sol baixo de verdade ela
+	// esticava ~7× a altura, atravessava a base em faixas e mostrava os degraus da grade grossa que a marcha pula (MacroEmpty); a
+	// sombra das nuvens já é assim (a mancha no rumo do sol, M_SmokeShadowLF). -RmShadowMinElev= (graus) pro A/B; 0 = o sol de verdade
+	static const double MinElevDeg = [] { float V = 20.0f; FParse::Value(FCommandLine::Get(), TEXT("RmShadowMinElev="), V); return double(V); }();
+	const double MinZ = FMath::Sin(FMath::DegreesToRadians(MinElevDeg));
+	if (ToSun.Z > 0.0 && ToSun.Z < MinZ)
+	{
+		const FVector2D Across = FVector2D(ToSun.X, ToSun.Y).GetSafeNormal() * FMath::Sqrt(1.0 - MinZ * MinZ);
+		ToSun = FVector(Across.X, Across.Y, MinZ);
+	}
 	const bool bOn = bAny && ToSun.Z > 0.05;
 	const float HalfM = 0.5f * Res * TexelM;
 	FBlastRaymarchExtension::FShadow S;
@@ -456,6 +618,7 @@ void UBlastRaymarchSubsystem::SubmitShadow(bool bAny)
 	S.GroundZM = float(Center.Z / 100.0);
 	S.OriginM = FVector2D(FMath::GridSnap(Center.X / 100.0, double(TexelM)) - HalfM, FMath::GridSnap(Center.Y / 100.0, double(TexelM)) - HalfM);
 	S.ToSun = FVector3f(ToSun);
+	S.SunHalfAngleRad = FMath::DegreesToRadians(0.5f * ShadowSun->LightSourceAngle);   // (23/10) a penumbra do rastro (o disco do sol)
 	S.Out = bOn ? ShadowTarget->GameThread_GetRenderTargetResource() : nullptr;
 	ShadowFunction->SetVectorParameterValue(TEXT("ShadowMap"), FLinearColor(float(S.OriginM.X), float(S.OriginM.Y), 1.0f / (Res * TexelM), S.GroundZM));
 	ShadowFunction->SetVectorParameterValue(TEXT("ShadowLight"), FLinearColor(ToSun.X, ToSun.Y, ToSun.Z, bOn ? 1.0f : 0.0f));

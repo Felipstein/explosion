@@ -38,10 +38,29 @@ O jogo mediu 31 ms na alta, no cenário `chao`, com 12 tanques e a poeira (a ses
 | 1 | Névoa volumétrica de 8 px/128 pra 16 px/64 fatias na alta | −1,5 ms | Look (a receita) + jogo (a escalabilidade) |
 | 2 | Viés do VSM de −1,5 pra −0,5 na alta, conferindo o estouro do pool | −0,5 a −0,8 ms | jogo |
 | 3 | Lumen de Épico pra Alto na alta (o ajuste de 60 qps da Epic) | −3 a −3,5 ms | Look + jogo |
-| 4 | O chão em RVT, com a memória do chão por cima, fora do cache | −1,5 a −2 ms | WorldForge (o Look revisa o CODE) |
+| 4 | ~~O chão em RVT, com a memória do chão por cima~~ **REPROVADO pelo Felipe em 14/10** ("também não, negativo, ficou horrível"). No lugar: cortar só amostra que não aparece (camadas quase zero, a pedra triplanar só no pixel que tem pedra), com A/B pixel a pixel contra o mapa da v2 | a medir | WorldForge (o Look revisa o CODE) |
 | 5 | TSR com AA Alto + FP16 (`r.TSR.16BitVALU.Nvidia`) | −0,5 a −1,5 ms | jogo |
 
+**Por que o RVT morreu (14/10, a folha em `docs/aprovados/mundos/2026-10-14_chao_rvt_reprovado_vila.jpg`, `docs/WORLDFORGE.md` §12.5):**
+- 3,1 cm por texel com compressão borrou o asfalto e o grão da areia;
+- sem o AO das camadas, o chão achatou e escureceu;
+- a projeção de cima esticou a pedra das encostas.
+
+A lição: ganho de ms que muda o que ele aprovou é regressão. Otimização do chão só passa com A/B pixel a pixel igual.
+
 A resolução vem depois: é o maior ganho (−4 a −5 ms contra 100%), mas a perda mais visível.
+
+## Medido no jogo (14/10, a madrugada da v3; cena `chao`, 6 contra 6, Alta, 1600×900, mediana de ~800 quadros)
+
+| Troca | Mediana | Na imagem | Decisão |
+|---|---|---|---|
+| Base (o Alta de hoje) | 32,9 ms | — | — |
+| `r.TSR.16BitVALU.Nvidia=1` (o TSR em FP16, item 5) | 33,6 ms | — | **não ganha na 1660**: sai da lista |
+| `r.Shadow.Virtual.ResolutionLodBiasDirectional=-0.5` (o viés do VSM, item 2) | 31,6 ms (**−1,3 ms**) | a sombra na água do lago fica mais quadriculada (`captures/game/ab_vsm_bias_sombra.jpg`) | **fora do Alta**: é regressão no que ele aprovou. Candidato pro Médio e o Baixo, com o A/B pra ele escolher |
+| A máscara de unidade da poeira (todo veículo no custom depth, bit 128) | 32,0 contra 32,8 ms | — | sem custo medível |
+
+- **O que a comparação achou de defeito, em qualquer viés:** a água do lago mostra manchas retangulares de sombra (blocos de página do VSM na superfície da água). É da água (Look e WorldForge): avisado.
+- **A ferramenta:** `game.ps1 view -Target alta -Folder X -Scenario chao -Extra '-dpcvars=...'`, e a mediana sai no fim do log (`RTS TEST quadros na partida`).
 
 ## A tabela proposta (a confirmar medindo)
 
@@ -52,7 +71,7 @@ A resolução vem depois: é o maior ganho (−4 a −5 ms contra 100%), mas a p
 | Reflexos | SSR | SSR | SSR | Lumen, downsample 2 |
 | VSM viés / SMRT | +1 / 4×2 | +0,5 / 4×2 | −0,5 / 8×4 | −1,5 / 8×4 |
 | Névoa volumétrica | desligada (height fog + aerial perspective) | 16 px / 64 | 16 px / 64 | 8 px / 128 |
-| Terreno | RVT, camadas Low | RVT | RVT | RVT + tesselação |
+| Terreno | camadas Low | sem amostra morta | sem amostra morta | sem amostra morta + tesselação |
 | GPU est. | ~7–8 ms | ~10–11 ms | ~14 ms | ~27–30 ms |
 
 **Outros pontos:**

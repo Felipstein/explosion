@@ -15,6 +15,7 @@
 		{ "Name": "MovieRenderPipeline", "Enabled": true },
 		{ "Name": "RTSLook", "Enabled": true },
 		{ "Name": "RTSHud", "Enabled": true },
-		{ "Name": "RTSTreadDust", "Enabled": true }
+		{ "Name": "RTSTreadDust", "Enabled": true },
+		{ "Name": "RTSWorldProps", "Enabled": true }
 	]
 }

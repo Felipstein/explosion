@@ -1,0 +1,26 @@
+// As mips dos cadernos do chão (16/10, a v3, §7 do CHAO_V3_ESTUDO; o Look pediu): a média de 2 × 2 da mip de cima, só no
+// retângulo que mudou, uma vez por quadro. A luz assada (SunLit, SkyAO) é linear e o relevo é a média da altura, da idade
+// e do revolvido: as duas médias valem como estão (a MF lê com o Sample normal e o nível sai pelas derivadas).
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D<float4> SrcMip;     // a mip de cima (a vista de um nível só)
+RWTexture2D<float4> DstMip;   // esta mip
+int2 DstMin;
+int2 DstSize;
+int2 SrcSize;
+
+[numthreads(8, 8, 1)]
+void DownCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(int2(Id.xy) >= DstSize))
+	{
+		return;
+	}
+	const int2 D = DstMin + int2(Id.xy);
+	const int2 S = D * 2;
+	const int2 M = SrcSize - 1;
+	const float4 Sum = SrcMip.Load(int3(min(S, M), 0)) + SrcMip.Load(int3(min(S + int2(1, 0), M), 0))
+		+ SrcMip.Load(int3(min(S + int2(0, 1), M), 0)) + SrcMip.Load(int3(min(S + int2(1, 1), M), 0));
+	DstMip[D] = Sum * 0.25;
+}

@@ -24,6 +24,12 @@ frente do casco no wreck):
   A = o claro (a areia espirrada, a borda e os torrões).
 O jogo compõe sem depender da ordem (altura somada, o resto pelo máximo): o redesenho dá o mesmo que a gravação.
 
+(16/10, a v3 do chão com o Look) A altura que faz sombra do sol sai à parte, em <tipo>_<opção>_sun.png (cinza de 16 bits,
+o mesmo arranjo e a mesma faixa do R): só a bacia, a borda e o halo levantado. Os torrões, os raios e a terra revirada
+ficam só no R (o escurecimento de contato e a cor): a 8° de sol um torrão de 5 cm fazia 35 cm de triângulo preto, o
+"pontinho preto" reprovado, e as pedras ≥ 9 cm já fazem a sombra delas de malha. A carcaça não tem: a altura dela é só
+torrão. "--sun" grava só esses arquivos (o atlas aprovado não muda).
+
 Saída: Game/Config/RTS/Ground/<tipo>_<opção>.png + .json, e a prévia em captures/game/crateras/ (sombreada com o sol
 do jogo, na inclinação da câmera do RTS, com o tanque de régua e o recorte do alvo ao lado).
 
@@ -291,6 +297,10 @@ def crater_proof(m, seed):
     t = np.clip(-h / d, 0.0, 1.0)
     h = np.where(h < 0, -d * (1.0 - (1.0 - t) ** 1.6), h)
     h = box_mean(h, 2)
+    # (16/10) a da sombra do sol passa pelo mesmo perfil e o mesmo borrão (o resto daqui é torrão e terra revirada)
+    hs = m['h_sun'].astype(np.float64)
+    ts = np.clip(-hs / d, 0.0, 1.0)
+    m['h_sun'] = box_mean(np.where(hs < 0, -d * (1.0 - (1.0 - ts) ** 1.6), hs), 2)
     r = np.hypot(x, y)
     low = box_mean(box_mean(h, 6), 6)
     bump = h - low
@@ -393,6 +403,8 @@ def crater(opt, seed):
     rim = rim_h * smoothstep(ra * 0.9, rr, rp) * (1 - smoothstep(rr, rr * 1.6, rp)) * (0.35 + 1.2 * fbm(x * 1.7 + seed * 2.3, y * 1.7 - seed, 41 + seed, 3)) * (0.15 + 0.85 * rim_arc)
     h = np.where(rp < ra, bowl, 0.0) + np.where(rp >= ra * 0.9, rim, 0.0)
     h += (rim_h * 0.5) * np.clip(rp / rr, 1.0, None) ** -3 * (1.0 + 0.5 * down) * (rp >= rr) * (1 - smoothstep(opt['halo'] * ra, opt['halo'] * ra * 1.4, rp))
+    # (16/10) a altura que faz sombra do sol: a forma até aqui (a bacia, a borda, o halo levantado), sem os torrões
+    h_sun = h.copy()
 
     # (b) o halo escuro até ~halo·R, com a borda recortada e definida (1–3 texels)
     hr = opt['halo'] * ra * (1.0 + 0.25 * down)
@@ -446,7 +458,9 @@ def crater(opt, seed):
     heat = (1 - smoothstep(0, ra * 1.1, rp)) * smoothstep(0.62, 0.76, fbm(x * 6.0, y * 6.0, 97 + seed, 3))   # brasas esparsas no fundo
     h = blur(h, 1, KIND_NOW[0])
     h = np.where(h > 0, 0.30 * np.tanh(h / 0.30), h)
-    return dict(h=h, dark=np.clip(dark, 0, 1), heat=np.clip(heat, 0, 1), light=np.clip(light, 0, 1), ra=ra, depth=depth, kind='crater')
+    h_sun = blur(h_sun, 1, KIND_NOW[0])
+    h_sun = np.where(h_sun > 0, 0.30 * np.tanh(h_sun / 0.30), h_sun)
+    return dict(h=h, h_sun=h_sun, dark=np.clip(dark, 0, 1), heat=np.clip(heat, 0, 1), light=np.clip(light, 0, 1), ra=ra, depth=depth, kind='crater')
 
 
 def wreck(opt, seed):
@@ -697,6 +711,24 @@ def save_atlas(kind, name, opt, marks):
     return path
 
 
+def save_sun(kind, name, marks):
+    """(16/10) A altura que faz sombra do sol, em cinza de 16 bits, com o arranjo e a faixa do R do atlas."""
+    os.makedirs(OUT, exist_ok=True)
+    rows = [np.clip(0.5 + m['h_sun'] / (2 * RANGE_M), 0, 1) for m in marks]
+    a16 = (np.concatenate(rows, axis=1) * 65535 + 0.5).astype(np.uint16)
+    h, w = a16.shape
+    raw = b''.join(b'\x00' + a16[y].astype('>u2').tobytes() for y in range(h))
+
+    def chunk(t, data):
+        c = struct.pack('>I', len(data)) + t + data
+        return c + struct.pack('>I', zlib.crc32(t + data) & 0xFFFFFFFF)
+
+    png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 16, 0, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b'')
+    path = os.path.join(OUT, f'{kind}_{name}_sun.png')
+    open(path, 'wb').write(png)
+    return path
+
+
 def export_clods(clods, seed):
     """As pedras de uma variante pro jogo (13/10, o Look: com 45 graúdas a cratera lia canteiro de pedra): no máximo 14
     graúdas (≥ 20 cm), um sorteio fixo que guarda a mistura de tamanhos, e todas as miúdas de 8–20 cm."""
@@ -720,7 +752,11 @@ def main():
     for name in (names or list(OPTIONS)):
         opt = OPTIONS[name]
         mc = [crater_proof(crater(opt, s), s) for s in range(VARIANTS)]
+        if '--sun' in sys.argv:
+            print(f'MARCAS {name}: a altura da sombra {save_sun("crater", name, mc)}')
+            continue
         save_atlas('crater', name, opt, mc)
+        save_sun('crater', name, mc)
         if '--crater-only' in sys.argv:
             print(f'MARCAS {name}: só a cratera')
             continue

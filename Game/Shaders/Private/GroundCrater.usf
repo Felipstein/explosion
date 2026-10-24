@@ -3,7 +3,8 @@
 //   - MarkCS, no GroundTrack (4,7 cm): G = o escuro (terra revirada, fuligem, combustível), B = o calor (a brasa,
 //     o jogo apaga em ~30 s), A = o claro (a areia espirrada, a borda e os torrões), todos pelo máximo; R (a esteira)
 //     fica;
-//   - HeightCS, na altura das crateras (R16F em cm, 9,4 cm): a altura somada, com limite.
+//   - HeightCS, na altura das crateras (RG16F em cm, 9,4 cm): a altura somada, com limite. R a cheia; G (16/10, a v3
+//     do chão) a que faz sombra do sol, do atlas à parte (SunTex: a bacia e a borda, sem os torrões).
 // A composição não depende da ordem (soma e máximo): o redesenho do caderno dá o mesmo que a gravação aos poucos
 // (a revisão de 13/10). O atlas: as variantes lado a lado, R altura com sinal (±AtlasRangeCm), G escuro, B calor,
 // A claro; o +X do carimbo vai no Axis.
@@ -17,7 +18,9 @@
 Texture2D AtlasTex;
 SamplerState AtlasSampler;
 RWTexture2D<float4> TargetTex;
-RWTexture2D<float> CraterOut;
+RWTexture2D<float2> CraterOut;
+Texture2D SunTex;       // a altura da sombra do sol (cinza, a faixa do R do atlas; só o HeightCS lê)
+int UseSun;
 
 int2 Origin;
 int2 Size;
@@ -40,29 +43,72 @@ float AtlasTexels;      // texels de uma variante
 float AtlasRangeCm;
 int Taps;               // a caixa de filtro (o caderno grosso tem texel ~11× maior que o do atlas)
 
+// o ponto do caderno no carimbo (UV de uma variante) e o pedaço do carimbo que um texel do caderno cobre
+bool MarkUV(int2 P, out float2 UV, out float Foot, out float Border)
+{
+	const float2 D = SheetMinCm + (float2(P) + 0.5) * SheetTexelCm - CenterCm;
+	const float2 L = float2(dot(D, Axis) / max(Stretch, 0.01), dot(D, float2(-Axis.y, Axis.x)) * Mirror) / Scale;
+	UV = L / SpanCm + 0.5;
+	Foot = SheetTexelCm / (SpanCm * Scale * min(max(Stretch, 0.01), 1.0));
+	// (16/10) a borda do carimbo vai a zero: o forno borrava o X com np.roll, que dá a volta, e as ~8 colunas da borda do
+	// atlas traziam a cratera do outro lado (até 15 cm e um risco escuro): girado no caderno, virava uma linha fina, e com o
+	// sol assado a 8°, um pontilhado de 2 m. Zero até 1,25% do lado (17 cm no atlas de 14 m), inteiro a 2,5% (35 cm); a
+	// cratera não chega lá (os raios param a 0,6 m da borda)
+	const float Inside = 0.5 - max(abs(UV.x - 0.5), abs(UV.y - 0.5));
+	Border = saturate((Inside - 0.0125) / 0.0125);
+	return all(UV >= 0.0) && all(UV <= 1.0);
+}
+
+float2 AtlasUV(float2 UV, float Foot, int I, int J)
+{
+	const float Edge = 0.5 / AtlasTexels;
+	const float2 U = UV + ((float2(I, J) + 0.5) / Taps - 0.5) * Foot;
+	return float2((Variant + clamp(U.x, Edge, 1.0 - Edge)) / Variants, clamp(U.y, Edge, 1.0 - Edge));
+}
+
 bool SampleMark(int2 P, out float4 S)
 {
 	S = 0.0;
-	const float2 D = SheetMinCm + (float2(P) + 0.5) * SheetTexelCm - CenterCm;
-	const float2 L = float2(dot(D, Axis) / max(Stretch, 0.01), dot(D, float2(-Axis.y, Axis.x)) * Mirror) / Scale;
-	const float2 UV = L / SpanCm + 0.5;
-	if (any(UV < 0.0) || any(UV > 1.0))
+	float2 UV;
+	float Foot;
+	float Border;
+	if (!MarkUV(P, UV, Foot, Border))
 	{
 		return false;
 	}
 	// a média no pedaço do carimbo que um texel do caderno cobre (sem serrilhar o torrão no caderno grosso)
-	const float Foot = SheetTexelCm / (SpanCm * Scale * min(max(Stretch, 0.01), 1.0));
-	const float Edge = 0.5 / AtlasTexels;
 	for (int J = 0; J < Taps; ++J)
 	{
 		for (int I = 0; I < Taps; ++I)
 		{
-			const float2 U = UV + ((float2(I, J) + 0.5) / Taps - 0.5) * Foot;
-			S += AtlasTex.SampleLevel(AtlasSampler, float2((Variant + clamp(U.x, Edge, 1.0 - Edge)) / Variants, clamp(U.y, Edge, 1.0 - Edge)), 0);
+			S += AtlasTex.SampleLevel(AtlasSampler, AtlasUV(UV, Foot, I, J), 0);
 		}
 	}
 	S /= float(Taps * Taps);
+	// fora do carimbo: altura zero (0,5) e nada de escuro, calor ou claro
+	S = float4(0.5 + (S.r - 0.5) * Border, S.gba * Border);
 	return true;
+}
+
+// a altura da sombra do sol no mesmo pedaço (0,5 = zero)
+float SampleSun(int2 P)
+{
+	float2 UV;
+	float Foot;
+	float Border;
+	if (UseSun == 0 || !MarkUV(P, UV, Foot, Border))
+	{
+		return 0.5;
+	}
+	float Sum = 0.0;
+	for (int J = 0; J < Taps; ++J)
+	{
+		for (int I = 0; I < Taps; ++I)
+		{
+			Sum += SunTex.SampleLevel(AtlasSampler, AtlasUV(UV, Foot, I, J), 0).r;
+		}
+	}
+	return 0.5 + (Sum / float(Taps * Taps) - 0.5) * Border;
 }
 
 [numthreads(8, 8, 1)]
@@ -104,10 +150,11 @@ void HeightCS(uint3 Id : SV_DispatchThreadID)
 		return;
 	}
 	const float H = (S.r - 0.5) * 2.0 * AtlasRangeCm * HeightMul;
-	if (abs(H) < 0.02)
+	const float Hs = (SampleSun(P) - 0.5) * 2.0 * AtlasRangeCm * HeightMul;
+	if (abs(H) < 0.02 && abs(Hs) < 0.02)
 	{
 		return;
 	}
 	// a soma (duas crateras juntas afundam mais), com limite: −90 cm a +40 cm
-	CraterOut[P] = clamp(CraterOut[P] + H, -90.0, 40.0);
+	CraterOut[P] = clamp(CraterOut[P] + float2(H, Hs), -90.0, 40.0);
 }

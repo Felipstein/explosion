@@ -1,0 +1,78 @@
+// As marcas que contam a batalha no minimapa (16/10, o Felipe: "faça então"; docs/MARCAS_DA_BATALHA.md P1). Lê o caderno de
+// acúmulo do mapa inteiro (GroundBattle: R o tráfego, G o combustível fresco, B o queimado largo, A a densidade de crateras)
+// e escreve a camada do minimapa já pintada e com alfa (o HUD desenha por cima da foto do mapa):
+//   - o caminho batido: claro e empoeirado (o pó fino da trilha muito usada, Belnap e Warren 2002), a partir de ~5 passadas;
+//   - o queimado e as crateras: escuro, mais forte onde caiu mais (a "zona vermelha" de Verdun em escala de RTS);
+//   - o combustível fresco: o mais escuro, onde um veículo morreu há pouco.
+// Cada texel da camada é um bloco do caderno (2048 → 256: 4 m, o pixel do minimapa); o escuro pega o pico do bloco e espalha
+// pros 8 vizinhos a 55% (a cratera de 4 m ainda vira mancha de 3 px; o 1º teste, batalha1, mostrou pontos de 1 px).
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D<float4> BattleTex;
+RWTexture2D<float4> OutTex;
+int2 OutSize;
+int2 InSize;
+
+// a média e o pico do bloco (o pico do escuro: o queimado e as crateras; o do combustível)
+void Block(int2 B, int2 Scale, out float4 Avg, out float BurnPeak, out float FuelPeak)
+{
+	float4 Sum = 0.0;
+	BurnPeak = 0.0;
+	FuelPeak = 0.0;
+	const int2 Base = clamp(B, int2(0, 0), OutSize - 1) * Scale;
+	[loop] for (int Y = 0; Y < Scale.y; ++Y)
+	{
+		[loop] for (int X = 0; X < Scale.x; ++X)
+		{
+			const float4 S = BattleTex.Load(int3(min(Base + int2(X, Y), InSize - 1), 0));
+			Sum += S;
+			BurnPeak = max(BurnPeak, saturate(S.b * 0.85 + S.a * 0.9));
+			FuelPeak = max(FuelPeak, S.g);
+		}
+	}
+	Avg = Sum / float(Scale.x * Scale.y);
+}
+
+[numthreads(8, 8, 1)]
+void OverlayCS(uint3 Id : SV_DispatchThreadID)
+{
+	if (any(int2(Id.xy) >= OutSize))
+	{
+		return;
+	}
+	const int2 Scale = max(InSize / OutSize, int2(1, 1));
+	float4 Avg;
+	float Burn, Fuel;
+	Block(int2(Id.xy), Scale, Avg, Burn, Fuel);
+	float Near = 0.0, NearFuel = 0.0;
+	[unroll] for (int Dy = -1; Dy <= 1; ++Dy)
+	{
+		[unroll] for (int Dx = -1; Dx <= 1; ++Dx)
+		{
+			if (Dx == 0 && Dy == 0)
+			{
+				continue;
+			}
+			float4 A2;
+			float B2, F2;
+			Block(int2(Id.xy) + int2(Dx, Dy), Scale, A2, B2, F2);
+			Near = max(Near, B2);
+			NearFuel = max(NearFuel, F2);
+		}
+	}
+	Burn = max(Burn, 0.55 * Near);
+	Fuel = max(Fuel, 0.4 * NearFuel);
+	const float Traffic = smoothstep(0.12, 0.6, Avg.r);
+	// por cima da foto: primeiro o claro do caminho, depois o escuro, e o combustível por cima de tudo (o "over")
+	float3 C = float3(0.86, 0.79, 0.66) * (0.42 * Traffic);
+	float A = 0.42 * Traffic;
+	const float Ab = 0.72 * Burn;
+	C = C * (1.0 - Ab) + float3(0.11, 0.085, 0.065) * Ab;
+	A = A * (1.0 - Ab) + Ab;
+	const float Af = 0.8 * Fuel;
+	C = C * (1.0 - Af) + float3(0.04, 0.035, 0.03) * Af;
+	A = A * (1.0 - Af) + Af;
+	// o HUD desenha translúcido (cor × alfa): a camada guarda a cor sem o alfa
+	OutTex[int2(Id.xy)] = float4(A > 1e-4 ? C / A : float3(0.0, 0.0, 0.0), A);
+}

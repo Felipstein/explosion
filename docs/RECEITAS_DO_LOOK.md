@@ -214,7 +214,7 @@ A MF tem a entrada `Surf` (o peso do asfalto): no asfalto o escuro é quase pret
 
 ## 6. A estrada com volume (13/10, protótipo)
 
-> **Estado em 14/10: só na maquete, nunca foi pro jogo.** O Felipe procurou na vila do jogo e viu a estrada pintada no chão. Fica pra v3 (a v2 não tem mais ajuste), com a prova na câmera do jogo. Os 3 tipos que ele viu: `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`.
+> **16/10: no jogo e aprovada** ("gostei da laje 3D, tá aprovado"), montada pelo WorldForge com este kit, nos 3 tipos por estrada (intacta, gasta, destruída), mais a original colada no chão, que ele não descartou: 4 opções por estrada. > **Estado em 14/10: só na maquete, nunca foi pro jogo.** O Felipe procurou na vila do jogo e viu a estrada pintada no chão. Fica pra v3 (a v2 não tem mais ajuste), com a prova na câmera do jogo. Os 3 tipos que ele viu: `docs/aprovados/look/2026-10-13_estrada_volume_3tipos.jpg`.
 
 **O pedido:** "a nossa é textura pintada no chão; a do game shot é uma estrada em cima do chão, uma camadinha bonita".
 

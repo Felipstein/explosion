@@ -83,6 +83,7 @@ namespace BlastRaymarch
 		float Scale = 1.0f;
 		float YawRad = 0.0f;           // o rumo (giro em z, rad): a gravação direcional aponta pra onde o fenômeno aponta (16/10 noite)
 		float Frame = 0.0f;            // quadro contínuo da gravação
+		float NoiseExtraS = 0.0f;      // (23/10) o relógio do ruído além do quadro (s da gravação): a nuvem viva da ogiva parada no último quadro
 		int32 Slot0 = 0, Slot1 = 0;    // onde os dois quadros em volta estão no pool
 		float Seed = 0.0f;
 		float Keep = 1.0f;             // fração ainda visível (o sumiço no fim, o aquecimento)
@@ -164,7 +165,9 @@ public:
 	void SetFog_GameThread(const FFog& InFog);
 
 	/** A sombra da explosão no chão, nas casas e nas unidades (13/10; "parece um PNG": a nuvem não fazia sombra): a espessura
-	 *  óptica entre um plano do chão e o sol, num mapa visto de cima, que a light function do sol (M_SmokeShadowLF) lê. */
+	 *  óptica entre um plano do chão e o sol, num mapa visto de cima, que a light function do sol (M_SmokeShadowLF) lê.
+	 *  (23/10) A marcha das explosões e da poeira escreve num mapa de passagem de Res² (TexelM); a composição (RTSSmokeShadow)
+	 *  soma a ele o rastro do míssil no alvo final (Out, RTSSmokeShadow::OutRes², a mesma janela de Res × TexelM). */
 	struct FShadow
 	{
 		class FTextureRenderTargetResource* Out = nullptr;
@@ -173,6 +176,7 @@ public:
 		int32 Res = 256;
 		float GroundZM = 0.0f;                       // o plano no mundo (m)
 		FVector3f ToSun = FVector3f(0.0f, 0.0f, 1.0f);
+		float SunHalfAngleRad = 0.004675f;           // (23/10) o raio angular do disco do sol (rad): a penumbra da sombra do rastro
 	};
 	void SetShadow_GameThread(const FShadow& InShadow);
 

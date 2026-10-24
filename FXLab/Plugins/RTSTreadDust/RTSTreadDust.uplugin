@@ -11,9 +11,18 @@
 		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
+		},
+		{
+			"Name": "RTSSunShadow",
+			"Enabled": true
 		}
 	],
 	"Modules": [
+		{
+			"Name": "RTSDustField",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		},
 		{
 			"Name": "RTSTreadDust",
 			"Type": "Runtime",

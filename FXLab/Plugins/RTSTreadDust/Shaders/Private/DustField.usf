@@ -1,0 +1,231 @@
+// Os passes do campo da poeira (RTSDustField.cpp): a tabela de páginas, a densidade de cada tijolo a partir dos puffs
+// da simulação (a mesma gravação do EmberGen da v26, com a erosão do BlastLab) e a luz de cada célula (a sombra da
+// própria poeira até o sol, a do mapa, o céu e as luzes das explosões e do fogo). Ver DustField.ush.
+
+#include "/Engine/Private/Common.ush"
+
+#define RTS_DUST_FIELD_GLOBALS 1
+#include "/Plugin/RTSTreadDust/Private/DustField.ush"
+
+// ---- comum aos passes -------------------------------------------------------------
+StructuredBuffer<uint4> Bricks;     // x = o tijolo na janela (x | y << 8 | z << 16), y = o atlas, z = o 1º puff, w = quantos
+StructuredBuffer<uint> Refresh;     // os tijolos refeitos neste quadro (metade, em xadrez; os novos sempre)
+uint NumBricks;
+
+int3 BrickCoord(uint Packed)
+{
+	return int3(Packed & 255u, (Packed >> 8) & 255u, (Packed >> 16) & 255u);
+}
+
+// ---- a tabela de páginas -------------------------------------------------------------
+RWTexture3D<uint> PageTableOut;
+RWTexture3D<uint> CoarseOut;        // a célula de 8 m tem poeira (todos escrevem 1: a corrida é inofensiva)
+
+[numthreads(64, 1, 1)]
+void MainScatter(uint Id : SV_DispatchThreadID)
+{
+	if (Id >= NumBricks)
+	{
+		return;
+	}
+	const uint4 B = Bricks[Id];
+	const int3 C = BrickCoord(B.x);
+	PageTableOut[C] = B.y + 1u;
+	CoarseOut[C >> 2] = 1u;
+}
+
+// ---- a densidade ------------------------------------------------------------------
+// cada puff: 5 float4 = (posição no quadro da janela m, escala m por m da gravação; negativa = espelhada),
+// (cos, sen do giro, o quadro da gravação (fracionário), σ por unidade de densidade (1/m)), (albedo rgb, erosão em 1/m),
+// a caixa da nuvem nos dois quadros misturados (m da gravação: x0, y0, x1, y1) e (z1, -, -, -)
+#define PUFF_STRIDE 5u
+StructuredBuffer<float4> Puffs;
+StructuredBuffer<uint> PuffIdx;
+Texture3D<float> Kick;              // os quadros da gravação, ladrilhados em XY (R16F)
+SamplerState KickSampler;
+float3 KickInvSize;
+float3 KickRes;                     // 48, 48, 24 voxels por quadro
+float KickCols;                     // quadros por linha do ladrilho
+float KickFrames;
+float KickVoxM;                     // 0,1 m
+float3 KickOrigin;                  // −2,4, −2,4, 0 (m da gravação)
+float KickRho2;                     // 1 = a gravação já é ρ² (a grossa da Alta, a média de ρ² em 2×2×2), 0 = ρ (a fina)
+float FillTime;                     // s: o ruído da erosão sobe 0,3 m/s
+RWTexture3D<float> AtlasOut;        // Σ σ, FillStore³ por tijolo
+float FillVoxM;                     // o voxel (0,125 ou 0,25 m)
+uint FillStore;                     // os voxels guardados por eixo (18 ou 10)
+uint FillGroups;                    // os grupos de 6 por eixo (3 ou 2)
+RWTexture3D<float4> ColorOut;       // o albedo, 6³ por tijolo (0,5 m)
+
+#define MAX_PUFFS_PER_BRICK 96
+groupshared float4 SP0[MAX_PUFFS_PER_BRICK];
+groupshared float4 SP1[MAX_PUFFS_PER_BRICK];
+groupshared float4 SP2[MAX_PUFFS_PER_BRICK];
+groupshared float4 SP3[MAX_PUFFS_PER_BRICK];
+groupshared float SP4[MAX_PUFFS_PER_BRICK];
+
+float KickAt(float3 V, float Fr)
+{
+	// um quadro, sem vazar pro ladrilho do lado (a borda da gravação é vazia)
+	const uint Fi = (uint)Fr;
+	const float2 Tile = float2(Fi % (uint)KickCols, Fi / (uint)KickCols) * KickRes.xy;
+	const float3 T = float3(Tile + clamp(V.xy, 0.5, KickRes.xy - 0.5), clamp(V.z, 0.5, KickRes.z - 0.5));
+	return Kick.SampleLevel(KickSampler, T * KickInvSize, 0);
+}
+
+// a densidade de um puff num ponto (σ, 1/m, já com a erosão)
+float PuffSigma(float4 A, float4 B, float4 D, float4 Bx, float Z1, float3 Pw, float N)
+{
+	const float S = abs(A.w);
+	const float3 Q0 = (Pw - A.xyz) / S;
+	float2 R = float2(B.x * Q0.x + B.y * Q0.y, -B.y * Q0.x + B.x * Q0.y);   // o giro de volta
+	R.y = A.w < 0.0 ? -R.y : R.y;                                               // o espelho
+	const float3 Q = float3(R, Q0.z);
+	if (any(Q.xy < Bx.xy) || any(Q.xy > Bx.zw) || Q.z < 0.0 || Q.z > Z1)
+	{
+		return 0.0;                                  // fora da caixa da nuvem: a gravação ali é < 1e-3
+	}
+	const float F = clamp(B.z, 0.0, KickFrames - 1.0);
+	const float F0 = floor(F), F1 = min(F0 + 1.0, KickFrames - 1.0);
+	const float3 V = (Q - KickOrigin) / KickVoxM;
+	const float Rho = lerp(KickAt(V, F0), KickAt(V, F1), F - F0);
+	if (Rho <= 1e-4)
+	{
+		return 0.0;
+	}
+	// a erosão (a mesma do cartão aprovado, make_dust_material.py: τ' = τ − E·(0,5 − 0,5n)): aqui na extinção, com o
+	// E do cartão dividido pela corda da nuvem (CPU, em 1/m): come primeiro o ralo, a borda vira fiapo, o miolo denso
+	// sente menos. O ruído é do mundo e sobe 0,3 m/s (o da v26)
+	// σ ∝ ρ²: as folhas aprovadas da v26 foram cozidas assim (a Principled Volume do Blender multiplica a grade 'density'
+	// de novo; o estudo de 17/10). Medido com o calib_vol.py na gravação de 0,05 m: o volume projetado bate com o alfa das
+	// folhas em todos os quadros (τ 0,94–1,01, cobertura 1,00) sem fator nenhum; com ρ linear a borda virava névoa
+	// A grossa da Alta guarda a média de ρ² (o filtro certo de σ; a média de ρ elevada depois perdia 18–31 % da massa
+	// com a idade, a desigualdade de Jensen, achada pela revisão de 17/10), então entra linear
+	return max((KickRho2 > 0.5 ? Rho : Rho * Rho) * B.w - D.w * (0.5 - 0.5 * N), 0.0);
+}
+
+float ErodeNoise(float3 Pw)
+{
+	return RTSDustNoise.SampleLevel(RTSDustNoiseSampler, (Pw - float3(0.0, 0.0, FillTime * 0.3)) / 9.6, 0) * 2.0 - 1.0;
+}
+
+// cada tijolo refeito: FillGroups³ grupos de 6³ (os FillStore³ voxels com a borda); o grupo 0 faz também a cor (6³ de 0,5 m)
+[numthreads(6, 6, 6)]
+void MainFill(uint3 L : SV_GroupThreadID, uint3 G : SV_GroupID, uint Li : SV_GroupIndex)
+{
+	const uint Per = FillGroups * FillGroups * FillGroups;
+	const uint Rb = G.x / Per, Sub = G.x - Rb * Per;
+	const uint4 Br = Bricks[Refresh[Rb]];
+	const uint Count = min(Br.w, (uint)MAX_PUFFS_PER_BRICK);
+	for (uint K = Li; K < Count; K += 216u)
+	{
+		const uint Pi = PuffIdx[Br.z + K] * PUFF_STRIDE;
+		SP0[K] = Puffs[Pi];
+		SP1[K] = Puffs[Pi + 1u];
+		SP2[K] = Puffs[Pi + 2u];
+		SP3[K] = Puffs[Pi + 3u];
+		SP4[K] = Puffs[Pi + 4u].x;
+	}
+	GroupMemoryBarrierWithGroupSync();
+	const float3 Base = float3(BrickCoord(Br.x)) * RTS_DUST_BRICK_M;
+	// o voxel (com a borda: o primeiro e o último são do tijolo vizinho, calculados aqui mesmo)
+	const uint3 Lv = uint3(Sub % FillGroups, (Sub / FillGroups) % FillGroups, Sub / (FillGroups * FillGroups)) * 6u + L;
+	const bool bIn = all(Lv < FillStore);
+	const float3 Pw = Base + (float3(Lv) - 0.5) * FillVoxM;
+	const float N = ErodeNoise(Pw);
+	float Sig = 0.0;
+	for (uint K2 = 0; K2 < (bIn ? Count : 0u); K2++)
+	{
+		Sig += PuffSigma(SP0[K2], SP1[K2], SP2[K2], SP3[K2], SP4[K2], Pw, N);
+	}
+	if (bIn)
+	{
+		AtlasOut[RTSDustSlotOrigin(Br.y) * FillStore + Lv] = Sig;
+	}
+	if (Sub == 0u)
+	{
+		// a cor da célula de 0,5 m: a média dos albedos pesada pelo σ ali; onde não há poeira no centro, a média do
+		// tijolo (o peso pequeno de cada puff), pra a borda interpolar sem puxar pro preto
+		const float3 Pc = Base + (float3(L) - 0.5) * RTS_DUST_CELL_M;
+		const float Nc = ErodeNoise(Pc);
+		float Wt = 0.0;
+		float3 Cc = 0.0;
+		for (uint K3 = 0; K3 < Count; K3++)
+		{
+			const float W = PuffSigma(SP0[K3], SP1[K3], SP2[K3], SP3[K3], SP4[K3], Pc, Nc) + 1e-3 * SP1[K3].w;
+			Wt += W;
+			Cc += W * SP2[K3].rgb;
+		}
+		ColorOut[RTSDustSlotOrigin(Br.y) * 6u + L] = float4(Wt > 0.0 ? Cc / Wt : 0.5, 0.0);
+	}
+}
+
+// ---- a luz -------------------------------------------------------------------------
+#define RTS_SUN_SHADOW_GLOBALS 1
+#include "/Plugin/RTSSunShadow/Private/SunShadow.ush"
+
+RWTexture3D<float4> LightAOut;
+RWTexture3D<float4> LightBOut;
+float3 SunDirW;                     // pro sol
+float SunStepM;
+int SunSteps;
+float TauCap;
+int NumLights;
+float4 LightPosR[8];                // a luz no quadro da janela (m), raio (m)
+float4 LightCol[8];                 // a cor × candela ÷ 128 000 (a escala do raymarch)
+
+[numthreads(6, 6, 6)]
+void MainLight(uint3 L : SV_GroupThreadID, uint3 G : SV_GroupID)
+{
+	const uint4 Br = Bricks[Refresh[G.x]];
+	const float3 Pw = float3(BrickCoord(Br.x)) * RTS_DUST_BRICK_M + (float3(L) - 0.5) * RTS_DUST_CELL_M;
+	// a sombra da própria poeira até o sol (a de um tanque cobre o rastro do outro; o cache das explosões faz igual)
+	float Tau = 0.0;
+	for (int I = 0; I < SunSteps && Tau < TauCap; I++)
+	{
+		Tau += RTSDustFieldAtW(Pw + SunDirW * (0.5 + SunStepM * (float(I) + 0.5))) * SunStepM;   // de 0,5 m em diante: o perto é por amostra
+	}
+	// a sombra do mapa (casa, muro, palmeira, duna, tanque): o mesmo mapa do sol das explosões
+	const float3 PosCamRelM = Pw - RTSDustCamToWindowM;
+	const float V = RTSSunVisibilityM(PosCamRelM, 0.25);
+	const float Vg = RTSSunVisibilityGroundM(PosCamRelM);
+	// o céu: a poeira acima, de 0,5 m em diante (o perto é por amostra, no RTSDustLightAt, como o sol; o jeito da
+	// VolumetricCloud da Unreal, a oclusão do céu por amostra: o estudo da nitidez de 17/10)
+	float TauUp = 0.0;
+	[unroll] for (int U = 0; U < 4; U++)
+	{
+		TauUp += RTSDustFieldAtW(Pw + float3(0.0, 0.0, 0.5 + 0.6 * (float(U) + 0.5))) * 0.6;
+	}
+	// a areia embaixo devolve o sol: a poeira entre o ponto e o chão tapa essa luz (antes entrava sem oclusão e
+	// clareava a barriga da nuvem por igual; as nuvens da Unreal tapam com 5 passos)
+	float TauDown = 0.0;
+	[unroll] for (int Dn = 0; Dn < 4; Dn++)
+	{
+		TauDown += RTSDustFieldAtW(Pw - float3(0.0, 0.0, 0.5 * (float(Dn) + 0.5))) * 0.5;
+	}
+	// as luzes das explosões e do fogo, com a queda da Unreal e a transmitância pela poeira até elas
+	float3 E = 0.0;
+	for (int K = 0; K < NumLights; K++)
+	{
+		const float3 Dl = LightPosR[K].xyz - Pw;
+		const float D2 = max(dot(Dl, Dl), 0.25);
+		const float R2 = LightPosR[K].w * LightPosR[K].w;
+		const float Win = Square(saturate(1.0 - Square(D2 / max(R2, 1e-4))));
+		if (Win <= 0.0)
+		{
+			continue;
+		}
+		const float Dist = sqrt(D2);
+		const float3 Dir = Dl / Dist;
+		const float Span = min(Dist, 6.0);
+		float TauL = 0.0;
+		[unroll] for (int J = 0; J < 4; J++)
+		{
+			TauL += RTSDustFieldAtW(Pw + Dir * (Span * (float(J) + 0.5) / 4.0)) * (Span / 4.0);
+		}
+		E += LightCol[K].rgb * (Win / D2) * exp(-TauL);
+	}
+	const uint3 So = RTSDustSlotOrigin(Br.y) * 6u + L;
+	LightAOut[So] = float4(exp(-Tau), exp(-TauUp), Vg * exp(-TauDown), V);
+	LightBOut[So] = float4(E, 0.0);
+}

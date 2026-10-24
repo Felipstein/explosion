@@ -10,7 +10,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "BlastFxDirector.generated.h"
 
-class AExplosionVolume;
+class AExplosionVolume; namespace BlastFxHitLife { struct FHitIn; struct FHitOut; struct FLanding; struct FEmberSmoke; }   // (numa linha só: o GENERATED_BODY não muda de linha, o cc_check usa o .generated.h da última compilação)
 class UExplosionBake;
 class UMaterialInterface; class UStaticMeshComponent;
 
@@ -72,6 +72,9 @@ public:
 	 * a fumaça para (a morte aprovada assume).
 	 */
 	void VehicleDamage(AActor* Unit, float Health01);
+	/** (22/10) A carcaça vai embora (começou a afundar, ou a simulação a tirou): o fogo dela, se ainda queima, se apaga em
+	 *  FadeS (a luz, a fumaça e as chamas); 0 = já. A que nem acendeu não acende mais. */
+	void WreckGone(AActor* Unit, float FadeS);
 
 	/**
 	 * A Patriot (16/10; o estudo: docs/ESTUDO_MISSIL_PATRIOT.md). O jogo chama:
@@ -81,8 +84,47 @@ public:
 	 *  - DefenseAssist quando uma bateria ajuda outra (o laser de mira vermelho entre elas, o LaserFromAssisted do ZH).
 	 */
 	void MissileLaunch(int32 Id, const FVector& PosCm, const FVector& Dir, uint32 Variant);
+	/** (v4, 23/10) O míssil que já nasce voando (o Cruise Missile Strike, sem atirador) ou que entra na vista vindo da névoa:
+	 *  a chama, a luz e o rastro do MissileLaunch, sem o clarão da saída e sem a poeira do lançamento. Não faz nada se o míssil
+	 *  Id já tem a chama (pode ser chamado a cada quadro). */
+	void MissileInFlight(int32 Id, const FVector& PosCm, const FVector& Dir, uint32 Variant);
 	void MissileMove(int32 Id, const FVector& PosCm, const FVector& Dir, float SpeedCmPerS);
-	void MissileHit(int32 Id, const FVector& PointCm, AActor* Victim, float GroundZCm, bool bKill);
+	/** (23/10, a ogiva v2) FromCm: de onde o míssil vinha (o passo de antes, no ar): a ogiva explode do lado de fora da blindagem,
+	 *  virada pra ele. WarheadKg: a carga da ogiva em kg de TNT (Units.json "warhead_kg", só desenho): a bola de fogo, a fuligem e
+	 *  o anel de areia em volume, pela escala de Hopkinson-Cranz a partir da Carga Pesada (o anel, a partir do tiro de canhão na
+	 *  areia); 0 = sem volume (só o clarão, as faíscas, a luz e a marca, sem o brilho em sprite: a metade pesada do ataque de mísseis,
+	 *  que ganha a clássica logo depois). -MissileBlastV=1 volta a de antes, exata.
+	 *  (23/10, a revisão) bClassicLook: a fuligem, o sol, o céu e o chão da clássica (Units.json "warhead_look": "classic"; a metade
+	 *  leve do ataque de mísseis, ao lado da pesada clássica), em vez dos da morte de tanque e dos tiros. Devolve o centro da bola de
+	 *  fogo que se vê (cm; o pé fora da blindagem, virado pro míssil, na altura do miolo quente), pro empurrão e o calor no rastro do
+	 *  míssil; sem a ogiva v2, o PointCm. */
+	FVector MissileHit(int32 Id, const FVector& PointCm, const FVector& FromCm, AActor* Victim, float GroundZCm, bool bKill, float WarheadKg,
+		bool bClassicLook = false, const BlastFxHitLife::FHitIn* LifeIn = nullptr, BlastFxHitLife::FHitOut* LifeOut = nullptr);
+	/**
+	 * (23/10, a explosão com vida; BlastFxHitLife.h) Com LifeIn e -HitLifeV=2 (o padrão) o MissileHit é o com vida: a direção ℓ (a bola nasce
+	 * no ponto do casco ou do chão e sai torta pela física: a normal da face, o que o míssil traz ao longo dela, o mergulho guardado), a
+	 * nuvem que continua viva depois da gravação, os brilhos no casco, as faíscas em jatos, os pedaços em brasa, a terra do míssil no chão
+	 * na escala da carga, as gravações dedicadas quando existem. Cada camada atrás da sua variável blast.HitLife.<camada>. LifeOut (bValid)
+	 * leva pro jogo o ponto, a normal, d, ℓ, o pé, a bola e os relógios (o pulso). Sem LifeIn, ou com -HitLifeV=1, o de hoje, exato.
+	 */
+	/** (23/10, a vida) Os brilhos dos estilhaços (1–2 quadros) nas faces das peças de Target viradas pra FromCm, a até RadiusCm de NearCm. */
+	void HullGlints(AActor* Target, const FVector& FromCm, const FVector& NearCm, float RadiusCm, int32 Count, uint32 Seed);
+	/** (23/10, a vida; a camada Neighbors) O vizinho do dano em área: a marca do míssil (tipo 1) na face virada pra explosão. */
+	void NeighborMark(AActor* Neighbor, const FVector& BlastCm, uint32 Seed);
+	/** (23/10, a vida) A fila de pousos (os pedaços em brasa e os torrões que levantam areia): os destroços põem, o jogo esvazia a cada quadro. */
+	void PushLanding(const BlastFxHitLife::FLanding& L);
+	void ConsumeLandings(TArray<BlastFxHitLife::FLanding>& Out);
+	/** (a revisão da vida) Os pedaços em brasa queimando em voo: os destroços põem o ponto a cada quadro, o jogo esvazia (o fio de fumaça em
+	 *  volume no RTSMissileSmoke, no lugar da fita chapada). */
+	void PushEmberSmoke(uint32 Id, const FVector& PosCm);
+	void ConsumeEmberSmoke(TArray<BlastFxHitLife::FEmberSmoke>& Out);
+	/** (23/10) A escala da ogiva de Kg kg: λ = 0,55·(W/20 kg)^⅓. A âncora: a clássica do jogo (a Carga Pesada a 0,55, a TankBallScale)
+	 *  é a carga de 20 kg (o nominal, instances.js MAGNITUDES; e a bola dela, 2,75 m, dá 20,8 kg pela LANL, ~1 m por kg^⅓). */
+	static float WarheadScale(float Kg) { return 0.55f * FMath::Pow(FMath::Max(Kg, 0.01f) / 20.0f, 1.0f / 3.0f); }
+	/** O raio da bola de fogo (m): os 5,0 m medidos na gravação da Carga Pesada (T > 0,5 de 0,28 a 0,9 s) × λ. */
+	static float WarheadFireballM(float Kg) { return 5.0f * WarheadScale(Kg); }
+	/** -MissileBlastV= (2, o padrão: a ogiva v2; 1: a de antes, exata, no BlastFx e no jogo). */
+	static int32 MissileBlastVer();
 	void DefenseAssist(const FVector& FromCm, const FVector& ToCm);
 
 	/**
@@ -118,7 +160,9 @@ public:
 
 private:
 	bool LoadAssets();
-	AExplosionVolume* Spawn(const FVector& Ground, UExplosionBake* Bake, float SizeScale, float Seed);
+	/** bLit false: nasce sem a luz e sem o clarão (os volumes da ogiva v2: a luz dela é a dos destroços). As areias aprovadas do
+	 *  tiro (SpawnDust) seguem nascendo como antes (true: o ator apaga a luz e o clarão logo depois, no SpawnDust). */
+	AExplosionVolume* Spawn(const FVector& Ground, UExplosionBake* Bake, float SizeScale, float Seed, bool bLit = true);
 	void UpdateView();
 
 	// a areia do tiro: a poeira gravada (jg_dust_impact) no raymarch, com orçamento (as mortes de tanque vêm primeiro:
@@ -129,7 +173,7 @@ private:
 		float Duration = 3.0f, Opacity0 = 1.0f;
 		int32 Prio = 0;
 		// (17/10 tarde) a vida em segundos de verdade (0 = a da gravação): some pela opacidade de FadeFromS a LifeS
-		float LifeS = 0.0f, FadeFromS = 0.0f;
+		float LifeS = 0.0f, FadeFromS = 0.0f, FadeInS = 0.25f;   // (23/10 noite) FadeInS: a entrada (s da gravação; a strike_chao nasce no impacto)
 	};
 	TArray<FDust> Dusts;
 	AExplosionVolume* SpawnDust(const FVector& GroundCm, float Scale, float TimeScale, float Opacity, int32 Prio, uint32 Variant,
@@ -167,7 +211,99 @@ private:
 	};
 	TMap<int32, FMissileFx> Missiles;
 	double LastLaunchDust = -10.0;
-	TMap<TWeakObjectPtr<AActor>, double> LastWarheadBall;
+	TMap<TWeakObjectPtr<AActor>, double> LastWarheadBall;   // (a de antes, -MissileBlastV=1)
+	/**
+	 * (23/10) A ogiva v2: cada volume vivo de uma ogiva (o corpo: a Carga Pesada a λ; o anel: a sim_chao_anel), a vítima e o pé
+	 * (a fusão dos acertos no mesmo alvo), os relógios em s de idade e a aposentadoria (o esmaecer curto quando falta vaga no
+	 * raymarch ou uma morte nasce em cima). Fora da lista das areias: o teto, a prioridade e a vida são daqui.
+	 */
+	struct FWarhead
+	{
+		TWeakObjectPtr<AExplosionVolume> E;
+		TWeakObjectPtr<AActor> Victim;
+		FVector FootCm = FVector::ZeroVector;
+		bool bRing = false;
+		float RadiusCm = 0.0f;                      // a bola (o corpo) ou o R90 do anel
+		float BallCm = 0.0f;                        // a bola da ogiva (nas duas: as mortes por cima tiram as duas)
+		float FireEndS = 0.0f;                      // o fim da fase A (a bola acesa); o anel: a janela da fusão dos anéis
+		float FadeFromS = 0.0f, LifeS = 0.0f;       // o corpo: o esmaecer natural (s de idade)
+		float ThinFromS = 0.0f, SootKeep = 1.0f;    // o corpo: a fuligem afina de ThinFromS até FireEndS pra SootKeep (a leitura do alvo)
+		float Duration = 0.0f, Opacity0 = 1.0f;     // o anel: até onde ele toca (s da gravação: o fim da parte que se vê) e a opacidade
+		float RetireAt = -1.0f;                     // a idade em que começou a sair (< 0: não está saindo)
+		// (23/10, a vida; BlastFxHitLife.h) o corpo com vida: a bola anda ao longo de ℓ (FootBase + MoveCm·(1 − e^(−t/MoveTauS))), a nuvem
+		// segura o último quadro válido a partir de HoldAgeS e sobe e alarga como térmica (o tamanho × √(t/HoldAgeS), a espessura ÷ o cubo)
+		// até CloudEndS, indo com o vento depois da bola acesa (DriftCm)
+		bool bMove = false, bCloud = false;
+		FVector FootBase = FVector::ZeroVector, MoveCm = FVector::ZeroVector, DriftCm = FVector::ZeroVector;
+		float MoveTauS = 0.1f, HoldAgeS = 0.0f, Scale0 = 1.0f, Thick0 = 1.0f, LastAge = 0.0f;
+		// (a revisão da vida) o λ da carga (a escala de Hopkinson-Cranz na Carga Pesada): a altura do meio da nuvem pro vento (12·λ m) é a da
+		// carga, não a do tamanho em que a gravação toca (a dedicada toca a (W/W0)^⅓, outra régua)
+		float CloudLambda = 1.0f;
+	};
+	TArray<FWarhead> Warheads;
+	/** (23/10, a vida) O que o MissileHit com vida passa pro SpawnWarhead (nulo = a ogiva v2 de hoje, exata). */
+	struct FWarheadLife
+	{
+		bool bCloud = false;                        // a nuvem viva (a camada Cloud; o preset diz quanto)
+		float CloudExtraS = 0.0f;                   // quanto ela dura depois da gravação (s; 3·G no Alta/Ultra, 1,5·G na Média)
+		FVector MoveCm = FVector::ZeroVector;       // a bola anda isto ao longo de ℓ (no chão)
+		float MoveTauS = 0.1f;                      // τ = 0,25 × o fim da bola acesa
+		bool bYaw = false;                          // o giro pelo rumo de ℓ (senão o sorteio de hoje)
+		float YawRad = 0.0f;
+		bool bRingFoot = false;                     // o anel na projeção do ponto, ~0,3 R pra fora
+		FVector RingFootCm = FVector::ZeroVector;
+		FName Source = NAME_None;                   // a gravação dedicada (warhead_lado, _teto, _chao), quando existe (a strike_chao, a areia do ataque, toca à parte)
+		float SourceScale = 1.0f;                   // o tamanho dela pra esta carga ((W/W da gravação)^⅓)
+		bool bGasSkirt = false;                     // o pé no teto do casco (sem a warhead_teto): a saia baixa é o gás da carga, na cor da fuligem
+		bool bNoRing = false;                       // (a revisão) sem o anel de areia: o jogo desenha o véu, ou a strike_chao tem a areia (uma representação só)
+		float OutCloudEndS = 0.0f;                  // (de volta) o fim da nuvem viva do corpo que nasceu (s de idade; 0 = sem ela)
+		bool bOutOwn = false;                       // (de volta, a revisão) nasceu a gravação dedicada (ela tem a areia que o choque levanta)
+		float OutOwnFadeS = 0.0f;                   // (de volta) o esmaecer dela (s de idade): a continuação do jogo nasce aí
+	};
+	/** (23/10, a vida) O MissileHit com vida (o pulso; BlastFxHitLife.h). */
+	FVector MissileHitLife(uint32 Variant, const FVector& PointCm, const FVector& FromCm, AActor* Victim, float GroundZCm, bool bKill, float WarheadKg,
+		bool bClassicLook, const BlastFxHitLife::FHitIn& In, BlastFxHitLife::FHitOut* Out);
+	/** (23/10, a vida) O 1º toque do raio From → To nas caixas das peças do alvo (a mesma conta do ArmorPoint, com o raio de verdade em 3D). */
+	bool HullRay(AActor* Target, const FVector& FromCm, const FVector& ToCm, FShotPoint& Out) const;
+	/** (a revisão da vida) A caixa do alvo no espaço dele, sem escala: a soma das caixas das peças que o HullRay enxerga. */
+	bool HullBox(AActor* Target, FBox& Out) const;
+	/** (23/10, a vida) A fila de pousos (FLanding), num tipo daqui (o cabeçalho de fora só é declarado). */
+	struct FLandingRec
+	{
+		FVector PosCm = FVector::ZeroVector;
+		float SizeM = 0.3f;
+		uint8 Kind = 0;
+		bool bHot = false;
+		FVector VelMs = FVector::ZeroVector;        // (a areia do acerto) a velocidade no 1º toque (m/s)
+	};
+	TArray<FLandingRec> Landings;
+	/** (23/10, a vida) Até quando cada pedaço em brasa vive (o teto do preset: 32 Ultra, 16 Alta, 8 Média, 4 Baixa). */
+	TArray<double> EmberUntil;
+	/** (a revisão da vida) Os pedaços que soltam o fio de fumaça em voo: até quando cada um queima e o fio dele sai (o teto do preset: 8 Ultra,
+	 *  4 Alta, 2 Média, nenhum na Baixa; 1 por acerto, 2 a partir de 12 kg) e os pontos deste quadro (o Id e onde está), que o jogo esvazia. */
+	TArray<double> EmberSmokeUntil;
+	struct FEmberSmokeRec
+	{
+		uint32 Id = 0;
+		FVector PosCm = FVector::ZeroVector;
+	};
+	TArray<FEmberSmokeRec> EmberSmoke;
+	TArray<TPair<FVector2D, double>> RecentBigBlasts;   // as mortes e as clássicas do último 1 s (o anel não nasce em cima delas)
+	void UpdateWarheads();
+	/** Devolve se a bola de fogo deste acerto é de uma ogiva: o corpo que nasceu agora, ou o aceso de antes em que ele se fundiu (a luz
+	 *  dos destroços segue a curva dela). false: a bola é da morte ou da clássica recente em cima (elas acendem a própria luz), ou não
+	 *  havia vaga no raymarch (os destroços ficam com a queda do clarão). Os destroços da ogiva v2 nunca têm o brilho em sprite. */
+	bool SpawnWarhead(const FVector& FootCm, AActor* Victim, float Kg, uint32 Variant, bool bClassicLook, FWarheadLife* LifeOpt = nullptr);
+	/** Quantos volumes o raymarch desenha agora na tela (o mesmo filtro e o mesmo cone dele; mais os anéis de ogiva que nasceram com
+	 *  opacidade 0 e entram no próximo quadro). */
+	int32 RaymarchOnScreen() const;
+	/** Tira Count ogivas: já (bNow; só as que contam no RaymarchOnScreen, que liberam vaga) ou esmaecendo. Primeiro o anel que nasceu
+	 *  com opacidade 0 e ainda não foi desenhado (sai já nos dois modos, sem estalo), depois os anéis, depois os corpos na fase B (a
+	 *  fumaça), a mais velha primeiro; bPhaseBOnly deixa a bola acesa em paz. Devolve quantas saíram. */
+	int32 RetireWarheads(int32 Count, bool bNow, bool bPhaseBOnly = false);
+	void RetireWarheadsNear(const FVector& AtCm, float RadiusCm);
+	/** Antes de nascer um volume que vem primeiro (a morte, a areia do tiro) com o pé em FootCm na escala Scale: as ogivas cedem. */
+	void MakeRoomForPriority(const FVector& FootCm, float Scale);
 	TArray<double> RecentDeaths;                    // quando nasceram as últimas mortes (o orçamento da morte em massa)
 	// os carros sendo esmagados: o eixo e o tamanho do carro, a direção do tanque, quando começou, a passagem e o que já
 	// aconteceu (um bit por etapa)

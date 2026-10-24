@@ -1,0 +1,16 @@
+{
+ "map": "World_TestSandV2Dune",
+ "version": 1,
+ "min_m": [-512.0, -512.0],
+ "cell_m": 4,
+ "res": 256,
+ "row0": "min_y",
+ "channels": {"r": "water state: 0 dry, 1 shore, 2 ford, 3 deep, 4 ice", "g": "body id (0 none)", "b": "reserved (0)", "a": "reserved (255)"},
+ "ford_max_depth_m": 0.80,
+ "bodies": [
+  {"id": 1, "kind": "oasis", "level_mm": -1000, "area_m2": 18472, "max_depth_mm": 5759},
+  {"id": 2, "kind": "oasis", "level_mm": -1000, "area_m2": 18473, "max_depth_mm": 5713}
+ ],
+ "hash": "a5f93f0806babaf6",
+ "hash_about": "FNV-1a 64 over the PNG pixels as RGBA bytes (row 0 first), then one ASCII line per body in order: id,kind,level_mm,flow_x_mm_s,flow_y_mm_s and a newline (flow 0 0 when not a river)"
+}

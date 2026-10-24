@@ -4,7 +4,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
+#include "GenericPlatform/ICursor.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 #include "RTSConvert.h"
 #include "RTSGameData.h"
 #include "RTSMapBaker.h"
@@ -240,6 +246,15 @@ bool ARTSPlayerController::HandleEconomyClick(const FVector2D& Mouse, uint32 Hit
 		++Orders;
 		return true;
 	}
+	if (bHit && !Dozers.IsEmpty() && HitUnit.bStructure && M->CanRepair(Hit))
+	{
+		// (v4, 23/10) o Dozer conserta o prédio avariado (o ZH: o cursor da chave sobre o prédio, o clique manda; o dele ou o do aliado)
+		M->OrderRepair(Dozers, Hit);
+		const FRTSBakedMap* Map = M->BakedMap();
+		AddMarker(FVector(HitUnit.PosCm.X, HitUnit.PosCm.Y, Map ? Map->GroundZCm(HitUnit.PosCm) : 0.0f), false);
+		++Orders;
+		return true;
+	}
 	if (bHit)
 	{
 		return false;   // clique numa unidade: seleção ou ataque, como sempre
@@ -274,4 +289,107 @@ bool ARTSPlayerController::HandleEconomyClick(const FVector2D& Mouse, uint32 Hit
 		return true;
 	}
 	return false;
+}
+
+bool ARTSPlayerController::EnsureRepairCursor()
+{
+	// (v4, 23/10) o cursor do conserto do ZH (a chave): a do kit é um botão (a chave clara na placa escura, 256 px); aqui a chave
+	// sai da placa pela luz (fora da moldura, a parte clara), reduzida a 32 px pela média com peso do alfa, com 1 px de contorno
+	// escuro (lê na areia clara e no asfalto, como os cursores do ZH). Feito uma vez, no buffer (sem arquivo no pacote)
+	if (RepairCursorState != 0)
+	{
+		return RepairCursorState > 0;
+	}
+	RepairCursorState = -1;
+	const TSharedPtr<ICursor> Platform = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetPlatformCursor() : nullptr;
+	if (!Platform.IsValid() || !Platform->IsCreateCursorFromRGBABufferSupported())
+	{
+		return false;
+	}
+	const FString Path = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT("../docs/concept/hud/kit/icons/repair.png"));
+	TArray<uint8> Png;
+	if (!FFileHelper::LoadFileToArray(Png, *Path))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS: o cursor do conserto não achou %s (fica a mão)"), *Path);
+		return false;
+	}
+	IImageWrapperModule& Images = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+	const TSharedPtr<IImageWrapper> Png8 = Images.CreateImageWrapper(EImageFormat::PNG);
+	TArray<uint8> Raw;
+	if (!Png8.IsValid() || !Png8->SetCompressed(Png.GetData(), Png.Num()) || !Png8->GetRaw(ERGBFormat::BGRA, 8, Raw))
+	{
+		return false;
+	}
+	const int32 SW = int32(Png8->GetWidth());
+	const int32 SH = int32(Png8->GetHeight());
+	if (SW < 32 || SH < 32 || Raw.Num() < SW * SH * 4)
+	{
+		return false;
+	}
+	// a chave: dentro da moldura (14% de cada lado), a luz entre 0,36 e 0,50 vira o alfa (o smoothstep); a placa e os rebites ficam fora
+	constexpr int32 N = 32;
+	constexpr float Inset = 0.14f, LumLo = 0.36f, LumHi = 0.50f;
+	TArray<FLinearColor> Cell;
+	Cell.SetNumZeroed(N * N);
+	for (int32 Y = 0; Y < N; ++Y)
+	{
+		for (int32 X = 0; X < N; ++X)
+		{
+			FLinearColor Sum(0.0f, 0.0f, 0.0f, 0.0f);
+			float Weight = 0.0f;
+			int32 Count = 0;
+			for (int32 SY = Y * SH / N; SY < (Y + 1) * SH / N; ++SY)
+			{
+				for (int32 SX = X * SW / N; SX < (X + 1) * SW / N; ++SX)
+				{
+					const uint8* Px = &Raw[(SY * SW + SX) * 4];   // B, G, R, A
+					const float R = Px[2] / 255.0f, G = Px[1] / 255.0f, B = Px[0] / 255.0f;
+					const bool bInside = SX >= Inset * SW && SX < (1.0f - Inset) * SW && SY >= Inset * SH && SY < (1.0f - Inset) * SH;
+					const float T = FMath::Clamp((0.299f * R + 0.587f * G + 0.114f * B - LumLo) / (LumHi - LumLo), 0.0f, 1.0f);
+					const float A = bInside ? T * T * (3.0f - 2.0f * T) : 0.0f;
+					Sum += FLinearColor(R * A, G * A, B * A, 0.0f);
+					Weight += A;
+					++Count;
+				}
+			}
+			FLinearColor& C = Cell[Y * N + X];
+			C = Weight > 0.0f ? FLinearColor(Sum.R / Weight, Sum.G / Weight, Sum.B / Weight, Weight / float(FMath::Max(Count, 1))) : FLinearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		}
+	}
+	TArray<FColor> Pixels;
+	Pixels.SetNumUninitialized(N * N);
+	for (int32 Y = 0; Y < N; ++Y)
+	{
+		for (int32 X = 0; X < N; ++X)
+		{
+			FLinearColor C = Cell[Y * N + X];
+			if (C.A < 0.5f)
+			{
+				float Near = 0.0f;
+				for (int32 DY = -1; DY <= 1; ++DY)
+				{
+					for (int32 DX = -1; DX <= 1; ++DX)
+					{
+						const int32 NX = X + DX, NY = Y + DY;
+						Near = NX >= 0 && NY >= 0 && NX < N && NY < N ? FMath::Max(Near, Cell[NY * N + NX].A) : Near;
+					}
+				}
+				if (Near >= 0.5f)
+				{
+					C = FLinearColor(0.05f, 0.05f, 0.05f, FMath::Max(C.A, 0.85f));   // o contorno
+				}
+			}
+			Pixels[Y * N + X] = FColor(uint8(FMath::RoundToInt(C.R * 255.0f)), uint8(FMath::RoundToInt(C.G * 255.0f)), uint8(FMath::RoundToInt(C.B * 255.0f)),
+				uint8(FMath::RoundToInt(FMath::Clamp(C.A, 0.0f, 1.0f) * 255.0f)));
+		}
+	}
+	RepairCursorHandle = Platform->CreateCursorFromRGBABuffer(Pixels.GetData(), N, N, FVector2D(0.5, 0.5));
+	if (!RepairCursorHandle)
+	{
+		return false;
+	}
+	Platform->SetTypeShape(EMouseCursor::Custom, RepairCursorHandle);
+	RepairCursorState = 1;
+	UE_LOG(LogTemp, Log, TEXT("RTS: o cursor do conserto pronto (a chave do kit, %d px)"), N);
+	return true;
 }

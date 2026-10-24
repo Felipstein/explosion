@@ -36,7 +36,9 @@ namespace
 	// os presets: Ultra 16 voxels por tijolo (0,125 m), Alta 8 (0,25 m); guardados com a borda de 1 voxel de cada lado
 	int32 StoreOf(bool bFine) { return bFine ? 18 : 10; }
 	constexpr double BrickM = 2.0;
-	constexpr int32 WinX = 96, WinY = 96, WinZ = 16;     // a janela em tijolos (192 × 192 × 32 m)
+	// a janela em tijolos (22/10, v4: 256 × 256 × 64 m; era 192 × 192 × 32 e, com os morros e o zoom de 140 m, a borda dela
+	// aparecia como uma linha reta "onde a poeira começa", o Felipe). A borda horizontal ainda some aos poucos (DustField.ush)
+	constexpr int32 WinX = 128, WinY = 128, WinZ = 32;
 	constexpr int32 AtlasBX = 32, AtlasBY = 32, AtlasBZ = 4;   // 4096 tijolos no atlas
 	constexpr int32 MaxBricks = AtlasBX * AtlasBY * AtlasBZ;
 	constexpr int32 MaxPuffsPerBrick = 96;               // o mesmo do DustField.usf (a memória do grupo)
@@ -52,6 +54,8 @@ namespace
 		bool bRho2 = false;                             // a gravação já guarda ρ² (a média de ρ² da grossa), sem elevar
 		FVector3f Origin = FVector3f(-2.4f, -2.4f, 0.0f);
 		TArray<FBox3f> Boxes;                           // a caixa da nuvem em cada quadro (m da gravação)
+		TArray<float> Column;                           // a coluna densa de cada quadro: Σ ρ²·dz no p95 das colunas (m)
+		TArray<float> Times;                            // o tempo de cozimento de cada quadro (s; "times_s" do cabeçalho)
 	};
 	// duas gravações, uma por preset (17/10): [0] a fina de 0,05 m pro campo de 0,125 m (Ultra), [1] a grossa de 0,1 m com
 	// a média de ρ² pro campo de 0,25 m (Alta). Cada campo lê a gravação no mesmo passo relativo (o texel × a escala do puff
@@ -279,6 +283,14 @@ bool RTSDustField::LoadKick(const FString& Path)
 	K.TexSize = FIntVector(int32(Ts[0]->AsNumber()), int32(Ts[1]->AsNumber()), int32(Ts[2]->AsNumber()));
 	K.Cols = int32(Tl[0]->AsNumber());
 	K.VoxM = float(H->GetNumberField(TEXT("voxel_m")));
+	const TArray<TSharedPtr<FJsonValue>>* TimesJ = nullptr;
+	if (H->TryGetArrayField(TEXT("times_s"), TimesJ))
+	{
+		for (const TSharedPtr<FJsonValue>& V : *TimesJ)
+		{
+			K.Times.Add(float(V->AsNumber()));
+		}
+	}
 	K.bRho2 = H->HasField(TEXT("rho2")) && H->GetNumberField(TEXT("rho2")) > 0.5;
 	const int32 Slot = K.VoxM < 0.075f ? 0 : 1;          // a fina (0,05 m) ou a grossa (0,1 m)
 	if (GKick[Slot].bLoaded)
@@ -316,6 +328,35 @@ bool RTSDustField::LoadKick(const FString& Path)
 		}
 		Data = TArray<uint8>(Bytes.GetData() + 8 + HeaderLen, int32(DataBytes));
 	}
+	// a coluna densa de cada quadro (17/10, o nascer do puff): Σ ρ²·dz em cada coluna vertical do quadro, no p95 das
+	// colunas com poeira. × σ do puff dá a profundidade óptica do miolo, a que o alfa do cartão escalava em opacidade
+	{
+		const FFloat16* V = reinterpret_cast<const FFloat16*>(Data.GetData());
+		TArray<float> Cols;
+		for (int32 F = 0; F < K.Frames; ++F)
+		{
+			const int32 Cx = (F % K.Cols) * K.Res.X, Cy = (F / K.Cols) * K.Res.Y;
+			Cols.Reset();
+			for (int32 Y = 0; Y < K.Res.Y; ++Y)
+			{
+				for (int32 X = 0; X < K.Res.X; ++X)
+				{
+					double S = 0.0;
+					for (int32 Z = 0; Z < K.Res.Z; ++Z)
+					{
+						const float Rv = float(V[(int64(Z) * K.TexSize.Y + (Cy + Y)) * K.TexSize.X + (Cx + X)]);
+						S += K.bRho2 ? Rv : double(Rv) * Rv;
+					}
+					if (S * K.VoxM > 1e-3)
+					{
+						Cols.Add(float(S * K.VoxM));
+					}
+				}
+			}
+			Cols.Sort();
+			K.Column.Add(Cols.Num() ? Cols[FMath::Min(Cols.Num() - 1, int32(Cols.Num() * 0.95f))] : 0.0f);
+		}
+	}
 	K.bLoaded = true;
 	GKick[Slot] = K;
 	const bool bNoise = !GKick[1 - Slot].bLoaded;        // o ruído nasce junto com a primeira gravação
@@ -352,6 +393,42 @@ int32 RTSDustField::KickFrames()
 	return GKick[0].bLoaded ? GKick[0].Frames : GKick[1].Frames;
 }
 
+float RTSDustField::KickFrameAt(double BakeT)
+{
+	const FKickInfo& K = GKick[0].bLoaded ? GKick[0] : GKick[1];
+	if (!K.bLoaded || K.Times.Num() < 2 || K.Times.Num() != K.Frames)
+	{
+		return -1.0f;
+	}
+	if (BakeT <= K.Times[0])
+	{
+		return 0.0f;
+	}
+	int32 Lo = 0, Hi = K.Times.Num() - 1;
+	if (BakeT >= K.Times[Hi])
+	{
+		return float(Hi);
+	}
+	while (Hi - Lo > 1)
+	{
+		const int32 Mid = (Lo + Hi) / 2;
+		(K.Times[Mid] < BakeT ? Lo : Hi) = Mid;
+	}
+	return float(Lo + (BakeT - K.Times[Lo]) / FMath::Max(double(K.Times[Hi] - K.Times[Lo]), 1e-6));
+}
+
+float RTSDustField::KickColumn(float Frame)
+{
+	const FKickInfo& K = GKick[0].bLoaded ? GKick[0] : GKick[1];
+	if (!K.bLoaded || K.Column.Num() == 0)
+	{
+		return 0.0f;
+	}
+	const float F = FMath::Clamp(Frame, 0.0f, float(K.Column.Num() - 1));
+	const int32 F0 = FMath::FloorToInt32(F), F1 = FMath::Min(F0 + 1, K.Column.Num() - 1);
+	return FMath::Lerp(K.Column[F0], K.Column[F1], F - float(F0));
+}
+
 FIntVector4 RTSDustField::GetStats()
 {
 	return GStats;
@@ -360,8 +437,11 @@ FIntVector4 RTSDustField::GetStats()
 // o preset do campo: -1 = pela qualidade de efeitos do jogo (sg.EffectsQuality 4 = Ultra), 1 = 0,125 m, 0 = 0,25 m. O jogo põe
 // baixa/média/alta/ultra nos níveis 1/2/3/4 do motor (RTSPlayerController::ApplyQuality); até 17/10 o corte era 3 e a Alta
 // pagava o campo fino do Ultra (+3,2 ms sobre os cartões em vez de −0,8; achado do estudo da nitidez)
+static TAutoConsoleVariable<int32> CVarDustRefresh(TEXT("rts.DustField.Refresh"), 1,
+	TEXT("Os tijolos da poeira refeitos por quadro: 1 = todos (o padrão desde 22/10), 2 = metade, 4 = um quarto (em xadrez)"), ECVF_Default);
+
 static TAutoConsoleVariable<int32> CVarDustFine(TEXT("rts.DustField.Fine"), -1,
-	TEXT("O campo da poeira: -1 pela qualidade de efeitos (Ultra = 0,125 m, metade dos tijolos por quadro; Alta = 0,25 m, um quarto), 1 fino, 0 grosso"),
+	TEXT("O campo da poeira: -1 pela qualidade de efeitos (Ultra = 0,125 m; Alta = 0,25 m), 1 fino, 0 grosso"),
 	ECVF_Default);
 
 // ---- o quadro: os puffs em tijolos ---------------------------------------------------------
@@ -369,6 +449,9 @@ void RTSDustField::SubmitFrame(const FVector& FocusM, const FVector& ToSun, doub
 {
 	++GSerial;
 	TSharedPtr<FFrameData, ESPMode::ThreadSafe> D = MakeShared<FFrameData, ESPMode::ThreadSafe>();
+	static const IConsoleVariable* RefreshVar = IConsoleManager::Get().FindConsoleVariable(TEXT("rts.DustField.Refresh"));
+	const int32 RefreshDiv = RefreshVar ? RefreshVar->GetInt() : 1;
+	const int32 RefreshMask = RefreshDiv >= 4 ? 3 : RefreshDiv >= 2 ? 1 : 0;
 	// o preset: rts.DustField.Fine (1 = 0,125 m, 0 = 0,25 m) ou, no automático, a qualidade de efeitos (4 = Ultra)
 	{
 		static const IConsoleVariable* Fine = IConsoleManager::Get().FindConsoleVariable(TEXT("rts.DustField.Fine"));
@@ -391,9 +474,9 @@ void RTSDustField::SubmitFrame(const FVector& FocusM, const FVector& ToSun, doub
 	int32 Overflow = 0, Trunc = 0;
 	if (Kk.bLoaded && Puffs.Num() > 0)
 	{
-		// a janela: 192 × 192 m em volta do foco, de 8 m abaixo dele a 24 m acima, presa à grade dos tijolos
+		// a janela: 256 × 256 m em volta do foco, de 32 m abaixo dele a 32 m acima (os vales e os morros), presa à grade
 		const FIntVector WinB(FMath::FloorToInt32(FocusM.X / BrickM) - WinX / 2, FMath::FloorToInt32(FocusM.Y / BrickM) - WinY / 2,
-			FMath::FloorToInt32(FocusM.Z / BrickM) - 4);
+			FMath::FloorToInt32(FocusM.Z / BrickM) - WinZ / 2);
 		const FVector WinO = FVector(WinB) * BrickM;
 		D->WindowOriginCm = WinO * 100.0;
 		struct FPair { uint64 Key; int32 Puff; int32 Bx, By, Bz; };
@@ -486,8 +569,10 @@ void RTSDustField::SubmitFrame(const FVector& FocusM, const FVector& ToSun, doub
 			const int32 Count = FMath::Min(J - I, MaxPuffsPerBrick);
 			Trunc += (J - I) - Count;                       // os puffs que não couberam no tijolo (a memória do grupo)
 			const uint32 Packed = uint32(Pr.Bx) | (uint32(Pr.By) << 8) | (uint32(Pr.Bz) << 16);
-			// metade por quadro no Ultra, um quarto na Alta (em xadrez pelo tijolo e pelo quadro); os novos sempre
-			if (bNew || ((Pr.Bx + Pr.By * 2 + Pr.Bz * 3 + GSerial) & (D->bFine ? 1 : 3)) == 0)
+			// todos os tijolos a cada quadro (22/10, o Felipe: "ela tem fps baixo"): com metade (Ultra) ou um quarto (Alta) por
+			// quadro, em xadrez, cada tijolo mostrava a poeira de 2 a 4 quadros atrás e a nuvem andava aos degraus (~8 por
+			// segundo na Alta a 30 qps). rts.DustField.Refresh 2 ou 4 volta ao xadrez (só pra medir); os novos sempre
+			if (bNew || ((Pr.Bx + Pr.By * 2 + Pr.Bz * 3 + GSerial) & RefreshMask) == 0)
 			{
 				D->Refresh.Add(uint32(D->Bricks.Num()));
 			}
@@ -611,12 +696,21 @@ bool RTSDustField::AddPasses(FRDGBuilder& GraphBuilder, const FSceneView& View, 
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("RTSDust.PageTable"), TShaderMapRef<FRTSDustScatterCS>(Map), P,
 			FIntVector(FMath::DivideAndRoundUp(NumBricks, 64u), 1, 1));
 	}
-	// 2. a densidade dos tijolos refeitos (metade por quadro; os novos sempre)
-	if (NumRefresh > 0)
+	// 2. a densidade dos tijolos refeitos (todos por quadro desde 22/10; os novos sempre). O Dispatch aceita no máximo 65535
+	// grupos por eixo (o D3D12) e cada tijolo usa Groups³ (27 no Ultra): com todos refeitos a cada quadro, o Ultra passava disso
+	// com mais de 2427 tijolos (~25 tanques andando) e o quadro ficava sem a densidade. Vai em partes, cada uma com a sua fatia
+	// da lista dos refeitos (o shader conta do 0); numa parte só, igual a antes
+	const uint32 Groups = uint32(FMath::DivideAndRoundUp(VoxStore, 6));
+	const uint32 Per = Groups * Groups * Groups;                // grupos de 6³ por tijolo (27 no Ultra, 8 na Alta)
+	const uint32 MaxPerPass = FMath::Max(uint32(FMath::Clamp(GRHIMaxDispatchThreadGroupsPerDimension.X, 1, 65535)) / Per, 1u);
+	for (uint32 First = 0; First < NumRefresh; First += MaxPerPass)
 	{
+		const uint32 Num = FMath::Min(NumRefresh - First, MaxPerPass);
 		FRTSDustFillCS::FParameters* P = GraphBuilder.AllocParameters<FRTSDustFillCS::FParameters>();
 		P->Bricks = GraphBuilder.CreateSRV(Bricks);
-		P->Refresh = GraphBuilder.CreateSRV(Refresh);
+		P->Refresh = GraphBuilder.CreateSRV(Num == NumRefresh ? Refresh
+			: CreateStructuredBuffer(GraphBuilder, TEXT("RTSDust.RefreshPart"), sizeof(uint32), Num, D->Refresh.GetData() + First,
+				uint64(Num) * sizeof(uint32), ERDGInitialDataFlags::None));
 		P->Puffs = GraphBuilder.CreateSRV(Puffs);
 		P->PuffIdx = GraphBuilder.CreateSRV(PuffIdx);
 		P->Kick = Kick;
@@ -633,12 +727,11 @@ bool RTSDustField::AddPasses(FRDGBuilder& GraphBuilder, const FSceneView& View, 
 		P->RTSDustNoiseSampler = Out.RTSDustNoiseSampler;
 		P->AtlasOut = GraphBuilder.CreateUAV(Atlas);
 		P->ColorOut = GraphBuilder.CreateUAV(Color);
-		const uint32 Groups = uint32(FMath::DivideAndRoundUp(VoxStore, 6));
 		P->FillVoxM = Out.RTSDustVoxM;
 		P->FillStore = uint32(VoxStore);
 		P->FillGroups = Groups;
 		FComputeShaderUtils::AddPass(GraphBuilder, RDG_EVENT_NAME("RTSDust.Fill"), TShaderMapRef<FRTSDustFillCS>(Map), P,
-			FIntVector(int32(NumRefresh * Groups * Groups * Groups), 1, 1));   // grupos de 6³ por tijolo (27 no Ultra, 8 na Alta)
+			FIntVector(int32(Num * Per), 1, 1));
 	}
 	// os parâmetros de leitura (a luz lê a densidade deste quadro; o raymarch lê tudo)
 	Out.RTSDustPT = PT;

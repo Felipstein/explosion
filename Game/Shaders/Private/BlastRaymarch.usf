@@ -1498,7 +1498,10 @@ float4 MarchDustFull(float3 Rd, float TScene, float2 Pix, out float DepthMean)
 	// (17/10, a Arte) estratificada: cada amostra cobre o trecho [S0, S0 + Dt] e cai tremida dentro dele. A tremida do pixel
 	// sobrevive aos saltos (antes todos recomeçavam na borda do tijolo: degrau de 0,125 m que o TSR não integra) e o último
 	// trecho para na superfície (antes o passo inteiro passava do chão e das unidades)
-	const float J = IGNoise(Pix + Jitter * 71.13);
+	// (22/10, v4) a tremida ANDA com o quadro: IGN(p + 5,588238·n), o deslocamento de Jimenez. O Jitter·71,13 de antes mudava
+	// a tremida de cada pixel em ~0,005 por quadro (medido: o espalhamento em 8 quadros 0,025, o uniforme seria 0,289): o
+	// degrau de 0,125 m ficava parado na tela, o TSR não tinha o que somar e as faixas "andavam" com a poeira
+	const float J = IGNoise(Pix + 5.588238 * float(uint(Jitter) % 64u));
 	float S0 = Hit.x;
 	float3 L = 0.0;
 	float Tr[4] = { 1.0, 1.0, 1.0, 1.0 };
@@ -1652,9 +1655,27 @@ void MainComposite(uint2 Id : SV_DispatchThreadID)
 		if (DustFullRes > 0.5 && DustLook.w > 0.5)
 		{
 			float DD;
-			const float4 Du = MarchDustFull(Rd, DRef, float2(Id), DD);
+			float4 Du = MarchDustFull(Rd, DRef, float2(Id), DD);
 			if (Du.a < 0.999)
 			{
+				// (22/10, v4) a névoa do mapa entre a câmera e a poeira, a MESMA conta das explosões acima (o chão atrás já vem
+				// com a névoa; a poeira vinha limpa por cima e parecia colada no cenário: "não encaixa")
+				if (FogA.x > 0.5)
+				{
+					const float S0f = FogA.w, S1f = max(min(DD, DRef), S0f);
+					const float Fzf = FogA.z * Rd.z;
+					const float Z0f = -FogHeightRel;
+					const float Linef = abs(Fzf) > 1e-4
+						? exp2(-FogA.z * Z0f) * (exp2(-Fzf * S0f) - exp2(-Fzf * S1f)) / (Fzf * 0.69314718)
+						: exp2(-FogA.z * Z0f) * (S1f - S0f);
+					const float FogTf = exp(-FogA.y * max(Linef, 0.0));
+					InitLights();
+					const float CosSf = dot(Rd, KeyDir);
+					const float Gf = FogB.w, G2f = Gf * Gf;
+					const float Hgf = (1.0 - G2f) / (4.0 * PI_F * pow(max(1.0 + G2f - 2.0 * Gf * CosSf, 1e-4), 1.5));
+					const float3 Srcf = FogB.rgb * (KeyGround * Hgf + SkyColor * (1.0 / (4.0 * PI_F)));
+					Du.rgb = Du.rgb * FogTf + Srcf * (1.0 - FogTf) * (1.0 - Du.a);
+				}
 				const float K = RadianceScale * View.PreExposure;
 				const float DE = VolDepthIn[clamp(int2(Uv * float2(HalfSize)), 0, int2(HalfSize) - 1)].y;
 				const bool bDustFront = Vol.a > 0.999 || DD < DE;

@@ -19,7 +19,7 @@ class UTextureRenderTarget2D;
  *   mas continua fazendo sombra nela (sem ele na lista, a poeira na sombra dele acenderia num quadro);
  * - Id estável; Speed com sinal (negativa de ré); YawRate = a derivada do yaw da Unreal em rad/s (positivo virando pra +Y);
  * - Sand: o peso da areia (1 − max(asfalto, molhado) da grade do WorldForge, FRTSBakedMap::SurfaceAt) no pé de trás
- *   (x −2,40 m) e na frente (x +2,55 m) de cada lagarta; quem nasce no meio (a cortina) interpola entre os dois;
+ *   (x −2,40 m) e na frente (x +2,55 m) de cada lagarta (nas rodas: o eixo de trás e o da frente); a cortina interpola;
  * - bVisible: falso sob a névoa de guerra (a poeira do inimigo escondido não aparece, como no Zero Hour).
  */
 USTRUCT(BlueprintType)
@@ -30,7 +30,7 @@ struct RTSTREADDUST_API FRTSTreadSource
 	FVector PosM = FVector::ZeroVector;        // m: o centro do veículo no chão
 	FVector FwdM = FVector(1, 0, 0);           // a frente, no chão
 	double Speed = 0.0;                        // m/s (negativa de ré)
-	double YawRate = 0.0;                      // rad/s: d(yaw)/dt da Unreal (no giro no lugar cada lagarta anda ±ω·1,425)
+	double YawRate = 0.0;                      // rad/s: d(yaw)/dt da Unreal (no giro no lugar cada lagarta anda ±ω·1,425; a roda, ±ω·a meia bitola)
 	double Sand[2] = { 1.0, 1.0 };             // pé de trás: [0] em −R (+Y local, a direita na Unreal), [1] em +R
 	double SandFront[2] = { 1.0, 1.0 };        // frente: [0] em −R (+Y local, a direita na Unreal), [1] em +R
 	bool bVisible = true;
@@ -41,8 +41,8 @@ struct RTSTREADDUST_API FRTSTreadSource
 	// a do casco). As caixas são as do tanque USA na escala de cada veículo
 	double HalfWidthM = 1.88, HullTopM = 1.55;
 	FVector TurretFwdM = FVector::ZeroVector;
-	// falso: só faz sombra e empurra o ar (o veículo de roda, a carcaça), não levanta poeira
-	bool bEmitsDust = true;
+	// falso: só faz sombra e empurra o ar (a carcaça), não levanta poeira. (23/10) As rodas (zero = a lagarta, o padrão do tanque aprovado; INTEGRACAO.md "As rodas"): a meia bitola, o eixo de trás e o da frente (x), o raio e a meia largura do pneu (m); o lado, a massa e o espaçamento do puff (× os do tanque); o comprimento do veículo (m: o denso e o sumiço do rastro vão em comprimentos dele); TrailTimeS (s; zero = só o comprimento): o rastro mínimo no tempo, a unidade de comprimento do puff vira max(TrailLenM, a velocidade × TrailTimeS)
+	bool bEmitsDust = true; double WheelHalfGaugeM = 0.0, WheelRearXM = 0.0, WheelFrontXM = 0.0, WheelRadiusM = 0.0, WheelHalfWidthM = 0.0, DustScale = 1.0, DustAmount = 1.0, DustSpacing = 1.0, TrailLenM = 0.0, TrailTimeS = 0.0;
 };
 
 /**
@@ -76,7 +76,7 @@ struct FRTSTreadLayer
 	double BaseShadeWorld = 0.0;
 	// a luz no volume inteiro (a 2ª opinião de 16/10): o lado do rastro virado pro sol mais claro, o outro mais escuro
 	// (0 = desligado; 0,4 = o lado de lá recebe 60 % do sol), na escala da nuvem e não de cada bolo; SunSideWidth em m
-	double SunSide = 0.0, SunSideWidth = 3.0;
+	double SunSide = 0.0, SunSideWidth = 3.0, WindGain = 0.0;   // (23/10) WindGain: × o vento do mapa (SetWind) nesta camada; 0 = a de antes (a K2 aprovada), 1 nas dos acertos
 	double SpacingPoisson = 0.0, BakeJitFrames = 0.0, ScaleLogMin = 0.0, ScaleLogMax = 0.0, RotFreeAfter = 0.0, ErodeFromBirth = 0.0;
 	// o sumiço (16/10, o Felipe: "ela vira 90 graus pra baixo e abaixa a opacidade pra 0... não se desfaz no céu bonito
 	// como o BlastLab"): no trecho em que a máscara apaga (maskDense → maskEnd), a nuvem se desfaz em vez de só ficar
@@ -236,6 +236,38 @@ public:
 	/** Uma explosão que empurra a poeira (vai pra fila com o relógio do plugin; ver FRTSDustBlast). */
 	void AddBlast(const FRTSDustBlast& B);
 
+	/**
+	 * (23/10, a explosão com vida do jogo: o acerto de míssil) Os puffs de poeira de um acerto: o véu de areia do choque, os pontinhos dos
+	 * estilhaços, o pouso de um torrão, a batida e o deslizar da torre solta, a onda de base e a poeira que fica do ataque de mísseis (a poeira
+	 * de baixo do casco saiu, 23/10). Cartões das camadas "impact" (freia em 0,5–2 m), "impact_surge" (a onda de base, rola longe) e
+	 * "impact_linger" (a poeira que fica e deriva no vento, depois da gravação do ataque) do perfil, que o Emit dos veículos pula (sem elas no
+	 * perfil, os padrões do código): andam, crescem, somem, são empurrados pelos veículos, pelas explosões e pelo vento do mapa e vão pro
+	 * volume (Alta/Ultra) ou pros cartões (Média/Baixa) como os das lagartas, com a sombra do mapa, a cor do chão onde nascem e as luzes da
+	 * cena. Quem chama já conferiu a névoa e o teto do preset. O sorteio deles é à parte: a poeira das lagartas fica igual (sem acerto, nada
+	 * muda).
+	 * A massa (23/10, a areia do acerto): um acerto não tem os 10–20 cartões empilhados de cada ponto do rastro, então cada puff leva a massa
+	 * de vários: Mass é o A do cartão, linear no volume (a profundidade óptica do miolo ≈ 0,43·A·coluna da gravação, até 16); nos cartões da
+	 * Média a opacidade corta em 1 (o cartão não passa de opaco).
+	 */
+	struct FImpactPuff
+	{
+		FVector PosM = FVector::ZeroVector;    // o ponto no chão (m)
+		FVector VelM = FVector::ZeroVector;    // a velocidade de saída (m/s; o arrasto da camada freia)
+		double SizeM = 3.0;                    // o lado do cartão (m)
+		double LifeS = 4.0;                    // a vida (s)
+		double Mass = 1.0;                     // o A (× o alfa da camada; × o peso do chão, de quem chama): 1 = um cartão do rastro, até 16
+		double DelayS = 0.0;                   // nasce depois disto (a chegada do choque, ~r/400 s; a onda de base; o fim da gravação)
+		double BakeT0 = -1.0;                  // o tempo da gravação ao nascer (s; < 0 = o bakeStart da camada), + o bakeStartJit dela
+		int32 Layer = 0;                       // 0 = "impact", 1 = "impact_surge", 2 = "impact_linger"
+	};
+	void AddImpactPuffs(const TArray<FImpactPuff>& Puffs, uint32 PuffSeed);
+	/** Os cartões de impacto vivos (o jogo segura o teto do preset). */
+	int32 NumImpactCards() const;
+	/** (23/10) Os tijolos do campo de poeira em volume no último quadro (0 nos cartões): o guarda do jogo antes de soltar areia. */
+	int32 BricksInUse() const;
+	/** (23/10) O vento do mapa (pra onde sopra, graus; m/s): as camadas com windGain derivam nele (as dos acertos; a K2 aprovada não). */
+	void SetWind(double YawDeg, double SpeedMs);
+
 	/** A partida (ou a rede) pausada: a poeira para no ar junto com as explosões. */
 	void SetPaused(bool bOn) { bPaused = bOn; }
 
@@ -264,6 +296,7 @@ private:
 		double Map[3] = { -1.0, -1.0, -1.0 };    // o sol que passa pelo cenário no pé, no meio e no topo do cartão
 		FLinearColor Col = FLinearColor(0.49f, 0.40f, 0.27f);   // o albedo do chão onde nasceu (linear)
 		double RotFree = 0.0;                    // o giro livre (rad) do véu, sorteado ao nascer
+		double Len = 7.93;                       // (23/10) o comprimento de quem soltou (m): o denso e o sumiço do rastro vão nele (o perfil: hullLen)
 		int32 Layer = 0, Src = 0;
 		bool bDouble = false;                  // a baixa: um cartão no lugar de dois
 	};
@@ -285,6 +318,13 @@ private:
 	FVector2D BlastShift(const FCard& C, double T0, double T1) const;
 	TMap<int32, TArray<FCrumb>> Crumbs;
 	TMap<int32, double> CrumbOdo, SrcRamp;
+	/** (23/10) As camadas dos puffs de impacto no perfil ("impact", "impact_surge", "impact_linger"; −1 = não há) e a fonte deles (nenhum
+	 *  veículo: fora da lista da névoa, sem odometria). */
+	int32 ImpactLayers[3] = { -1, -1, -1 };
+	static constexpr int32 ImpactSrcId = -1;
+	bool IsImpactLayer(int32 Li) const { return Li >= 0 && (Li == ImpactLayers[0] || Li == ImpactLayers[1] || Li == ImpactLayers[2]); }
+	/** (23/10) O vento do mapa (m/s, no plano; SetWind), × o windGain de cada camada. */
+	FVector2D MapWind = FVector2D::ZeroVector;
 	TArray<FBlastEv> Blasts;
 	double Clock = 0.0;
 	bool bPaused = false;

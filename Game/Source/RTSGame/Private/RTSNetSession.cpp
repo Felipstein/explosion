@@ -26,6 +26,9 @@ namespace
 	// cai quando os votos chegam a todos os outros)
 	constexpr double NoticeSeconds = 5.0;
 	constexpr double DropSeconds = 60.0;
+	// (23/10, o pacote da v4) carregando, a paciência é maior: na 1ª vez de um pacote novo a placa compila os shaders do
+	// raymarch (um só levou 66 s na 1660) e o jogo fica mudo esse tempo todo; com 60 s o outro PC desistia na largada
+	constexpr double LoadDropSeconds = 300.0;
 	constexpr float ResumeCountdown = 3.0f;
 	constexpr int64 HashKeepTicks = 900;
 
@@ -33,8 +36,38 @@ namespace
 	{
 		Beacon = 1, Hello, Welcome, Reject, Lobby, SetupChunk, SetupAck, Ready, Go, Input, Ticks, Ping, Pong, Bye, Color, Team,
 		Control,     // cliente → anfitrião: pausa, volta, voto (13/10)
-		PauseState   // anfitrião → todos: o estado da pausa e da espera
+		PauseState,  // anfitrião → todos: o estado da pausa e da espera
+		Chat         // (17/10) o chat: cliente → anfitrião → quem deve ver (fora da simulação)
 	};
+
+	// (17/10) o chat: até 120 letras (a caixa corta), que em UTF-8 cabem em 360 bytes
+	constexpr int32 ChatMaxBytes = 360;
+	constexpr int32 ChatKeep = 50;
+	constexpr int32 ChatCopies = 3;           // o UDP perde pacote: a mesma linha vai 3 vezes, e quem recebe descarta a repetida
+
+	void WriteChatText(Sim::ByteWriter& W, const FString& S)
+	{
+		const FTCHARToUTF8 U(*S);
+		const int32 N = FMath::Min(U.Length(), ChatMaxBytes);
+		W.U16(uint16(N));
+		W.Raw(reinterpret_cast<const uint8_t*>(U.Get()), size_t(N));
+	}
+
+	bool ReadChatText(Sim::ByteReader& R, FString& Out)
+	{
+		uint16 N = 0;
+		if (!R.U16(N) || N > ChatMaxBytes)
+		{
+			return false;
+		}
+		uint8_t Buf[ChatMaxBytes + 1] = {};
+		if (!R.Raw(Buf, N))
+		{
+			return false;
+		}
+		Out = FString(UTF8_TO_TCHAR(reinterpret_cast<const char*>(Buf)));
+		return true;
+	}
 
 	void WriteString(Sim::ByteWriter& W, const FString& S)
 	{
@@ -146,8 +179,9 @@ uint64 URTSNetSession::VersionHash() const
 		FRTSGameData Data;
 		FString Err;
 		const uint64 Rules = Data.Load(Err) ? Data.Rules.Hash() : 0;
-		// (0002, 11/10: a sala ganhou time, IA e a névoa de 3 tipos; 0003, 13/10: a pausa e a queda; o jogo velho não entra)
-		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0003ull;
+		// (0002, 11/10: a sala ganhou time, IA e a névoa de 3 tipos; 0003, 13/10: a pausa e a queda; 0004, 22/10: o dinheiro
+		// inicial no pacote da sala; o jogo velho não entra)
+		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0004ull;
 	}
 	return CachedVersion;
 }
@@ -229,6 +263,7 @@ bool URTSNetSession::Host(FString& OutError)
 	if (const URTSSessionSubsystem* S = GetGameInstance()->GetSubsystem<URTSSessionSubsystem>())
 	{
 		FogMode = uint8(S->FogMode);
+		StartingMoney = S->StartingMoney;
 	}
 	{
 		// a sala não passa das largadas do mapa (4 no de hoje)
@@ -346,6 +381,22 @@ void URTSNetSession::SetFogMode(ERTSFogMode Mode)
 	}
 }
 
+void URTSNetSession::SetStartingMoney(int32 Money)
+{
+	if (Role == ERTSNetRole::Host)
+	{
+		// (v4) o anfitrião escolhe: guarda como a escolha do menu (a lista e o .ini são da sessão) e a sala mostra a todos;
+		// a montagem leva o valor nas regras
+		if (URTSSessionSubsystem* S = GetGameInstance()->GetSubsystem<URTSSessionSubsystem>())
+		{
+			S->SetStartingMoney(Money);
+			Money = S->StartingMoney;
+		}
+		StartingMoney = Money;
+		SendLobby();
+	}
+}
+
 uint8 URTSNetSession::FirstFreeSlot() const
 {
 	uint8 Slot = 1;
@@ -367,6 +418,83 @@ uint8 URTSNetSession::TeamOfSlot(uint8 Slot) const
 {
 	const FRTSNetMember* M = Lobby.FindByPredicate([Slot](const FRTSNetMember& X) { return X.Slot == Slot; });
 	return M ? M->Team : 0;
+}
+
+// ---------------------------------------------------------------- o chat da partida (17/10)
+
+bool URTSNetSession::SeesChat(uint8 Viewer, uint8 FromSlot, bool bTeam) const
+{
+	if (!bTeam || Viewer == FromSlot)
+	{
+		return true;
+	}
+	const uint8 T = TeamOfSlot(FromSlot);
+	return T != 0 && TeamOfSlot(Viewer) == T;
+}
+
+void URTSNetSession::AddChat(uint8 Slot, const FString& Text, bool bTeam)
+{
+	FChatLine& L = Chat.AddDefaulted_GetRef();
+	L.Slot = Slot;
+	L.Text = Text;
+	L.bTeam = bTeam;
+	L.Time = FPlatformTime::Seconds();
+	if (Chat.Num() > ChatKeep)
+	{
+		Chat.RemoveAt(0, Chat.Num() - ChatKeep);
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS chat: vaga %d%s: %s"), Slot, bTeam ? TEXT(" (aliados)") : TEXT(""), *Text);
+}
+
+void URTSNetSession::RelayChat(uint8 FromSlot, uint16 Id, bool bTeam, const FString& Text)
+{
+	Sim::ByteWriter W = Begin(EMsg::Chat);
+	W.U8(FromSlot);
+	W.U16(Id);
+	W.U8(bTeam ? 1 : 0);
+	WriteChatText(W, Text);
+	const TArray<uint8> Packet = ToArray(W);
+	for (const FPeer& P : Peers)
+	{
+		if (P.bDropped || P.Slot == FromSlot || !SeesChat(P.Slot, FromSlot, bTeam))
+		{
+			continue;
+		}
+		for (int32 K = 0; K < ChatCopies; ++K)
+		{
+			SendTo(*P.Addr, Packet);
+		}
+	}
+}
+
+void URTSNetSession::SendChat(const FString& InText, bool bTeam)
+{
+	const FString Text = InText.TrimStartAndEnd().Left(120);
+	if (Text.IsEmpty())
+	{
+		return;
+	}
+	const uint8 From = Role == ERTSNetRole::None ? uint8(0) : MySlot;
+	const uint16 Id = NextChatId++;
+	ChatSeen.Add((uint32(From) << 16) | Id);
+	AddChat(From, Text, bTeam);
+	if (Role == ERTSNetRole::Host)
+	{
+		RelayChat(From, Id, bTeam, Text);
+	}
+	else if (Role == ERTSNetRole::Client)
+	{
+		Sim::ByteWriter W = Begin(EMsg::Chat);
+		W.U8(From);
+		W.U16(Id);
+		W.U8(bTeam ? 1 : 0);
+		WriteChatText(W, Text);
+		const TArray<uint8> Packet = ToArray(W);
+		for (int32 K = 0; K < ChatCopies; ++K)
+		{
+			SendHost(Packet);
+		}
+	}
 }
 
 void URTSNetSession::CycleTeam(uint8 Slot)
@@ -1120,6 +1248,7 @@ void URTSNetSession::SendLobby()
 	W.U8(uint8(Phase));
 	W.U8(Epoch);
 	W.U8(FogMode);
+	W.U32(uint32(StartingMoney));   // (v4, 0004) o dinheiro inicial: os outros vêem na sala
 	W.U8(uint8(Lobby.Num()));
 	for (const FRTSNetMember& M : Lobby)
 	{
@@ -1258,21 +1387,20 @@ void URTSNetSession::Tick(float DeltaTime)
 				SendTo(*P.Addr, ToArray(W));
 			}
 		}
-		// quem sumiu: na sala sai; na partida, a partida avisa
+		// quem sumiu: na sala sai; carregando, a partida avisa. (17/10, o teste lan_chat: cada PC fica mudo enquanto carrega
+		// o mapa, 7,4 s no anfitrião de hoje, e com 8 s o outro desistia na largada; carregando, a paciência é a da partida)
 		for (int32 K = Peers.Num() - 1; K >= 0; --K)
 		{
-			if (Clock - Peers[K].LastHeard > LostSeconds)
+			const double Silent = Clock - Peers[K].LastHeard;
+			if (Phase == ERTSNetPhase::Lobby && Silent > LostSeconds)
 			{
-				if (Phase == ERTSNetPhase::Lobby)
-				{
-					UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s saiu (sem resposta)"), *Peers[K].Name);
-					Peers.RemoveAt(K);
-					RebuildLobby();
-				}
-				else if (Phase == ERTSNetPhase::Loading)
-				{
-					bPeerLost = true;
-				}
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s saiu (sem resposta)"), *Peers[K].Name);
+				Peers.RemoveAt(K);
+				RebuildLobby();
+			}
+			else if (Phase == ERTSNetPhase::Loading && Silent > LoadDropSeconds)
+			{
+				bPeerLost = true;
 			}
 		}
 		// na partida, quem some faz a partida esperar (a pausa), e cai aos 60 s ou pelo voto
@@ -1293,8 +1421,9 @@ void URTSNetSession::Tick(float DeltaTime)
 					}
 				}
 			}
-			// todos prontos: começa (e o "comece" vai junto com os passos)
-			if (!bGo && bLocalReady && Peers.Num() > 0 && !Peers.ContainsByPredicate([](const FPeer& P) { return !P.bReady; }))
+			// todos prontos: começa (e o "comece" vai junto com os passos). A sala só com IA não tem outro PC: começa quando
+			// este está pronto (14/10, o Felipe sozinho contra 3 IAs ficou parado em "Waiting for the other players")
+			if (!bGo && bLocalReady && !Peers.ContainsByPredicate([](const FPeer& P) { return !P.bReady; }))
 			{
 				bGo = true;
 				Phase = ERTSNetPhase::Playing;
@@ -1350,8 +1479,10 @@ void URTSNetSession::Tick(float DeltaTime)
 			}
 		}
 		// sem resposta: antes de entrar, segue tentando (o anfitrião pode abrir depois); na sala, a conexão caiu;
-		// na partida, a espera vai até 60 s (13/10: um engasgo de 9 s do anfitrião derrubava todo mundo aos 8 s)
-		const double Limit = Phase == ERTSNetPhase::Playing ? DropSeconds : LostSeconds;
+		// na partida a espera vai até 60 s, carregando até 5 min (13/10: um engasgo de 9 s do anfitrião derrubava todo mundo aos 8 s;
+		// 17/10: o anfitrião carregando o mapa fica mudo 7,4 s e o robô do teste desistia na largada; 23/10: o pacote novo
+		// compilando os shaders do raymarch deixou o anfitrião mudo 75 s e o robô desistiu aos 60)
+		const double Limit = Phase == ERTSNetPhase::Loading ? LoadDropSeconds : (Phase == ERTSNetPhase::Playing ? DropSeconds : LostSeconds);
 		if (Clock - LastHeardHost > Limit && Phase != ERTSNetPhase::Ended)
 		{
 			if (Phase == ERTSNetPhase::Idle)
@@ -1603,6 +1734,30 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			}
 			return;
 		}
+		case EMsg::Chat:
+		{
+			// (17/10) a linha de um cliente: a vaga é a do PC que mandou (não a do pacote), uma vez só, e o anfitrião repassa
+			uint8 FromIgnored = 0, TeamFlag = 0;
+			uint16 Id = 0;
+			FString Text;
+			if (!P || !R.U8(FromIgnored) || !R.U16(Id) || !R.U8(TeamFlag) || !ReadChatText(R, Text))
+			{
+				return;
+			}
+			const uint32 Key = (uint32(P->Slot) << 16) | Id;
+			if (ChatSeen.Contains(Key))
+			{
+				return;
+			}
+			ChatSeen.Add(Key);
+			const bool bTeamLine = TeamFlag != 0;
+			if (SeesChat(MySlot, P->Slot, bTeamLine))
+			{
+				AddChat(P->Slot, Text, bTeamLine);
+			}
+			RelayChat(P->Slot, Id, bTeamLine, Text);
+			return;
+		}
 		case EMsg::Bye:
 			if (P)
 			{
@@ -1668,8 +1823,11 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			uint8 HostPhase = 0;
 			uint8 HostEpoch = 0;
 			uint8 Fog = 1;
+			uint32 Money = 0;
 			uint8 Count = 0;
-			if (!R.U8(HostPhase) || !R.U8(HostEpoch) || !R.U8(Fog) || Fog > uint8(ERTSFogMode::Explored) || !R.U8(Count) || Count > MaxPlayers)
+			// (v4, 0004) o dinheiro inicial depois da névoa, de 1 000 a 1 000 000 (fora disso, o pacote não entra)
+			if (!R.U8(HostPhase) || !R.U8(HostEpoch) || !R.U8(Fog) || Fog > uint8(ERTSFogMode::Explored) || !R.U32(Money) || Money < 1000u || Money > 1000000u
+				|| !R.U8(Count) || Count > MaxPlayers)
 			{
 				return;
 			}
@@ -1694,6 +1852,11 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			}
 			Lobby = MoveTemp(List);
 			FogMode = Fog;
+			if (StartingMoney != int32(Money))
+			{
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN: dinheiro inicial da sala: %d"), int32(Money));
+			}
+			StartingMoney = int32(Money);
 			for (const FRTSNetMember& Mb : Lobby)
 			{
 				if (Mb.Slot == MySlot)
@@ -1877,6 +2040,24 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 				{
 					UE_LOG(LogTemp, Log, TEXT("RTS LAN: o anfitrião %s a partida"), Pause.bPaused ? TEXT("pausou") : TEXT("retomou"));
 				}
+			}
+			return;
+		}
+		case EMsg::Chat:
+		{
+			// (17/10) a linha que o anfitrião repassou (a dele ou a de outro cliente), uma vez só
+			uint8 FromSlot = 0, TeamFlag = 0;
+			uint16 Id = 0;
+			FString Text;
+			if (!R.U8(FromSlot) || !R.U16(Id) || !R.U8(TeamFlag) || !ReadChatText(R, Text))
+			{
+				return;
+			}
+			const uint32 Key = (uint32(FromSlot) << 16) | Id;
+			if (!ChatSeen.Contains(Key))
+			{
+				ChatSeen.Add(Key);
+				AddChat(FromSlot, Text, TeamFlag != 0);
 			}
 			return;
 		}

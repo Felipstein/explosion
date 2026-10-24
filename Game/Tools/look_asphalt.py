@@ -227,3 +227,68 @@ Nout = normalize(N + float3(nxy, 0.0));
 Rout = saturate(rough);
 return col;
 """
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A faixa pintada v2 no jogo (16/10, RECEITAS_DO_LOOK §7; a maquete de 13/10, PAINTV2 no look_lab.py). O Felipe procurou na
+# vila do jogo e não achou: ficou só na maquete. O que ele pediu: "areia em cima da faixa branca", "erosão e rachaduras",
+# "às vezes ela tá apagada". O estudo nas favoritas (captures/look/faixa_branca_estudo.jpg): a da beira a ~0,5 m da borda,
+# contínua, acompanhando a curva; creme empoeirada (nunca branco: ~0,55–0,6 de brilho contra ~0,3 do asfalto); a idade muda
+# em trechos (quase nova, gasta com falhas, só o fantasma); a velha descasca em placas de 10–50 cm; a trinca passa por cima.
+# Pro pixel do jogo (5–7 cm na tela, 7–12 cm por dentro do TSR): a faixa com 15 cm (13 cm virava sub-pixel e piscava) e o
+# corte antisserrilhado pelo fwidth; a descascada em placas, não em pó.
+# A areia que invade a pista vem DEPOIS deste código (o WorldForge mistura a areia por cima): a areia cobre a faixa.
+#
+# Entradas: WP float3 (cm); RF float4 = o T_RoadFrame do WorldForge já amostrado (R a distância com sinal até o eixo em m,
+# G a meia largura em m, 0 = não pinta; B/A = sen/cos(2*pi*s/9 m) ao longo da estrada); Base float3 (a cor do asfalto que
+# chega); Rough float; N float3 (a normal tangente); Dust float3 (a cor da areia do mapa, pro encardido); Cracks tex
+# (T_LL_Cracks, o mesmo do asfalto v2).
+# Saídas: a cor (float3), Nout (float3), Rout (float).
+PAINT_V2_CODE = r"""
+float2 p = WP.xy * 0.01;                                     // m
+float3 col = Base;
+float rough = Rough;
+float3 nO = N;
+float halfW = RF.g;
+if (halfW > 0.5) {
+    float a = abs(RF.r);
+    // a da beira: contínua, a 0,55 m da borda, 15 cm; o eixo: tracejado, 3 m de cada 9 m, 12 cm
+    float edgeD = halfW - a;
+    float lineE = saturate((0.075 - abs(edgeD - 0.55)) / max(fwidth(edgeD), 1e-3) + 0.5);
+    float ph = frac(atan2(RF.b, RF.a) / 6.2831853 + 1.0);
+    float fwP = max(fwidth(ph), 1e-4);
+    float dash = saturate((0.3333 - ph) / fwP + 0.5) * saturate(ph / fwP + 0.5);
+    float lineC = saturate((0.06 - a) / max(fwidth(a), 1e-3) + 0.5) * dash;
+    float pline = max(lineE, lineC);
+    if (pline > 0.001) {
+        // três ruídos de valor no mundo: a idade por trecho (30 m), as placas que descascam (2,4 m) e as lascas (0,6 m)
+        float nz[3];
+        float sc[3] = { 30.0, 2.4, 0.6 };
+        for (int k = 0; k < 3; k++) {
+            float2 q = p / sc[k] + float2(17.3 * k, 5.1 * k);
+            float2 i = floor(q), f = frac(q);
+            f = f * f * (3.0 - 2.0 * f);
+            float h00 = frac(sin(dot(i, float2(127.1, 311.7))) * 43758.5453);
+            float h10 = frac(sin(dot(i + float2(1, 0), float2(127.1, 311.7))) * 43758.5453);
+            float h01 = frac(sin(dot(i + float2(0, 1), float2(127.1, 311.7))) * 43758.5453);
+            float h11 = frac(sin(dot(i + float2(1, 1), float2(127.1, 311.7))) * 43758.5453);
+            nz[k] = lerp(lerp(h00, h10, f.x), lerp(h01, h11, f.x), f.y);
+        }
+        float life = lerp(0.12, 1.0, smoothstep(0.25, 0.75, nz[0]));          // 0,12 = só o fantasma; 1 = quase nova
+        float thr = lerp(0.8, 0.12, life);
+        float keep = smoothstep(thr - 0.04, thr + 0.04, nz[1]);                // a tinta velha sai em placas
+        float chips = smoothstep(0.84, 0.92, nz[2]);                           // as lasquinhas ao longo
+        float crackCut = 1.0 - saturate(Cracks.Sample(CracksSampler, p / 12.0).r * 1.6);   // a trinca passa por cima
+        float paint = pline * keep * (1.0 - 0.9 * chips) * (0.55 + 0.45 * life) * crackCut;
+        float ghost = pline * (1.0 - keep) * 0.18 * crackCut;                  // o fantasma: o asfalto mais claro onde a tinta esteve
+        float3 paintC = lerp(float3(0.56, 0.53, 0.46), Dust * 0.95, 0.2 + 0.35 * (1.0 - life));   // creme empoeirada, encarde com a idade
+        col = lerp(col, col * 1.25 + 0.02, ghost);
+        col = lerp(col, paintC, paint);
+        rough = lerp(rough, 0.55, paint);
+        nO = normalize(lerp(N, float3(0.0, 0.0, 1.0), 0.5 * paint));           // a tinta alisa o agregado
+    }
+}
+Nout = nO;
+Rout = saturate(rough);
+return col;
+"""

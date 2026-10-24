@@ -13,7 +13,7 @@
 #include "RTSHudTypes.h"
 #include "RTSHUD.generated.h"
 
-class ARTSPlayerController;
+class ARTSPlayerController; struct FCompositeFont;   // (v4: na mesma linha, o GENERATED_BODY abaixo não muda de linha)
 class URTSMatchSubsystem;
 
 enum class ERTSFogMode : uint8;
@@ -45,6 +45,8 @@ public:
 	void ToggleNewHud() { bNewHud = !bNewHud; bNewHudChecked = true; }
 	/** As teclas das casas do HUD novo (a letra → o id do botão), do último quadro. */
 	const TMap<TCHAR, FName>& GetHotkeys() const { return NewHotkeys; }
+	/** (v4) O dinheiro como na tela: "$20,000" (fora do namespace anônimo: o unity build junta os .cpp do HUD). */
+	static FString MoneyText(int32 Money);
 
 private:
 	struct FButton
@@ -62,13 +64,21 @@ private:
 	void DrawPause();
 	/** A linha QUALITY (baixa … ultra) do Esc e do menu. */
 	void DrawQualityRow(const class ARTSPlayerController* PC, float X, float Y, float W);
+	/** (v4) A linha STARTING MONEY: [ - ] $20,000 [ + ] e um tracinho por escolha, o de agora aceso (ids <Prefix>_down e
+	 *  <Prefix>_up). bCanChange falso: só o valor. bCompact: sem o título em cima (a sala), 34 px de alto. */
+	void DrawMoneyRow(FName Prefix, int32 Money, float X, float Y, float W, bool bCanChange, bool bCompact = false);
 	void DrawResult(URTSMatchSubsystem* Match);
+	/** (16/10) O mapa da batalha na tela do fim: a foto do minimapa e as marcas, num losango de meia diagonal Half. */
+	void DrawBattleMap(URTSMatchSubsystem* Match, const FVector2D& Center, float Half, float Alpha);
 	void DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	FVector2D MinimapUVToScreen(const FVector2D& UV) const;
 	FVector2D MinimapScreenToUV(const FVector2D& Screen) const;
 	void DrawClippedLine(FVector2D A, FVector2D B, const FLinearColor& Color, float Thickness);
 
-	void DrawGroundRing(const FVector& Center, float RadiusCm, const FLinearColor& Color, float Thickness);
+	void DrawGroundRing(const FVector& Center, float RadiusCm, const FLinearColor& Color, float Thickness, int32 Segments = 28);
+	/** (v4, 23/10) A prévia da linha dos dois botões (esquerdo + direito arrastando), nos dois HUDs: a linha puxada, fina, no
+	 *  chão, e cada unidade como um anel com um risquinho pra frente no lugar exato onde vai parar (a conta da simulação). */
+	void DrawLinePreview(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 
 	// economia e construção, o HUD provisório (RTSHUDEconomy.cpp; o de verdade sai da arte: docs/HUD.md)
 	/** O topo com base: dinheiro, energia, relógio e quem segue em campo. */
@@ -112,6 +122,8 @@ private:
 	/** Texto com sombra; Size em pontos do Slate. Devolve o tamanho desenhado (px). */
 	FVector2D DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter = false, bool bBold = false);
 	FVector2D MeasureLabel(const FString& Text, int32 Size, bool bBold) const;
+	/** (17/10) O chat da partida: as linhas no canto de cima à esquerda (somem em 10 s) e a caixa de digitar. */
+	void DrawChat(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	void DrawButton(FName Id, const FString& Label, float X, float Y, float W, float H);
 	/** O botão pequeno da sala: o texto centrado e menor; com Swatch, o quadrado de cor dentro (o botão da cor). */
 	void DrawSmallButton(FName Id, const FString& Label, float X, float Y, float W, float H, const FLinearColor* Swatch = nullptr);
@@ -128,6 +140,28 @@ private:
 	/** A subida do painel (PanelIn) e a idade do aviso de energia, no HUD novo. */
 	double NewSelectionShownAt = -1.0;
 	double NewLowPowerSince = -1.0;
+
+	// (v4, 23/10) a patente, os poderes do general e a zona de lançamento (RTSHUDNew.cpp). O plugin desenha as estrelas, a
+	// barra de XP, a coluna de poderes, os avisos e a casa do avião no cartão; o que ele ainda não tem (a dica do poder, o
+	// relógio do avião ao lado da casa) sai daqui, na mesma letra (a Barlow do HUDLab) e na mesma planta (Layout)
+	/** A mira do poder: o círculo do raio no chão (azul vale, vermelho não, com o motivo no mouse), nos dois HUDs. */
+	void DrawPowerTarget(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** A recusa do último pedido de poder, no mouse (some em 2 s). */
+	void DrawPowerMessage(ARTSPlayerController* PC);
+	/** "PROMOTED - RANK 2: Cruise Missile Strike" (o que a patente liberou, pelos dados). */
+	static FString PromotionText(URTSMatchSubsystem* Match, int32 Rank);
+	/** Depois do plugin: a dica do poder sob o mouse e o relógio do avião no cartão da zona. */
+	void DrawNewHudExtras(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	FVector2D NewText(const FString& Text, float X, float Y, float Px, const FLinearColor& Color, bool bBold, bool bRight = false);
+	FVector2D NewMeasure(const FString& Text, float Px, bool bBold) const;
+	TSharedPtr<const FCompositeFont> NewFonts[2];
+	/** A escala da planta neste quadro (FRTSHudPainter::Layout) e o lado esquerdo e a largura da faixa 16:9. */
+	float NewS = 1.0f;
+	float NewLeft = 0.0f;
+	float NewWidth = 1920.0f;
+	/** A casa da coluna de poderes sob o mouse (−1 = nenhuma) e a zona de lançamento do cartão (0 = nenhuma). */
+	int32 NewHoverPowerSlot = -1;
+	uint32 NewAirliftZone = 0;
 	bool bNewHud = false;
 	bool bNewHudChecked = false;
 	/** O quadro (ms) suavizado, pro contador de FPS no canto (14/10, o Felipe: "durante o desenvolvimento"). */

@@ -9,7 +9,7 @@
 // Quem inclui define RTS_DUST_FIELD_GLOBALS 1 antes (os parâmetros vêm do FRTSDustFieldParameters, RTSDustField.h).
 //
 // O campo: tijolos de 2 m (16³ voxels de 0,125 m, guardados com 1 voxel de borda: 18³; a gravação tem 0,1 m) num atlas,
-// achados por uma tabela de páginas sobre uma janela de 96×96×16 tijolos (192×192×32 m) em volta do foco. A luz e a cor:
+// achados por uma tabela de páginas sobre uma janela de 128×128×32 tijolos (256×256×64 m) em volta do foco. A luz e a cor:
 // células de 0,5 m (4³ por tijolo, guardadas 6³). Tudo em metros relativos ao canto da janela.
 
 #if defined(RTS_DUST_FIELD_GLOBALS) && RTS_DUST_FIELD_GLOBALS
@@ -23,7 +23,7 @@ Texture3D<float> RTSDustNoise;      // o ruído de Worley que ladrilha (9,6 m), 
 SamplerState RTSDustSampler;        // bilinear, clamp
 SamplerState RTSDustNoiseSampler;   // bilinear, wrap
 float3 RTSDustCamToWindowM;         // a câmera no quadro da janela (m)
-int3 RTSDustWindowBricks;           // 96, 96, 16
+int3 RTSDustWindowBricks;           // 128, 128, 32
 float3 RTSDustAtlasInvSize;         // 1 / texels do atlas da densidade
 float3 RTSDustLightInvSize;         // 1 / texels do atlas da luz
 float RTSDustDetail;                // a erosão fina na marcha (1/m; 0 = só o campo)
@@ -67,7 +67,10 @@ float RTSDustFieldAtW(float3 Pw)
 	}
 	// o voxel i do tijolo cobre [i, i+1) em InB / o voxel; no atlas ele é o texel 1 + i (a borda vem antes)
 	const float3 T = float3(RTSDustSlotOrigin(S - 1) * (uint)RTSDustVoxStore) + 1.0 + InB / RTSDustVoxM;
-	return RTSDustAtlas.SampleLevel(RTSDustSampler, T * RTSDustAtlasInvSize, 0);
+	// a borda da janela some em 16 m (22/10: o corte reto da janela aparecia como "a linha onde a poeira começa")
+	const float2 Wm = float2(RTSDustWindowBricks.xy) * RTS_DUST_BRICK_M;
+	const float Edge = saturate(min(min(Pw.x, Pw.y), min(Wm.x - Pw.x, Wm.y - Pw.y)) / 16.0);
+	return RTSDustAtlas.SampleLevel(RTSDustSampler, T * RTSDustAtlasInvSize, 0) * Edge;
 }
 
 // a cor (o albedo rgb) num ponto, na grade de 0,5 m

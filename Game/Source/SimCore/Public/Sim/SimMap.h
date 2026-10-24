@@ -17,6 +17,8 @@ namespace Sim
 		Open = 0,
 		Blocked = 1,   // penhasco, pedra grande, borda do mapa
 		Water = 2,     // fundo demais pra unidade de chão
+		Crushable = 3, // (16/10) o carro de pé: fechada pra quem não esmaga, aberta pra quem esmaga (o crusherGround do ZH)
+		Toppleable = 4,// (v4, 23/10) a árvore de pé: aberta também pra quem a derruba pelo choque (o caminhão, o Tomahawk: KnocksOver)
 	};
 
 	/** A água de cada célula (13/10, a grade do WorldForge, grid.png: R). */
@@ -57,6 +59,16 @@ namespace Sim
 		std::vector<uint8_t> Pass;        // CellPass por célula, linha a linha (Y·Width + X)
 		/** Distância (em células, métrica do xadrez) até a célula bloqueada ou borda mais próxima. 1 = vizinha de bloqueio. */
 		std::vector<uint8_t> Clearance;
+		/** (16/10) A folga de quem esmaga: a célula esmagável (o carro) e a da árvore contam como abertas. */
+		std::vector<uint8_t> CrushClearance;
+		/** (v4, 23/10) A folga de quem derruba a árvore pelo choque: só a célula da árvore conta como aberta (o carro não). */
+		std::vector<uint8_t> ToppleClearance;
+		/** O bit da mobilidade de quem esmaga (o carro e a árvore): IsWalkable lê a CrushClearance. As folgas cabem abaixo dele. */
+		static constexpr int32_t CrusherBit = 0x40;
+		/** (v4) O bit de quem derruba a árvore pelo choque (sem esmagar): IsWalkable lê a ToppleClearance. Com os dois, vale o de esmagar. */
+		static constexpr int32_t ToppleBit = 0x80;
+		/** A folga sem os bits da mobilidade. */
+		static constexpr int32_t ClearanceOf(int32_t Mobility) { return Mobility & ~(CrusherBit | ToppleBit); }
 		/** Altura do chão por célula, a menor e a maior (decímetros). Vazio = sem altura (chão plano). */
 		std::vector<int16_t> MinDm;
 		std::vector<int16_t> MaxDm;
@@ -73,12 +85,24 @@ namespace Sim
 		void Resize(int32_t InWidth, int32_t InHeight, Fix InCellSize, Vec2 InOrigin);
 		/** Recalcula a folga depois de mudar a passabilidade. */
 		void ComputeClearance();
+		/** Mode: 0 só o aberto, 1 quem esmaga (o carro e a árvore abertos), 2 quem derruba a árvore (só ela aberta). */
+		void ComputeClearanceInto(std::vector<uint8_t>& Out, int32_t Mode) const;
 
 		bool InBounds(int32_t X, int32_t Y) const { return X >= 0 && Y >= 0 && X < Width && Y < Height; }
 		int32_t Index(int32_t X, int32_t Y) const { return Y * Width + X; }
 		CellPass PassAt(int32_t X, int32_t Y) const { return InBounds(X, Y) ? CellPass(Pass[Index(X, Y)]) : CellPass::Blocked; }
 		/** Livre pra uma unidade que precisa de MinClearance células de folga em volta (1 = só a própria). */
-		bool IsWalkable(int32_t X, int32_t Y, int32_t MinClearance) const { return InBounds(X, Y) && Clearance[Index(X, Y)] >= MinClearance; }
+		bool IsWalkable(int32_t X, int32_t Y, int32_t MinClearance) const
+		{
+			if (!InBounds(X, Y))
+			{
+				return false;
+			}
+			const int32_t Need = ClearanceOf(MinClearance);
+			// (a cópia do mapa sem a folga da árvore, a do caminho seguro da IA, lê a comum: quem derruba contorna, como antes)
+			return (MinClearance & CrusherBit) ? CrushClearance[Index(X, Y)] >= Need
+				: ((MinClearance & ToppleBit) && !ToppleClearance.empty() ? ToppleClearance[Index(X, Y)] >= Need : Clearance[Index(X, Y)] >= Need);
+		}
 
 		Cell CellOf(Vec2 P) const;
 		Vec2 CellCenter(Cell C) const;

@@ -77,7 +77,7 @@ Menu → Configurar partida / Lobby → Carregando → 3-2-1 → PARTIDA → Res
 - mapa (com o minimapa e as bases clicáveis);
 - por vaga: humano, IA (fácil, média ou brutal), aberta ou fechada;
 - facção, cor e time;
-- dinheiro inicial;
+- dinheiro inicial (v4, 22/10: feito, de 10 000 a 50 000 de 5 000 em 5 000, no menu e na sala; vai nas regras da montagem; a IA usa o banco grande em mais fábricas);
 - regras (ex.: sem superarmas).
 
 Enquanto vocês escolhem, o mapa já começa a carregar ou a ser gerado.
@@ -514,6 +514,7 @@ powershell -File Game\Tools\simtest.ps1        # a simulação sem a Unreal, em 
 **Controles** (Zero Hour / Vanguard ADR-0003 e 0004):
 - **Botão esquerdo:** clique seleciona; arrastar faz a caixa. Com seleção, clique no chão = andar, clique no inimigo = atacar. Shift soma ou tira; dois cliques pegam os iguais na tela.
 - **Botão direito:** clique rápido desseleciona; arrastar rola (mais longe = mais rápido).
+- **Os dois botões juntos (v4, 23/10):** esquerdo + direito, em qualquer ordem, arrastando, puxam a linha do ponto apertado até o cursor. Enquanto puxa, cada unidade aparece no chão como um anel com um risquinho pra frente, no lugar exato onde vai parar (a conta da simulação, `World::PreviewLineSlots`). Da esquerda pra direita na tela, a frente fica de costas pra câmera; ao contrário, vira pra ela. Soltar os dois manda; o `Esc`, ou soltar um e segurar o outro, desiste. Com o `F` vai em formação, com o `A` armado vai atacando (anéis vermelhos). O esquerdo arrastado sozinho é sempre a caixa, mesmo com tropa selecionada.
 - **Teclas:**
   - `A` = a próxima ordem é ataque andando; `S` = parar;
   - `Ctrl+número` grava um grupo, o número chama, `Shift+número` soma, dois toques levam a câmera até ele;

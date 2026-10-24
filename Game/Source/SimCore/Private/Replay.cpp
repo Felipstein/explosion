@@ -12,6 +12,7 @@ namespace Sim
 		constexpr uint16_t MaxStartingUnits = 10000;
 		constexpr uint16_t MaxListLength = 64;
 		constexpr uint16_t MaxDocks = 1024;
+		constexpr uint32_t MaxProps = 65536;
 
 		enum class Record : uint8_t
 		{
@@ -80,6 +81,47 @@ namespace Sim
 			W.U8(D.bSupplyCenter ? 1 : 0);
 			W.U8(D.bCountsForVictory ? 1 : 0);
 			WriteFix(W, D.ExitLane);
+			WriteI32(W, D.Weapon.ClipSize);
+			WriteI32(W, D.Weapon.ClipReloadTicks);
+			W.U8(D.bNeedsPower ? 1 : 0);
+			// (simulação 16, 16/10) o esmagar
+			WriteI32(W, D.CrusherLevel);
+			WriteFix(W, D.HullHalfLength);
+			WriteFix(W, D.HullHalfWidth);
+			WriteFix(W, D.AssistRange);   // (simulação 17)
+			// (simulação 15, 16/10) o míssil da Patriot
+			WriteFix(W, D.Weapon.MissileLaunchStep);
+			WriteFix(W, D.Weapon.MissileAccel);
+			WriteI32(W, D.Weapon.MissileTurnBam);
+			WriteI32(W, D.Weapon.MissileBoostTicks);
+			W.U16(D.Weapon.MissileLaunchPitch.Bam);
+			WriteFix(W, D.Weapon.MissileLaunchHeight);
+			WriteI32(W, D.Weapon.MissileSpreadBam);
+			WriteI32(W, D.Weapon.MissileLifeTicks);
+			// (simulação 18, 22/10) a vida e o afundar da carcaça
+			WriteI32(W, D.WreckLifeTicks);
+			WriteI32(W, D.WreckSinkTicks);
+			// (simulação 19, 22/10) o alcance mínimo, o dano em área, a patente, o teto, os poderes e o avião de carga
+			WriteFix(W, D.Weapon.MinRange);
+			WriteFix(W, D.Weapon.SplashFull);
+			WriteFix(W, D.Weapon.Splash);
+			WriteI32(W, D.Weapon.SplashEdgePct);
+			WriteI32(W, D.RequiresRank);
+			WriteI32(W, D.MaxPerPlayer);
+			W.U8(D.bGrantsPowers ? 1 : 0);
+			for (const int32_t V : { D.AirliftFirstTicks, D.AirliftPeriodTicks, D.AirliftLeadTicks, D.AirliftPalletsMin, D.AirliftPalletsMax,
+				D.AirliftBoxesPerPallet, D.AirliftUnloadTicks })
+			{
+				WriteI32(W, V);
+			}
+			// (simulação 20, 23/10) a mira antes do tiro, a boca do tubo, o conserto do Dozer e a massa
+			WriteI32(W, D.Weapon.PreAttackTicks);
+			for (const Fix V : { D.Weapon.LaunchPivot.X, D.Weapon.LaunchPivot.Y, D.Weapon.LaunchForward, D.Weapon.LaunchSide, D.Weapon.LaunchUp })
+			{
+				WriteFix(W, V);
+			}
+			WriteI32(W, D.RepairMilliPctPerS);
+			WriteI32(W, D.MassKg);
 		}
 
 		bool ReadDef(ByteReader& R, UnitDef& D)
@@ -130,7 +172,110 @@ namespace Sim
 			}
 			D.bSupplyCenter = Center != 0;
 			D.bCountsForVictory = Victory != 0;
-			return true;
+			// (simulação 13, 14/10) a rajada e a energia da defesa de base
+			uint8_t Powered = 0;
+			if (!ReadI32(R, D.Weapon.ClipSize) || !ReadI32(R, D.Weapon.ClipReloadTicks) || !R.U8(Powered) || Powered > 1)
+			{
+				return false;
+			}
+			D.bNeedsPower = Powered != 0;
+			// (simulação 16, 16/10) o esmagar
+			if (!ReadI32(R, D.CrusherLevel) || !ReadFix(R, D.HullHalfLength) || !ReadFix(R, D.HullHalfWidth) || !ReadFix(R, D.AssistRange))
+			{
+				return false;
+			}
+			// (simulação 15, 16/10) o míssil da Patriot
+			uint16_t LaunchPitch = 0;
+			if (!ReadFix(R, D.Weapon.MissileLaunchStep) || !ReadFix(R, D.Weapon.MissileAccel) || !ReadI32(R, D.Weapon.MissileTurnBam)
+				|| !ReadI32(R, D.Weapon.MissileBoostTicks) || !R.U16(LaunchPitch) || !ReadFix(R, D.Weapon.MissileLaunchHeight)
+				|| !ReadI32(R, D.Weapon.MissileSpreadBam) || !ReadI32(R, D.Weapon.MissileLifeTicks))
+			{
+				return false;
+			}
+			D.Weapon.MissileLaunchPitch = Angle::FromBam(LaunchPitch);
+			// (simulação 18, 22/10) a vida e o afundar da carcaça (o afundar tem pelo menos 1 passo: o desenho divide por ele)
+			if (!ReadI32(R, D.WreckLifeTicks) || !ReadI32(R, D.WreckSinkTicks) || D.WreckLifeTicks < 0 || D.WreckSinkTicks < 1)
+			{
+				return false;
+			}
+			// (simulação 19, 22/10) o alcance mínimo, o dano em área, a patente, o teto, os poderes e o avião de carga (os números
+			// fora da faixa recusam: o avião sem palete ou sem caixa travaria a conta)
+			uint8_t Grants = 0;
+			if (!ReadFix(R, D.Weapon.MinRange) || !ReadFix(R, D.Weapon.SplashFull) || !ReadFix(R, D.Weapon.Splash) || !ReadI32(R, D.Weapon.SplashEdgePct)
+				|| !ReadI32(R, D.RequiresRank) || !ReadI32(R, D.MaxPerPlayer) || !R.U8(Grants) || Grants > 1)
+			{
+				return false;
+			}
+			D.bGrantsPowers = Grants != 0;
+			for (int32_t* V : { &D.AirliftFirstTicks, &D.AirliftPeriodTicks, &D.AirliftLeadTicks, &D.AirliftPalletsMin, &D.AirliftPalletsMax,
+				&D.AirliftBoxesPerPallet, &D.AirliftUnloadTicks })
+			{
+				if (!ReadI32(R, *V) || *V < 0)
+				{
+					return false;
+				}
+			}
+			if (D.Weapon.MinRange.Raw < 0 || D.Weapon.Splash < D.Weapon.SplashFull || D.Weapon.SplashEdgePct < 0 || D.Weapon.SplashEdgePct > 100
+				|| D.RequiresRank < 0 || D.RequiresRank > MaxRank || D.MaxPerPlayer < 0
+				|| (D.HasAirlift() && (D.AirliftPalletsMin < 1 || D.AirliftPalletsMax < D.AirliftPalletsMin || D.AirliftBoxesPerPallet < 1
+					|| D.AirliftLeadTicks >= D.AirliftPeriodTicks || D.AirliftFirstTicks <= D.AirliftLeadTicks)))
+			{
+				return false;
+			}
+			// (simulação 20, 23/10) a mira antes do tiro, a boca do tubo, o conserto do Dozer e a massa (nada negativo)
+			if (!ReadI32(R, D.Weapon.PreAttackTicks))
+			{
+				return false;
+			}
+			for (Fix* V : { &D.Weapon.LaunchPivot.X, &D.Weapon.LaunchPivot.Y, &D.Weapon.LaunchForward, &D.Weapon.LaunchSide, &D.Weapon.LaunchUp })
+			{
+				if (!ReadFix(R, *V))
+				{
+					return false;
+				}
+			}
+			return ReadI32(R, D.RepairMilliPctPerS) && ReadI32(R, D.MassKg) && D.Weapon.PreAttackTicks >= 0 && D.Weapon.LaunchUp.Raw >= 0
+				&& D.RepairMilliPctPerS >= 0 && D.MassKg >= 0;
+		}
+
+		/** (simulação 19) Um poder do general; a munição o ReadSetup confere contra as unidades lidas. */
+		void WritePower(ByteWriter& W, const PowerDef& P)
+		{
+			WriteString(W, P.Key);
+			for (const int32_t V : { P.RequiresRank, P.UpgradeRank, P.CooldownTicks, P.Missiles, P.MissilesUpgraded, P.IntervalTicks })
+			{
+				WriteI32(W, V);
+			}
+			for (const Fix V : { P.PatternRadius, P.PatternRadiusUpgraded, P.SpawnBack, P.SpawnUp })
+			{
+				WriteFix(W, V);
+			}
+			W.U16(P.Munition);
+		}
+
+		bool ReadPower(ByteReader& R, PowerDef& P)
+		{
+			if (!ReadString(R, P.Key))
+			{
+				return false;
+			}
+			for (int32_t* V : { &P.RequiresRank, &P.UpgradeRank, &P.CooldownTicks, &P.Missiles, &P.MissilesUpgraded, &P.IntervalTicks })
+			{
+				if (!ReadI32(R, *V))
+				{
+					return false;
+				}
+			}
+			for (Fix* V : { &P.PatternRadius, &P.PatternRadiusUpgraded, &P.SpawnBack, &P.SpawnUp })
+			{
+				if (!ReadFix(R, *V))
+				{
+					return false;
+				}
+			}
+			return R.U16(P.Munition) && P.RequiresRank >= 0 && P.RequiresRank <= MaxRank && P.UpgradeRank >= 0 && P.UpgradeRank <= MaxRank
+				&& P.CooldownTicks >= 0 && P.IntervalTicks >= 0 && P.Missiles >= 1 && P.Missiles <= MaxStrikeMissiles
+				&& P.MissilesUpgraded >= 1 && P.MissilesUpgraded <= MaxStrikeMissiles;
 		}
 	}
 
@@ -201,6 +346,38 @@ namespace Sim
 		}
 		W.U8(S.bFogOfWar ? 1 : 0);
 		W.U8(S.bAllowDebugCommands ? 1 : 0);
+		// (simulação 16) os carros e as árvores do mapa
+		W.U32(uint32_t(S.Props.size()));
+		for (const PropSetup& P : S.Props)
+		{
+			W.U8(uint8_t(P.Kind));
+			WriteFix(W, P.Pos.X);
+			WriteFix(W, P.Pos.Y);
+			W.U16(P.Facing.Bam);
+			WriteFix(W, P.HalfLength);
+			WriteFix(W, P.HalfWidth);
+			WriteFix(W, P.Height);
+			W.U8(P.CrushableLevel);
+		}
+		// (simulação 19, 22/10) a patente e os poderes do general, e a patente de largada de cada jogador
+		for (const int32_t V : E.RankXp)
+		{
+			WriteI32(W, V);
+		}
+		WriteI32(W, E.XpDealtDivisor);
+		WriteI32(W, E.XpTakenDivisor);
+		W.U8(uint8_t(S.Rules.Powers.size()));
+		for (const PowerDef& P : S.Rules.Powers)
+		{
+			WritePower(W, P);
+		}
+		for (const PlayerSetup& P : S.Players)
+		{
+			W.U8(P.StartRank);
+		}
+		// (simulação 20, 23/10) vender: a % e a desmontagem
+		WriteI32(W, E.SellPercent);
+		WriteI32(W, E.SellTicks);
 	}
 
 	bool ReadSetup(ByteReader& R, MatchSetup& Out)
@@ -223,7 +400,7 @@ namespace Sim
 		}
 		for (const uint8_t P : Out.Map.Pass)
 		{
-			if (P > uint8_t(CellPass::Water))
+			if (P > uint8_t(CellPass::Toppleable))
 			{
 				return false;
 			}
@@ -335,7 +512,60 @@ namespace Sim
 		}
 		Out.bFogOfWar = Fog != 0;
 		Out.bAllowDebugCommands = Debug != 0;
-		return true;
+		// (simulação 16) os carros e as árvores do mapa
+		uint32_t PropCount = 0;
+		if (!R.U32(PropCount) || PropCount > MaxProps)
+		{
+			return false;
+		}
+		Out.Props.resize(PropCount);
+		for (PropSetup& P : Out.Props)
+		{
+			uint8_t Kind = 0;
+			if (!R.U8(Kind) || Kind > 1 || !ReadFix(R, P.Pos.X) || !ReadFix(R, P.Pos.Y) || !R.U16(P.Facing.Bam) || !ReadFix(R, P.HalfLength)
+				|| !ReadFix(R, P.HalfWidth) || !ReadFix(R, P.Height) || !R.U8(P.CrushableLevel))
+			{
+				return false;
+			}
+			P.Kind = PropKind(Kind);
+		}
+		// (simulação 19, 22/10) a patente e os poderes do general (a munição tem de ser uma unidade lida com arma de míssil), e a
+		// patente de largada de cada jogador
+		for (int32_t& V : E.RankXp)
+		{
+			if (!ReadI32(R, V))
+			{
+				return false;
+			}
+		}
+		uint8_t PowerCount = 0;
+		if (!ReadI32(R, E.XpDealtDivisor) || !ReadI32(R, E.XpTakenDivisor) || E.XpDealtDivisor < 0 || E.XpTakenDivisor < 0
+			|| !R.U8(PowerCount) || PowerCount > MaxPowers)
+		{
+			return false;
+		}
+		Out.Rules.Powers.resize(PowerCount);
+		for (PowerDef& P : Out.Rules.Powers)
+		{
+			if (!ReadPower(R, P) || P.Munition >= Out.Rules.Units.size())
+			{
+				return false;
+			}
+			const UnitDef& M = Out.Rules.Units[P.Munition];
+			if (M.IsStructure() || !M.Weapon.IsMissile() || M.Weapon.Damage <= 0)
+			{
+				return false;
+			}
+		}
+		for (PlayerSetup& P : Out.Players)
+		{
+			if (!R.U8(P.StartRank) || P.StartRank > MaxRank)   // (o 0 o Init sobe pra 1)
+			{
+				return false;
+			}
+		}
+		// (simulação 20, 23/10) vender: a % (0..100) e a desmontagem (pelo menos 1 passo)
+		return ReadI32(R, E.SellPercent) && ReadI32(R, E.SellTicks) && E.SellPercent >= 0 && E.SellPercent <= 100 && E.SellTicks >= 1;
 	}
 
 	void ReplayWriter::Begin(const MatchSetup& Setup)

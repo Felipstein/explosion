@@ -175,6 +175,12 @@ dele que sai o Dozer. Depois a usina e o Supply Center, que já aparecem na part
 
 O prompt da folha de ideias do Centro de Comando está em `captures/concept/44_usa_buildings/PROMPTS.md`.
 
+**21/10: a usina vem primeiro** (pedido do Felipe, começando a paleta que falta da USA). É o prédio mais repetido
+da base (4 a 6 por partida), então define o desenho da base mais que qualquer outro. Folha de ideias com 4
+assinaturas (o reator com anéis, o anel de fusão deitado, a torre baixa com o ventilador gigante, o tambor com 4
+contêineres plugados) em `captures/concept/47_usa_power_plant/PROMPTS.md`. **Proibido na usina da USA:** a torre
+de resfriamento em ampulheta (é da China).
+
 ## 4. Como fazer uma construção nova
 
 1. **Folha de ideias (GPT):** 4 designs, cada um com **um elemento-assinatura

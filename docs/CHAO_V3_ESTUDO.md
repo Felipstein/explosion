@@ -894,3 +894,22 @@ Vale refazer na luz medida da receita (a sombra/sol de 8°) antes de fixar os al
   - **barro:** bem moldado (borda nítida, garra funda e limpa, mais escuro e úmido).
   - O tipo de chão já existe no mapa (o `surface.png` do WorldForge, que a poeira usa). O perfil (a largura, o fundo, a bordinha, a garra, o tempo de enchimento) vira uma tabela por tipo no jogo, e a cor e a rugosidade da faixa por tipo na MF. A graminha deitada pede o espalhamento (o capim) saber onde a trilha passou.
 
+## 12. O sulco por tipo de chão (16/10, o jogo; o pedido 4 de hoje cedo)
+
+**De onde vem:** por pixel, no relevo (`GroundRelief.usf`) e na garra da luz assada (`GroundSunLit.usf`). O tipo de chão é o `surface.png` do WorldForge: R asfalto, G terra batida, B pedra, A molhado; a areia é o resto. Só na v3; `rts.Ground.Surface 0` desliga pro A/B.
+
+| Chão | Sulco | Bordinha | Garra | O que diz a pesquisa |
+|---|---|---|---|---|
+| Areia | 1 | 1 | 1 | A trilha aprovada de 16/10. Areia seca afunda 9–19 cm pela pressão (conta com os parâmetros da UMD) e a parede desaba a 30–35°. |
+| Terra batida | 0,5 | 0,6 | 1,8 | A seca quase não afunda (Halvorson 1998, CRREL SR 98-8, em Yakima com o M1A2); o desenho da lagarta aparece. |
+| Barro (o molhado na areia e na terra) | × 1,7 | × 1,6 | × 1,3 | H98: no solo úmido, 2–15 cm, borda de 10–20 cm, "mostra o desenho"; a água fica parada no sulco (infiltra 190× mais devagar). |
+| Pedra | 0,06 | 0 | 0 | Prose 1985 e USGS 2000: quase não afunda; as pedrinhas quebram e a marca fica mais clara. |
+| Asfalto | 0 | 0 | 0 | O desfile de DC (2025) e o TECOM das sapatas T-142: não afunda; a borracha fica nas curvas e no giro no lugar. |
+
+**Os canais do relevo na v3** (o formato do Look, 16/10):
+- **R:** a altura (0,5 no asfalto).
+- **G:** a idade.
+- **B:** a borracha, em todo chão: 0,3 × a cobertura no reto, até 1 na curva e no pivô (raio ≤ 6 m), pela mesma curva do sulco. A MF lê com `UseRubber` = 1.
+- **A:** o revolvido, só na areia e na terra; a pedra metade, o asfalto 0. A areia trazida de fora pro asfalto fica pra depois.
+
+**A pesquisa inteira, com os links:** a da sessão do jogo de 16/10 (a tabela por chão, os jogos e as fontes) está resumida aqui; as principais são CRREL SR 98-8 (Halvorson 1998), Retta (Fort Riley), Meeks, Liu 2009, Prose 1985, USGS OF 2000-512, EPA AP-42 13.2.1 e Stripes (o desfile de 2025).

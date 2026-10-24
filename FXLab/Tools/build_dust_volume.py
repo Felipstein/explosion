@@ -29,6 +29,13 @@ OUT = argv[2] if len(argv) > 2 else os.path.join(ROOT, 'FXLab', 'Plugins', 'RTST
 atlas = json.load(open(ATLAS, encoding='utf-8'))
 frames = atlas['sim_frames']
 times = atlas['times_s']
+# DUSTVOL_FRAMES=all (22/10, v4): todos os quadros da simulação (30 por segundo) em vez dos 48 da folha, que ficam de 0,033 s
+# no começo a 0,2 s no fim; com eles a poeira andava aos pulos ("a poeira parece com um FPS diferente do jogo", o Felipe)
+if os.environ.get('DUSTVOL_FRAMES') == 'all':
+    frames = sorted(k for k in (int(f[3:-4]) for f in os.listdir(SRC) if f.startswith('cb_') and f.endswith('.vdb')) if k >= 1)
+    times = [round((k - 1) / 30.0, 6) for k in frames]
+# DUSTVOL_RHO2=1: grava a média de ρ² (o filtro certo de σ ∝ ρ²; o shader lê sem elevar, 'rho2' no cabeçalho)
+RHO2 = os.environ.get('DUSTVOL_RHO2') == '1'
 HALF = 2.4                     # m: o domínio em x e y vai de −2,4 a 2,4
 ZTOP = 2.4                     # m: o chão em 0; a nuvem vai até ~1,2 m na escala 1
 DX = float(os.environ.get('DUSTVOL_DX', '0.1'))   # m por voxel (0,1 = a média 2x2x2 da gravação; 0,05 = a gravação inteira)
@@ -62,7 +69,7 @@ def load(k):
     else:
         lost = 0.0
     f = int(round(DX / dxv))
-    coarse = fine.reshape(NX, f, NX, f, NZ, f).mean(axis=(1, 3, 5))
+    coarse = (fine * fine if RHO2 else fine).reshape(NX, f, NX, f, NZ, f).mean(axis=(1, 3, 5))
     return coarse, lost / max(float(fine.sum()), 1e-9)
 
 
@@ -91,6 +98,9 @@ header = {
     'density': 'EmberGen density (o cozimento: alpha = 1 - exp(-6 * sum(rho^2) * dx))',
     'zlib': int(tex.nbytes),
 }
+if RHO2:
+    header['rho2'] = 1
+    header['density'] = 'mean(rho^2) por voxel (sigma = 6 * valor * density, sem elevar)'
 hj = json.dumps(header).encode('utf-8')
 with open(OUT, 'wb') as f:
     f.write(b'RTSD')

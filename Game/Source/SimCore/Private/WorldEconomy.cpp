@@ -109,12 +109,17 @@ namespace Sim
 
 	bool World::HasPrerequisites(PlayerIndex P, uint16_t Def) const
 	{
+		// (v4, 22/10) a patente do general é a chave da tecnologia grande (o Tomahawk na 3): sem ela, nem fila nem obra
+		if (P < Players.size() && RulesData.Units[Def].RequiresRank > Players[P].Rank)
+		{
+			return false;
+		}
 		for (const uint16_t R : RulesData.Units[Def].Requires)
 		{
 			bool bFound = false;
 			for (int32_t I = 0; I < UnitCount() && !bFound; ++I)
 			{
-				bFound = U.Owner[I] == P && U.Def[I] == R && IsComplete(I) && U.Hp[I] > 0;
+				bFound = U.Owner[I] == P && U.Def[I] == R && IsComplete(I) && U.Hp[I] > 0 && !IsSelling(I);   // (v4) o vendido já saiu
 			}
 			if (!bFound)
 			{
@@ -122,6 +127,33 @@ namespace Sim
 			}
 		}
 		return true;
+	}
+
+	bool World::CanSell(PlayerIndex P, EntityId Structure) const
+	{
+		// (v4, 23/10) o BuildAssistant::sellObject do ZH: o prédio do jogador, pronto (a obra se cancela), vivo e ainda não vendido
+		const int32_t S = IndexOf(Structure);
+		return S >= 0 && P < Players.size() && !Players[P].bDefeated && U.Owner[S] == P && DefOf(S).IsStructure() && U.Hp[S] > 0
+			&& IsComplete(S) && !IsSelling(S);
+	}
+
+	int32_t World::SellRefund(EntityId Structure) const
+	{
+		// o SellPercentage do GameData.ini (50%) do custo do tipo (o calcCostToBuild do ZH, sem desconto nenhum aqui)
+		const int32_t S = IndexOf(Structure);
+		return S >= 0 && DefOf(S).IsStructure() ? int32_t(int64_t(DefOf(S).Cost) * RulesData.Economy.SellPercent / 100) : 0;
+	}
+
+	bool World::CanRepair(PlayerIndex P, EntityId Structure) const
+	{
+		// (v4) o ActionManager::canRepairObject do ZH: prédio que não é inimigo, vivo, pronto, avariado e sem estar sendo vendido
+		const int32_t S = IndexOf(Structure);
+		if (S < 0 || P >= Players.size() || Players[P].bDefeated)
+		{
+			return false;
+		}
+		const UnitDef& D = DefOf(S);
+		return D.IsStructure() && U.Hp[S] > 0 && U.Hp[S] < D.MaxHp && IsComplete(S) && !IsSelling(S) && !AreEnemies(P, U.Owner[S]);
 	}
 
 	// ---------------------------------------------------------------- o prédio na grade
@@ -334,6 +366,20 @@ namespace Sim
 			const bool bSeen = !bFogOfWar || (U.LookCell[I] >= 0 && Vision.IsVisible(Team, U.LookCell[I]));
 			return bSeen ? PlaceResult::Occupied : PlaceResult::NotVisible;
 		}
+		// (v4) o teto por jogador (a zona de lançamento: 2), fundações inclusive; antes do pré-requisito, pro fantasma dizer
+		// o motivo certo e o Build recusar igual
+		if (D.MaxPerPlayer > 0)
+		{
+			int32_t Owned = 0;
+			for (int32_t I = 0; I < UnitCount(); ++I)
+			{
+				Owned += U.Owner[I] == P && U.Def[I] == Def && U.Hp[I] > 0 ? 1 : 0;
+			}
+			if (Owned >= D.MaxPerPlayer)
+			{
+				return PlaceResult::LimitReached;
+			}
+		}
 		if (!HasPrerequisites(P, Def))
 		{
 			return PlaceResult::MissingPrereq;
@@ -460,6 +506,8 @@ namespace Sim
 		if (bComplete || D.BuildTicks <= 0)
 		{
 			SetFootprint(I, true);   // prédio de largada: pronto e no chão
+			// (v4) a zona de largada já conta o avião: o 1º pouso FirstTicks passos depois da montagem
+			U.IncomeLeft[I] = D.HasAirlift() ? D.AirliftFirstTicks : 0;
 		}
 		else
 		{
@@ -636,6 +684,14 @@ namespace Sim
 	{
 		U.BuildLeft[Index] = 0;
 		U.Builder[Index] = NoEntity;
+		// (v4) a zona de lançamento pronta liga o relógio do avião: a rota começa do zero (3 paletes) e o pátio vazio. O +1 é o
+		// passo de agora, que o UpdateAirlift (logo depois da obra) já desconta: o 1º pouso cai FirstTicks passos depois deste
+		if (DefOf(Index).HasAirlift())
+		{
+			U.IncomeLeft[Index] = DefOf(Index).AirliftFirstTicks + 1;
+			U.IncomeCount[Index] = 0;
+			U.UnloadLeft[Index] = 0;
+		}
 		const EntityId Id = U.Id[Index];
 		Events.push_back({ EventType::StructureCompleted, NoEntity, Id, U.Pos[Index], U.Owner[Index] });
 		const std::vector<uint16_t> Free = DefOf(Index).FreeUnits;
@@ -845,9 +901,9 @@ namespace Sim
 		int64_t BestD2 = 0;
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
-			if (U.Owner[I] != Owner || !DefOf(I).bSupplyCenter || !IsComplete(I) || U.Hp[I] <= 0)
+			if (U.Owner[I] != Owner || !DefOf(I).bSupplyCenter || !IsComplete(I) || U.Hp[I] <= 0 || IsSelling(I))
 			{
-				continue;
+				continue;   // (v4) o centro sendo vendido já não recebe
 			}
 			const int64_t D2 = DistSqRaw(From, U.Pos[I]);
 			if (Best < 0 || D2 < BestD2)
@@ -892,7 +948,7 @@ namespace Sim
 		};
 		const auto LeaveCurrentWork = [&](int32_t B)
 		{
-			if (U.Task[B] == UnitTask::Construct)
+			if (U.Task[B] == UnitTask::Construct || U.Task[B] == UnitTask::Repair)   // (v4) o conserto também
 			{
 				const int32_t Old = IndexOf(U.TaskTarget[B]);
 				if (Old >= 0 && U.Builder[Old] == U.Id[B])
@@ -907,7 +963,7 @@ namespace Sim
 		case CommandType::Produce:
 		{
 			const int32_t S = OwnStructure(C.Target);
-			if (S < 0 || !IsComplete(S) || C.Value < 0 || C.Value >= int32_t(RulesData.Units.size()))
+			if (S < 0 || !IsComplete(S) || IsSelling(S) || C.Value < 0 || C.Value >= int32_t(RulesData.Units.size()))
 			{
 				return;
 			}
@@ -1032,6 +1088,73 @@ namespace Sim
 			U.HasRally[S] = 1;
 			return;
 		}
+		case CommandType::Sell:
+		{
+			// (v4, 23/10) vender (o BuildAssistant::sellObject do ZH): o prédio desmonta em SellTicks passos (1,5 s de andaime, 3 s
+			// desmontando, 1,5 s de chão) e só no fim volta SellPercent do custo (destruído antes, nada volta). Já no começo ele sai
+			// de tudo, como o OBJECT_STATUS_SOLD: a fila volta inteira (o cancelAndRefundAllProduction), a energia para de contar, a
+			// defesa para de atirar, os poderes e o pré-requisito não valem mais, o centro não recebe caixa e o Dozer que o
+			// consertava larga (UpdateRepair). As caixas no pátio da zona de lançamento ficam no chão quando ela sai (RemoveDead)
+			const int32_t S = OwnStructure(C.Target);
+			if (S < 0 || !CanSell(C.Player, C.Target))
+			{
+				return;
+			}
+			for (const uint16_t K : U.Queue[S])
+			{
+				P.Money += RulesData.Units[K].Cost;
+			}
+			U.Queue[S].clear();
+			U.QueueLeft[S] = 0;
+			U.SellLeft[S] = std::max(1, E.SellTicks);
+			U.Order[S] = OrderType::Idle;
+			U.OrderTarget[S] = NoEntity;
+			U.FireTarget[S] = NoEntity;
+			Events.push_back({ EventType::StructureSelling, NoEntity, C.Target, U.Pos[S], U.SellLeft[S] });
+			return;
+		}
+		case CommandType::Repair:
+		{
+			// (v4, 23/10) consertar (o DozerAIUpdate do ZH): o Dozer do grupo mais perto do prédio vai até ele e conserta (o prédio
+			// dele ou do aliado: o canRepairObject). Um Dozer por prédio (o canAcceptNewRepair e o "sole benefactor" do ZH): com
+			// outro já indo ou consertando, a ordem não vale; o mesmo Dozer de novo, nada muda
+			const int32_t S = IndexOf(C.Target);
+			if (S < 0 || !CanRepair(C.Player, C.Target))
+			{
+				return;
+			}
+			for (int32_t I = 0; I < UnitCount(); ++I)
+			{
+				if (U.Task[I] == UnitTask::Repair && U.TaskTarget[I] == C.Target)
+				{
+					return;
+				}
+			}
+			int32_t B = -1;
+			int64_t BestD2 = 0;
+			for (const int32_t I : Members)
+			{
+				const int64_t D2 = DistSqRaw(U.Pos[I], U.Pos[S]);
+				if (DefOf(I).CanRepair() && (B < 0 || D2 < BestD2 || (D2 == BestD2 && U.Id[I] < U.Id[B])))
+				{
+					B = I;
+					BestD2 = D2;
+				}
+			}
+			if (B < 0)
+			{
+				return;
+			}
+			LeaveCurrentWork(B);
+			U.Task[B] = UnitTask::Repair;
+			U.TaskTarget[B] = C.Target;
+			U.TaskTimer[B] = 0;
+			U.RepairAcc[B] = 0;
+			U.Order[B] = OrderType::Idle;   // a ordem de andar de antes acaba aqui (o conserto anda sozinho até o prédio)
+			U.Path[B].clear();
+			U.NeedsPath[B] = 0;
+			return;
+		}
 		case CommandType::Gather:
 		{
 			if (C.Value < 0 || C.Value >= int32_t(Docks.size()) || Docks[size_t(C.Value)].Boxes <= 0)
@@ -1066,6 +1189,59 @@ namespace Sim
 
 	// ---------------------------------------------------------------- sistemas
 
+	void World::UpdateAirlift()
+	{
+		// (v4, 22/10) a zona de lançamento (o Supply Drop Zone do ZH, com a rota que amadurece): o avião de carga pousa
+		// paletes no pátio (o Cargo da zona) e a empilhadeira leva um palete por vez pro banco. O pouso n (os que a zona já
+		// recebeu) traz min(PalletsMin + n, PalletsMax) paletes; o aviso AirliftInbound vem LeadTicks antes (o avião aparece).
+		// Sem energia, o relógio para acima do aviso e a empilhadeira para; o avião já anunciado está no ar e pousa igual.
+		// A zona que cai com caixas no pátio solta a pilha no RemoveDead (a carga que cai, como o caminhão)
+		const int32_t BoxValue = RulesData.Economy.BoxValue;
+		const int32_t N = UnitCount();
+		for (int32_t I = 0; I < N; ++I)
+		{
+			const UnitDef& D = DefOf(I);
+			if (!D.HasAirlift() || !IsComplete(I) || U.Hp[I] <= 0)
+			{
+				continue;
+			}
+			PlayerState& Owner = Players[U.Owner[I]];
+			// (v4, 23/10) sendo vendida, para como sem energia (o avião já anunciado pousa; as caixas do pátio ficam no chão)
+			const bool bPowered = !(D.bNeedsPower && Owner.IsLowPower()) && !IsSelling(I);
+			// a empilhadeira antes do avião: o palete que pousa agora espera UnloadTicks inteiros (um a cada UnloadTicks, exato)
+			if (U.Cargo[I] > 0 && bPowered && --U.UnloadLeft[I] <= 0)
+			{
+				const int32_t Boxes = std::min(std::max(D.AirliftBoxesPerPallet, 1), U.Cargo[I]);
+				U.Cargo[I] -= Boxes;
+				Owner.Money += Boxes * BoxValue;
+				// o mesmo "+$" do caminhão, com a zona de origem e de destino
+				Events.push_back({ EventType::SupplyDelivered, U.Id[I], U.Id[I], U.Pos[I], Boxes * BoxValue });
+				U.UnloadLeft[I] = U.Cargo[I] > 0 ? D.AirliftUnloadTicks : 0;
+			}
+			const int32_t Pallets = std::min(D.AirliftPalletsMin + U.IncomeCount[I], D.AirliftPalletsMax);
+			if (bPowered || U.IncomeLeft[I] <= D.AirliftLeadTicks)
+			{
+				--U.IncomeLeft[I];
+			}
+			if (U.IncomeLeft[I] == D.AirliftLeadTicks && D.AirliftLeadTicks > 0)
+			{
+				Events.push_back({ EventType::AirliftInbound, U.Id[I], NoEntity, U.Pos[I], Pallets });
+			}
+			if (U.IncomeLeft[I] <= 0)
+			{
+				const int32_t Boxes = Pallets * D.AirliftBoxesPerPallet;
+				U.Cargo[I] += Boxes;
+				++U.IncomeCount[I];
+				Events.push_back({ EventType::AirliftLanded, U.Id[I], NoEntity, U.Pos[I], Boxes });
+				U.IncomeLeft[I] = D.AirliftPeriodTicks;
+				if (U.UnloadLeft[I] <= 0)
+				{
+					U.UnloadLeft[I] = D.AirliftUnloadTicks;
+				}
+			}
+		}
+	}
+
 	void World::UpdatePower()
 	{
 		for (PlayerState& P : Players)
@@ -1076,9 +1252,9 @@ namespace Sim
 		for (int32_t I = 0; I < UnitCount(); ++I)
 		{
 			const UnitDef& D = DefOf(I);
-			if (!D.IsStructure() || !IsComplete(I) || D.Energy == 0 || U.Hp[I] <= 0)
+			if (!D.IsStructure() || !IsComplete(I) || D.Energy == 0 || U.Hp[I] <= 0 || IsSelling(I))
 			{
-				continue;   // a obra não gera nem gasta (ZH Player.cpp)
+				continue;   // a obra não gera nem gasta (ZH Player.cpp); (v4) nem o prédio sendo desmontado
 			}
 			PlayerState& P = Players[U.Owner[I]];
 			if (D.Energy > 0)
@@ -1189,7 +1365,7 @@ namespace Sim
 		const int32_t N = UnitCount();
 		for (int32_t S = 0; S < N; ++S)
 		{
-			if (U.Queue[S].empty() || !DefOf(S).IsStructure() || !IsComplete(S) || U.Hp[S] <= 0)
+			if (U.Queue[S].empty() || !DefOf(S).IsStructure() || !IsComplete(S) || U.Hp[S] <= 0 || IsSelling(S))
 			{
 				continue;
 			}
@@ -1412,9 +1588,9 @@ namespace Sim
 			case UnitTask::ToCenter:
 			{
 				const int32_t Center = IndexOf(U.TaskTarget[I]);
-				if (Center < 0 || !IsComplete(Center) || U.Hp[Center] <= 0 || U.Owner[Center] != U.Owner[I])
+				if (Center < 0 || !IsComplete(Center) || U.Hp[Center] <= 0 || U.Owner[Center] != U.Owner[I] || IsSelling(Center))
 				{
-					GoDeliver();   // o centro caiu: o mais perto que sobrou
+					GoDeliver();   // o centro caiu (ou está sendo vendido): o mais perto que sobrou
 					break;
 				}
 				if (Arrived())
@@ -1444,8 +1620,107 @@ namespace Sim
 				break;
 			}
 			case UnitTask::Construct:
+			case UnitTask::Repair:
 				break;
 			}
+		}
+	}
+
+	// ---------------------------------------------------------------- (v4, 23/10) consertar e vender
+
+	void World::UpdateRepair()
+	{
+		// o DozerAIUpdate do ZH: o Dozer vai até o prédio (o mesmo alcance da obra) e, parado do lado, devolve a vida a
+		// RepairMilliPctPerS da vida cheia por segundo (2%: a CC de 5 000 PV, 100 por segundo; do zero a cheio em 50 s), de graça
+		// (o ZH não cobra o conserto). Acaba com a vida cheia (o "DOZER:RepairComplete"), o prédio caído, vendido ou de inimigo
+		const int32_t N = UnitCount();
+		for (int32_t I = 0; I < N; ++I)
+		{
+			if (U.Task[I] != UnitTask::Repair)
+			{
+				continue;
+			}
+			const int32_t S = IndexOf(U.TaskTarget[I]);
+			const auto Stop = [&]()
+			{
+				if (S >= 0 && U.Builder[S] == U.Id[I])
+				{
+					U.Builder[S] = NoEntity;
+				}
+				U.Task[I] = UnitTask::None;
+				U.TaskTarget[I] = NoEntity;
+				U.RepairAcc[I] = 0;
+			};
+			if (S < 0 || !DefOf(I).CanRepair() || !DefOf(S).IsStructure() || U.Hp[S] <= 0 || !IsComplete(S) || IsSelling(S)
+				|| AreEnemies(U.Owner[I], U.Owner[S]) || U.Hp[S] >= DefOf(S).MaxHp)
+			{
+				Stop();
+				continue;
+			}
+			// um Dozer por prédio (o attemptHealingFromSoleBenefactor do ZH): o que já conserta fica; o outro desiste
+			const int32_t Current = IndexOf(U.Builder[S]);
+			if (Current >= 0 && Current != I && U.Task[Current] == UnitTask::Repair && U.TaskTarget[Current] == U.Id[S])
+			{
+				U.Task[I] = UnitTask::None;
+				U.TaskTarget[I] = NoEntity;
+				U.RepairAcc[I] = 0;
+				continue;
+			}
+			Fix HX;
+			Fix HY;
+			HalfExtents(U.Def[S], DirOf(S), HX, HY);
+			// o alcance da obra (o raio + 2 células) e o mesmo jeito de chegar (o caminho termina na célula livre mais perto)
+			const Fix Reach = DefOf(I).Radius + MapData.CellSize * 2;
+			if (RectDistance(U.Pos[I], U.Pos[S], HX, HY) > Reach)
+			{
+				const bool bGoing = U.Order[I] == OrderType::Move && U.OrderPoint[I] == U.Pos[S];
+				if (!bGoing)
+				{
+					if (U.TaskTimer[I] > 0)
+					{
+						--U.TaskTimer[I];
+					}
+					else
+					{
+						GiveMove(I, U.Pos[S], OrderType::Move);
+						U.TaskTimer[I] = RetryTicks;
+					}
+				}
+				continue;
+			}
+			if (U.Order[I] != OrderType::Idle)
+			{
+				U.Order[I] = OrderType::Idle;
+				U.Path[I].clear();
+				U.NeedsPath[I] = 0;
+			}
+			U.Builder[S] = U.Id[I];
+			// a vida, na conta exata: o resto do passo fica no RepairAcc (1 ponto de vida = 100 000 × 30 nesta escala)
+			const UnitDef& SD = DefOf(S);
+			constexpr int64_t Den = int64_t(100000) * TicksPerSecond;
+			const int64_t Acc = int64_t(U.RepairAcc[I]) + int64_t(SD.MaxHp) * DefOf(I).RepairMilliPctPerS;
+			U.RepairAcc[I] = int32_t(Acc % Den);
+			U.Hp[S] = int32_t(std::min<int64_t>(SD.MaxHp, int64_t(U.Hp[S]) + Acc / Den));
+			if (U.Hp[S] >= SD.MaxHp)
+			{
+				Stop();
+			}
+		}
+	}
+
+	void World::UpdateSell()
+	{
+		// a desmontagem anda; no fim o dinheiro volta pro dono e o prédio sai sem explodir (o StructureSold do ResolveDamage e o
+		// RemoveDead deste passo: a grade abre, as caixas do pátio da zona ficam no chão como a carga que cai)
+		for (int32_t I = 0; I < UnitCount(); ++I)
+		{
+			if (U.SellLeft[I] <= 0 || U.Hp[I] <= 0 || --U.SellLeft[I] > 0)
+			{
+				continue;
+			}
+			Players[U.Owner[I]].Money += SellRefund(U.Id[I]);
+			U.SellLeft[I] = -1;
+			U.Hp[I] = 0;
 		}
 	}
 }

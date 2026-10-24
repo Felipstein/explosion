@@ -1,0 +1,67 @@
+// A sombra do rastro do míssil no mapa do sol (23/10; o Felipe: "as fumaças do Tomahawk, do Patriot e do carrinho não projetam
+// sombras bonitas e reais"). O sistema único de docs/ESTUDO_LUZ_NA_FUMACA.md (a fase 2b, o mapa composto): o mapa visto de cima
+// que a light function do sol (M_SmokeShadowLF) lê ganha, somada à espessura óptica das explosões e da poeira (MainShadowMap, no
+// mapa de passagem de 256²), a coluna analítica de cada puff do rastro até o sol. A LF tira e^−τ só do sol direto: no chão, nas
+// unidades e nos prédios, sem escurecer de novo o que já está na sombra.
+//
+// A conta: a integral de uma gaussiana 3D numa reta é uma gaussiana 2D com o mesmo σ (a pegada do splatting EWA; Zwicker,
+// Pfister, van Baar e Gross 2001). Pro texel p do plano, com u = p − c (c = onde o raio do sol pelo centro do puff corta o plano)
+// e l = L.xy, a distância do raio ao centro é d² = |u|² − (u·l)²: a elipse esticada 1/sen E no rumo do sol, exata por texel,
+// sem quadrado. O contorno visível (Roberts 1923) é o do material do rastro (a v7f: o corte pelo perfil de través), com o
+// corte calculado na linha de visada do sol. A parte do puff acima do chão local é Φ(ao longo/σ), pela logística de Bowling
+// et al. (2009, erro máximo 1,4e−4). Os puffs vêm agrupados na CPU por ladrilho de 8 × 8 texels (como as luzes do forward+:
+// Harada et al. 2012; Andersson 2011): um grupo por ladrilho, todos os fios lendo o mesmo puff.
+
+#include "/Engine/Public/Platform.ush"
+
+Texture2D VolTau;                   // as explosões e a poeira (o mapa de passagem, a mesma janela)
+SamplerState VolSampler;
+float VolOn;                        // 0 = só o rastro (sem explosão nem poeira neste quadro)
+RWTexture2D<float> OutTau;          // o mapa que a light function lê
+StructuredBuffer<float4> Puffs;     // 3 por puff: (c.xy, t0 até o chão local, 1/σ ou 0), (1/2σe², pico, corte, 0), (b.xy, 0, 0)
+StructuredBuffer<uint> TileStart;   // o começo da lista de cada ladrilho (e o fim no último)
+StructuredBuffer<uint> TileItems;   // os puffs de cada ladrilho
+float2 SunXY;                       // a direção pro sol no plano (L.xy, não unitária: |L.xy| = cos E)
+float TexelM;                       // o texel do mapa final (m)
+float InvWindowM;                   // 1 / o lado da janela (m): o uv do mapa de passagem
+uint2 OutSize;
+uint TilesX;
+
+[numthreads(8, 8, 1)]
+void MainTrailShadow(uint3 Grp : SV_GroupID, uint3 Thr : SV_GroupThreadID)
+{
+	const uint2 Id = Grp.xy * 8 + Thr.xy;
+	const float2 Pm = (float2(Id) + 0.5) * TexelM;
+	float Tau = 0.0;
+	if (VolOn > 0.5)
+	{
+		Tau = VolTau.SampleLevel(VolSampler, Pm * InvWindowM, 0).r;
+	}
+	const uint Tile = Grp.y * TilesX + Grp.x;
+	const uint Last = TileStart[Tile + 1];
+	for (uint K = TileStart[Tile]; K < Last; K++)
+	{
+		const uint Idx = TileItems[K] * 3;
+		const float4 Ca = Puffs[Idx];
+		const float4 Cb = Puffs[Idx + 1];
+		const float4 Cc = Puffs[Idx + 2];
+		const float2 U = Pm - Ca.xy;
+		const float Ul = dot(U, SunXY);
+		// a distância ao raio do sol pelo centro (²) e a de través ao rastro (sem o componente ao longo do rumo dele, b ⊥ L)
+		const float D2 = max(dot(U, U) - Ul * Ul, 0.0);
+		const float Ub = dot(U, Cc.xy);
+		const float Prof = exp(-Cb.x * D2);
+		const float ProfP = exp(-Cb.x * max(D2 - Ub * Ub, 0.0));
+		// o contorno do material (build_content.py SMOKE_HLSL, a v7f): τ0 · perfil · (1 − corte/perfil de través), com a rampa
+		const float Ce = Cb.z;
+		const float Shape = saturate(1.0 - Ce / max(ProfP, 1e-3)) * saturate((ProfP - Ce) / max(0.5 * Ce, 0.02));
+		// a parte do puff acima do chão local, ao longo do raio (Φ pela logística; 1/σ = 0: o puff inteiro acima)
+		const float X = clamp((Ca.z - Ul) * Ca.w, -8.0, 8.0);   // Φ(±8) já é 0 e 1: sem infinito no exp
+		const float Above = Ca.w > 0.0 ? 1.0 / (1.0 + exp(-(0.07056 * X * X + 1.5976) * X)) : 1.0;
+		Tau += Cb.y * Prof * Shape * Above;
+	}
+	if (all(Id < OutSize))
+	{
+		OutTau[Id] = Tau;
+	}
+}

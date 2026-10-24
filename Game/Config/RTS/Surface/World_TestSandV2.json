@@ -1,0 +1,9 @@
+{
+ "min_m": [-512.0, -512.0],
+ "size_m": 1024.0,
+ "cell_m": 1.00,
+ "res": 1024,
+ "row0": "min_y",
+ "channels": {"r": "asphalt", "g": "dirt", "b": "rock", "a": "wet"},
+ "about": "WorldForge layer weights 0..255 per pixel (Landscape painting weights: asphalt = paved road incl. broken edge and holes; dirt = dirt roads, shoulders, trodden village ground, damp oasis earth and salt-flat rims; rock = cliffs and banks; wet = 255 under water, the wet band up to ~1.2 m above the water within 8 m of the shore and the damp oasis earth, 0 dry). Pixel (i, j) center = min_m + ((i + 0.5), (j + 0.5)) * cell_m, row 0 at min y."
+}

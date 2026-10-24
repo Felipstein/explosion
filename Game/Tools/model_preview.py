@@ -60,6 +60,29 @@ MODELS = {
         'usa_at': (0, 6.0, 0),
         'game': [('game_cam', 37.5, 35.0, 50.0, 0.8), ('game_cam_close', 37.5, 35.0, 28.0, 0.75)],
     },
+    # o Tomahawk (o chassi do caminhão com os 2 tubos deitados, Game/Tools/model_tomahawk.py)
+    'usa_tomahawk': {
+        'parts': [('SM_USA_Tomahawk_Hull', (0, 0, 0)), ('SM_USA_Tomahawk_Wheels', (0, 0, 0)),
+                  ('SM_USA_Tomahawk_Turret', (0, 0, 0)), ('SM_USA_Tomahawk_Pod', (0, 0, 0))],
+        'views': [('front', 'ortho', (-1, 0, 0), (0, 0, 1), (900, 900)),
+                  ('back', 'ortho', (1, 0, 0), (0, 0, 1), (900, 900)),
+                  ('left', 'ortho', (0, -1, 0), (0, 0, 1), (1800, 820)),
+                  ('top', 'ortho', (0, 0, -1), (0, -1, 0), (1800, 1000)),
+                  ('three_quarter', 'persp', 27.0, 232.0, (1600, 1000), 30.0, 0.95),
+                  ('three_quarter_right', 'persp', 30.0, 40.0, (1600, 900), 35.0, 0.95)],
+        'usa_at': (0, 6.0, 0),
+        'game': [('game_cam', 37.5, 35.0, 50.0, 0.8), ('game_cam_close', 37.5, 35.0, 28.0, 0.75)],
+    },
+    # ... e com o lançador levantado 45° (a pose de tiro: pose/ não vai pro jogo)
+    'usa_tomahawk_fire': {
+        'parts': [('SM_USA_Tomahawk_Hull', (0, 0, 0)), ('SM_USA_Tomahawk_Wheels', (0, 0, 0)),
+                  ('captures/game/models/usa_tomahawk/pose/SM_USA_Tomahawk_Launcher_Fire', (0, 0, 0))],
+        'views': [('fire_left', 'ortho', (0, -1, 0), (0, 0, 1), (1800, 1000)),
+                  ('fire_three_quarter', 'persp', 27.0, 232.0, (1600, 1000), 30.0, 0.95),
+                  ('fire_three_quarter_right', 'persp', 30.0, 40.0, (1600, 1000), 35.0, 0.95)],
+        'usa_at': (0, 6.0, 0),
+        'game': [('fire_game_cam', 37.5, 35.0, 50.0, 0.8), ('fire_game_cam_close', 37.5, 35.0, 28.0, 0.75)],
+    },
     'usa_patriot': {
         'parts': [('SM_USA_Patriot_Base', (0, 0, 0)), ('SM_USA_Patriot_Turret', (0, 0, 0)), ('SM_USA_Patriot_Dish', (-2.35, 2.35, 4.4))],
         'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1200, 1200)),
@@ -91,6 +114,64 @@ MODELS = {
                   ('low', 'persp', 16.0, 200.0, (1600, 900), 35.0, 0.95)],
         'usa_at': (0, 0.0, 0),
         'game': [('game_cam', 37.5, 200.0, 50.0, 0.85), ('game_cam_close', 37.5, 200.0, 30.0, 0.8)],
+    },
+    'usa_strategy_center': {
+        'parts': [('SM_USA_StrategyCenter_Base', (0, 0, 0)), ('SM_USA_StrategyCenter_Dish', (0.0, 0.0, 5.8))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1300, 1300)),
+                  ('front', 'ortho', (-1, 0, 0), (0, 0, 1), (1400, 900)),
+                  ('side', 'ortho', (0, 1, 0), (0, 0, 1), (1400, 900)),
+                  ('three_quarter', 'persp', 34.0, 215.0, (1600, 1000), 30.0, 0.95),
+                  ('back_three_quarter', 'persp', 32.0, 35.0, (1600, 1000), 30.0, 0.95)],
+        'usa_at': (2.0, 13.8, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85), ('game_cam_close', 37.5, 200.0, 30.0, 0.8)],
+        'scaffold': 'SM_USA_StrategyCenter_Scaffold',
+    },
+    'usa_drop_zone': {
+        'parts': [('SM_USA_DropZone_Base', (0, 0, 0)), ('SM_USA_DropZone_Radar', (-6.3, 6.3, 6.4))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1300, 1300)),
+                  ('front', 'ortho', (-1, 0, 0), (0, 0, 1), (1400, 800)),
+                  ('three_quarter', 'persp', 34.0, 215.0, (1600, 1000), 30.0, 0.95),
+                  ('back_three_quarter', 'persp', 32.0, 35.0, (1600, 1000), 30.0, 0.95)],
+        'usa_at': (0.0, 11.5, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85), ('game_cam_close', 37.5, 200.0, 30.0, 0.8)],
+        'scaffold': 'SM_USA_DropZone_Scaffold',
+    },
+    # o lançamento na câmera do jogo: 2 caixas já no X, 1 caindo de paraquedas (as peças do supply_drop)
+    'usa_drop_zone_drop': {
+        'parts': [('SM_USA_DropZone_Base', (0, 0, 0)), ('SM_USA_DropZone_Radar', (-6.3, 6.3, 6.4)),
+                  ('captures/game/models/supply_drop/SM_SupplyDrop_Crate', (0.6, 0.4, 0.18)),
+                  ('captures/game/models/supply_drop/SM_SupplyDrop_Crate', (-0.9, -0.7, 0.18)),
+                  ('captures/game/models/supply_drop/SM_SupplyDrop_Crate', (1.2, -1.5, 9.0)),
+                  ('captures/game/models/supply_drop/SM_SupplyDrop_Canopy', (1.2, -1.5, 9.0))],
+        'views': [],
+        'usa_at': (0.0, 11.5, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85)],
+    },
+    'supply_drop': {
+        'parts': [('SM_SupplyDrop_Crate', (0, 0, 0)), ('SM_SupplyDrop_Canopy', (0, 0, 0))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1000, 1000)),
+                  ('front', 'ortho', (-1, 0, 0), (0, 0, 1), (900, 1100)),
+                  ('three_quarter', 'persp', 30.0, 215.0, (1200, 1200), 35.0, 0.95)],
+        'usa_at': (0.0, 5.5, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.8)],
+    },
+    'supply_drop_crate': {
+        'parts': [('SM_SupplyDrop_Crate', (0, 0, 0))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (900, 900)),
+                  ('three_quarter', 'persp', 30.0, 215.0, (1200, 900), 35.0, 0.9),
+                  ('three_quarter_right', 'persp', 30.0, 145.0, (1200, 900), 35.0, 0.9)],
+        'usa_at': (0.0, 3.5, 0),
+        'game': [('game_cam_close', 37.5, 200.0, 28.0, 0.75)],
+    },
+    'cargo_plane': {
+        'parts': [('SM_USA_CargoPlane', (0, 0, 8.0))],
+        'views': [('top', 'ortho', (0, 0, -1), (-1, 0, 0), (1400, 1100)),
+                  ('front', 'ortho', (-1, 0, 0), (0, 0, 1), (1600, 600)),
+                  ('side', 'ortho', (0, 1, 0), (0, 0, 1), (1600, 600)),
+                  ('three_quarter', 'persp', 30.0, 215.0, (1600, 1000), 35.0, 0.95),
+                  ('back_three_quarter', 'persp', 25.0, 35.0, (1600, 1000), 35.0, 0.95)],
+        'usa_at': (0.0, 0.0, 0),
+        'game': [('game_cam', 37.5, 200.0, 50.0, 0.85)],
     },
     'gla_war_factory': {
         'parts': [('gla_war_factory', (0, 0, 0))],
@@ -236,6 +317,9 @@ def ground(bg, sun):
 
 spec = MODELS[MODEL]
 cam, sun, bg = scene_setup()
+# o cubo da cena de fábrica (--factory-startup) sai: aparecia como um pedestal branco embaixo dos veículos nas 3/4
+if 'Cube' in bpy.data.objects:
+    bpy.data.objects.remove(bpy.data.objects['Cube'], do_unlink=True)
 objs = []
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 for name, at in spec['parts']:

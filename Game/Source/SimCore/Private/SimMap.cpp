@@ -12,6 +12,8 @@ namespace Sim
 		Origin = InOrigin;
 		Pass.assign(size_t(Width) * size_t(Height), uint8_t(CellPass::Open));
 		Clearance.assign(Pass.size(), 0);
+		CrushClearance.assign(Pass.size(), 0);
+		ToppleClearance.assign(Pass.size(), 0);
 		MinDm.clear();
 		MaxDm.clear();
 		Water.clear();
@@ -21,19 +23,32 @@ namespace Sim
 
 	void SimMap::ComputeClearance()
 	{
+		ComputeClearanceInto(Clearance, 0);
+		ComputeClearanceInto(CrushClearance, 1);
+		ComputeClearanceInto(ToppleClearance, 2);
+	}
+
+	void SimMap::ComputeClearanceInto(std::vector<uint8_t>& Into, int32_t Mode) const
+	{
 		// Transformada de distância em duas passadas (métrica do xadrez): bloqueio = 0,
-		// e fora do mapa conta como bloqueio (a borda fica com folga 1).
+		// e fora do mapa conta como bloqueio (a borda fica com folga 1). Quem esmaga passa na célula esmagável e na da árvore;
+		// (v4) quem derruba pelo choque, só na da árvore
 		constexpr int32_t Far = 255;
-		Clearance.assign(Pass.size(), 0);
-		auto At = [this](int32_t X, int32_t Y) -> int32_t
+		Into.assign(Pass.size(), 0);
+		auto At = [this, &Into](int32_t X, int32_t Y) -> int32_t
 		{
-			return InBounds(X, Y) ? int32_t(Clearance[Index(X, Y)]) : 0;
+			return InBounds(X, Y) ? int32_t(Into[Index(X, Y)]) : 0;
+		};
+		auto Closed = [this, Mode](int32_t X, int32_t Y)
+		{
+			const CellPass P = CellPass(Pass[Index(X, Y)]);
+			return !(P == CellPass::Open || (Mode == 1 && (P == CellPass::Crushable || P == CellPass::Toppleable)) || (Mode == 2 && P == CellPass::Toppleable));
 		};
 		for (int32_t Y = 0; Y < Height; ++Y)
 		{
 			for (int32_t X = 0; X < Width; ++X)
 			{
-				if (CellPass(Pass[Index(X, Y)]) != CellPass::Open)
+				if (Closed(X, Y))
 				{
 					continue;
 				}
@@ -42,23 +57,23 @@ namespace Sim
 				D = D < At(X, Y - 1) + 1 ? D : At(X, Y - 1) + 1;
 				D = D < At(X + 1, Y - 1) + 1 ? D : At(X + 1, Y - 1) + 1;
 				D = D < At(X - 1, Y) + 1 ? D : At(X - 1, Y) + 1;
-				Clearance[Index(X, Y)] = uint8_t(D);
+				Into[Index(X, Y)] = uint8_t(D);
 			}
 		}
 		for (int32_t Y = Height - 1; Y >= 0; --Y)
 		{
 			for (int32_t X = Width - 1; X >= 0; --X)
 			{
-				if (CellPass(Pass[Index(X, Y)]) != CellPass::Open)
+				if (Closed(X, Y))
 				{
 					continue;
 				}
-				int32_t D = Clearance[Index(X, Y)];
+				int32_t D = Into[Index(X, Y)];
 				D = D < At(X + 1, Y + 1) + 1 ? D : At(X + 1, Y + 1) + 1;
 				D = D < At(X, Y + 1) + 1 ? D : At(X, Y + 1) + 1;
 				D = D < At(X - 1, Y + 1) + 1 ? D : At(X - 1, Y + 1) + 1;
 				D = D < At(X + 1, Y) + 1 ? D : At(X + 1, Y) + 1;
-				Clearance[Index(X, Y)] = uint8_t(D);
+				Into[Index(X, Y)] = uint8_t(D);
 			}
 		}
 	}

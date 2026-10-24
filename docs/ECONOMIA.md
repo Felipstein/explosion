@@ -472,3 +472,16 @@ Também decidido pelo que ele já tinha dito:
 - o teste automático da partida com base (`game.ps1 view -Folder x`, o padrão agora é `-Script base`).
 
 **Falta:** os depósitos virem do WorldForge; a arte final dos prédios; o painel de verdade (a arte do HUD).
+
+## Parte 6. Vender e consertar (v4, 23/10 à noite, simulação 20; sem o teste do Felipe)
+
+**Vender** (o `BuildAssistant::sellObject` do ZH, lido no fonte do TheSuperHackers; o `SellPercentage = 50%` do GameData.ini):
+- o botão Sell em todo prédio pronto do jogador (a casa do Cancelar da obra; a zona de lançamento só tem ele, sem ponto de encontro: não produz). Sem confirmação, como no ZH;
+- o comando `Sell` (lockstep, no replay): a fila volta inteira na hora (o `cancelAndRefundAllProduction`), e o prédio já sai de tudo (o `OBJECT_STATUS_SOLD`): a energia para de contar, a defesa para de atirar, os poderes e o pré-requisito não valem mais, o centro não recebe caixa, o Dozer que o consertava larga, e ele sai da seleção (o `UNSELECTABLE`);
+- desmonta em 6 s (o ZH: 1,5 s de andaime, 3 s do 100% ao 0%, 1,5 s até −50%): o desenho é a obra ao contrário (o andaime, o corte descendo com a solda, a laje). No fim, 50% do custo volta e ele some sem explodir, com o "+$"; destruído no meio, nada volta;
+- as caixas no pátio da zona vendida ficam no chão (a carga que cai).
+
+**O conserto do Dozer** (o `DozerAIUpdate` do ZH: `RepairHealthPercentPerSecond = 2%`; o `ActionManager::canRepairObject`):
+- o Dozer selecionado sobre um prédio avariado (dele ou do aliado, pronto, sem estar sendo vendido): o cursor vira a chave (a do kit, recortada da placa); o clique manda o comando `Repair`;
+- o Dozer mais perto do grupo vai até o prédio (o mesmo alcance da obra) e devolve 2% da vida cheia por segundo, de graça (o ZH não cobra), até encher; um Dozer por prédio (o `canAcceptNewRepair`); a ordem de andar, atacar ou parar larga o conserto;
+- o conserto sozinho do ZH (o Dozer à toa 5 s procura prédio avariado a 150 u) ficou de fora: mexeria nos Dozers da IA.
