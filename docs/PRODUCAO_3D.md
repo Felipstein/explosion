@@ -154,7 +154,11 @@ Abre com:
 - a grade de 4 m no chão (as linhas são a grade da simulação);
 - o tanque USA (7,9 m) e um humano de 1,8 m pra escala;
 - a câmera do jogo (37,5°, campo de 50°, 61,1 m de altura; Numpad 0) e a de zoom perto (31,6 m);
-- o sol do deserto do jogo (20° de altura);
+- o sol dos game shots (20° de altura, contraluz de três-quartos: as sombras caem pra baixo e pra esquerda
+  da tela) e o céu de poeira do deserto, calibrados (24/10) pela foto aprovada do jogo
+  (`docs/aprovados/look/2026-10-17_ceu_uma_luz.jpg`): a areia no sol e na sombra bate em tom com a do
+  jogo. O céu segue a luz `Sol`: gire só o Y (altura) e o Z (direção) dela;
+- o chão de areia de duna do jogo (a receita v2 "duna", texturas em `captures/art3d/textures/`);
 - uma caixa de planta 8 × 8 × 4 m pro primeiro modelo;
 - a coleção `Modelo`, vazia: é onde vai o que você modela (a `Referencia` não se exporta).
 
@@ -179,3 +183,30 @@ Medidas: **planta 8 × 8 m** (2 × 2 quadrados), **~4 m de altura** (esconde 5,2
 Escombro (`_Rubble`): paredes quebradas de 0,5 a 1,5 m e monte de blocos.
 Depois, pelo mesmo caminho: a casa de dois andares, a de varanda com toldo de madeira e o
 muro de quintal com portão.
+
+## 11. O primeiro veículo: a Technical do GLA (24–25/10)
+
+Pra aprender veículo no Blender: quase tudo é caixa e cilindro, e a beleza vem do material.
+- **O modelo (escolha dele, 24/10):** a picape 1 da folha das 48 (`captures/concept/picapes_gla_todas.jpg`),
+  a do ataque à base: cabine simples dos anos 90, caçamba comprida, quebra-mato, arco atrás da cabine,
+  metralhadora no pedestal e bandeira. Só o formato; a cor vem da paleta do tanque GLA aprovado
+  (`docs/concept/units/gla_mbt_sheet.webp`), num segundo passo.
+- **A ficha (aprovada 25/10, "por mim tá tudo certo"):** `docs/concept/units/gla_technical_sheet.webp`, feita
+  no Gemini pelo prompt `captures/concept/_attach/gla_technical/PROMPT_ficha_GPT.txt` (o GPT recusou). As vistas
+  batem entre si em ~3% (comprimento e altura); a frente e a trás saíram ~5% mais largas que a de cima: quando
+  discordarem, vale a de cima e a de lado. O arco atrás da cabine aparece na frente e na trás, mas não no lado
+  nem em cima: modelar pela frente e pela trás.
+- **Depois:** variações como no ZH (a Technical sai sorteada entre carrocerias): o mesmo chassi com peças
+  que trocam (cabine, quebra-mato, arco com a arma no alto, panos e bandeiras, carga).
+
+`art/tools/start_model.py -- gla_technical` monta `captures/art3d/gla_technical/gla_technical.blend`:
+- **as 4 vistas da ficha atrás do modelo**, na escala da ficha (93,5 px por metro), cada uma só na vista reta dela:
+  - cima (Numpad 7), deitada no chão;
+  - frente (Numpad 1) e trás (Ctrl+Numpad 1);
+  - o lado esquerdo (Numpad 3, a vista Right do Blender).
+- **a caixa de arame do tamanho da picape** (1,69 × 4,82 × 1,73 m), frente pra −Y. A largura é a da Hilux
+  de cabine simples que ela imita; o resto sai da proporção da ficha.
+- **a régua de 4,82 m** no chão, do 0 (a frente) até a traseira;
+- **a picape 1 e a mesma com o atirador**, recortadas do game shot, em pé dos lados e viradas pra câmera, mais a ficha inteira;
+- **a `Camera_Detalhe`:** o ângulo da câmera do jogo a 13 m da picape. É a do render (F12).
+  A `Camera_Jogo` mostra o tamanho de verdade no jogo, do lado do tanque (a picape tem ~61% dele).

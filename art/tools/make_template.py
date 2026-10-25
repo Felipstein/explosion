@@ -14,23 +14,43 @@ O que vem na cena:
 - a planta do 1º modelo: caixa 8 × 8 × 4 m (a casa de adobe, §10), só em arame;
 - a câmera do jogo (Game/Config/DefaultGame.ini: 37,5° de inclinação, campo horizontal de 50°,
   61,1 m de altura) e a de zoom perto (31,6 m), olhando a planta na diagonal como no jogo;
-- o sol do deserto do jogo (20° de altura) e um céu claro.
+- o sol dos game shots e o céu de poeira do deserto dourado (light());
+- o chão de areia de duna do jogo (sand_material()).
 """
 import math
 import os
 
 import bpy
+import numpy as np
 from mathutils import Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
 TANK = os.path.join(REPO, 'captures', 'concept', '30_to_3d', 'usa_tank', 'parts_v2')
 OUT = os.path.join(REPO, 'captures', 'art3d')
+TEX = os.path.join(OUT, 'textures')
+TEX_SRC = os.path.join(REPO, 'WorldForge', 'Intermediate', 'Assets')   # as 4K do Poly Haven (CC0)
 CELL_M = 4.0
 TANK_LEN_M = 7.9
 PITCH_DEG, FOV_DEG = 37.5, 50.0
+CAM_AZ_DEG = 225.0                             # de onde as câmeras olham: na diagonal, do lado da frente (−Y)
 HEIGHTS = {'Camera_Jogo': 61.1, 'Camera_Perto': 31.6}
-SUN_ELEV_DEG = 20.0
+
+# O sol da receita aprovada do deserto dourado (Game/Tools/look_recipes/desert_golden_hour_v2_aprovada.json):
+# 20° de altura, em contraluz de três-quartos, 42° à direita da frente da câmera (as sombras caem pra baixo
+# e pra esquerda da tela, como em todos os game shots do deserto), disco de 0,8°.
+SUN_ELEV_DEG, SUN_FROM_CAMERA_DEG, SUN_ANGLE_DEG = 20.0, -42.0, 0.8
+# O sol e o céu saem do mesmo modelo de atmosfera do Blender (MULTIPLE_SCATTERING) com a poeira do deserto
+# (aerosol 10): a cor e a força do sol (W/m²) foram medidas no próprio céu, com o disco menos sem o disco,
+# num chão branco (24/10). Por isso o sol é a luz já filtrada pela atmosfera, laranja a 20°.
+SKY_AEROSOL = 10.0
+SUN_RGB_W = (101.95, 74.31, 41.90)
+# O que leva o quadro pra foto aprovada do jogo (docs/aprovados/look/2026-10-17_ceu_uma_luz.jpg, medida a
+# areia no sol e na sombra dos tanques): a luz do céu reforçada como o skylight 4,0 da receita, e o
+# ganho quente dela no balanço de branco. Medido (24/10): sol 195/160/130 contra 205/153/113 do jogo,
+# sombra 150/122/97 contra 156/122/95.
+SKY_STRENGTH = 2.5
+EXPOSURE, WHITE_BALANCE_K = -3.6, 9500.0
 
 
 def clear():
@@ -62,6 +82,101 @@ def material(name, rgb, rough=0.9):
     return m
 
 
+def sand_textures():
+    """As texturas da areia em 2K (as 4K pesam 60 MB): o grão do gravelly_sand e os montinhos do
+    aerial_beach_01. A normal vira o padrão OpenGL do Blender (o verde invertido). Só faz o que falta."""
+    os.makedirs(TEX, exist_ok=True)
+    for name, flip in (('gravelly_sand_diff', False), ('gravelly_sand_nor', True), ('gravelly_sand_arm', False),
+                       ('aerial_beach_01_diff', False), ('aerial_beach_01_nor', True)):
+        dst = os.path.join(TEX, name + ('_gl' if flip else '') + '_2k.jpg')
+        if os.path.exists(dst):
+            continue
+        src_name = name + ('_dx' if flip else '') + '_4k.jpg'
+        img = bpy.data.images.load(os.path.join(TEX_SRC, name.rsplit('_', 1)[0], src_name))
+        img.scale(2048, 2048)
+        if flip:
+            px = np.empty(2048 * 2048 * 4, dtype=np.float32)
+            img.pixels.foreach_get(px)
+            px[1::4] = 1.0 - px[1::4]
+            img.pixels.foreach_set(px)
+        img.save(filepath=dst, quality=92)
+        bpy.data.images.remove(img)
+
+
+def sand_material():
+    """A areia de duna do deserto dourado (docs/RECEITAS_DO_LOOK.md, a v2 "duna" escolhida em 16/10): o albedo
+    físico 0,45/0,26/0,15 e a textura só no desenho, como em Game/Tools/look_materials/sand_desert_v2.json:
+    o grão do gravelly_sand a 1,3 m (a cor ±25% em volta da média dela, a normal ×1,35, a oclusão
+    lerp(1, ao², 0,7)), os montinhos do aerial_beach_01 a 6 m (normal ×0,6) e a variação larga dele a 40 m."""
+    sand_textures()
+    m = bpy.data.materials.new('M_Areia')
+    m.use_nodes = True
+    nt = m.node_tree
+    N, L = nt.nodes, nt.links
+    bsdf = N['Principled BSDF']
+    bsdf.inputs['Roughness'].default_value = 0.95
+    co = N.new('ShaderNodeTexCoord')
+
+    def tex(name, size_m, color=True):         # o chão tem 1 unidade = 1 m: a coordenada do objeto já é em metros
+        mp = N.new('ShaderNodeMapping')
+        mp.inputs['Scale'].default_value = (1 / size_m,) * 3
+        L.new(co.outputs['Object'], mp.inputs['Vector'])
+        t = N.new('ShaderNodeTexImage')
+        t.image = bpy.data.images.load(os.path.join(TEX, name), check_existing=True)
+        if not color:
+            t.image.colorspace_settings.name = 'Non-Color'
+        L.new(mp.outputs['Vector'], t.inputs['Vector'])
+        return t
+
+    def op(kind, a, b):
+        n = N.new('ShaderNodeMath')
+        n.operation = kind
+        for i, v in enumerate((a, b)):
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+
+    def lum(t, mean):                          # o brilho da textura sobre a média dela (medida): 1 = o tom médio
+        bw = N.new('ShaderNodeRGBToBW')
+        L.new(t.outputs['Color'], bw.inputs[0])
+        return op('DIVIDE', bw.outputs[0], mean)
+
+    def lerp1(v, k):                           # 1 + (v − 1)·k
+        return op('ADD', op('MULTIPLY', op('SUBTRACT', v, 1.0), k), 1.0)
+
+    grain = lerp1(lum(tex('gravelly_sand_diff_2k.jpg', 1.3), 0.1851), 0.25)
+    broad = lum(tex('aerial_beach_01_diff_2k.jpg', 40.0), 0.2440)
+    arm = N.new('ShaderNodeSeparateColor')
+    L.new(tex('gravelly_sand_arm_2k.jpg', 1.3, color=False).outputs['Color'], arm.inputs[0])
+    ao = lerp1(op('POWER', arm.outputs[0], 2.0), 0.7)
+    albedo = N.new('ShaderNodeVectorMath')
+    albedo.operation = 'SCALE'
+    albedo.inputs[0].default_value = (0.45, 0.26, 0.15)
+    L.new(op('MULTIPLY', op('MULTIPLY', grain, broad), ao), albedo.inputs['Scale'])
+    L.new(albedo.outputs[0], bsdf.inputs['Base Color'])
+
+    # as duas normais somadas sobre a do chão: n = normalize(n1 + n2 − N)
+    vec = []
+    for name, size_m, strength in (('gravelly_sand_nor_gl_2k.jpg', 1.3, 1.35), ('aerial_beach_01_nor_gl_2k.jpg', 6.0, 0.6)):
+        nm = N.new('ShaderNodeNormalMap')
+        nm.inputs['Strength'].default_value = strength
+        L.new(tex(name, size_m, color=False).outputs['Color'], nm.inputs['Color'])
+        vec.append(nm.outputs[0])
+    geo = N.new('ShaderNodeNewGeometry')
+    out = None
+    for kind, a, b in (('ADD', vec[0], vec[1]), ('SUBTRACT', None, geo.outputs['Normal']), ('NORMALIZE', None, None)):
+        n = N.new('ShaderNodeVectorMath')
+        n.operation = kind
+        L.new(a if out is None else out, n.inputs[0])
+        if b is not None:
+            L.new(b, n.inputs[1])
+        out = n.outputs[0]
+    L.new(out, bsdf.inputs['Normal'])
+    return m
+
+
 def grid(col):
     # 200 m de lado em quadrados de 4 m: só as linhas (arame), mais um chão de areia logo abaixo
     n = int(200 / CELL_M)
@@ -74,7 +189,7 @@ def grid(col):
     bpy.ops.mesh.primitive_plane_add(size=400.0, location=(0, 0, 0))
     floor = bpy.context.active_object
     floor.name = 'Chao_Areia'
-    floor.data.materials.append(material('M_Areia', (0.35, 0.21, 0.11)))   # albedo da areia do deserto do jogo
+    floor.data.materials.append(sand_material())
     floor.hide_select = True
     link(floor, col)
 
@@ -136,7 +251,7 @@ def cameras(col):
     col.objects.link(target)
     target.location = (4.0, 0.0, 0.0)          # entre a planta e o tanque
     p = math.radians(PITCH_DEG)
-    az = math.radians(225.0)                   # na diagonal, do lado da frente (−Y), como no jogo
+    az = math.radians(CAM_AZ_DEG)
     for name, h in HEIGHTS.items():
         cam = bpy.data.cameras.new(name)
         cam.sensor_fit = 'HORIZONTAL'
@@ -154,18 +269,44 @@ def cameras(col):
 
 
 def light(col):
-    sun = bpy.data.lights.new('Sol_20graus', 'SUN')
-    sun.energy = 4.0
-    sun.angle = math.radians(0.53)
-    ob = bpy.data.objects.new('Sol_20graus', sun)
+    # a direção do sol (azimute, anti-horário a partir de +X): a frente da câmera girada pro lado do sol
+    cam_forward = CAM_AZ_DEG - 180.0
+    az = math.radians(cam_forward + SUN_FROM_CAMERA_DEG)
+    el = math.radians(SUN_ELEV_DEG)
+    sun = bpy.data.lights.new('Sol', 'SUN')
+    sun.energy = max(SUN_RGB_W)
+    sun.color = [v / max(SUN_RGB_W) for v in SUN_RGB_W]
+    sun.angle = math.radians(SUN_ANGLE_DEG)
+    ob = bpy.data.objects.new('Sol', sun)
     col.objects.link(ob)
-    # luz de lado e um pouco de trás da câmera, como no deserto do jogo
-    ob.rotation_euler = (math.radians(90 - SUN_ELEV_DEG), 0.0, math.radians(-120.0))
-    w = bpy.data.worlds.new('Ceu')
+    # girar só em Y (altura: 90° − Y) e em Z (direção): o céu segue o sol pelos drivers abaixo
+    ob.rotation_euler = (0.0, math.pi / 2 - el, az)
+    w = bpy.data.worlds.new('Ceu_Deserto')
     w.use_nodes = True
-    w.node_tree.nodes['Background'].inputs['Color'].default_value = (0.45, 0.6, 0.85, 1.0)
-    w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.8
-    bpy.context.scene.world = w
+    nt = w.node_tree
+    sky = nt.nodes.new('ShaderNodeTexSky')
+    sky.sky_type = 'MULTIPLE_SCATTERING'
+    sky.sun_disc = False                       # o sol é a luz "Sol"; o disco do céu contaria duas vezes
+    sky.aerosol_density = SKY_AEROSOL
+    nt.links.new(sky.outputs['Color'], nt.nodes['Background'].inputs['Color'])
+    nt.nodes['Background'].inputs['Strength'].default_value = SKY_STRENGTH
+    # no céu do Blender o sol de rotação 0 fica em +Y e a rotação gira pro +X (medido): rotação = 90° − azimute
+    for prop, axis in (('sun_elevation', 1), ('sun_rotation', 2)):
+        fc = sky.driver_add(prop)
+        v = fc.driver.variables.new()
+        v.name = 'a'
+        v.targets[0].id = ob
+        v.targets[0].data_path = f'rotation_euler[{axis}]'
+        fc.driver.expression = 'pi / 2 - a'
+    s = bpy.context.scene
+    s.world = w
+    s.render.engine = 'CYCLES'
+    s.cycles.device = 'GPU'                    # sem placa configurada nas preferências, o Cycles usa a CPU
+    s.cycles.samples = 128
+    s.view_settings.view_transform = 'AgX'
+    s.view_settings.exposure = EXPOSURE
+    s.view_settings.use_white_balance = True
+    s.view_settings.white_balance_temperature = WHITE_BALANCE_K
 
 
 def main():
