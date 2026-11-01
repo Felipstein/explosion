@@ -23,7 +23,10 @@ function writeB64(b64, mime, outBase) {
 const CODEX_IMAGES = path.join(os.homedir(), '.codex', 'generated_images');
 async function codex({ prompt, attachments, outBase, signal }) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'atelier-codex-'));
-  const args = ['/d', '/s', '/c', 'codex', 'exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '--json', '-C', work];
+  // sem o uso do computador nem o aviso de fim de turno: o ajudante deles ficava vivo depois do Codex, preso na saída,
+  // e a fila nunca sabia que tinha acabado (01/11: dois GPT "gerando" 11 minutos sem processo nenhum)
+  const args = ['/d', '/s', '/c', 'codex', 'exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '--json', '-C', work,
+    '-c', 'features.computer_use=false', '-c', 'notify=[]'];
   for (const a of attachments) args.push('-i', a);
   const n = attachments.length;
   const text = 'Use your image generation tool to create exactly one image, then stop. Do not run commands, do not write files, do not ask questions.' +
@@ -32,18 +35,29 @@ async function codex({ prompt, attachments, outBase, signal }) {
   const started = Date.now();
   const out = await new Promise((resolve, reject) => {
     const p = spawn(process.env.ComSpec || 'cmd.exe', args, { windowsHide: true, signal });
-    let so = '', se = '';
+    let so = '', se = '', done = false;
     p.stdout.on('data', d => so += d);
     p.stderr.on('data', d => se += d);
-    p.on('error', reject);
-    p.on('close', code => {
+    // 6 minutos no máximo (o normal é ~50 s): fecha a árvore dele pelo número do processo
+    const limit = setTimeout(() => {
+      spawn('taskkill', ['/PID', String(p.pid), '/T', '/F'], { windowsHide: true });
+      settle(-1, 'o Codex não respondeu em 6 minutos');
+    }, 6 * 60 * 1000);
+    p.on('error', e => { clearTimeout(limit); if (!done) { done = true; reject(e); } });
+    // vale o fim do processo, não o fechamento da saída: se sobrar um filho segurando a saída, não trava a fila
+    p.on('exit', code => setTimeout(() => settle(code), 1500));
+    p.on('close', code => settle(code));
+    function settle(code, forced) {
+      if (done) return; done = true; clearTimeout(limit);
+      try { p.stdout.destroy(); p.stderr.destroy(); } catch {}
+      if (forced) return reject(new Error(forced));
       if (code === 0) return resolve(so);
       // o motivo de verdade vem num evento "error" do JSON (ex.: o limite de uso da conta e quando volta); sem ele, a última linha
       let why = '';
       for (const line of so.split('\n')) { try { const ev = JSON.parse(line); if (ev.type === 'error' && ev.message) why = ev.message; } catch {} }
       if (/usage limit/i.test(why)) { const t = why.match(/try again at ([^.]+)/i); why = 'limite de uso da conta do ChatGPT' + (t ? ` (volta em ${t[1]})` : ''); }
       reject(new Error(`o Codex saiu com ${code}: ${(why || (se || so).trim().split('\n').slice(-2).join(' ')).slice(0, 300)}`));
-    });
+    }
     p.stdin.end(text);
   });
   let thread = null, found = null, lastMsg = '';

@@ -172,7 +172,8 @@ function renderRail() {
   const g = {wait:[], gen:[], closed:[]};
   R.forEach(r => { if (!S.sess || r.src === S.sess) g[r.status].push(r); });
   const names = {wait:'Esperando você', gen:'Gerando', closed:'Fechados'};
-  $('#rail').innerHTML = R.length ? ['wait', 'gen', 'closed'].filter(k => g[k].length).map(k =>
+  // o que está gerando fica no topo, à vista; depois o que espera a escolha dele; os fechados por último
+  $('#rail').innerHTML = R.length ? ['gen', 'wait', 'closed'].filter(k => g[k].length).map(k =>
     `<div class="grp"><div class="grp-h"><span>${names[k]}</span><span>${g[k].length}</span></div>${g[k].map(rowHTML).join('')}</div>`).join('')
     : `<div class="grp"><div class="grp-h"><span>Nenhum pedido ainda</span></div></div>`;
   const today = new Date().toDateString();
