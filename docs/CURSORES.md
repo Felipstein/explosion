@@ -10,11 +10,9 @@ que precisa".
 - **A v2 está APROVADA**, menos o ataque andando: "o resto super aprovado, parabéns, um dos melhores". Ela corrige cada
   cursor um por um (§3.1); o antes e depois está em `docs/aprovados/hud/2026-11-01_cursores_v2_APROVADOS_menos_ataque_andando.jpg`.
 - **O mestre** (os desenhos em vetor e a prancha animada) é `art/cursors/cursors.html`. Abre direto no navegador.
-- **O ataque andando da v2** foi reprovado: "deixou de ser entendido que é um ataque". As setas verdes engoliam a mira
-  vermelha pequena. Ele pediu pra misturar os dois. Estão no mestre três misturas pra ele escolher (`amoveA/B/C`):
-  - **A**, a do ZH: a mira inteira com as setas nos vãos;
-  - **B**: o ataque manda, com setas de canto;
-  - **C**: a seta de corpo verde e ponta vermelha.
+- **O ataque andando:** o da v2 foi reprovado ("deixou de ser entendido que é um ataque": as setas verdes engoliam a mira
+  vermelha pequena). Das três misturas, ele escolheu **a B** ("opção B, gostei"): a mira do atacar inteira manda, e o verde
+  vira quatro setas de canto apontando pra ela.
 - **Nada no jogo ainda.** O jogo hoje usa as setas do Windows (seta, cruz, mira, mão), e só a chave do conserto é nossa
   (`Game/Source/RTSGame/Private/RTSPlayerController.cpp:1033-1081`, `RTSPlayerEconomy.cpp:306`).
 
@@ -111,7 +109,7 @@ o centro de massa contra o ponto do clique e o borrão (a parte da borda que fic
 | **Não alcança** | sobre o inimigo que ninguém da seleção acerta (o tanque e o avião) | a mira cinza cortada | cinza | parada | centro | não tem (novo: diz "precisa de antiaéreo") |
 | **Tiro forçado** | Ctrl, sobre qualquer unidade | a mira (sem triângulos) travada por quatro cantos | vermelho | os cantos apertam | centro | `ForceAttackObj` (igual ao atacar) |
 | **Atirar no chão** | Ctrl, no chão | os triângulos + um X no lugar do anel | vermelho | fecham | centro | `ForceAttackGround` (igual ao atacar) |
-| **Ataque andando** | A armado | **a escolher** (A, B ou C; a da v2, as setas + a mira pequena, foi reprovada) | verde e vermelho | fecham | centro | `AttackMove` |
+| **Ataque andando** | A armado | a mira do atacar inteira + quatro setas verdes de canto apontando pra ela (a B) | vermelho e verde | fecham | centro | `AttackMove` |
 | **Guardar a área** | G, no chão | escudo + a área em 6 traços no chão | verde | a área pulsa (50–100% em 1 s, o do ZH) | centro da área | `Guard` + decal |
 | **Escoltar** | G, sobre o que é seu | escudo dentro dos cantos | verde | os cantos apertam | centro | a mesma guarda |
 | **Patrulhar** | avião e helicóptero | duas setas em roda | verde | gira devagar | centro | não tem |
