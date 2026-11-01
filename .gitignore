@@ -91,3 +91,7 @@ Game/Build/Windows/FileOpenOrder/
 # O fogo da carcaça em volume esparso (312 MB): passa do limite de 100 MB do GitHub; refeito pelo BlastLab a partir
 # da simulação do EmberGen (14/10). Se precisar guardar, vai por Git LFS.
 BlastLab/Content/Explosions/SVT_WreckFireLoop.uasset
+
+# Atelier: compilação do app nativo (Tauri), refeita por npx @tauri-apps/cli build
+Atelier/app/src-tauri/target/
+Atelier/app/src-tauri/gen/

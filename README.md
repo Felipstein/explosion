@@ -21,6 +21,10 @@ Game/                      o jogo (Unreal Engine 5.8): menu + skirmish; docs/JOG
 WorldForge/                o criador de mundos do RTS (Unreal Engine 5.8): docs/WORLDFORGE.md
   Source/WorldForge/       Generation/ (o gerador, só Core) + terreno, câmera RTS, painel
   Tools/                   forge.ps1 (compilar, montar, abrir, testar), texturas, materiais
+Atelier/                   o app de imagens (GPT/Gemini em fila, Claude dentro, MCP pras sessões): docs/ATELIER.md
+  core/                    o serviço da fila (Node), provedores, configurações, ponte MCP
+  ui/                      a tela
+  app/                     o .exe (Tauri) e o ícone
 reference/webgl/           o simulador WebGL original (referência visual aprovada)
 docs/                      estado, plano de migração, arquitetura
 captures/                  renders e testes (fora do git)
@@ -40,6 +44,9 @@ powershell -File BlastLab\Tools\blast.ps1 editor       # abre o editor da Unreal
 O jogo: `powershell -File Game\Tools\game.ps1 setup` na primeira vez, depois
 `powershell -File Game\Tools\game.ps1 view` (abre no menu; "Jogar Skirmish"
 começa a partida contra a IA). Controles no rodapé da tela; detalhes em `docs/JOGO.md`.
+
+App de imagens: `Atelier.exe` na área de trabalho (ou `powershell -File Atelier\atelier.ps1`).
+Detalhes em `docs/ATELIER.md`.
 
 Criador de mundos: `WorldForge\WorldForge.cmd` (ou `powershell -File
 WorldForge\Tools\forge.ps1 setup` na primeira vez). Detalhes em `docs/WORLDFORGE.md`.
