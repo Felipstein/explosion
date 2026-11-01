@@ -95,6 +95,9 @@ de radar de verdade:
   trilhas respondem com o emblema; OPTIONS gira os botões GAIN e BRILL (o eco sobe); QUIT apaga o tubo, e o clique fecha a imagem
   numa linha e num ponto, como os tubos antigos;
 - a base é a do assgets (o fundo, a grade de 48 px, as cantoneiras douradas); a música e o clique são os do site (`snd_dl/`).
+- **O clique do menu do assgets (`Menu_Click.wav`) toca em todo clique de qualquer coisa clicável das telas** (pedido de 01/11): botão,
+  link, campo ou o que tem a mãozinha; clique no fundo vazio não toca. O áudio nasce já com o som decodificado, então o 1º clique também
+  toca (e solta a trilha). No hover não toca nada. Vale no `menu.html` e no `shell.html` (sala, carregando); o REPLAYS saiu do `shell.html` também.
 - Custo: só canvas 2D. Os rascunhos anteriores ficam em `menu_scenes.html`, `menu_table.html`, `menu_table2.html` e `menu_radar_copia.html`.
 
 ## 4. A primeira rodada, olhada com rigor

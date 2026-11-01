@@ -60,7 +60,7 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
   <div class="ver">v0.5.2</div>
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
 </div></div>
-<audio id="music" loop preload="none"></audio>
+<audio id="music" preload="auto"></audio>
 <script>
 // =====================================================================================
 // O fundo do menu: o painel do radar de vigilância do teatro. Tudo vem do radar de verdade:
@@ -374,22 +374,30 @@ function drawLink(li) {
 }
 function hover(li) { hovered = li; const k = li && li.dataset.k; dimT = k === 'quit' ? .35 : 1; gainT = k === 'options' ? 1.6 : 1; knobT = k === 'options' ? 1 : 0; if (!li) link.innerHTML = ''; }
 document.querySelectorAll('#menu li').forEach(li => {
-  li.addEventListener('mouseenter', () => { hover(li); click(.16, 1.25); });
+  li.addEventListener('mouseenter', () => hover(li));
   li.addEventListener('mouseleave', () => hover(null));
-  li.addEventListener('mousedown', () => { click(.6, 1); if (li.dataset.k === 'quit') { offT = 1; setTimeout(() => offT = 0, 1800); } });
+  li.addEventListener('mousedown', () => { if (li.dataset.k === 'quit') { offT = 1; setTimeout(() => offT = 0, 1800); } });
 });
 // ---------- o som do site: a trilha do menu no primeiro clique, o clique da interface; a cascata ouve a trilha ----------
-const music = document.getElementById('music'); music.src = `snd/Main_Menu_${Q.get('music') || 2}.wav`; music.volume = .55;
-let actx = null, clickBuf = null;
-async function audioOn() {
-  if (actx || Q.get('mute')) return; actx = new AudioContext();
+// as três trilhas do menu do assgets, uma depois da outra (V1, V2, V3 e volta)
+const music = document.getElementById('music'); let track = (+(Q.get('music') || 1) - 1) % 3;
+music.src = `snd/Main_Menu_${track + 1}.wav`; music.volume = .55;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.wav`; music.play().catch(() => { }); });
+// o clique do menu do assgets em todo clique dos menus: o contexto nasce já (suspenso) com o som decodificado, então o 1º clique também toca
+const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
+if (actx) {
+  fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
   try { const src = actx.createMediaElementSource(music); analyser = actx.createAnalyser(); analyser.fftSize = 512; src.connect(analyser); analyser.connect(actx.destination);
     fft = { fd: new Uint8Array(analyser.frequencyBinCount), td: new Uint8Array(analyser.fftSize) }; } catch (e) { }
-  try { const b = await (await fetch('snd/Menu_Click.wav')).arrayBuffer(); clickBuf = await actx.decodeAudioData(b); } catch (e) { }
-  music.play().catch(() => { });
 }
-function click(vol, rate) { if (!actx || !clickBuf) return; const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; s.playbackRate.value = rate; g.gain.value = vol; s.connect(g).connect(actx.destination); s.start(); }
-addEventListener('pointerdown', audioOn, { once: true }); addEventListener('keydown', audioOn, { once: true });
+function click(vol = .6, rate = 1) { if (!actx || !clickBuf) return; const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; s.playbackRate.value = rate; g.gain.value = vol; s.connect(g).connect(actx.destination); s.start(); }
+function clickable(el) {           // tudo que se clica: botão, link, campo, ou o que tem a mãozinha
+  for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+    if (/^(BUTTON|A|SELECT|INPUT|LABEL|SUMMARY)$/.test(e.tagName) || e.getAttribute('role') === 'button' || getComputedStyle(e).cursor === 'pointer') return true; }
+  return false; }
+function audioOn() { if (!actx) return; actx.resume(); if (!musicOn) { musicOn = true; music.play().catch(() => { }); } }
+addEventListener('pointerdown', e => { audioOn(); if (clickable(e.target)) click(); }, true);
+addEventListener('keydown', audioOn, { once: true });
 // ---------- o laço (ou o passo a passo pra gravar) ----------
 window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };
 window.__hover = i => { document.querySelectorAll('#menu li').forEach(l => l.classList.remove('hv')); if (i) { const li = document.querySelector(`#menu li:nth-child(${i})`); li.classList.add('hv'); hover(li); } else hover(null); };
