@@ -36,7 +36,14 @@ async function codex({ prompt, attachments, outBase, signal }) {
     p.stdout.on('data', d => so += d);
     p.stderr.on('data', d => se += d);
     p.on('error', reject);
-    p.on('close', code => code === 0 ? resolve(so) : reject(new Error(`o Codex saiu com ${code}: ${(se || so).trim().split('\n').slice(-2).join(' ').slice(0, 300)}`)));
+    p.on('close', code => {
+      if (code === 0) return resolve(so);
+      // o motivo de verdade vem num evento "error" do JSON (ex.: o limite de uso da conta e quando volta); sem ele, a última linha
+      let why = '';
+      for (const line of so.split('\n')) { try { const ev = JSON.parse(line); if (ev.type === 'error' && ev.message) why = ev.message; } catch {} }
+      if (/usage limit/i.test(why)) { const t = why.match(/try again at ([^.]+)/i); why = 'limite de uso da conta do ChatGPT' + (t ? ` (volta em ${t[1]})` : ''); }
+      reject(new Error(`o Codex saiu com ${code}: ${(why || (se || so).trim().split('\n').slice(-2).join(' ')).slice(0, 300)}`));
+    });
     p.stdin.end(text);
   });
   let thread = null, found = null, lastMsg = '';
@@ -125,5 +132,46 @@ async function fake({ outBase, signal }) {
   return file;
 }
 
-export const PROVIDERS = { codex, gemini, openai, fake };
+/* ElevenLabs, efeitos sonoros: uma chamada = um som. Sem duração, ela escolhe; com loop o som emenda
+   sem corte (e sai em MP3, que é o que o loop aceita). */
+async function eleven({ prompt, outBase, model, audio = {}, signal }) {
+  const k = key('elevenlabs');
+  if (!k) throw new Error('falta a chave da ElevenLabs (Configurações)');
+  const body = { text: prompt, model_id: model, prompt_influence: audio.influence ?? 0.3, loop: !!audio.loop };
+  if (audio.duration) body.duration_seconds = audio.duration;
+  const r = await fetch('https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128', {
+    method: 'POST', signal, headers: { 'xi-api-key': k, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    let msg = t; try { const j = JSON.parse(t); msg = (j.detail && (j.detail.message || j.detail.status || j.detail)) || t; } catch {}
+    throw new Error(`ElevenLabs ${r.status}: ${String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 240)}`);
+  }
+  const file = outBase + '.mp3';
+  fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+  return file;
+}
+
+/* Som de teste, pros testes da tela: um estouro de ruído com grave e cauda, em WAV. Não gasta nada. */
+async function fakeaudio({ outBase, audio = {}, signal }) {
+  await new Promise((res, rej) => { const t = setTimeout(res, 1200 + Math.random() * 1800); signal && signal.addEventListener('abort', () => { clearTimeout(t); rej(new Error('cancelado')); }); });
+  const sr = 22050, dur = audio.duration || 1.5 + Math.random() * 2, n = Math.round(sr * dur);
+  const data = Buffer.alloc(44 + n * 2);
+  data.write('RIFF', 0); data.writeUInt32LE(36 + n * 2, 4); data.write('WAVEfmt ', 8); data.writeUInt32LE(16, 16);
+  data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22); data.writeUInt32LE(sr, 24); data.writeUInt32LE(sr * 2, 28);
+  data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34); data.write('data', 36); data.writeUInt32LE(n * 2, 40);
+  const decay = 2 + Math.random() * 6, thump = 40 + Math.random() * 40, gain = 0.3 + Math.random() * 0.6;
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr, env = audio.loop ? 0.6 + 0.4 * Math.sin(t * 3) : Math.exp(-t * decay);
+    lp += 0.08 * ((Math.random() * 2 - 1) - lp);
+    const v = gain * env * (lp * 2.2 + 0.6 * Math.sin(2 * Math.PI * thump * t) * Math.exp(-t * 6));
+    data.writeInt16LE(Math.max(-32767, Math.min(32767, Math.round(v * 32767))), 44 + i * 2);
+  }
+  const file = outBase + '.wav';
+  fs.writeFileSync(file, data);
+  return file;
+}
+
+export const PROVIDERS = { codex, gemini, openai, fake, eleven, fakeaudio };
 export const hasKey = name => !!key(name);

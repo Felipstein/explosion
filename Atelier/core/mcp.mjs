@@ -25,12 +25,12 @@ async function api(method, route, body) {
 }
 
 const MODELS = {
-  type: 'object', description: 'Quantas imagens de cada modelo (0 a 4). GPT vai pela conta do ChatGPT. Ex.: {"gpt":1,"gemini_pro":1}',
-  properties: { gpt: { type: 'integer' }, gemini_pro: { type: 'integer' }, gemini_flash: { type: 'integer' } },
+  type: 'object', description: 'Imagem: quantas de cada modelo (0 a 4), ex. {"gpt":1,"gemini_pro":1}; GPT vai pela conta do ChatGPT. Som: {"sfx":4} = 4 variações (até 8) na ElevenLabs.',
+  properties: { gpt: { type: 'integer' }, gemini_pro: { type: 'integer' }, gemini_flash: { type: 'integer' }, sfx: { type: 'integer' } },
 };
 const TOOLS = [
   { name: 'atelier_generate',
-    description: 'Pede imagens ao GPT e/ou Gemini pelo Atelier, sem o Felipe copiar e colar. Os anexos são copiados pra pasta do pedido (_anexos/) na ordem dada: no prompt, "image 1" é o primeiro. O primeiro anexo é a raiz (âncora) se "root" não disser outro. Devolve o id; use atelier_wait pra receber os caminhos. Prompt completo, em inglês. Com "items" vira lote: o mesmo prompt pra cada item, trocando {item}.',
+    description: 'Pede imagens (GPT/Gemini) ou efeitos sonoros (ElevenLabs, kind="sound") pelo Atelier, sem o Felipe copiar e colar. Som: prompt em inglês descrevendo fonte, material, distância, ambiente, ataque e cauda; "variations" sons por rodada (padrão 4); "duration" em segundos (0,5 a 30; sem ela a ElevenLabs escolhe); "loop" pra som contínuo sem emenda. Imagem: Os anexos são copiados pra pasta do pedido (_anexos/) na ordem dada: no prompt, "image 1" é o primeiro. O primeiro anexo é a raiz (âncora) se "root" não disser outro. Devolve o id; use atelier_wait pra receber os caminhos. Prompt completo, em inglês. Com "items" vira lote: o mesmo prompt pra cada item, trocando {item}.',
     inputSchema: { type: 'object', required: ['title', 'prompt', 'session'], properties: {
       title: { type: 'string', description: 'Nome curto do pedido, em português (ex.: "Comanche, ficha").' },
       prompt: { type: 'string', description: 'O prompt inteiro, pronto, em inglês.' },
@@ -42,6 +42,11 @@ const TOOLS = [
       aspect: { type: 'string', description: '16:9 (padrão), 1:1, 3:2, 9:16.' },
       items: { type: 'array', items: { type: 'string' }, description: 'Lote: um item por imagem; o prompt usa {item}.' },
       branch: { type: 'string', description: 'Nome do primeiro ramo (padrão "Raiz").' },
+      kind: { type: 'string', enum: ['image', 'sound'], description: 'image (padrão) ou sound (efeito sonoro pela ElevenLabs).' },
+      variations: { type: 'integer', description: 'Som: quantas variações por rodada (1 a 8, padrão 4).' },
+      duration: { type: 'number', description: 'Som: duração em segundos (0,5 a 30). Sem ela, automática.' },
+      loop: { type: 'boolean', description: 'Som: loop sem emenda (ambiente, motor, vento).' },
+      influence: { type: 'number', description: 'Som: fidelidade ao prompt de 0 a 1 (padrão 0,3; mais baixo varia mais).' },
     } } },
   { name: 'atelier_wait',
     description: 'Espera o pedido ficar pronto (until="done") ou o Felipe escolher/aprovar (until="pick") e devolve o estado com os caminhos das imagens, as escolhidas e o que ele disse. Se o tempo acabar, chame de novo.',

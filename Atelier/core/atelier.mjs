@@ -1,4 +1,4 @@
-// Atelier: o serviço local com a fila de imagens. Um só por máquina (porta 8140); a tela e as
+// Atelier: o serviço local com a fila de imagens e de sons. Um só por máquina (porta 8140); a tela e as
 // sessões (pelo MCP, mcp.mjs) falam com ele por HTTP. Cada pedido mora num JSON em
 // captures/atelier/requests/ e as imagens vão pra pasta do pedido, com os anexos em _anexos/.
 // Sobrevive a reinício: o que estava gerando volta pra fila.
@@ -28,8 +28,11 @@ const MODELS = {
   pro:   { name: 'Gemini 3 Pro Image', short: 'Gemini Pro', provider: 'gemini', model: CONFIG.proModel || 'gemini-3-pro-image-preview', cost: 0.134 },
   flash: { name: 'Gemini 3.1 Flash Image', short: 'Gemini Flash', provider: 'gemini', model: CONFIG.flashModel || 'gemini-3.1-flash-image-preview', cost: 0.067 },
   fake:  { name: 'Teste', short: 'Teste', provider: 'fake', model: 'fake', cost: 0 },
+  // som pela ElevenLabs (efeitos sonoros, até 30 s, com loop); a API cobra ~US$ 0,12 por minuto de som
+  sfx:   { name: 'ElevenLabs Sound Effects', short: 'Som', provider: 'eleven', model: CONFIG.sfxModel || 'eleven_text_to_sound_v2', cost: 0.002, perSecond: true, audio: true },
+  fakeaudio: { name: 'Som de teste', short: 'Teste', provider: 'fakeaudio', model: 'fake', cost: 0, audio: true },
 };
-const PAR = Object.assign({ codex: 2, gemini: 3, openai: 3, fake: 4 }, CONFIG.parallel || {});
+const PAR = Object.assign({ codex: 2, gemini: 3, openai: 3, eleven: 3, fake: 4, fakeaudio: 4 }, CONFIG.parallel || {});
 
 const log = (...a) => fs.appendFileSync(path.join(DATA, 'atelier.log'), new Date().toISOString() + ' ' + a.join(' ') + '\n');
 
@@ -54,9 +57,11 @@ function items(r) {
 const all = () => [...R.values()].flatMap(items);
 const byKey = k => { const r = R.get(k.split(':')[0]); return r && items(r).find(x => x.k === k); };
 const status = r => r.closed ? 'closed' : items(r).some(x => x.it.st === 'q' || x.it.st === 'g') ? 'gen' : 'wait';
-const slug = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'pedido';
+const slug = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'pedido';
 const lines = p => Array.isArray(p) ? p : String(p || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
-const newItem = m => ({ m, st: 'q', seq: SEQ++, file: null, err: '', took: 0, cost: MODELS[m].cost, pick: false, rej: false, seen: false });
+// som cobra por segundo: sem duração fixada, a ElevenLabs escolhe (conta ~5 s na estimativa)
+const costOf = (m, r) => MODELS[m].perSecond ? MODELS[m].cost * ((r && r.audio && r.audio.duration) || 5) : MODELS[m].cost;
+const newItem = (m, r) => ({ m, st: 'q', seq: SEQ++, file: null, err: '', took: 0, cost: costOf(m, r), pick: false, rej: false, seen: false });
 
 const saveTimers = new Map();
 function save(r) {
@@ -70,19 +75,24 @@ function save(r) {
 const abs = p => path.isAbsolute(p) ? p : path.join(REPO, p);
 const rel = p => path.relative(REPO, p).split(path.sep).join('/');
 
-function nextFolder(title) {
-  const base = path.join(REPO, 'captures', 'concept');
+// imagem vai pra captures/concept, som pra captures/audio, com o próximo número
+const folderBase = media => media === 'audio' ? 'audio' : 'concept';
+function nextFolder(title, media) {
+  const base = path.join(REPO, 'captures', folderBase(media));
   const nums = fs.existsSync(base) ? fs.readdirSync(base).map(d => +(d.match(/^(\d+)_/) || [])[1]).filter(n => n) : [];
-  return `captures/concept/${String(Math.max(50, ...nums) + 1).padStart(2, '0')}_${slug(title)}/`;
+  return `captures/${folderBase(media)}/${String(Math.max(media === 'audio' ? 0 : 50, ...nums) + 1).padStart(2, '0')}_${slug(title)}/`;
 }
 
 function create(b) {
   if (!b.title) throw new Error('falta o título');
   if (!b.prompt) throw new Error('falta o prompt');
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  const folder = (b.folder || nextFolder(b.title)).replace(/\\/g, '/').replace(/\/?$/, '/');
+  const media = b.kind === 'sound' || b.media === 'audio' ? 'audio' : 'image';
+  const folder = (b.folder || nextFolder(b.title, media)).replace(/\\/g, '/').replace(/\/?$/, '/');
+  const slots = slotsOf(b.models || (media === 'audio' ? { sfx: b.variations || 4 } : { gpt: 1 }));
+  if (slots.some(m => !!MODELS[m].audio !== (media === 'audio'))) throw new Error(media === 'audio' ? 'pedido de som só usa modelos de som' : 'modelo de som num pedido de imagem');
   const dir = abs(folder);
-  fs.mkdirSync(path.join(dir, '_anexos'), { recursive: true });
+  fs.mkdirSync(media === 'audio' ? dir : path.join(dir, '_anexos'), { recursive: true });
   const atts = (b.attachments || []).map((a, i) => {
     if (a.dataUrl) { // colada ou arrastada na tela
       const m = a.dataUrl.match(/^data:image\/(\w+);base64,(.*)$/); if (!m) throw new Error('imagem inválida');
@@ -96,11 +106,15 @@ function create(b) {
     if (path.resolve(src) !== path.resolve(dst)) fs.copyFileSync(src, dst);
     return { file: rel(dst), label: a.label || path.basename(src).replace(/\.\w+$/, ''), root: b.root != null ? i === b.root : i === 0 };
   });
-  const slots = slotsOf(b.models || { gpt: 1 });
   const r = { id, title: b.title, src: b.session || 'Você', folder, created: new Date().toISOString(), closed: false, aspect: b.aspect || '16:9',
     root: lines(b.prompt), att: atts, thread: [] };
+  if (media === 'audio') {
+    const dur = +b.duration > 0 ? Math.min(30, Math.max(0.5, +b.duration)) : null;
+    r.media = 'audio';
+    r.audio = { duration: dur, loop: !!b.loop, influence: b.influence != null ? Math.min(1, Math.max(0, +b.influence)) : 0.3 };
+  }
   if (b.items && b.items.length) {
-    Object.assign(r, { kind: 'batch', slots, items: b.items.map(name => ({ name, cells: slots.map(newItem) })) });
+    Object.assign(r, { kind: 'batch', slots, items: b.items.map(name => ({ name, cells: slots.map(m => newItem(m, r)) })) });
   } else {
     r.ramos = [{ id: 'a', name: b.branch || 'Raiz', slots, prompt: null, rounds: [] }];
     addRound(r, r.ramos[0]);
@@ -111,14 +125,15 @@ function create(b) {
 }
 
 function slotsOf(models) {
-  const map = { gpt: 'gpt', gemini_pro: 'pro', pro: 'pro', gemini_flash: 'flash', flash: 'flash', fake: 'fake', test: 'fake' };
+  const map = { gpt: 'gpt', gemini_pro: 'pro', pro: 'pro', gemini_flash: 'flash', flash: 'flash', fake: 'fake', test: 'fake',
+    sfx: 'sfx', sound: 'sfx', elevenlabs: 'sfx', fakeaudio: 'fakeaudio', test_sound: 'fakeaudio' };
   const out = [];
-  for (const [k, n] of Object.entries(models)) { const m = map[k]; if (!m) throw new Error('modelo desconhecido: ' + k); for (let i = 0; i < Math.min(+n || 0, 4); i++) out.push(m); }
+  for (const [k, n] of Object.entries(models)) { const m = map[k]; if (!m) throw new Error('modelo desconhecido: ' + k); for (let i = 0; i < Math.min(+n || 0, MODELS[m].audio ? 8 : 4); i++) out.push(m); }
   if (!out.length) throw new Error('nenhum modelo escolhido');
   return out;
 }
 function addRound(r, rm, slots) {
-  rm.rounds.push({ prompt: rm.prompt || null, items: (slots || rm.slots).map(newItem) });
+  rm.rounds.push({ prompt: rm.prompt || null, items: (slots || rm.slots).map(m => newItem(m, r)) });
   r.closed = false;
 }
 function ramoOf(r, ref) { return r.ramos.find(x => x.id === ref || x.name.toLowerCase() === String(ref || '').toLowerCase()) || r.ramos[r.ramos.length - 1]; }
@@ -152,7 +167,7 @@ function start(x) {
   const ac = new AbortController(); running.set(it, ac);
   changed(r);
   const attachments = r.att.map(a => abs(a.file));
-  PROVIDERS[M.provider]({ prompt: promptFor(x), attachments, outBase: outBase(x), model: M.model, aspect: r.aspect, signal: ac.signal })
+  PROVIDERS[M.provider]({ prompt: promptFor(x), attachments, outBase: outBase(x), model: M.model, aspect: r.aspect, audio: r.audio, signal: ac.signal })
     .then(file => { it.st = 'd'; it.file = rel(file); it.took = Math.round((Date.now() - it.t0) / 1000); log('pronta', x.k, it.file, it.took + 's'); })
     .catch(e => { it.st = 'f'; it.err = String(e.message || e); log('falhou', x.k, it.err); })
     .finally(() => { running.delete(it); save(r); changed(r); pump(); });
@@ -192,7 +207,8 @@ function claudeContext(r, text, selKey) {
   const L = [];
   L.push('Você é o diretor de arte dentro do Atelier, o app do Felipe pra gerar imagens no GPT e no Gemini pro jogo dele, um RTS estilo C&C Zero Hour moderno (câmera de RTS vista de cima; jogabilidade antes do realismo; ancorar sempre na raiz aprovada, nunca encadear derivadas).');
   L.push('Responda em português, curto e direto, como profissional: diga o que vê e o que mudaria, com motivo.');
-  L.push(`\nPedido: ${r.title} (sessão ${r.src}), pasta ${r.folder}`);
+  if (r.media === 'audio') L.push('ESTE PEDIDO É DE SOM (efeitos da ElevenLabs). Você não consegue ouvir os arquivos de áudio: não tente abri-los. Ajude no prompt (em inglês, descrevendo fonte, material, distância, ambiente, ataque e cauda), na duração e no loop, e no que pedir na próxima rodada; o julgamento de ouvido é dele.');
+  L.push(`\nPedido: ${r.title} (sessão ${r.src}), pasta ${r.folder}${r.audio ? ` · duração ${r.audio.duration ? r.audio.duration + ' s' : 'automática'}${r.audio.loop ? ' · loop' : ''} · fidelidade ao prompt ${r.audio.influence}` : ''}`);
   L.push('Prompt da raiz:\n' + r.root.join('\n'));
   L.push('\nAnexos, na ordem em que vão pro gerador (image 1, image 2...):');
   r.att.forEach((a, i) => L.push(`image ${i + 1}: ${abs(a.file)} (${a.label}${a.root ? ', RAIZ aprovada' : ''}${a.derived ? ', derivada de uma rodada' : ''})`));
@@ -269,6 +285,14 @@ async function testProvider(p, typed) {
     const want = [MODELS.pro.model, MODELS.flash.model];
     return { ok: true, msg: `Chave aceita. ${want.map(w => `${w}: ${img.includes(w) ? 'liberado' : 'não aparece'}`).join(' · ')}. A cota só aparece no primeiro pedido.` };
   }
+  if (p === 'elevenlabs') {
+    const r = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': k } });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return { ok: true, msg: `Chave aceita. Plano ${j.tier || '?'} · ${(j.character_count || 0).toLocaleString('pt-BR')} de ${(j.character_limit || 0).toLocaleString('pt-BR')} créditos usados no mês.` };
+    const m = (j.detail && (j.detail.message || j.detail.status)) || '';
+    if (r.status === 401 && /permission/i.test(JSON.stringify(j))) return { ok: true, msg: 'Chave aceita (sem permissão de ler o plano, o que não atrapalha gerar som).' };
+    return { ok: false, msg: `A ElevenLabs recusou a chave (${r.status}): ${String(m).slice(0, 160)}` };
+  }
   if (p === 'openai') {
     const r = await fetch('https://api.openai.com/v1/models', { headers: { authorization: `Bearer ${k}` } });
     const j = await r.json().catch(() => ({}));
@@ -280,17 +304,19 @@ async function testProvider(p, typed) {
 }
 /* ---------- pastas: as de captures/concept pra escolher na tela, e o seletor do Windows ---------- */
 const IMG_EXT = /\.(png|jpe?g|webp)$/i;
-function listFolders() {
-  const base = path.join(REPO, 'captures', 'concept');
+const AUDIO_EXT = /\.(mp3|wav|ogg)$/i;
+function listFolders(media) {
+  const sub = folderBase(media), base = path.join(REPO, 'captures', sub);
+  const EXT = media === 'audio' ? AUDIO_EXT : IMG_EXT;
   if (!fs.existsSync(base)) return [];
   return fs.readdirSync(base, { withFileTypes: true }).filter(d => d.isDirectory() && !d.name.startsWith('_')).map(d => {
     const dir = path.join(base, d.name);
     let imgs = [];
-    try { imgs = fs.readdirSync(dir).filter(f => IMG_EXT.test(f)); } catch {}
+    try { imgs = fs.readdirSync(dir).filter(f => EXT.test(f)); } catch {}
     const st = fs.statSync(dir);
     const mtime = Math.max(st.mtimeMs, ...imgs.slice(0, 60).map(f => fs.statSync(path.join(dir, f)).mtimeMs));
     const thumb = imgs.sort((a, b) => fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs)[0];
-    return { name: d.name, path: `captures/concept/${d.name}/`, images: imgs.length, mtime, thumb: thumb ? `captures/concept/${d.name}/${thumb}` : null };
+    return { name: d.name, path: `captures/${sub}/${d.name}/`, images: imgs.length, mtime, thumb: thumb && media !== 'audio' ? `captures/${sub}/${d.name}/${thumb}` : null };
   }).sort((a, b) => b.mtime - a.mtime);
 }
 function pickFolder(start) {
@@ -312,12 +338,12 @@ const settingsView = () => ({ gptVia: readSettings().gptVia, keys: publicKeys(),
 /* ---------- HTTP ---------- */
 const body = req => new Promise((res, rej) => { let b = ''; req.on('data', d => b += d); req.on('end', () => { try { res(b ? JSON.parse(b) : {}); } catch (e) { rej(new Error('JSON inválido')); } }); });
 const send = (res, code, obj, type = 'application/json; charset=utf-8') => { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' }); res.end(type.startsWith('application/json') ? JSON.stringify(obj) : obj); };
-const TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.html': 'text/html; charset=utf-8' };
+const TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.html': 'text/html; charset=utf-8' };
 
 const routes = {
   'POST /api/open': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe'); spawn('explorer.exe', [abs(r.folder).replace(/\//g, '\\')], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
-  'GET /api/health': () => ({ ok: true, pid: process.pid, boot: BOOT, repo: REPO, gptVia: readSettings().gptVia, models: Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { ...m, ready: m.provider === 'gemini' ? hasKey('gemini') : m.provider === 'openai' ? hasKey('openai') : m.provider === 'codex' ? CODEX.loggedIn !== false : true }])) }),
-  'GET /api/folders': () => listFolders(),
+  'GET /api/health': () => ({ ok: true, pid: process.pid, boot: BOOT, repo: REPO, gptVia: readSettings().gptVia, models: Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { ...m, ready: m.provider === 'gemini' ? hasKey('gemini') : m.provider === 'openai' ? hasKey('openai') : m.provider === 'eleven' ? hasKey('elevenlabs') : m.provider === 'codex' ? CODEX.loggedIn !== false : true }])) }),
+  'GET /api/folders': (b, q) => listFolders(q.get('media')),
   'POST /api/pick-folder': b => pickFolder(b.start),
   'GET /api/settings': async () => { await codexStatus(); return settingsView(); },
   'POST /api/settings': b => { writeSettings(b); log('configurações salvas', 'gpt via', readSettings().gptVia); for (const r of R.values()) changed(r); return settingsView(); },
@@ -335,8 +361,8 @@ const routes = {
     if (b.op === 'pick') { it.pick = !it.pick; if (it.pick) it.rej = false; }
     if (b.op === 'reject') { it.rej = !it.rej; if (it.rej) it.pick = false; }
     if (b.op === 'seen') it.seen = true;
-    if (b.op === 'retry') Object.assign(it, newItem(it.m), { m: it.m });
-    if (b.op === 'regen') { if (x.rm) addRound(x.r, x.rm, [it.m]); else Object.assign(it, newItem(it.m)); }
+    if (b.op === 'retry') Object.assign(it, newItem(it.m, x.r), { m: it.m });
+    if (b.op === 'regen') { if (x.rm) addRound(x.r, x.rm, [it.m]); else Object.assign(it, newItem(it.m, x.r)); }
     if (b.op === 'cancel' && running.has(it)) running.get(it).abort();
     save(x.r); changed(x.r); return view(x.r); },
   'POST /api/attach': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe');
@@ -357,7 +383,7 @@ const routes = {
   'POST /api/approve': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe');
     const picks = items(r).filter(x => x.it.pick && x.it.st === 'd');
     if (!picks.length) throw new Error('nenhuma escolhida');
-    const area = slug(b.area || 'cenas'); const dir = path.join(REPO, 'docs', 'aprovados', area); fs.mkdirSync(dir, { recursive: true });
+    const area = slug(b.area || (r.media === 'audio' ? 'sons' : 'cenas')); const dir = path.join(REPO, 'docs', 'aprovados', area); fs.mkdirSync(dir, { recursive: true });
     const copied = picks.map(x => { const src = abs(x.it.file); const dst = path.join(dir, `${slug(r.title)}_${path.basename(src)}`); fs.copyFileSync(src, dst); return rel(dst); });
     r.closed = true; r.approved = { area, said: b.said || '', files: copied, at: new Date().toISOString() };
     save(r); changed(r); log('aprovado', r.id, copied.join(' ')); return view(r); },

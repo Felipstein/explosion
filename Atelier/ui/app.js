@@ -27,6 +27,10 @@ const ICONS = {
   left:'<path d="M14.5 6l-6 6 6 6"/>', right:'<path d="M9.5 6l6 6-6 6"/>',
   down:'<path d="M6 9.5l6 6 6-6"/>',
   copy:'<rect x="8.5" y="8.5" width="11" height="11" rx="1.6"/><path d="M15.5 8.5v-3A1.5 1.5 0 0014 4H5.5A1.5 1.5 0 004 5.5V14a1.5 1.5 0 001.5 1.5h3"/>',
+  play:'<path d="M8 5.5v13l10.5-6.5z"/>',
+  wave:'<path d="M3 12h1.5M6.5 8.5v7M10 5v14M13.5 8v8M17 10v4M20.5 11.5v1"/>',
+  repeat:'<path d="M16.5 3.5l3 3-3 3M4.5 11V9.5a3 3 0 013-3h12M7.5 20.5l-3-3 3-3M19.5 13v1.5a3 3 0 01-3 3h-12"/>',
+  volume:'<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.5 7.5 0 010 10.4"/>',
   sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'
 };
 const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -37,7 +41,10 @@ const M = {
   pro:   {name:'Gemini 3 Pro Image', short:'Gemini Pro', cls:'m-pro', typ:25, key:'gemini_pro'},
   flash: {name:'Gemini 3.1 Flash Image', short:'Gemini Flash', cls:'m-flash', typ:10, key:'gemini_flash'},
   fake:  {name:'Teste (não gera de verdade)', short:'Teste', cls:'m-flash', typ:3, key:'fake'},
+  sfx:   {name:'ElevenLabs Sound Effects', short:'Som', cls:'m-sfx', typ:8, key:'sfx', audio:true},
+  fakeaudio: {name:'Som de teste', short:'Teste', cls:'m-sfx', typ:3, key:'fakeaudio', audio:true},
 };
+const isAudio = x => !!(x && M[x.it.m] && M[x.it.m].audio);
 let HEALTH = {models:{}, repo:''};
 let R = [];
 const S = { sel:null, selK:null, claude:false, sess:null, cmp:null, lpT:false, ov:null, rail:false, openPrompt:{}, showDiff:{} };
@@ -121,11 +128,12 @@ function render() {
   $('#body').classList.toggle('show-rail', S.rail);
   $('#btn-claude').classList.toggle('on', S.claude);
   progress();
+  hydrateWaves(); paintPlaying();
 }
 
 function renderMeters() {
   const all = everything();
-  $('#meters').innerHTML = ['gpt', 'pro', 'flash'].map(k => {
+  $('#meters').innerHTML = ['gpt', 'pro', 'flash', 'sfx'].map(k => {
     const m = M[k], ready = (HEALTH.models[k] || {}).ready !== false;
     const g = all.filter(x => x.it.m === k && x.it.st === 'g').length;
     const q = all.filter(x => x.it.m === k && x.it.st === 'q').length;
@@ -151,7 +159,8 @@ function rowHTML(r) {
   const pickd = done.filter(x => x.it.pick);
   const show = (pickd.length ? pickd : done).slice(r.kind === 'batch' ? 0 : -2).slice(0, r.kind === 'batch' ? 4 : 2);
   const unseen = done.filter(x => !x.it.seen).length;
-  const mos = show.length ? show.map(x => `<img src="${SRC(x.it.file)}" alt="" loading="lazy">`).join('') : '<i class="shim"></i>';
+  const mos = r.media === 'audio' ? `<span class="mglyph m-sfx">${ic('wave')}</span>`
+    : show.length ? show.map(x => `<img src="${SRC(x.it.file)}" alt="" loading="lazy">`).join('') : '<i class="shim"></i>';
   return `<button class="req ${S.sel === r.id ? 'on' : ''}" data-act="sel" data-id="${r.id}">
     <span class="mosaic ${r.kind === 'batch' ? 'b4' : ''}">${mos}</span>
     <span class="req-t"><b>${esc(r.title)}</b><span>${ic('chat')}${esc(r.src)} · ${ago(r.created)}</span></span>
@@ -183,30 +192,38 @@ function tileHTML(x, o = {}) {
   if (it.rej) c.push('rej');
   if (it.st === 'd' && !it.seen) c.push('new');
   if (o.small) c.push('small');
+  const au = !!(M[it.m] && M[it.m].audio);
+  if (au) c.push('au');
+  if (au && AUD.cur && AUD.cur.key === k) c.push('playing');
   let inner = '';
-  if (it.st === 'd') inner = `<img src="${SRC(it.file)}" alt="" loading="lazy">`;
+  if (it.st === 'd' && au) inner = `<canvas class="wave" data-f="${esc(it.file)}"></canvas><i class="ph"></i>${o.small ? '' : `<span class="dur mono" data-dur="${esc(it.file)}"></span><span class="play">${ic('play')}</span>`}`;
+  else if (it.st === 'd') inner = `<img src="${SRC(it.file)}" alt="" loading="lazy">`;
   else if (it.st === 'g') inner = `<i class="shim"></i><span class="clock mono">0:00</span><i class="prog"></i>`;
   else if (it.st === 'q') inner = o.small ? '' : `<span class="qpos mono">${qpos(it)}º na fila</span>`;
   else inner = `<span class="err">${esc(it.err)}</span><button class="mini" data-act="retry" data-k="${k}">${ic('refresh')}Tentar de novo</button>`;
   const lab = o.small ? '' : `<span class="lab"><span class="chip ov ${m.cls}">${o.mini ? m.short.replace('Gemini ', '') : m.short}</span>${o.r ? `<span class="rtag mono">r${o.r}</span>` : ''}</span>`;
   const b = (a, i, t, on) => `<button data-act="${a}" data-k="${k}" title="${t}" class="${on ? 'on' : ''}">${ic(i)}</button>`;
   let acts = '';
-  if (it.st === 'd' && !o.small) acts = o.mini
-    ? `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${b('copy','copy','Copiar a imagem (Ctrl C)')}${b('regen','refresh','Gerar de novo (R)')}</span>`
+  const cpy = au ? b('copy','copy','Copiar o caminho do arquivo (Ctrl C)') : b('copy','copy','Copiar a imagem (Ctrl C)');
+  if (it.st === 'd' && !o.small && au && !o.mini) acts = `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${b('rej','x','Reprovar (X)', it.rej)}${b('branch','branch','Ramificar daqui (B)')}${cpy}</span>`;
+  else if (it.st === 'd' && !o.small) acts = o.mini
+    ? `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${cpy}${b('regen','refresh','Gerar de novo (R)')}</span>`
     : `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${b('rej','x','Reprovar (X)', it.rej)}${b('branch','branch','Ramificar daqui (B)')}${b('attach','clip','Usar como anexo (A)')}${b('copy','copy','Copiar a imagem (Ctrl C)')}</span>`;
-  const foot = it.st === 'd' && !o.small && !o.mini ? `<span class="foot mono"><span>${Math.round(it.took)} s</span><span>${it.cost ? usd(it.cost) : 'conta'}</span></span>` : '';
+  const foot = it.st === 'd' && !o.small && !o.mini && !au ? `<span class="foot mono"><span>${Math.round(it.took)} s</span><span>${it.cost ? usd(it.cost) : 'conta'}</span></span>` : '';
   const star = it.pick ? `<span class="star">${ic('star')}</span>` : '';
   const tip = o.small ? ` title="${m.short} · r${o.r}"` : '';
   return `<figure class="${c.join(' ')}" data-k="${k}"${tip}>${inner}${lab}${star}${acts}${foot}</figure>`;
 }
 
+const slotChips = slots => { const n = {}; slots.forEach(m => n[m] = (n[m] || 0) + 1);
+  return Object.entries(n).map(([m, c]) => `<span class="chip ${M[m].cls}">${M[m].short}${c > 1 ? ' ×' + c : ''}</span>`).join(''); };
 function ramoHTML(r, rm) {
   const n = rm.rounds.length, last = rm.rounds[n - 1];
   const d = diff(r.root, rm.prompt || r.root);
   const has = d.add.length || d.del.length;
   const pre = `${r.id}:${rm.id}`;
   const hist = rm.rounds.slice(0, -1).map((rd, i) => ({rd, i})).reverse();
-  const head = `<div class="ramo-h"><h3>${esc(rm.name)}</h3><span class="slots">${rm.slots.map(m => `<span class="chip ${M[m].cls}">${M[m].short}</span>`).join('')}</span>
+  const head = `<div class="ramo-h"><h3>${esc(rm.name)}</h3><span class="slots">${slotChips(rm.slots)}</span>
     ${has ? `<button class="pdiff" data-act="diff" data-ramo="${rm.id}" title="O que muda em relação ao prompt da raiz"><span class="a">+${d.add.length}</span><span class="dl">−${d.del.length}</span><span>no prompt</span></button>` : `<span class="praw">prompt da raiz</span>`}
     <span class="sp"></span>
     <button class="ghost sm" data-act="round" data-ramo="${rm.id}" title="Nova rodada com o prompt deste ramo">${ic('refresh')}r${n + 1}</button></div>`;
@@ -233,12 +250,13 @@ function renderDesk() {
   </div>
   <section class="prompt ${S.openPrompt[r.id] ? 'open' : ''}" id="prompt-card">
     <div class="p-text" data-act="expand" title="${S.openPrompt[r.id] ? 'Recolher' : 'Ver o prompt inteiro'}">${esc(r.root.join(' '))}</div>
-    <div class="atts">${r.att.map((a, i) => `<figure class="att ${a.root ? 'root' : ''} ${a.derived ? 'derived' : ''}" title="${a.root ? 'Referência: a imagem aprovada que o resultado tem de seguir' : a.derived ? 'Saiu de uma rodada. Anexar derivada encadeia: a próxima herda o desvio dela.' : ''}"><div class="att-img" data-act="view-att" data-i="${i}"><img src="${SRC(a.file)}" alt=""><span class="n">${i + 1}</span>${a.root ? `<span class="anc">${ic('anchor')}</span>` : ''}${r.closed ? '' : `<button class="rm" data-act="detach" data-i="${i}" title="Tirar o anexo (as próximas rodadas não usam mais)">${ic('x')}</button>`}</div><figcaption>${esc(a.label)}</figcaption></figure>`).join('')}
+    ${r.media === 'audio' ? `<div class="aparams">${r.audio.duration ? `<span class="chip">${String(r.audio.duration).replace('.', ',')} s</span>` : '<span class="chip">duração automática</span>'}${r.audio.loop ? `<span class="chip">${ic('repeat')}loop</span>` : ''}<span class="chip">fidelidade ${String(r.audio.influence).replace('.', ',')}</span></div>` : `<div class="atts">${r.att.map((a, i) => `<figure class="att ${a.root ? 'root' : ''} ${a.derived ? 'derived' : ''}" title="${a.root ? 'Referência: a imagem aprovada que o resultado tem de seguir' : a.derived ? 'Saiu de uma rodada. Anexar derivada encadeia: a próxima herda o desvio dela.' : ''}"><div class="att-img" data-act="view-att" data-i="${i}"><img src="${SRC(a.file)}" alt=""><span class="n">${i + 1}</span>${a.root ? `<span class="anc">${ic('anchor')}</span>` : ''}${r.closed ? '' : `<button class="rm" data-act="detach" data-i="${i}" title="Tirar o anexo (as próximas rodadas não usam mais)">${ic('x')}</button>`}</div><figcaption>${esc(a.label)}</figcaption></figure>`).join('')}
       <button class="att add" data-act="attach-file" title="Anexar imagem: escolher, arrastar ou colar (Ctrl V)">${ic('plus')}</button></div>
+  `}
   </section>`;
   if (r.kind === 'batch') {
     const tot = all.length, done = all.filter(x => x.it.st === 'd').length;
-    h += `<div class="b-head"><span class="slots">${r.slots.map(m => `<span class="chip ${M[m].cls}">${M[m].short}</span>`).join('')}</span><span class="bbar"><i style="width:${done / tot * 100}%"></i></span><span class="mono dim">${done} de ${tot}</span></div>
+    h += `<div class="b-head"><span class="slots">${slotChips(r.slots)}</span><span class="bbar"><i style="width:${done / tot * 100}%"></i></span><span class="mono dim">${done} de ${tot}</span></div>
       <div class="bgrid">${r.items.map((row, ri) => `<div class="bcard"><div class="bname">${esc(row.name)}</div><div class="bpair">${row.cells.map((it, ci) => tileHTML({it, k:`${r.id}:b:${ri}:${ci}`}, {mini:true})).join('')}</div></div>`).join('')}</div>`;
   } else {
     h += r.ramos.map(rm => ramoHTML(r, rm)).join('');
@@ -325,20 +343,20 @@ function askClaude(text) {
 
 /* ---------- camadas ---------- */
 function openOv(kind, html) { S.ov = kind; const o = $('#ov'); o.hidden = false; o.className = kind === 'cmp' || kind === 'loupe' ? '' : 'overlay'; o.innerHTML = html; }
-function closeOv() { S.ov = null; S.lpAtt = null; $('#ov').hidden = true; $('#ov').innerHTML = ''; }
+function closeOv() { if (S.ov === 'cmp') stopAudio(); S.ov = null; S.lpAtt = null; $('#ov').hidden = true; $('#ov').innerHTML = ''; }
 
 function stepper(id, v, off) { return `<div class="step ${v ? '' : 'zero'}" data-step="${id}"><button type="button" data-d="-1" aria-label="menos" ${off ? 'disabled' : ''}>−</button><b>${v}</b><button type="button" data-d="1" aria-label="mais" ${off ? 'disabled' : ''}>+</button></div>`; }
-function modelRows(counts) {
-  return ['gpt', 'pro', 'flash'].map(k => {
+function modelRows(counts, keys = ['gpt', 'pro', 'flash']) {
+  return keys.map(k => {
     const m = M[k], h = HEALTH.models[k] || {}, ready = h.ready !== false;
-    const price = !ready ? 'falta a chave' : h.cost ? `${usd(h.cost)} · ~${m.typ} s` : `pela conta · ~${m.typ} s`;
+    const price = !ready ? 'falta a chave' : m.audio ? 'variações · ~US$ 0,01 por segundo de som' : h.cost ? `${usd(h.cost)} · ~${m.typ} s` : `pela conta · ~${m.typ} s`;
     return `<div class="mrow"><span class="mname"><span class="chip ${m.cls}">${m.short}</span><b>${m.name}</b></span><span class="mono dim">${price}</span>${stepper(k, ready ? counts[k] || 0 : 0, !ready)}</div>`;
   }).join('');
 }
 function wireSteppers(root, counts, onChange) {
   root.querySelectorAll('.step').forEach(st => st.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
-    const k = st.dataset.step; counts[k] = Math.max(0, Math.min(4, (counts[k] || 0) + +b.dataset.d));
+    const k = st.dataset.step; counts[k] = Math.max(0, Math.min(M[k] && M[k].audio ? 8 : 4, (counts[k] || 0) + +b.dataset.d));
     st.querySelector('b').textContent = counts[k]; st.classList.toggle('zero', !counts[k]); onChange();
   }));
 }
@@ -349,14 +367,22 @@ let newState = null, pickTarget = null;
 async function openNew() {
   if (!HEALTH.boot) await refreshHealth();
   const ready = k => (HEALTH.models[k] || {}).ready !== false;
-  const st = {counts:{gpt:1, pro:ready('pro') ? 1 : 0, flash:0}, att:[], batch:false};
+  const st = {counts:{gpt:1, pro:ready('pro') ? 1 : 0, flash:0}, acounts:{sfx:ready('sfx') ? 4 : 0}, att:[], batch:false, media:'image'};
   openOv('new', `<form class="sheet" id="nf" autocomplete="off">
-    <h2>Novo pedido <span class="seg" style="margin-left:auto"><button type="button" class="on" data-mode="one">Um pedido</button><button type="button" data-mode="batch">Lote</button></span></h2>
+    <h2>Novo pedido <span class="seg" id="nf-media"><button type="button" class="on" data-media="image">Imagem</button><button type="button" data-media="audio">${ic('wave')}Som</button></span>
+      <span class="seg" style="margin-left:auto"><button type="button" class="on" data-mode="one">Um pedido</button><button type="button" data-mode="batch">Lote</button></span></h2>
     <div class="field"><input class="inp" id="nf-title" placeholder="Nome (ex.: Comanche, ficha)"></div>
     <div class="field"><textarea class="ta" id="nf-prompt" placeholder="Prompt completo, em inglês. Uma ideia por linha deixa a diferença entre ramos legível."></textarea></div>
     <div class="field" id="nf-items-f" hidden><span class="flabel">Itens, um por linha: cada um vira uma imagem com o mesmo prompt, trocando {item}</span><textarea class="ta" id="nf-items" style="min-height:80px" placeholder="sell&#10;repair&#10;guard"></textarea></div>
-    <div class="field"><div class="drop" id="nf-drop"></div></div>
-    <div class="field">${modelRows(st.counts)}</div>
+    <div class="field" data-for="image"><div class="drop" id="nf-drop"></div></div>
+    <div class="field" data-for="image" id="nf-irows">${modelRows(st.counts)}</div>
+    <div class="field aform" data-for="audio" hidden>
+      <div class="arow"><span class="flabel">Duração</span><span class="seg" id="nf-dmode"><button type="button" class="on" data-dm="auto">Automática</button><button type="button" data-dm="fix">Fixa</button></span>
+        <input type="range" id="nf-dur" min="0.5" max="30" step="0.5" value="3" hidden><span class="mono" id="nf-durv" hidden>3 s</span></div>
+      <div class="arow"><label class="chk" style="margin:0"><input type="checkbox" id="nf-loop">${ic('repeat')}Loop sem emenda (vento, motor, ambiente)</label></div>
+      <div class="arow"><span class="flabel">Mais livre</span><input type="range" id="nf-inf" min="0" max="1" step="0.05" value="0.3"><span class="flabel">Mais fiel ao prompt</span></div>
+      ${modelRows(st.acounts, ['sfx'])}
+    </div>
     <div class="field fpick" id="nf-fp">
       <button type="button" class="fp-btn" id="fp-btn" title="Onde as imagens vão ficar">${ic('folder')}<span class="fp-name" id="fp-name"></span><span class="mono fp-path" id="fp-path"></span>${ic('down')}</button>
       <button type="button" class="ghost" id="fp-browse" title="Escolher qualquer pasta no seletor do Windows">Procurar…</button>
@@ -366,11 +392,14 @@ async function openNew() {
   </form>`);
   const f = $('#nf');
   const upd = () => {
-    const n = Object.values(st.counts).reduce((a, b) => a + b, 0);
+    const au = st.media === 'audio';
+    const n = Object.values(au ? st.acounts : st.counts).reduce((a, b) => a + b, 0);
     const items = st.batch ? $('#nf-items').value.split('\n').filter(s => s.trim()).length : 1;
-    const tot = n * items, cost = costOf(st.counts) * items;
-    $('#nf-go').innerHTML = `Gerar ${tot} ${tot === 1 ? 'imagem' : 'imagens'}${cost ? ' · ' + usd(cost) : ''} <kbd>Ctrl Enter</kbd>`;
+    const secs = au ? (st.dfix ? +$('#nf-dur').value : 5) : 0;
+    const tot = n * items, cost = au ? tot * secs * 0.002 : costOf(st.counts) * items;
+    $('#nf-go').innerHTML = `Gerar ${tot} ${au ? (tot === 1 ? 'som' : 'sons') : (tot === 1 ? 'imagem' : 'imagens')}${cost ? ' · ' + (au && !st.dfix ? '~' : '') + usd(cost) : ''} <kbd>Ctrl Enter</kbd>`;
     $('#nf-go').disabled = !tot;
+    if (au && !ready('sfx')) { $('#nf-go').innerHTML = 'Falta a chave da ElevenLabs'; $('#nf-go').disabled = true; }
   };
   const drawAtt = () => {
     $('#nf-drop').innerHTML = st.att.map((a, i) => `<figure class="att ${i === 0 ? 'root' : ''}"><div class="att-img"><img src="${a.dataUrl}" alt=""><span class="n">${i + 1}</span>${i === 0 ? `<span class="anc">${ic('anchor')}</span>` : ''}<button type="button" class="rm" data-rm="${i}" title="Tirar">${ic('x')}</button></div><figcaption>${esc(a.label)}</figcaption></figure>`).join('') +
@@ -379,7 +408,22 @@ async function openNew() {
     $('#nf-drop').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { st.att.splice(+b.dataset.rm, 1); drawAtt(); });
   };
   st.redraw = drawAtt;
-  drawAtt(); wireSteppers(f, st.counts, upd); upd();
+  drawAtt(); wireSteppers($('#nf-irows'), st.counts, upd);
+  wireSteppers(f.querySelector('.aform'), st.acounts, upd); upd();
+  const prompt = $('#nf-prompt'), phImg = prompt.placeholder;
+  f.querySelectorAll('[data-media]').forEach(b => b.onclick = () => {
+    st.media = b.dataset.media;
+    f.querySelectorAll('[data-media]').forEach(x => x.classList.toggle('on', x === b));
+    f.querySelectorAll('[data-for]').forEach(x => x.hidden = x.dataset.for !== st.media);
+    prompt.placeholder = st.media === 'audio' ? 'O som, em inglês: a fonte, o material, a distância, o lugar, o ataque e a cauda. Ex.: heavy tank cannon shot, close, open desert, sharp crack, deep boom, short tail' : phImg;
+    st.reloadFolders && st.reloadFolders(); upd();
+  });
+  f.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => {
+    st.dfix = b.dataset.dm === 'fix';
+    f.querySelectorAll('[data-dm]').forEach(x => x.classList.toggle('on', x === b));
+    $('#nf-dur').hidden = $('#nf-durv').hidden = !st.dfix; upd();
+  });
+  $('#nf-dur').addEventListener('input', () => { $('#nf-durv').textContent = String($('#nf-dur').value).replace('.', ',') + ' s'; upd(); });
   f.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
     st.batch = b.dataset.mode === 'batch';
     f.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === b));
@@ -390,6 +434,7 @@ async function openNew() {
   const go = async e => {
     e.preventDefault();
     const body = {title:$('#nf-title').value.trim(), prompt:$('#nf-prompt').value.trim(), session:'Você', attachments:st.att, models:modelsBody(st.counts), folder:st.folder || undefined};
+    if (st.media === 'audio') Object.assign(body, {kind:'sound', attachments:[], models:modelsBody(st.acounts), loop:$('#nf-loop').checked, influence:+$('#nf-inf').value, duration:st.dfix ? +$('#nf-dur').value : undefined});
     if (st.batch) body.items = $('#nf-items').value.split('\n').map(s => s.trim()).filter(Boolean);
     if (!body.title || !body.prompt) return toast('Falta o nome ou o prompt');
     $('#nf-go').disabled = true;
@@ -409,7 +454,8 @@ function wireFolderPicker(st, form) {
   const pop = $('#fp-pop'), q = $('#fp-q');
   const nextNew = () => {
     const nums = folders.map(f => +(f.name.match(/^(\d+)_/) || [])[1]).filter(Boolean);
-    return `captures/concept/${String(Math.max(50, ...nums) + 1).padStart(2, '0')}_${slugOf($('#nf-title').value)}/`;
+    const au = st.media === 'audio';
+    return `captures/${au ? 'audio' : 'concept'}/${String(Math.max(au ? 0 : 50, ...nums) + 1).padStart(2, '0')}_${slugOf($('#nf-title').value)}/`;
   };
   const show = () => {
     const p = st.folder || nextNew();
@@ -423,14 +469,15 @@ function wireFolderPicker(st, form) {
     $('#fp-list').innerHTML = items.map((f, i) => {
       const chosen = f.nova ? !st.folder : st.folder === f.path;
       const pic = f.nova ? `<span class="ph">${ic('plus')}</span>` : f.thumb ? `<img src="${SRC(f.thumb)}" alt="" loading="lazy">` : `<span class="ph">${ic('folder')}</span>`;
-      const sub = f.nova ? esc(nextNew()) : `${f.images} ${f.images === 1 ? 'imagem' : 'imagens'} · ${ago(new Date(f.mtime).toISOString())}`;
+      const unit = st.media === 'audio' ? ['som', 'sons'] : ['imagem', 'imagens'];
+      const sub = f.nova ? esc(nextNew()) : `${f.images} ${unit[f.images === 1 ? 0 : 1]} · ${ago(new Date(f.mtime).toISOString())}`;
       return `<button type="button" class="fp-it ${i === idx ? 'on' : ''}" data-i="${i}">${pic}<span class="fp-t"><b>${esc(f.nova ? 'Nova pasta' : f.name)}</b><span class="m">${sub}</span></span>${chosen ? ic('check') : ''}</button>`;
     }).join('');
     const on = $('#fp-list .fp-it.on'); if (on) on.scrollIntoView({block:'nearest'});
   };
   const choose = i => { const f = items[i]; if (!f) return; st.folder = f.nova ? null : f.path; show(); pop.hidden = true; $('#fp-btn').focus(); };
-  api('/api/folders').then(f => { folders = f; show(); if (!pop.hidden) draw(); });
-  show();
+  st.reloadFolders = () => { st.folder = null; folders = []; show(); api('/api/folders?media=' + st.media).then(f => { folders = f; show(); if (!pop.hidden) draw(); }); };
+  st.reloadFolders();
   $('#fp-btn').onclick = () => { pop.hidden = !pop.hidden; if (!pop.hidden) { q.value = ''; idx = 0; draw(); q.focus(); } };
   $('#fp-list').onclick = e => { const b = e.target.closest('[data-i]'); if (b) choose(+b.dataset.i); };
   q.oninput = () => { idx = 0; draw(); };
@@ -444,7 +491,7 @@ function wireFolderPicker(st, form) {
   $('#nf-title').addEventListener('input', () => { if (!st.folder) show(); });
   $('#fp-browse').onclick = async () => {
     const b = $('#fp-browse'); b.disabled = true; b.textContent = 'Abrindo…';
-    try { const r = await api('/api/pick-folder', {start:st.folder || 'captures/concept'}); if (r.path) { st.folder = r.path; show(); } }
+    try { const r = await api('/api/pick-folder', {start:st.folder || (st.media === 'audio' ? 'captures/audio' : 'captures/concept')}); if (r.path) { st.folder = r.path; show(); } }
     finally { b.disabled = false; b.textContent = 'Procurar…'; }
   };
 }
@@ -464,8 +511,9 @@ function readFiles(files, target) {
 function openBranch(fromK) {
   const r = cur(); if (!r || r.kind === 'batch') return;
   const x = fromK && byKey(fromK);
-  const counts = {gpt:0, pro:0, flash:0};
-  if (x) counts[x.it.m] = 1; else counts.gpt = 1;
+  const au = r.media === 'audio';
+  const counts = au ? {sfx:0} : {gpt:0, pro:0, flash:0};
+  if (au) counts.sfx = 4; else if (x) counts[x.it.m] = 1; else counts.gpt = 1;
   const base = x && x.rm ? (x.rm.prompt || r.root) : r.root;
   let mode = 'same';
   openOv('branch', `<form class="sheet" id="bf" autocomplete="off">
@@ -473,7 +521,7 @@ function openBranch(fromK) {
     <div class="field"><input class="inp" id="bf-name" value="Outra visão"></div>
     <div class="field"><span class="seg"><button type="button" data-m="same" class="on">Mesmo prompt</button><button type="button" data-m="edit">Eu escrevo</button><button type="button" data-m="claude">Claude propõe</button></span>
       <textarea class="ta" id="bf-prompt" hidden>${esc(base.join('\n'))}</textarea></div>
-    <div class="field" id="bf-models">${modelRows(counts)}</div>
+    <div class="field" id="bf-models">${au ? modelRows(counts, ['sfx']) : modelRows(counts)}</div>
     <div class="sheet-acts"><button type="button" class="ghost" data-act="close">Cancelar</button><button type="submit" class="primary" id="bf-go">Criar e gerar</button></div>
   </form>`);
   const f = $('#bf');
@@ -505,8 +553,11 @@ function openApprove() {
   const r = cur(); const picks = allOf(r).filter(x => x.it.pick && x.it.st === 'd'); if (!picks.length) return;
   openOv('approve', `<form class="sheet" id="af">
     <h2>${ic('check')}Aprovar</h2>
-    <div class="ap-imgs">${picks.map(x => `<img src="${SRC(x.it.file)}" alt="">`).join('')}</div>
-    <div class="field"><label class="pathsel mono">docs/aprovados/<select id="af-area"><option>unidades</option><option>construcoes</option><option selected>cenas</option><option>explosoes</option><option>hud</option><option>chao</option></select>/</label></div>
+    ${r.media === 'audio'
+      ? `<div class="ap-snds">${picks.map(x => `<span class="chip m-sfx">${ic('wave')}${esc(x.it.file.split('/').pop())}</span>`).join('')}</div>
+    <div class="field"><label class="pathsel mono">docs/aprovados/<select id="af-area"><option selected>sons</option><option>musica</option><option>vozes</option></select>/</label></div>`
+      : `<div class="ap-imgs">${picks.map(x => `<img src="${SRC(x.it.file)}" alt="">`).join('')}</div>
+    <div class="field"><label class="pathsel mono">docs/aprovados/<select id="af-area"><option>unidades</option><option>construcoes</option><option selected>cenas</option><option>explosoes</option><option>hud</option><option>chao</option></select>/</label></div>`}
     <div class="field"><input class="inp" id="af-said" placeholder="O que você achou, nas suas palavras"></div>
     <div class="sheet-acts"><button type="button" class="ghost" data-act="close">Voltar</button><button type="submit" class="primary">Aprovar${r.src !== 'Você' ? ' e mandar pra ' + esc(r.src) : ''} <kbd>Ctrl Enter</kbd></button></div>
   </form>`);
@@ -534,6 +585,7 @@ function openCompare() {
 }
 function renderCompare() {
   const r = cur(), c = S.cmp;
+  if (r.media === 'audio') return renderListen();
   const list = c.list.map(byKey).filter(Boolean);
   const tgt = rootAtt(r);
   const cap = x => `<span class="chip ov ${M[x.it.m].cls}">${M[x.it.m].short}</span><span class="lbl">${x.rm ? esc(x.rm.name) + ' · r' + (x.n + 1) : esc(x.row.name)}</span>`;
@@ -559,13 +611,33 @@ function renderCompare() {
   }
 }
 
+/* A mesa de ouvir: as variações uma embaixo da outra, com a onda grande. 1–9 troca na hora e no mesmo
+   ponto do som (A/B de verdade), Espaço pausa, L repete, V liga/desliga o volume igualado. */
+function renderListen() {
+  const r = cur(), c = S.cmp;
+  const list = c.list.map(byKey).filter(Boolean);
+  const lbl = x => x.rm ? esc(x.rm.name) + ' · r' + (x.n + 1) : esc(x.row.name);
+  $('#ov').innerHTML = `<div class="cmp listen"><div class="cmp-h"><b>Ouvir</b><span class="dim">${esc(r.title)}</span>
+    <span class="seg"><button data-act="au-norm" class="${AUD.norm ? 'on' : ''}" title="Cada som no mesmo volume, pro mais alto não parecer melhor (V)">${ic('volume')}Volume igualado <kbd>V</kbd></button><button data-act="au-loop" class="${AUD.loop ? 'on' : ''}" title="Tocar sem parar, pra ouvir a emenda (L)">${ic('repeat')}Repetir <kbd>L</kbd></button></span>
+    <span class="sp"></span>${allOf(r).some(x => x.it.pick) && !r.closed ? `<button class="primary sm" data-act="approve">${ic('check')}Aprovar</button>` : ''}<button class="ghost sm" data-act="close">Fechar <kbd>Esc</kbd></button></div>
+    <div class="au-list">${list.map((x, i) => `<figure class="au-row au ${M[x.it.m].cls} ${x.it.pick ? 'pick' : ''} ${AUD.cur && AUD.cur.key === x.k ? 'playing' : ''}" data-act="au-play" data-k="${x.k}">
+      <span class="n mono">${i + 1}</span><span class="au-l"><span class="chip ${M[x.it.m].cls}">${M[x.it.m].short}</span><b>${lbl(x)}</b><span class="dur mono" data-dur="${esc(x.it.file)}"></span></span>
+      <span class="wv"><canvas class="wave" data-f="${esc(x.it.file)}"></canvas><i class="ph"></i></span>
+      <button class="pk ${x.it.pick ? 'on' : ''}" data-act="pick" data-k="${x.k}" title="Escolher (P escolhe o que está tocando)">${ic('star')}</button></figure>`).join('')}</div></div>`;
+  hydrateWaves();
+}
+
 function doneList(r) { return allOf(r).filter(x => x.it.st === 'd'); }
-function openLoupe(k) { const x = k && byKey(k); if (!x || x.it.st !== 'd') return; S.selK = k; S.lpAtt = null; openOv('loupe', ''); renderLoupe(); }
+function openLoupe(k) { const x = k && byKey(k); if (!x || x.it.st !== 'd') return; if (isAudio(x)) return togglePlay(k); S.selK = k; S.lpAtt = null; openOv('loupe', ''); renderLoupe(); }
 function openAtt(i) { const r = cur(); if (!r || !r.att[i]) return; openOv('loupe', ''); S.lpAtt = {id:r.id, i}; renderLoupe(); }
 const copyBtn = file => `<button class="ghost sm" data-act="copy" data-f="${esc(file)}" title="Copiar a imagem">${ic('copy')}Copiar <kbd>Ctrl C</kbd></button>`;
 function viewFile() {
   if (S.lpAtt) { const r = req(S.lpAtt.id); return r && r.att[S.lpAtt.i] && r.att[S.lpAtt.i].file; }
   const x = S.selK && byKey(S.selK); return x && x.it.st === 'd' ? x.it.file : null;
+}
+async function copyPath(file) {
+  const p = (HEALTH.repo ? HEALTH.repo.replace(/\\/g, '/') + '/' : '') + file;
+  try { await navigator.clipboard.writeText(p); toast('Caminho copiado', null, 'copy'); } catch { toast(p, null, 'copy'); }
 }
 function renderLoupe() {
   if (S.lpAtt) {
@@ -597,6 +669,7 @@ function loupeStep(d) {
 
 async function copyImage(file) {
   if (!file) return;
+  if (/\.(mp3|wav|ogg)$/i.test(file)) return copyPath(file);
   try {
     const png = fetch(SRC(file)).then(r => r.blob()).then(async b => {
       if (b.type === 'image/png') return b;
@@ -607,6 +680,82 @@ async function copyImage(file) {
     await navigator.clipboard.write([new ClipboardItem({'image/png': png})]);
     toast('Imagem copiada', null, 'copy');
   } catch (e) { toast('Não deu pra copiar: ' + (e.message || e), null, 'copy'); }
+}
+
+/* ---------- som: decodifica, desenha a onda e toca com o volume igualado ---------- */
+const AUD = { ctx:null, cache:new Map(), cur:null, norm:true, loop:false, paused:null };
+const actx = () => AUD.ctx || (AUD.ctx = new AudioContext());
+function decode(file) {
+  if (!AUD.cache.has(file)) AUD.cache.set(file, fetch(SRC(file)).then(r => r.arrayBuffer()).then(b => actx().decodeAudioData(b)).then(buf => {
+    const chs = [...Array(buf.numberOfChannels).keys()].map(c => buf.getChannelData(c));
+    const n = buf.length, peaks = new Float32Array(800), step = Math.max(1, Math.floor(n / 800));
+    for (let i = 0; i < 800; i++) { let m = 0; for (let j = i * step, e = Math.min(n, (i + 1) * step); j < e; j++) for (const ch of chs) { const v = Math.abs(ch[j]); if (v > m) m = v; } peaks[i] = m; }
+    // o trecho de 400 ms mais alto de cada som vai pro mesmo nível (~−16 dBFS RMS): comparar justo
+    const w = Math.min(n, Math.max(1, Math.round(buf.sampleRate * 0.4)));
+    let acc = 0, best = 0;
+    for (let i = 0; i < n; i++) {
+      let v = 0; for (const ch of chs) v += ch[i] * ch[i]; acc += v / chs.length;
+      if (i >= w) { let u = 0; for (const ch of chs) u += ch[i - w] * ch[i - w]; acc -= u / chs.length; }
+      if (i >= w - 1) best = Math.max(best, Math.sqrt(Math.max(0, acc) / w));
+    }
+    const gain = best > 1e-5 ? Math.min(6, Math.max(0.1, 0.16 / best)) : 1;
+    let top = 0; for (const p of peaks) top = Math.max(top, p);
+    return { buf, peaks, top: top || 1, gain, dur: buf.duration };
+  }));
+  return AUD.cache.get(file);
+}
+function drawWave(cv, d) {
+  const r = cv.getBoundingClientRect(); if (!r.width || !r.height) return;
+  const dpr = devicePixelRatio || 1; cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  const g = cv.getContext('2d'), mid = cv.height / 2, bars = Math.max(8, Math.floor(r.width / 3));
+  g.fillStyle = getComputedStyle(cv).getPropertyValue('--mc').trim() || '#c39bf2';
+  const bw = cv.width / bars;
+  for (let i = 0; i < bars; i++) {
+    const a = Math.floor(i * d.peaks.length / bars), e = Math.max(a + 1, Math.floor((i + 1) * d.peaks.length / bars));
+    let m = 0; for (let j = a; j < e; j++) m = Math.max(m, d.peaks[j]);
+    const h = Math.max(dpr, Math.pow(m / d.top, 0.75) * mid * 0.92);
+    g.fillRect(i * bw + bw * 0.18, mid - h, Math.max(dpr, bw * 0.64), h * 2);
+  }
+}
+function hydrateWaves() {
+  document.querySelectorAll('canvas.wave').forEach(cv => decode(cv.dataset.f).then(d => drawWave(cv, d)).catch(() => {}));
+  document.querySelectorAll('[data-dur]').forEach(el => decode(el.dataset.dur).then(d => { el.textContent = d.dur.toFixed(1).replace('.', ',') + ' s'; }).catch(() => {}));
+}
+const reqLoop = key => { const r = req(String(key).split(':')[0]); return !!(r && r.audio && r.audio.loop); };
+function stopAudio() { if (AUD.cur) { const c = AUD.cur; AUD.cur = null; try { c.src.onended = null; c.src.stop(); } catch {} } paintPlaying(); }
+function posOf() {
+  if (!AUD.cur) return 0;
+  const t = actx().currentTime - AUD.cur.t0;
+  return AUD.cur.loop ? (t % AUD.cur.dur) / AUD.cur.dur : Math.min(1, t / AUD.cur.dur);
+}
+async function playKey(k, from = 0) {
+  const x = byKey(k); if (!x || x.it.st !== 'd' || !isAudio(x)) return;
+  stopAudio(); AUD.paused = null;
+  const d = await decode(x.it.file), ctx = actx();
+  if (ctx.state === 'suspended') await ctx.resume();
+  const src = ctx.createBufferSource(), gain = ctx.createGain();
+  src.buffer = d.buf; src.loop = AUD.loop || reqLoop(k);
+  gain.gain.value = AUD.norm ? d.gain : 1;
+  src.connect(gain).connect(ctx.destination);
+  const off = Math.min(d.dur * from, Math.max(0, d.dur - 0.01));
+  src.start(0, off);
+  AUD.cur = { src, gain, key:k, dur:d.dur, loop:src.loop, t0:ctx.currentTime - off, d };
+  src.onended = () => { if (AUD.cur && AUD.cur.src === src) { AUD.cur = null; paintPlaying(); } };
+  if (!x.it.seen) { x.it.seen = true; item(k, 'seen'); }
+  paintPlaying(); requestAnimationFrame(tickPlay);
+}
+function togglePlay(k) { if (AUD.cur && AUD.cur.key === k) { AUD.paused = { key:k, pos:posOf() }; stopAudio(); } else playKey(k); }
+// A/B: troca pro outro som no mesmo ponto do que está tocando
+function switchTo(k) { const p = AUD.cur ? posOf() : AUD.paused && AUD.paused.key !== k ? AUD.paused.pos : 0; playKey(k, p); }
+function paintPlaying() {
+  document.querySelectorAll('.au.playing').forEach(e => e.classList.remove('playing'));
+  if (AUD.cur) document.querySelectorAll(`.au[data-k="${AUD.cur.key}"]`).forEach(e => e.classList.add('playing'));
+}
+function tickPlay() {
+  if (!AUD.cur) return;
+  const p = posOf();
+  document.querySelectorAll(`.au[data-k="${AUD.cur.key}"]`).forEach(e => { e.style.setProperty('--pp', p.toFixed(4)); if (!e.classList.contains('playing')) e.classList.add('playing'); });
+  requestAnimationFrame(tickPlay);
 }
 
 /* Configurações: por onde o GPT sai e as chaves. A chave digitada vai direto pro serviço; a tela só
@@ -641,6 +790,11 @@ async function openSettings() {
       <div class="dim">Pro ~US$ 0,13 e Flash ~US$ 0,07 por imagem; o Pro precisa do faturamento ligado no projeto</div>
     </section>
     <section class="cfg">
+      <div class="cfg-h"><span class="chip m-sfx">Som</span><b>ElevenLabs</b><span class="sp"></span><a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">criar chave na ElevenLabs</a></div>
+      ${keyRow('elevenlabs', 'sk_…')}
+      <div class="dim">efeitos sonoros ~US$ 0,12 por minuto de som; desconta da sua assinatura</div>
+    </section>
+    <section class="cfg">
       <div class="cfg-h"><span class="spark">${ic('spark')}</span><b>Claude</b></div>
       <div class="cfg-st"><i class="dot live"></i>pela sua assinatura, com o Claude Code deste PC</div>
     </section>
@@ -665,7 +819,7 @@ async function openSettings() {
   if (login) login.onclick = () => { api('/api/codex-login', {}); toast('Abri o login do Codex numa janela; termine no navegador e reabra as Configurações'); };
   const save = async e => {
     e.preventDefault();
-    await api('/api/settings', {gptVia:via, keys:{openai:$('#k-openai') ? $('#k-openai').value : '', gemini:$('#k-gemini').value}});
+    await api('/api/settings', {gptVia:via, keys:{openai:$('#k-openai') ? $('#k-openai').value : '', gemini:$('#k-gemini').value, elevenlabs:$('#k-elevenlabs').value}});
     closeOv(); toast('Configurações salvas'); refreshHealth();
   };
   f.addEventListener('submit', save);
@@ -721,7 +875,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]');
   if (!t) {
     const tile = e.target.closest('.tile[data-k]');
-    if (tile) { setSel(tile.dataset.k); openLoupe(tile.dataset.k); }
+    if (tile) { setSel(tile.dataset.k); const x = byKey(tile.dataset.k); if (isAudio(x)) togglePlay(tile.dataset.k); else openLoupe(tile.dataset.k); }
     if (e.target.id === 'ov' && S.ov !== 'cmp' && S.ov !== 'loupe') closeOv();
     return;
   }
@@ -759,6 +913,9 @@ document.addEventListener('click', e => {
     case 'lp-prev': loupeStep(-1); break;
     case 'lp-next': loupeStep(1); break;
     case 'lp-t': S.lpT = !S.lpT; renderLoupe(); break;
+    case 'au-play': switchTo(k); break;
+    case 'au-norm': AUD.norm = !AUD.norm; if (AUD.cur) AUD.cur.gain.gain.value = AUD.norm ? AUD.cur.d.gain : 1; renderListen(); break;
+    case 'au-loop': AUD.loop = !AUD.loop; if (AUD.cur) AUD.cur.src.loop = AUD.cur.loop = AUD.loop || reqLoop(AUD.cur.key); renderListen(); break;
     case 'view-att': openAtt(+t.dataset.i); break;
     case 'copy': copyImage(t.dataset.f || (k && byKey(k)?.it.file)); break;
   }
@@ -832,6 +989,15 @@ document.addEventListener('keydown', e => {
     const f = S.ov === 'loupe' ? viewFile() : !S.ov ? viewFile() : null;
     if (f) { e.preventDefault(); copyImage(f); return; }
   }
+  if (S.ov === 'cmp' && !typing && cur() && cur().media === 'audio') {
+    const n = +e.key, l = S.cmp.list, kk = e.key.toLowerCase();
+    if (n >= 1 && n <= l.length) switchTo(l[n - 1]);
+    if (e.key === ' ') { e.preventDefault(); if (AUD.cur) { AUD.paused = { key:AUD.cur.key, pos:posOf() }; stopAudio(); } else if (AUD.paused) playKey(AUD.paused.key, AUD.paused.pos); else if (l[0]) playKey(l[0]); }
+    if (kk === 'l') $('[data-act="au-loop"]').click();
+    if (kk === 'v') $('[data-act="au-norm"]').click();
+    if (kk === 'p' && (AUD.cur || AUD.paused)) togglePick((AUD.cur || AUD.paused).key);
+    return;
+  }
   if (S.ov === 'cmp' && !typing) {
     const n = +e.key; const l = S.cmp.list;
     if (n >= 1 && n <= l.length) togglePick(l[n - 1]);
@@ -852,7 +1018,7 @@ document.addEventListener('keydown', e => {
   const kk = e.key.toLowerCase();
   const map = {n:openNew, c:openCompare, p:() => togglePick(S.selK), x:() => toggleRej(S.selK), r:() => S.selK && regen(S.selK),
     b:() => openBranch(S.selK && byKey(S.selK)?.it.st === 'd' && byKey(S.selK)?.rm ? S.selK : null), a:() => S.selK && attachFrom(S.selK),
-    enter:() => S.selK && openLoupe(S.selK), '/':() => { S.claude = true; render(); $('#cl-input').focus(); },
+    enter:() => S.selK && openLoupe(S.selK), ' ':() => S.selK && isAudio(byKey(S.selK)) && togglePlay(S.selK), '/':() => { S.claude = true; render(); $('#cl-input').focus(); },
     arrowleft:() => navTiles('l'), arrowright:() => navTiles('r'), arrowup:() => navTiles('u'), arrowdown:() => navTiles('d')};
   if (map[kk]) { e.preventDefault(); map[kk](); }
 });

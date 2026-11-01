@@ -113,3 +113,37 @@ Fontes: [preços de imagem 2026, IntuitionLabs](https://intuitionlabs.ai/article
 
 - Ele: a chave do Gemini, se quiser as duas visões automáticas (~US$ 0,07 a 0,13 por imagem).
 - Depois do ok da tela: empacotar no Tauri e o "Claude monta o prompt" no pedido novo.
+
+## Som (fase 3, 01/11): efeitos sonoros pela ElevenLabs
+
+Pedido dele: "geração de áudios também, sons, música, eu pago ElevenLabs, tudo detalhado bem top".
+Começou pelos **efeitos sonoros**; música e vozes vêm depois, uma coisa de cada vez.
+
+**Estudo** (agente, com as fontes oficiais):
+- SFX: `POST /v1/sound-generation`, `eleven_text_to_sound_v2`, até 30 s, `loop` sem emenda (só em MP3),
+  `prompt_influence` 0–1 (padrão 0,3), **um som por chamada** (o site gera 4; o Atelier pede N em paralelo).
+- Música: `POST /v1/music` (`music_v2_5`), até 10 min, plano por seções **grátis** em `/v1/music/plan`,
+  instrumental, faixas separadas. Licença: jogo indie sim; "Studio Games" acima de US$ 500 mil, não.
+- Voz: `eleven_v4` com tags de emoção; Voice Design cria a voz pela descrição.
+- Custo pela API (desconta da assinatura dele, mais barato que o site): SFX ~US$ 0,12/min, música
+  ~US$ 0,15/min, voz ~US$ 0,08 por mil caracteres.
+- Mesa de ouvir, do jeito dos estúdios: volume igualado antes do A/B (senão o mais alto "ganha"),
+  trocar A↔B no mesmo ponto do som, repetir pra ouvir a emenda do loop, aprovar um **conjunto** de
+  6 a 9 variações (como o `docs/CONCEITO_SOM.md` pede).
+
+**Como ficou:**
+- Pedido novo → **Imagem | Som**. No Som: duração automática ou fixa (0,5 a 30 s), loop sem emenda,
+  "mais livre ↔ mais fiel ao prompt", e quantas variações (padrão 4, até 8). Pasta em
+  `captures/audio/<NN>_<nome>/`. Lote também vale (o mesmo prompt com `{item}`).
+- Na mesa, cada variação é a **onda** do som; clique toca e pausa (Espaço também). O loop toca sem
+  parar sozinho num pedido com loop.
+- **Comparar vira "Ouvir"**: as variações uma embaixo da outra; 1–9 troca na hora e no mesmo ponto,
+  Espaço pausa, **V** liga/desliga o volume igualado (o trecho de 400 ms mais alto de cada som vai pra
+  ~−16 dBFS RMS), **L** repete, **P** escolhe o que está tocando.
+- Aprovar copia pra `docs/aprovados/sons/` (ou `musica/`, `vozes/`). Copiar (Ctrl C) num som copia o
+  caminho do arquivo.
+- O Claude não ouve: num pedido de som ele ajuda no prompt, na duração e no que pedir na próxima
+  rodada; o ouvido é dele.
+- Sessões: `atelier_generate` com `kind: "sound"`, `variations`, `duration`, `loop`, `influence`.
+- A chave da ElevenLabs entra nas Configurações (Testar mostra o plano e os créditos do mês).
+- `core/providers.mjs`: `eleven` (a API) e `fakeaudio` (um estouro sintético em WAV, pros testes da tela).

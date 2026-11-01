@@ -27,11 +27,12 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   `Tools/simtest.ps1` testa a simulação sem a Unreal. Arquitetura em `docs/JOGO.md`.
   **A lista viva da base jogável** (multiplayer, War Factory, névoa, minimapa, visual
   final; o que é de cada sessão) é `docs/BASE_JOGAVEL.md`: quem mexer num item marca lá.
-- `Atelier/`: o **app de imagens** (desde 01/11): fila do GPT (pela conta do ChatGPT dele, via
-  Codex, sem custo por imagem) e do Gemini (pela API, só com a chave), com o Claude dentro.
+- `Atelier/`: o **app de imagens e sons** (desde 01/11): fila do GPT (pela conta do ChatGPT dele, via
+  Codex, sem custo por imagem), do Gemini (pela API, só com a chave) e dos efeitos sonoros da
+  ElevenLabs (`kind: "sound"`), com o Claude dentro.
   As sessões pedem imagem sozinhas pelas ferramentas `atelier_*` (MCP, `.mcp.json`) em vez de
   mandar o Felipe colar prompt: `atelier_generate` com os anexos e depois `atelier_wait`.
-  Ele abre o app pelo atalho "Atelier" (`Atelier/atelier.ps1`). Contexto: `docs/ATELIER.md`.
+  Ele abre pelo `Atelier.exe` na área de trabalho (`Atelier/app`). Contexto: `docs/ATELIER.md`.
 - `reference/webgl/`: o simulador **WebGL** original, congelado na tag
   `v6-fumaca-interacao`. É a referência visual aprovada. Não mexer no JS.
 - `docs/`: leia nesta ordem quando precisar de contexto:

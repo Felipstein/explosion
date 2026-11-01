@@ -8,7 +8,7 @@ import path from 'node:path';
 const DIR = path.join(process.env.APPDATA || os.homedir(), 'Atelier');
 const FILE = path.join(DIR, 'settings.json');
 const LEGACY = path.join(DIR, 'keys.json');
-const ENV = { gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], openai: ['OPENAI_API_KEY'] };
+const ENV = { gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], openai: ['OPENAI_API_KEY'], elevenlabs: ['ELEVENLABS_API_KEY', 'XI_API_KEY'] };
 
 let cache = null, readAt = 0;
 export function readSettings() {
