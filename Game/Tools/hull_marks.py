@@ -30,7 +30,7 @@ tools = unreal.AssetToolsHelpers.get_asset_tools()
 
 CODE = r"""
 float3 bc = BC; float mt = Mt; float rg = Rg;
-float darken = 1.0; float metal = 0.0; float3 emi = float3(0.0, 0.0, 0.0);
+float darken = 1.0; float metal = 0.0; float3 emi = float3(0.0, 0.0, 0.0); float sootK = 0.0;
 float4 H[6] = { H0, H1, H2, H3, H4, H5 };
 [unroll] for (int i = 0; i < 6; ++i)
 {
@@ -51,6 +51,20 @@ float4 H[6] = { H0, H1, H2, H3, H4, H5 };
     // o míssil manchado: a fuligem em placas (o estilhaço picando a tinta)
     float blot = missile ? 0.75 + 0.25 * sin(dot(v, float3(0.31, 0.27, 0.22)) + s * 17.0) : 1.0;
     darken = min(darken, lerp(missile ? 0.2 : 0.25, 1.0, saturate(smoothstep(0.25, 1.0, r) / blot)));
+    // (01/11, ele: "a fuligem preta de queimado [...] nas unidades e construções que levaram um impacto explosivo de mísseis, por alguns
+    // segundos") a bola de fogo do míssil lambe a face atingida: a fuligem quase preta e fosca em ~3 m (o raio da bola de 2–4 kg, ∛kg),
+    // manchada, cheia até 1,5 s e clareando até 6 s, quando fica só a marca de 90 cm. Lê na câmera do jogo como "este levou o míssil"
+    if (missile && kind < 1.5)
+    {
+        float skA = 1.0 - smoothstep(1.5, 6.0, t);
+        if (skA > 0.0)
+        {
+            float skP = 0.8 + 0.2 * sin(dot(v, float3(0.11, 0.09, 0.13)) + s * 23.0) + 0.1 * sin(dot(v, float3(-0.23, 0.17, 0.29)) + s * 51.0);
+            float skK = (1.0 - smoothstep(0.3, 1.0, d / (150.0 * wob) * skP)) * skA;
+            darken = min(darken, lerp(1.0, 0.06, skK));
+            sootK = max(sootK, skK);
+        }
+    }
     if (!missile)
     {
         metal = max(metal, 1.0 - smoothstep(0.7, 1.0, d / 6.0));
@@ -65,8 +79,8 @@ float4 H[6] = { H0, H1, H2, H3, H4, H5 };
         }
     }
 }
-Mout = lerp(mt, 1.0, metal);
-Rout = lerp(rg, 0.35, metal);
+Mout = lerp(mt, 1.0, metal) * (1.0 - sootK);
+Rout = lerp(lerp(rg, 0.35, metal), 0.95, sootK);
 Emi = emi * EInv;
 return lerp(bc * darken, float3(0.45, 0.45, 0.46), metal);
 """

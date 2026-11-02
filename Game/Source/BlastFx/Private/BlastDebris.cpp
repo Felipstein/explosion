@@ -8,6 +8,9 @@
 #include "BlastFxHitLife.h"
 #include "BlastRaymarch.h"
 #include "Components/PointLightComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "EngineUtils.h"
@@ -40,8 +43,13 @@ namespace
 	// vê ~metade das que saem (as outras vão pra trás ou pra fora): 32. Com 16, na
 	// folha lado a lado de 07/10 mal apareciam
 	constexpr int32 NumPlates = 32, NumShapes = 6;
+	// (31/10, o Felipe: os destroços do tiro no chão; "os torrões são cubos escuros de perto") os torrões de terra: pelotas irregulares
+	// (a terra arrancada se esfarela em bolotas, não em placas), depois das chapas e dos pedaços na mesma lista
+	constexpr int32 NumLumps = 6;
 	constexpr float PlateDrag = G / (13.0f * 13.0f), PlateThickM = 0.03f;
-	const FLinearColor PlateColor(0.035f, 0.031f, 0.028f);      // aço queimado, fuligem por cima
+	// aço queimado com a tinta tostada (30/10: a 0,035 cada chapa no chão era um buraco preto na areia clara, o "confete"; o aço com
+	// fuligem e a tinta queimada ficam em ~0,07–0,12 de albedo)
+	const FLinearColor PlateColor(0.085f, 0.078f, 0.07f);
 	constexpr float PlateRough = 0.6f, PlateMetal = 0.5f;
 	// Cometas (pedaços de propelente e metal em brasa): cabeça branca-amarela,
 	// 20–35 m/s, 15–65° acima do horizonte, queimam 1–2.5 s; densos e pequenos,
@@ -131,12 +139,17 @@ void ABlastDebris::BuildShapes()
 	// Chapa recortada de 1 m: polígono de 5–8 lados com raio sorteado (borda
 	// rasgada), dobrada no meio (a chapa entorta ao arrancar) e com espessura:
 	// face de cima, de baixo e a borda. Leque a partir do centro.
-	Shapes.SetNum(NumShapes);
-	for (FShape& S : Shapes)
+	Shapes.SetNum(NumShapes + NumLumps);
+	for (int32 Si = 0; Si < NumShapes; ++Si)
 	{
+		FShape& S = Shapes[Si];
+		// (30/10) a metade de cima são pedaços grossos (o bloco, a peça da suspensão, a caixa amassada: espessura de ~0,3 do tamanho),
+		// não chapas: de cima, as chapas finas todas iguais liam como confete
+		const bool bChunk = Si >= NumShapes / 2;
+		const float ThickM = bChunk ? 0.3f : PlateThickM;
 		const int32 N = Rand.RandRange(5, 8);
-		const float Bend = Rand.FRandRange(-0.25f, 0.25f);
-		const float Stretch = Rand.FRandRange(0.55f, 1.0f);
+		const float Bend = bChunk ? 0.0f : Rand.FRandRange(-0.25f, 0.25f);
+		const float Stretch = bChunk ? Rand.FRandRange(0.7f, 1.0f) : Rand.FRandRange(0.55f, 1.0f);
 		TArray<FVector> Ring;
 		for (int32 i = 0; i < N; ++i)
 		{
@@ -145,7 +158,7 @@ void ABlastDebris::BuildShapes()
 			const float X = R * FMath::Cos(A), Y = R * FMath::Sin(A) * Stretch;
 			Ring.Add(FVector(X, Y, Bend * FMath::Abs(X)));
 		}
-		const FVector Up(0.0f, 0.0f, PlateThickM * 0.5f);
+		const FVector Up(0.0f, 0.0f, ThickM * 0.5f);
 		auto AddVert = [&S](const FVector& P, const FVector& Nrm) { S.Verts.Add(P); S.Normals.Add(Nrm); return S.Verts.Num() - 1; };
 		for (int32 Side = 0; Side < 2; ++Side)
 		{
@@ -171,6 +184,49 @@ void ABlastDebris::BuildShapes()
 			const FVector Out = FVector::CrossProduct(P1 - P0, FVector::UpVector).GetSafeNormal();
 			const int32 A = AddVert(P0 + Up, Out), B = AddVert(P1 + Up, Out), C = AddVert(P1 - Up, Out), D = AddVert(P0 - Up, Out);
 			S.Tris.Append({ A, C, B, A, D, C });
+		}
+	}
+	// a pelota: uma esfera baixa (6 meridianos × 4 faixas) de 1 m, o raio de cada vértice sorteado (0,72–1,0) e achatada (0,6–0,8 na
+	// altura: o torrão deita), a normal pelo raio (lê redonda na luz, sem as arestas retas da chapa)
+	FRandomStream LumpRand(0x10AD5EED);
+	for (int32 Li = 0; Li < NumLumps; ++Li)
+	{
+		FShape& S = Shapes[NumShapes + Li];
+		constexpr int32 Mer = 6, Bands = 4;
+		const float Flat = LumpRand.FRandRange(0.6f, 0.8f);
+		const float Stretch = LumpRand.FRandRange(0.75f, 1.0f);
+		auto Vert = [&S](const FVector& Dir, float R, float FlatK, float StretchK)
+		{
+			const FVector P(Dir.X * R * 0.5f, Dir.Y * R * 0.5f * StretchK, Dir.Z * R * 0.5f * FlatK);
+			S.Verts.Add(P);
+			S.Normals.Add(FVector(P.X, P.Y / FMath::Max(StretchK * StretchK, 0.1f), P.Z / FMath::Max(FlatK * FlatK, 0.1f)).GetSafeNormal());
+			return S.Verts.Num() - 1;
+		};
+		const int32 Top = Vert(FVector::UpVector, LumpRand.FRandRange(0.72f, 1.0f), Flat, Stretch);
+		TArray<int32> Ring;
+		for (int32 B = 1; B < Bands; ++B)
+		{
+			const float Lat = PI * (0.5f - float(B) / Bands);
+			for (int32 M = 0; M < Mer; ++M)
+			{
+				const float Lon = 2.0f * PI * (M + (B % 2) * 0.5f) / Mer;
+				Ring.Add(Vert(FVector(FMath::Cos(Lat) * FMath::Cos(Lon), FMath::Cos(Lat) * FMath::Sin(Lon), FMath::Sin(Lat)), LumpRand.FRandRange(0.72f, 1.0f), Flat, Stretch));
+			}
+		}
+		const int32 Bottom = Vert(-FVector::UpVector, LumpRand.FRandRange(0.72f, 1.0f), Flat, Stretch);
+		for (int32 M = 0; M < Mer; ++M)
+		{
+			S.Tris.Append({ Top, Ring[(M + 1) % Mer], Ring[M] });
+			S.Tris.Append({ Bottom, Ring[(Bands - 2) * Mer + M], Ring[(Bands - 2) * Mer + (M + 1) % Mer] });
+		}
+		for (int32 B = 0; B < Bands - 2; ++B)
+		{
+			for (int32 M = 0; M < Mer; ++M)
+			{
+				const int32 A0 = Ring[B * Mer + M], A1 = Ring[B * Mer + (M + 1) % Mer];
+				const int32 B0 = Ring[(B + 1) * Mer + M], B1 = Ring[(B + 1) * Mer + (M + 1) % Mer];
+				S.Tris.Append({ A0, B1, A1, A0, B0, B1 });   // a mesma volta da borda das chapas (a face pra fora)
+			}
 		}
 	}
 }
@@ -231,8 +287,10 @@ void ABlastDebris::UpdateLight(float Dt)
 		// aberturas; docs/ESTUDO_CARCACA.md), não as senoides rápidas de antes
 		const float Flicker = bWreckFlames ? 0.75f + 0.15f * FMath::Sin(T * 13.0f) + 0.1f * FMath::Sin(T * 31.0f + 1.7f)
 			: 0.78f + 0.14f * FMath::Sin(T * 6.28f) + 0.08f * FMath::Sin(T * 10.7f + 1.7f);
-		Light->SetWorldLocation(ToCm(FirePos + FVector(0.0f, 0.0f, 1.0f)));
-		Light->SetIntensity(LightPeak * Flicker * Fade * ExpoComp);
+		// (25/10, o fogo simulado) a potência gravada manda (o pulso, a ignição e o fim são os da simulação); a luz no centro da queima
+		const bool bDriven = FireDrive >= 0.0f;
+		Light->SetWorldLocation(ToCm(FirePos + FVector(0.0f, 0.0f, bDriven ? 0.0f : 1.0f)));
+		Light->SetIntensity(LightPeak * (bDriven ? FireDrive : Flicker * Fade) * ExpoComp);
 		Light->SetVisibility(true);
 		LightAge = 0.0f;
 		return;
@@ -272,9 +330,9 @@ void ABlastDebris::UpdateLight(float Dt)
 	}
 	if (bLightHold)
 	{
-		// o míssil: acesa enquanto o motor queima, presa atrás do bocal (o diretor move a cada quadro)
+		// o míssil: acesa enquanto o motor queima, presa atrás do bocal (o diretor move a cada quadro); (01/11) apagada saindo do tubo
 		Light->SetWorldLocation(ToCm(LightAt));
-		Light->SetIntensity(LightPeak * ExpoComp);
+		Light->SetIntensity(bMissileMotor ? LightPeak * ExpoComp : 0.0f);
 		Light->SetVisibility(true);
 		LightAge = 0.0f;
 		return;
@@ -315,6 +373,8 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
 	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
 	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	// (30/10) o tamanho do acerto (ImpactK: 1 = o tiro de tanque, ~0,18 = a bala de metralhadora)
+	const float K = FMath::Clamp(ImpactK, 0.05f, 1.0f), SizeK = FMath::Pow(K, 0.6f), SpeedK = FMath::Sqrt(K);
 	BallScale = 1.0f;                               // as faíscas brancas-amarelas da arte, não as laranja da morte
 	BuildShapes();
 	const FVector O = ToM(PointCm);
@@ -325,22 +385,26 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 	const FVector D = ShellDir.GetSafeNormal();
 	// o leque sai pro lado do ricochete (o projétil refletido na blindagem), aberto pra fora da chapa
 	const FVector R = (D - 2.0f * FVector::DotProduct(D, N) * N).GetSafeNormal();
-	const FVector Axis = (R * 0.5f + N * 0.35f + FVector(0.0f, 0.0f, 0.5f)).GetSafeNormal();   // (16/10: sobe como na 4.2)
+	// (30/10, o ricochete) de raspão o leque segue o tiro refletido, rente à chapa (só um pouco pra fora dela)
+	const FVector Axis = bGrazing ? (R + N * 0.12f).GetSafeNormal() : (R * 0.5f + N * 0.35f + FVector(0.0f, 0.0f, 0.5f)).GetSafeNormal();   // (16/10: sobe como na 4.2)
+	const float ConeDeg = bGrazing ? 15.0f : 48.0f;
+	const float SpeedMul = bGrazing ? 2.0f : 1.0f;
 	// o clarão no metal: o miolo branco (0–50 ms, 0,15–0,25 do tanque) e o brilho branco-amarelo que fica (até ~0,3 s,
 	// ~0,5 do tanque: menor que o do ZH pra não tapar unidade)
 	{
 		FSpark& S = Sparks.AddDefaulted_GetRef();
 		S.P = O + N * 0.15f;
-		S.Life = 0.05f;
-		S.Size = 0.8f;
+		S.Life = bBallFollows ? 0.034f : 0.05f;   // (30/10) com a bola junto: 1 quadro
+		S.Size = 0.8f * SizeK;
 		S.Bright = 1.0f;
 		S.bRound = true;
 	}
+	if (!bBallFollows)   // (30/10) com a bola junto, o fogo é ela
 	{
 		FSpark& S = Sparks.AddDefaulted_GetRef();
 		S.P = O + N * 0.3f;
 		S.Life = 0.3f;
-		S.Size = 0.9f;                              // (a 1,3 crescendo 3 m/s era uma bola de névoa branca de ~5 m)
+		S.Size = 0.9f * SizeK;                      // (a 1,3 crescendo 3 m/s era uma bola de névoa branca de ~5 m)
 		S.Grow = 1.5f;
 		S.Bright = 0.6f;
 		S.Color = FLinearColor(1.0f, 0.8f, 0.45f, 1.0f);
@@ -349,12 +413,12 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 	// os riscos do leque (a arte: dezenas de riscos brancos-amarelos de 1–3 m até ~1 tanque, em ~90°)
 	// (16/10, contra a arte 4.2 no jogo: com 8–14 cm de largura e todos iguais, saindo de um ponto, eram barras brancas
 	// numa estrela desenhada; a arte tem riscos finos e variados, pontinhos, esfriando pro laranja)
-	const int32 Spikes = FMath::Max(16, FMath::RoundToInt(110 * Keep));
+	const int32 Spikes = bGrazing ? FMath::Max(24, FMath::RoundToInt(70 * Keep)) : FMath::Max(K < 1.0f ? 6 : 16, FMath::RoundToInt(110 * Keep * K));
 	for (int32 i = 0; i < Spikes; ++i)
 	{
 		FSpark& S = Sparks.AddDefaulted_GetRef();
 		S.P = O + N * 0.05f + Rand.VRand() * Rand.FRandRange(0.0f, 0.15f);
-		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(48.0f)) * Rand.FRandRange(15.0f, 35.0f);
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(ConeDeg)) * Rand.FRandRange(15.0f, 35.0f) * SpeedK * SpeedMul;
 		S.Life = Rand.FRandRange(0.12f, 0.45f);
 		S.Size = Rand.FRandRange(0.012f, 0.025f);
 		S.Bright = Rand.FRandRange(0.4f, 1.0f);
@@ -367,13 +431,13 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 		S.Seed = Rand.FRandRange(0.0f, 100.0f);
 	}
 	// as fagulhas que caem piscando depois
-	const int32 Embers = FMath::RoundToInt(30 * Keep);
+	const int32 Embers = bGrazing ? 0 : FMath::RoundToInt(30 * Keep * K);
 	for (int32 i = 0; i < Embers; ++i)
 	{
 		FSpark& S = Sparks.AddDefaulted_GetRef();
 		S.bEmber = true;
 		S.P = O + N * 0.05f;
-		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(70.0f)) * Rand.FRandRange(3.0f, 10.0f);
+		S.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(70.0f)) * Rand.FRandRange(3.0f, 10.0f) * SpeedK;
 		S.Life = Rand.FRandRange(0.6f, 1.6f);
 		S.Size = Rand.FRandRange(0.04f, 0.07f);
 		S.Bright = Rand.FRandRange(0.12f, 0.25f);
@@ -383,7 +447,7 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 		S.Seed = Rand.FRandRange(0.0f, 100.0f);
 	}
 	// lascas: tinta, terra e metal (a arte: pedacinhos caindo embaixo do tanque)
-	const int32 Chips = FMath::Max(2, FMath::RoundToInt(6 * Keep));
+	const int32 Chips = bGrazing ? 0 : (K < 1.0f ? FMath::RoundToInt(6 * Keep * K + 0.4f) : FMath::Max(2, FMath::RoundToInt(6 * Keep)));
 	for (int32 i = 0; i < Chips; ++i)
 	{
 		FPlate& P = Plates.AddDefaulted_GetRef();
@@ -391,16 +455,19 @@ void ABlastDebris::StartImpact(const FVector& PointCm, const FVector& Normal, co
 		P.V = Rand.VRandCone(Axis, FMath::DegreesToRadians(55.0f)) * Rand.FRandRange(5.0f, 12.0f);
 		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
 		P.Spin = Rand.VRand() * Rand.FRandRange(10.0f, 25.0f);
-		P.Size = Rand.FRandRange(0.15f, 0.25f);
+		P.Size = Rand.FRandRange(0.15f, 0.25f) * SizeK;
 		P.Shape = Rand.RandRange(0, NumShapes - 1);
 	}
 	BuildPlateSection();
 	// a luz: a do ZH (255, 255, 128), raio ~1 tanque, cai em ~0,35 s
-	EnsureLight(FLinearColor(1.0f, 0.78f, 0.45f), 800.0f);
-	LightAt = O + N * 0.6f;
-	LightPeak = 6.0e5f;                             // na referência (~1,9·10⁵ no jogo; a 8·10⁵ sem compensar lavava o casco de branco)
+	if (!bNoLight)
+	{
+		EnsureLight(FLinearColor(1.0f, 0.78f, 0.45f), 800.0f * FMath::Max(SizeK, 0.5f));   // (30/10) a bala: ~4 m
+		LightAt = O + N * 0.6f;
+		LightPeak = 6.0e5f * K;
+	}                           // na referência (~1,9·10⁵ no jogo; a 8·10⁵ sem compensar lavava o casco de branco)
 	LightTau = 0.12f;
-	SetLifeSpan(20.0f);
+	SetLifeSpan(K < 1.0f ? 3.0f : 20.0f);   // (30/10) a bala: as faíscas vivem 0,45 s e as fagulhas 1,6 (com 20 s, ~60 balas/s deixavam centenas de atores vivos)
 }
 
 void ABlastDebris::StartMuzzle(const FVector& MuzzleCm, const FVector& Dir, int32 Seed)
@@ -568,6 +635,46 @@ void ABlastDebris::StartDirt(const FVector& PointCm, const FVector& AwayDir, int
 	SetLifeSpan(12.0f);
 }
 
+void ABlastDebris::StartDozerDirt(const FVector& LipCm, const FVector& Fwd, float HalfWidthCm, int32 Seed)
+{
+	// (30/10, 3ª volta) o "gush of dirt" do ZH (AmericaVehicleDozer: DozerDirtFall no osso DIRTFX01 da lâmina, na animação de obra):
+	// a terra que a lâmina empurrou escorrega pela borda de cima quando ela sobe. Torrões de 6–22 cm (o torrão do tiro na areia: 8–22)
+	// saindo devagar (0,4–1,4 m/s, a lâmina sobe a ~0,5 m/s) ao longo de ~70% da largura, caindo ~1–1,5 m (~0,5 s) e ficando na
+	// areia na frente dela; a cor é a do torrão do tiro (ClodTint: a areia revirada, mais escura que a da superfície)
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	if (!Shapes.Num())
+	{
+		BuildShapes();
+	}
+	static const IConsoleVariable* EffectsQuality = IConsoleManager::Get().FindConsoleVariable(TEXT("sg.EffectsQuality"));
+	const int32 Eq = EffectsQuality ? EffectsQuality->GetInt() : 3;
+	const float Keep = Eq >= 3 ? 1.0f : (Eq == 2 ? 0.5f : 0.25f);
+	PlateTint = ClodTint.R >= 0.0f ? FLinearColor(ClodTint.R, ClodTint.G, ClodTint.B, 1.0f) : FLinearColor(0.30f, 0.23f, 0.15f, 1.0f);
+	const FVector O = ToM(LipCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector F = Fwd.GetSafeNormal2D();
+	const FVector R(-F.Y, F.X, 0.0f);
+	const float Hw = 0.7f * HalfWidthCm / 100.0f;
+	const int32 Count = FMath::Max(8, FMath::RoundToInt((22 + Rand.RandRange(0, 10)) * Keep));
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FPlate& P = Plates.AddDefaulted_GetRef();
+		P.P = O + R * Rand.FRandRange(-Hw, Hw) + F * Rand.FRandRange(0.0f, 0.15f) + FVector(0.0f, 0.0f, Rand.FRandRange(-0.1f, 0.05f));
+		P.V = F * Rand.FRandRange(0.4f, 1.4f) + R * Rand.FRandRange(-0.3f, 0.3f) + FVector(0.0f, 0.0f, Rand.FRandRange(-0.2f, 0.6f));
+		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
+		P.Spin = Rand.VRand() * Rand.FRandRange(3.0f, 10.0f);
+		P.Size = Rand.FRandRange(0.06f, 0.22f);
+		P.Shape = NumShapes + Rand.RandRange(0, NumLumps - 1);   // (31/10) a pelota de terra (antes o bloco grosso, que lia caixa)
+	}
+	bPlatesSettled = false;
+	BuildPlateSection();
+	SetActorTickEnabled(true);
+	SetLifeSpan(10.0f);
+}
+
 void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& AwayDir, int32 Seed)
 {
 	Rand.Initialize(Seed);
@@ -611,7 +718,8 @@ void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& Away
 		}
 		// as faíscas: 25–40 num cone de ~60° em volta da vertical puxado pra frente, 0,15–0,35 s (o estudo)
 		const FVector SparkAxis = (FVector::UpVector * 0.8f + F * 0.45f).GetSafeNormal();
-		const int32 Spikes = FMath::Max(8, FMath::RoundToInt(32 * Keep));
+		// (24/10, o laboratório) × SparkK pelo tipo de chão (1 = a areia de hoje, exato)
+		const int32 Spikes = SparkK == 1.0f ? FMath::Max(8, FMath::RoundToInt(32 * Keep)) : FMath::Max(4, FMath::RoundToInt(32 * Keep * FMath::Max(SparkK, 0.0f)));
 		for (int32 i = 0; i < Spikes; ++i)
 		{
 			FSpark& S = Sparks.AddDefaulted_GetRef();
@@ -640,7 +748,7 @@ void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& Away
 	// (v7b, chao_v7: os riscos saíam um feixe estreito de linhas duras, uma "vassoura"; a 4.1 é um leque largo e macio
 	// que sobe ~10 m: mais aberto, mais alto, mais finos e ralos, engordando no voo)
 	// (23/10, a vida) os riscos × K (não K²: são os de mais custo, um rastro cada) e mais grossos × K
-	const int32 Sprays = FMath::Max(8, FMath::RoundToInt(40 * Keep * FMath::Min(Kd, 2.0f)));
+	const int32 Sprays = FMath::Max(8, FMath::RoundToInt(40 * Keep * FMath::Min(Kd, 2.0f) * SprayCountK));
 	for (int32 i = 0; i < Sprays; ++i)
 	{
 		FComet& C = Comets.AddDefaulted_GetRef();
@@ -649,12 +757,18 @@ void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& Away
 		C.Burn = Rand.FRandRange(0.3f, 0.55f);
 		C.HeadM = 0.05f;
 		C.Color = FLinearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		C.Trail = NewTrail(Rand.FRandRange(0.08f, 0.14f) * Kd, 1.6f, 0.3f, 0.12f, 0.0f, Rand.FRandRange(0.35f, 0.55f));
+		C.Trail = NewTrail(Rand.FRandRange(0.08f, 0.14f) * Kd * SprayWidthK, 1.6f, 0.3f, 0.12f, 0.0f, Rand.FRandRange(0.35f, 0.55f));
+	}
+	if (bNoClods)
+	{
+		SetActorTickEnabled(true);
+		SetLifeSpan(12.0f);
+		return;
 	}
 	// os torrões: 45 de 12–45 cm (de cima, 4–14 px) no mesmo leque, mais uns largos e lentos; escuros (a areia de baixo,
 	// úmida); caem em 1–3 s e ficam
 	// (23/10, a vida) × K² na quantidade (teto 2×), × K no tamanho (até 0,8 m), as velocidades × DirtSpeedK
-	PlateTint = FLinearColor(0.07f, 0.055f, 0.04f, 1.0f);
+	PlateTint = ClodTint.R >= 0.0f ? FLinearColor(ClodTint.R, ClodTint.G, ClodTint.B, 1.0f) : FLinearColor(0.07f, 0.055f, 0.04f, 1.0f);   // (24/10) o tipo de chão
 	PlateRoughNow = 0.95f;
 	const int32 Clods = FMath::Max(10, FMath::RoundToInt(45 * Keep * Kn));
 	const int32 FirstClod = Plates.Num();
@@ -663,11 +777,19 @@ void ABlastDebris::StartGroundImpact(const FVector& PointCm, const FVector& Away
 		const bool bWide = i % 4 == 0;
 		FPlate& P = Plates.AddDefaulted_GetRef();
 		P.P = O + FVector(Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(-0.4f, 0.4f), Rand.FRandRange(0.05f, 0.3f)) * Kd;
-		P.V = Rand.VRandCone(JetAxis, FMath::DegreesToRadians(bWide ? 45.0f : 22.0f)) * ((bWide ? Rand.FRandRange(4.5f, 8.5f) : Rand.FRandRange(8.5f, 17.0f)) * Kv);
+		// (31/10, o Felipe: "os destroços do tiro do canhão no chão voando e não ficando na física no buraco") o material ejetado sai
+		// mais devagar quanto maior o pedaço (a lei de escala da cratera: a velocidade cai com a distância de origem e o torrão grande vem
+		// da borda, devagar; Housen & Holsapple 2011): os de 8–15 cm a 9–15 m/s (até ~10 m de alto, os riscos da 4.1), os de 20–32 cm a
+		// 3–6 m/s (sobem 0,5–2 m e caem na boca e em volta da cratera, dentro do anel do material lançado). Antes, 12–45 cm a 8,5–17 m/s:
+		// os graúdos subiam ~15 m e ficavam ~3,5 s no ar, voando pra câmera. As pelotas (não as chapas) e no máximo 32 cm (a areia seca
+		// não faz torrão grande: a crosta de cima se quebra em bolotas)
+		const float Sz = Rand.FRandRange(0.0f, 1.0f);
+		P.Size = FMath::Min(FMath::Lerp(0.08f, 0.32f, Sz * Sz) * Kd, 0.8f);
+		const float Spd = FMath::Lerp(14.0f, 3.5f, FMath::Clamp((P.Size / FMath::Max(Kd, 0.1f) - 0.08f) / 0.24f, 0.0f, 1.0f)) * Rand.FRandRange(0.8f, 1.15f);
+		P.V = Rand.VRandCone(JetAxis, FMath::DegreesToRadians(bWide ? 45.0f : 22.0f)) * (Spd * Kv);
 		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
-		P.Spin = Rand.VRand() * Rand.FRandRange(8.0f, 20.0f);
-		P.Size = FMath::Min(Rand.FRandRange(0.12f, 0.45f) * Kd, 0.8f);
-		P.Shape = Rand.RandRange(0, NumShapes - 1);
+		P.Spin = Rand.VRand() * Rand.FRandRange(6.0f, 14.0f);
+		P.Shape = NumShapes + Rand.RandRange(0, NumLumps - 1);
 	}
 	if (DirtPuffs > 0)
 	{
@@ -764,7 +886,13 @@ void ABlastDebris::UpdateMissile(const FVector& PosCm, const FVector& Dir)
 	// a chama treme ±20% (est., 20–30 Hz) e nasce nos primeiros 2 quadros
 	const float Flick = (0.8f + 0.2f * FMath::Sin(T * 151.0f + 1.3f) * FMath::Sin(T * 97.0f)) * FMath::Clamp(Age / 0.066f, 0.3f, 1.0f);
 	const float Base[3] = { 1.0f, 0.5f, 0.1f };
-	const FVector At[3] = { P - D * 0.25f, P - D * 1.2f, P - D * 0.5f };
+	// (30/10) com o corpo desenhado, a ponta fica no ponto do míssil e tudo isto sai da tubeira, o comprimento dele atrás
+	const float Lt = MissileTailM;
+	const FVector At[3] = { P - D * (Lt + 0.25f), P - D * (Lt + 1.2f), P - D * (Lt + 0.5f) };
+	if (MissileBody)
+	{
+		MissileBody->SetWorldLocationAndRotation(PosCm, D.Rotation());
+	}
 	for (int32 k = 0; k < 3; ++k)
 	{
 		if (Sparks.IsValidIndex(MissileSpark[k]))
@@ -775,17 +903,76 @@ void ABlastDebris::UpdateMissile(const FVector& PosCm, const FVector& Dir)
 			{
 				S.V = -D * 60.0f;
 			}
-			S.Bright = Base[k] * Flick;
+			S.Bright = bMissileMotor ? Base[k] * Flick : 0.0f;
 		}
 	}
-	SetTrailHead(MissileTrail[0], ToCm(P - D * 0.6f), Age < 0.15f);
-	SetTrailHead(MissileTrail[1], ToCm(P - D * 0.6f), true);
-	LightAt = P - D * 0.5f;
+	SetTrailHead(MissileTrail[0], ToCm(P - D * (Lt + 0.6f)), bMissileMotor && Age < 0.15f);
+	SetTrailHead(MissileTrail[1], ToCm(P - D * (Lt + 0.6f)), bMissileMotor);
+	LightAt = P - D * (Lt + 0.5f);
 	bGlowsDone = false;
+}
+
+void ABlastDebris::SetMissileMotor(bool bOn)
+{
+	if (MissileT0 < 0.0f || bOn == bMissileMotor)
+	{
+		return;
+	}
+	bMissileMotor = bOn;
+	if (bOn)
+	{
+		MissileT0 = T;   // a chama nasce agora (os 2 quadros) e o sopro grosso sai da ignição
+	}
+	for (int32 k = 0; k < 3; ++k)
+	{
+		if (!bOn && Sparks.IsValidIndex(MissileSpark[k]))
+		{
+			Sparks[MissileSpark[k]].Bright = 0.0f;
+		}
+	}
+}
+
+void ABlastDebris::SetMissileBody(UStaticMesh* Mesh, UMaterialInterface* Material, float LengthCm)
+{
+	if (MissileBody || !Mesh || MissileT0 < 0.0f)
+	{
+		return;
+	}
+	MissileTailM = LengthCm / 100.0f;
+	MissileBody = NewObject<UStaticMeshComponent>(this);
+	MissileBody->SetMobility(EComponentMobility::Movable);
+	MissileBody->SetStaticMesh(Mesh);
+	MissileBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	MissileBody->SetReceivesDecals(false);
+	// (01/11, a prova v36_lanca_ar: o míssil da Patriot passava azul-chapado com contorno) o raio-X da unidade escondida (o Avenger quase
+	// todo atrás da caixa) compara a profundidade dela com a da cena e pintava a silhueta azul "através" do míssil que passava na frente.
+	// O corpo do míssil grava a profundidade própria com a marca 0: onde ele está, a profundidade de quem tem silhueta não é a da frente e a
+	// silhueta não sai (a regra da silhueta é pra quem está atrás de casa, muro e morro, não de um efeito de passagem)
+	MissileBody->SetRenderCustomDepth(true);
+	MissileBody->SetCustomDepthStencilValue(0);
+	if (Material)
+	{
+		// a tinta dos vértices (o M_Soldier na cor dos vértices), lisa de metal pintado
+		if (UMaterialInstanceDynamic* M = UMaterialInstanceDynamic::Create(Material, this))
+		{
+			M->SetScalarParameterValue(TEXT("UseTex"), 0.0f);
+			M->SetScalarParameterValue(TEXT("Rough"), 0.45f);
+			for (int32 K = 0; K < FMath::Max(Mesh->GetStaticMaterials().Num(), 1); ++K)
+			{
+				MissileBody->SetMaterial(K, M);
+			}
+		}
+	}
+	MissileBody->RegisterComponent();
 }
 
 void ABlastDebris::EndMissile()
 {
+	if (MissileBody)
+	{
+		MissileBody->DestroyComponent();   // o corpo some no acerto (a ogiva é do MissileHit)
+		MissileBody = nullptr;
+	}
 	if (MissileT0 < 0.0f)
 	{
 		return;
@@ -875,6 +1062,51 @@ void ABlastDebris::StartLaunch(const FVector& MouthCm, const FVector& Dir, int32
 	LightTau = 0.06f;
 	SetActorTickEnabled(true);
 	SetLifeSpan(8.0f);
+}
+
+void ABlastDebris::StartRailLaunch(const FVector& TailCm, const FVector& Dir, int32 Seed)
+{
+	// (01/11, a avaliação do item 6: "essa bola branca mal feita parecendo png [...] se for manter, menor, volumétrica, detalhada") o
+	// Hellfire sai do trilho com o motor aceso: não há caixa (nem tampa nem a bola de 1,2 m da boca dela). A ignição é um clarão
+	// laranja-branco de ~0,3 m na tubeira por 2 quadros e o jato de ré curto (4 riscos de ~1 m); a fumaça branca do motor é a do sistema
+	// único (o MissileSmoke, em volume, nasce na tubeira) e o rastro do próprio míssil
+	Rand.Initialize(Seed);
+	BallScale = 1.0f;
+	BuildShapes();
+	const FVector O = ToM(TailCm);
+	OriginM = O;
+	bHasOrigin = true;
+	GroundRefM = -1.0e9f;
+	const FVector D = Dir.GetSafeNormal();
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O - D * 0.1f;
+		S.Life = 0.066f;
+		S.Size = 0.16f;
+		S.Bright = 0.8f;
+		S.Color = FLinearColor(1.0f, 0.8f, 0.55f, 1.0f);
+		S.bRound = true;
+	}
+	for (int32 i = 0; i < 4; ++i)
+	{
+		FSpark& S = Sparks.AddDefaulted_GetRef();
+		S.P = O - D * 0.15f;
+		S.V = Rand.VRandCone(-D, FMath::DegreesToRadians(10.0f)) * Rand.FRandRange(15.0f, 25.0f);
+		S.Life = Rand.FRandRange(0.05f, 0.08f);
+		S.Size = 0.025f;
+		S.Bright = 0.5f;
+		S.Color = FLinearColor(1.0f, 0.55f, 0.2f, 1.0f);
+		S.Lift = 1.0f;
+		S.StreakT = 1.0f / 20.0f;
+		S.MinPxK = 0.0004f;
+	}
+	// a luz da ignição: menor que a da caixa (o motor de um Hellfire, não a carga de expulsão da Patriot)
+	EnsureLight(FLinearColor(1.0f, 0.75f, 0.45f), 500.0f);
+	LightAt = O;
+	LightPeak = 2.0e5f;
+	LightTau = 0.05f;
+	SetActorTickEnabled(true);
+	SetLifeSpan(3.0f);
 }
 
 void ABlastDebris::StartMissileHit(const FVector& PointCm, const FVector& Normal, int32 Seed, float Scale, bool bGlowSprite)
@@ -1584,8 +1816,12 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 		P.V = FVector(FMath::Cos(Az) * FMath::Cos(El), FMath::Sin(Az) * FMath::Cos(El), FMath::Sin(El)) * Speed;
 		P.Q = FQuat(Rand.VRand(), Rand.FRandRange(0.0f, 2.0f * PI));
 		P.Spin = Rand.VRand() * Rand.FRandRange(6.0f, 20.0f);
-		P.Size = Rand.FRandRange(0.4f, 1.4f);
-		P.Shape = Rand.RandRange(0, NumShapes - 1);
+		// (30/10, "os pedaços são quadradinhos pretos chapados, espalhados como confete") a mistura de um veículo que explode: a maioria
+		// pedaço pequeno e grosso (0,15–0,4 m: a peça, o bloco, a caixa), umas chapas médias (0,4–0,8 m) e raras grandes (a saia, a
+		// tampa: 0,8–1,3 m); antes eram 32 chapas finas de 0,4–1,4 m, todas iguais
+		const float Pick = Rand.FRand();
+		P.Size = Pick < 0.7f ? Rand.FRandRange(0.15f, 0.4f) : (Pick < 0.95f ? Rand.FRandRange(0.4f, 0.8f) : Rand.FRandRange(0.8f, 1.3f));
+		P.Shape = P.Size < 0.4f ? Rand.RandRange(NumShapes / 2, NumShapes - 1) : Rand.RandRange(0, NumShapes / 2 - 1);
 		// um terço solta um fio de fumaça escura (estava em brasa ou com óleo). 13/10: 6 cm e albedo 0,12 eram fios pretos
 		// de arame dentro da nuvem marrom; agora nasce com 15 cm, engorda 0,5 m/s e é fuligem (0,3)
 		if (Rand.FRand() < 0.33f)
@@ -1607,7 +1843,8 @@ void ABlastDebris::Start(const FVector& OriginCm, int32 Seed)
 		// desfaz: vida 0.9 s, engorda 0.4 m/s, opacidade ≤ 0.6 (a 1ª versão, 2.6 s
 		// e opaca, virou tentáculos de 40 m). Mais grosso desde 13/10 (0,12 m → 0,35 m, engorda 1,2 m/s): nos alvos
 		// 3/19 os rastros dos destroços são fumaça de ~0,5–1 m, e com 12 cm eram riscos de laser
-		C.Trail = NewTrail(0.35f, 1.2f, 0.9f, 0.6f, 0.0f, 0.5f);
+		const float Jk = FMath::Max(CometTrailK, 0.1f);
+		C.Trail = NewTrail(0.35f * Jk, 1.2f * Jk, 0.9f * FMath::Sqrt(Jk), 0.6f, 0.0f, FMath::Min(0.5f * FMath::Sqrt(Jk), 0.8f));
 	}
 	// Espinhos: a estrela de riscos do vídeo (0.05–0.5 s), dezenas de pedaços em
 	// brasa a 40–90 m/s que o olho integra em riscos; pequenos, freiam rápido
@@ -1682,10 +1919,13 @@ void ABlastDebris::Integrate(float Dt)
 	{
 		GroundRefM = float(BlastFxGround::HeightAtCached(W, OriginM.X * 100.0, OriginM.Y * 100.0) / 100.0);
 	}
+	// (31/10, o Felipe: "os destroços do tiro do canhão no chão voando e não ficando na física no buraco") o pouso no chão desenhado:
+	// o terreno mais o que o jogo afunda (a cratera do deslocamento, BlastFxGround::SurfaceOffset); antes, no plano de antes do buraco
 	auto FloorAt = [this, W](const FVector& P) -> float
 	{
-		return bHasOrigin && FVector::DistSquared2D(P, OriginM) < 36.0 ? GroundRefM
+		const float Base = bHasOrigin && FVector::DistSquared2D(P, OriginM) < 36.0 ? GroundRefM
 			: float(BlastFxGround::HeightAtCached(W, P.X * 100.0, P.Y * 100.0) / 100.0);
+		return Base + float(BlastFxGround::SurfaceOffset(P.X * 100.0, P.Y * 100.0) / 100.0);
 	};
 	for (FArc& Ac : Arcs)
 	{
@@ -1831,15 +2071,25 @@ void ABlastDebris::Integrate(float Dt)
 			}
 		}
 	}
+	// (25/10, o vento ao vivo) a fumaça que deita (Wind ≠ 0: a do ferido, a do rastro) anda no vento do mapa, o do diretor (o mesmo da poeira,
+	// do rastro do míssil e da coluna da carcaça), no perfil dele a ~2 m do chão; sem o diretor, a brisa fixa de 16/10
+	FVector LiveWind = FVector::ZeroVector;
+	const UBlastFxDirector* WindDir = UBlastFxDirector::Get(this);
+	if (WindDir)
+	{
+		const FVector2D Wm = WindDir->WindMs() * UBlastFxDirector::WindProfileK(2.0f);
+		LiveWind = FVector(Wm.X, Wm.Y, 0.0);
+	}
 	for (FTrail& Tr : Trails)
 	{
 		Tr.Age += Dt;
+		const FVector TrWind = Tr.Wind.IsNearlyZero() || !WindDir ? Tr.Wind : LiveWind;
 		for (FTrailPoint& Pt : Tr.Points)
 		{
 			Pt.Age += Dt;
 			Pt.P.Z += (Tr.Rise >= 0.0f ? Tr.Rise : TrailRise) * Dt;
 			// o vento empurra mais o que já subiu (rente ao casco o ar é parado): a coluna deita e se abre
-			Pt.P += Tr.Wind * (Dt * FMath::Min(Pt.Age / 1.5f, 1.0f));
+			Pt.P += TrWind * (Dt * FMath::Min(Pt.Age / 1.5f, 1.0f));
 		}
 		Tr.Points.RemoveAll([&Tr](const FTrailPoint& Pt) { return Pt.Age > Tr.Life; });
 		if (Tr.bEmitting)
@@ -1868,7 +2118,9 @@ void ABlastDebris::UpdatePlates()
 	for (const FPlate& P : Plates)
 	{
 		const FShape& S = Shapes[P.Shape];
-		const FVector Scale(P.Size, P.Size, 1.0f);       // a espessura fica
+		// a chapa fina guarda a espessura (3 cm); o pedaço grosso e a pelota crescem nos três eixos (31/10: com a altura fixa, o bloco
+		// "de ~0,3 do tamanho" tinha 30 cm em qualquer tamanho e a pelota 70 cm: deitados no chão, de pé como estacas pretas)
+		const FVector Scale(P.Size, P.Size, P.Shape >= NumShapes / 2 ? P.Size : 1.0f);
 		for (int32 i = 0; i < S.Verts.Num(); ++i)
 		{
 			V.Add(ToCm(P.P + P.Q.RotateVector(S.Verts[i] * Scale)));

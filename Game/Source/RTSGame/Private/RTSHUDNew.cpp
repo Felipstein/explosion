@@ -27,6 +27,7 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "Sim/World.h"   // (v5) o estado de voo no painel do ar
 
 #define LOCTEXT_NAMESPACE "RTSHUD"
 
@@ -40,6 +41,12 @@ namespace
 		if (Key == TEXT("usa_tomahawk"))
 		{
 			return TEXT("usa_rocket_launcher");
+		}
+		if (Key == TEXT("usa_avenger"))
+		{
+			// (v5) o antiaéreo móvel; (25/10) virou o Linebacker (a chave fica): o recorte da arte escolhida (o design 1 da folha
+			// captures/concept/_attach/linebacker_v2) até ter a foto da Arte
+			return TEXT("usa_linebacker");
 		}
 		return Key == TEXT("usa_mbt") ? FString(TEXT("usa_battle_tank")) : (Key == TEXT("usa_patriot") ? FString(TEXT("usa_missile_defense")) : Key);
 	}
@@ -126,7 +133,7 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 	{
 		FRTSHudPlayer H;
 		H.Name = P == Me ? LOCTEXT("PlayerYou", "You").ToString() : URTSMatchSubsystem::PlayerColorName(P).ToString();
-		H.Emblem = TEXT("emblem:usa");
+		H.Emblem = FName(*(TEXT("emblem:") + Match->FactionOf(P)));   // (31/10) o emblema da facção de cada jogador
 		H.Color = URTSMatchSubsystem::PlayerColor(P);
 		H.bMe = P == Me;
 		H.bAlly = P != Me && Match->IsAllyOfLocal(P);
@@ -174,6 +181,7 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 	const URTSMatchSubsystem::FHudNotice* Strike = nullptr;
 	const URTSMatchSubsystem::FHudNotice* Promoted = nullptr;
 	const URTSMatchSubsystem::FHudNotice* Airlift = nullptr;
+	const URTSMatchSubsystem::FHudNotice* NoRunway = nullptr;   // (v5) a aeronave sem Airfield
 	for (const URTSMatchSubsystem::FHudNotice& N : Match->HudNotices())
 	{
 		const float Age = float(Now - N.At);
@@ -182,6 +190,7 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 		case URTSMatchSubsystem::FHudNotice::EKind::StrikeIncoming: Strike = Age < 5.0f ? &N : Strike; break;
 		case URTSMatchSubsystem::FHudNotice::EKind::Promoted: Promoted = Age < 6.0f ? &N : Promoted; break;
 		case URTSMatchSubsystem::FHudNotice::EKind::AirliftInbound: Airlift = Age < 5.0f ? &N : Airlift; break;
+		case URTSMatchSubsystem::FHudNotice::EKind::AirNoRunway: NoRunway = Age < 6.0f ? &N : NoRunway; break;
 		default: break;
 		}
 	}
@@ -206,6 +215,11 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 		FRTSHudAlert& A = S.Alerts.Add_GetRef({ LOCTEXT("AlertAirlift", "Airlift inbound").ToString(), V4Amber });
 		A.Age = float(Now - Airlift->At);
 	}
+	if (NoRunway)
+	{
+		FRTSHudAlert& A = S.Alerts.Add_GetRef({ LOCTEXT("AlertNoRunway", "Aircraft without a runway").ToString(), V4Red });
+		A.Age = float(Now - NoRunway->At);
+	}
 	// (a regra do Felipe, 10/10: a produção mais lenta aparece; sem prédio nenhum, a energia 0/0 não é aviso, 13/10)
 	const bool bLowPower = OwnsStructure(Match, Me) && Match->ProductionSpeed(Me) < 0.999f;
 	NewLowPowerSince = bLowPower ? (NewLowPowerSince < 0.0 ? Now : NewLowPowerSince) : -1.0;
@@ -216,6 +230,34 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 	}
 	// o minimapa é desenhado pelo jogo, por baixo (a peça só põe a moldura e os botões)
 	S.MinimapImage = NAME_None;
+	// (01/11) o botão do trabalhador ao lado do minimapa: quantos construtores estão parados e a foto do construtor da facção (o do
+	// primeiro parado; sem nenhum, o primeiro que você tem; sem nenhum, o Dozer)
+	{
+		TArray<uint32> Idle;
+		Match->GetIdleBuilders(Me, Idle);
+		S.IdleWorkers = Idle.Num();
+		FString BuilderKey = TEXT("usa_dozer");
+		FRTSUnitState Wu;
+		FRTSDefInfo Wd;
+		if (Idle.Num() > 0 && Match->GetUnit(Idle[0], Wu) && Match->GetDef(Wu.Def, Wd))
+		{
+			BuilderKey = Wd.Key;
+		}
+		else
+		{
+			TArray<FRTSUnitState> Mine;
+			Match->GetUnits(Mine);
+			for (const FRTSUnitState& U : Mine)
+			{
+				if (U.Owner == Me && Match->GetDef(U.Def, Wd) && !Wd.bStructure && !Wd.Constructs.IsEmpty())
+				{
+					BuilderKey = Wd.Key;
+					break;
+				}
+			}
+		}
+		S.WorkerImage = Btn(BuilderKey);
+	}
 
 	// (v4) a coluna de poderes: um botão por poder que a patente já ligou (de baixo pra cima, a ordem das teclas F1–F3; antes
 	// da patente 2 a coluna nem aparece), o ícone dos dados, READY respirando ou o tempo caindo; sem o Command Center fica
@@ -375,11 +417,15 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 					}
 					const bool bMissing = !Match->HasPrerequisites(P);
 					const bool bFull = !bMissing && AtLimit(P, PD);
-					X.bLocked = bMissing || bFull;
+					// (v5, 25/10) o jato precisa de uma vaga: com as do Airfield tomadas (os jatos dele, no chão ou no ar, e os da fila) o botão
+					// trava como no ZH (CANMAKE_PARKING_PLACES_FULL, ControlBarCommand.cpp), em vez da fila parada esperando vaga
+					const bool bPadsFull = !bMissing && !bFull && PD.bJet && Match->AirfieldPadsLeft(StructureId) == 0;
+					X.bLocked = bMissing || bFull || bPadsFull;
 					X.bNoMoney = Cash < PD.Cost;
 					Tips.Add(X.Id, bMissing ? FTip{ CostAndTime(PD.Cost, PD.BuildSeconds), Requires(PD), true }
 						: (bFull ? FTip{ CostAndTime(PD.Cost, PD.BuildSeconds), LimitTip(PD), true }
-						: FTip{ CostAndTime(PD.Cost, PD.BuildSeconds), LOCTEXT("TipProduce", "Left-click +1 · Shift-click +5 · Right-click −1").ToString(), false }));
+						: (bPadsFull ? FTip{ CostAndTime(PD.Cost, PD.BuildSeconds), FText::Format(LOCTEXT("TipPadsFull", "Airfield full: all {0} pads are taken"), D.Pads).ToString(), true }
+						: FTip{ CostAndTime(PD.Cost, PD.BuildSeconds), LOCTEXT("TipProduce", "Left-click +1 · Shift-click +5 · Right-click −1").ToString(), false })));
 					Main.Add(X);
 				}
 				for (int32 K = 0; K < Queue.Num() && K < 5; ++K)
@@ -491,6 +537,33 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 				X.bCaptain = bFirst;
 				Main.Add(X);
 			}
+			// (01/11, o pedido dele: "as tropas que estão dentro de alguma unidade ou construção, tem que mostrar os slots dela ao selecionar
+			// a unidade com elas dentro, pra poder tirar elas uma por uma, ou tirar todas de uma vez. Se você selecionar mais de uma [...]
+			// tem que mostrar todas unidades selecionadas") o transporte sozinho na seleção: depois dele, uma casa por vaga, a de quem está
+			// dentro com a foto e a vida (o clique tira só ele) e as livres apagadas; o "Desembarcar" (D) tira todos
+			if (Selected.Num() == 1 && U.TransportSlots > 0)
+			{
+				TArray<uint32> Inside;
+				Match->GetPassengers(Id, Inside);
+				for (int32 K = 0; K < U.TransportSlots && Main.Num() < 2 * S.MainColumns; ++K)
+				{
+					FRTSUnitState PU;
+					FRTSDefInfo PD;
+					if (Inside.IsValidIndex(K) && Match->GetUnit(Inside[K], PU) && Match->GetDef(PU.Def, PD))
+					{
+						FRTSHudSlot X = Slot(FName(*FString::Printf(TEXT("pass_%u"), Inside[K])), Btn(PD.Key), PD.Name, FString());
+						X.Health = float(PU.Hp) / float(FMath::Max(1, PU.MaxHp));
+						Tips.Add(X.Id, FTip{ LOCTEXT("UnloadOneTip", "Click: this one gets out").ToString(), FString(), false });
+						Main.Add(X);
+					}
+					else
+					{
+						// a vaga livre: só o nome, apagada (sem o cadeado: ela não está bloqueada, está vazia)
+						FRTSHudSlot X = Slot(FName(*FString::Printf(TEXT("seat_%d"), K)), NAME_None, LOCTEXT("EmptySeat", "Empty seat").ToString(), FString());
+						Main.Add(X);
+					}
+				}
+			}
 			bFirst = false;
 		}
 		if (!Main.IsEmpty())
@@ -498,6 +571,32 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 			S.bCommandPanel = true;
 			S.Actions[0] = Action(TEXT("cmd_attack_move"), TEXT('A'), LOCTEXT("AttackMove", "Attack Move").ToString(), TEXT("icon:attack_move"));
 			S.Actions[1] = Action(TEXT("cmd_stop"), TEXT('S'), LOCTEXT("Stop", "Stop").ToString(), TEXT("icon:stop"));
+			// (v5, 25/10) a guarda (G): clicar no chão guarda a área (arrastar muda o raio), numa unidade ou prédio amigo escolta
+			S.Actions[3] = Action(TEXT("cmd_guard"), TEXT('G'), LOCTEXT("Guard", "Guard").ToString(), TEXT("icon:guard"));
+			// (v5, 24/10) com aeronave armada na seleção: Voltar à base (o jato rearma, o helicóptero conserta) e a patrulha que volta
+			bool bAircraft = false;
+			for (const uint32 Id : Selected)
+			{
+				FRTSUnitState U;
+				FRTSDefInfo D;
+				bAircraft |= Match->GetUnit(Id, U) && U.bAir && Match->GetDef(U.Def, D) && D.bArmed;
+			}
+			if (bAircraft)
+			{
+				S.Actions[2] = Action(TEXT("cmd_return_base"), 0, LOCTEXT("ReturnToBase", "Return to Base").ToString(), TEXT("icon:repair"));
+				S.Actions[4] = Action(TEXT("cmd_patrol"), 0, LOCTEXT("Patrol", "Patrol").ToString(), TEXT("icon:beacon"));
+			}
+			// (simulação 35) com transporte carregado na seleção: desembarcar (D)
+			bool bLoaded = false;
+			for (const uint32 Id : Selected)
+			{
+				FRTSUnitState U;
+				bLoaded |= Match->GetUnit(Id, U) && U.Owner == Me && U.Passengers > 0;
+			}
+			if (bLoaded)
+			{
+				S.Actions[5] = Action(TEXT("cmd_unload"), TEXT('D'), LOCTEXT("Unload", "Unload").ToString(), TEXT("icon:paradrop"));
+			}
 		}
 	}
 	if (!S.Card.bShow)
@@ -516,8 +615,11 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 		}
 		S.Card.bShow = true;
 		S.Card.bFactionPlate = true;
-		S.Card.FactionName = TEXT("UNITED STATES");
-		S.Card.FactionEmblem = TEXT("emblem:usa");
+		// (31/10, o elenco das 3 facções) a placa da sua facção
+		const FString MyFaction = Match->FactionOf(Me);
+		S.Card.FactionName = MyFaction == TEXT("china") ? TEXT("CHINA") : (MyFaction == TEXT("gla") ? TEXT("GLA")
+			: (MyFaction == TEXT("russia") ? TEXT("RUSSIA") : TEXT("UNITED STATES")));   // (01/11) a Rússia provisória
+		S.Card.FactionEmblem = FName(*(TEXT("emblem:") + MyFaction));
 		S.Card.PlateLine = FText::Format(LOCTEXT("PlateLine", "Army {0} · Buildings {1}"), Army, Buildings).ToString();
 	}
 	// as teclas do clássico, em ordem nas casas que têm tecla (QWERTYU na de cima, ZXCVBNM na de baixo)
@@ -547,6 +649,13 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 		if (PC->IsInputKeyDown(EKeys::LeftMouseButton))
 		{
 			S.PressedId = B.Id;
+		}
+		if (B.Id == FName(TEXT("mm_worker")))
+		{
+			// (01/11) o botão do trabalhador
+			S.TooltipFor = B.Id;
+			S.TooltipTitle = LOCTEXT("IdleBuilder", "Idle builder").ToString();
+			S.TooltipLine = LOCTEXT("IdleBuilderAll", "Ctrl: select all idle builders").ToString();
 		}
 		if (B.Id.ToString().StartsWith(TEXT("power_")))
 		{
@@ -711,7 +820,7 @@ void ARTSHUD::DrawNewHudExtras(ARTSPlayerController* PC, URTSMatchSubsystem* Mat
 		NewText(Stats, BX + Pad, BY + 54.0f * S, 14.0f, V4TextSub, false);
 	}
 	// (o relógio do avião saiu daqui, 23/10: é o DrawTimer do plugin, no painel do meio com a zona selecionada)
-	(void)PC;
+	// (25/10: o painel das vagas do Airfield e o quadro da munição saíram: o Felipe, "gambiarra e feio"; o desenho vem depois)
 }
 
 void ARTSHUD::DrawPowerTarget(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
@@ -769,6 +878,83 @@ void ARTSHUD::DrawPowerTarget(ARTSPlayerController* PC, URTSMatchSubsystem* Matc
 	else
 	{
 		DrawLabel(Why.ToString(), M.X + 22.0f, M.Y + 36.0f, 14, V4Red, false, true);
+	}
+}
+
+void ARTSHUD::DrawGuardPreview(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
+{
+	// (v5, 25/10) a guarda (G): escolhendo, o círculo da área no chão (o raio do alcance do grupo, ou o do arraste) ou o anel no amigo
+	// debaixo do mouse (a escolta); e a área de quem já está de guarda na seleção, fraca
+	const FRTSBakedMap* Map = Match->BakedMap();
+	if (!Map)
+	{
+		return;
+	}
+	const auto Ring = [this, PC, Map](const FVector2D& C, double RadiusCm, const FLinearColor& Color, float Thickness, int32 Segments)
+	{
+		FVector2D Prev = FVector2D::ZeroVector;
+		bool bPrev = false;
+		for (int32 K = 0; K <= Segments; ++K)
+		{
+			const double A = 2.0 * UE_DOUBLE_PI * double(K) / double(Segments);
+			const FVector2D Pt = C + FVector2D(FMath::Cos(A), FMath::Sin(A)) * RadiusCm;
+			FVector2D Screen;
+			const bool bOn = PC->ProjectWorldLocationToScreen(FVector(Pt.X, Pt.Y, Map->GroundZCm(Pt) + 30.0), Screen);
+			if (bOn && bPrev)
+			{
+				DrawLine(Prev.X, Prev.Y, Screen.X, Screen.Y, Color, Thickness);
+			}
+			Prev = Screen;
+			bPrev = bOn;
+		}
+	};
+	// quem já está de guarda (a 1ª área de cada centro, sem repetir)
+	TArray<FVector2D> Drawn;
+	for (const uint32 Id : PC->GetSelection())
+	{
+		FVector2D C;
+		float R = 0.0f;
+		uint32 Target = 0;
+		if (!Match->GetGuard(Id, C, R, Target) || Drawn.ContainsByPredicate([&C](const FVector2D& D) { return FVector2D::Distance(C, D) < 200.0; }))
+		{
+			continue;
+		}
+		Drawn.Add(C);
+		Ring(C, R, V4Alpha(V4Green, Target != 0 ? 0.25f : 0.4f), 1.5f, 64);
+	}
+	FVector2D Center;
+	float RadiusCm = 0.0f;
+	uint32 Target = 0;
+	bool bDragging = false;
+	if (!PC->GetGuardPreview(Center, RadiusCm, Target, bDragging))
+	{
+		return;
+	}
+	const FVector2D M = MousePos();
+	FRTSUnitState TU;
+	FRTSDefInfo TD;
+	if (Target != 0 && Match->GetUnit(Target, TU) && Match->GetDef(TU.Def, TD))
+	{
+		// a escolta: o anel no protegido (o prédio pelo lote)
+		const double R = TU.bStructure ? FMath::Max(TD.SizeM.X, TD.SizeM.Y) * 50.0 + 300.0 : 600.0;
+		Ring(TU.PosCm, R, V4Green, 2.5f, 40);
+		DrawLabel(FText::Format(TU.bStructure ? LOCTEXT("GuardStructure", "Guard: {0}") : LOCTEXT("GuardEscort", "Escort: {0}"), FText::FromString(TD.Name)).ToString(),
+			M.X + 22.0f, M.Y + 14.0f, 14, V4TextMain, false, true);
+		DrawLabel(LOCTEXT("GuardEscortHint", "Left-click: guard it  ·  Right-click: cancel").ToString(), M.X + 22.0f, M.Y + 36.0f, 12, V4TextSub);
+		return;
+	}
+	Ring(Center, RadiusCm, V4Green, 2.5f, 64);
+	Ring(Center, RadiusCm * 11.0 / 9.0, V4Alpha(V4Green, 0.3f), 1.0f, 64);   // a coleira (até onde o guarda persegue)
+	FVector2D Mid;
+	if (PC->ProjectWorldLocationToScreen(FVector(Center.X, Center.Y, Map->GroundZCm(Center) + 30.0), Mid))
+	{
+		DrawLine(Mid.X - 8.0f, Mid.Y, Mid.X + 8.0f, Mid.Y, V4Green, 2.0f);
+		DrawLine(Mid.X, Mid.Y - 8.0f, Mid.X, Mid.Y + 8.0f, V4Green, 2.0f);
+	}
+	DrawLabel(FText::Format(LOCTEXT("GuardArea", "Guard area  ·  {0} m"), FMath::RoundToInt(RadiusCm / 100.0f)).ToString(), M.X + 22.0f, M.Y + 14.0f, 14, V4TextMain, false, true);
+	if (!bDragging)
+	{
+		DrawLabel(LOCTEXT("GuardAreaHint", "Click: guard here  ·  Drag: radius  ·  Click a friendly unit or building: escort").ToString(), M.X + 22.0f, M.Y + 36.0f, 12, V4TextSub);
 	}
 }
 

@@ -6,11 +6,11 @@
 //    dois cliques = todos iguais na tela;
 //  - botão direito: clique rápido desseleciona, arrastar rola a câmera; os dois juntos arrastando = a linha (v4, ELineChord);
 //  - A = próxima ordem é ataque andando; S = parar; Ctrl+número grava grupo,
-//    número chama, dois toques centralizam; Esc = pausa.
-// Também cuida dos botões do menu e das telas de pausa e de fim.
+//    número chama, dois toques centralizam; Esc = pausa. Também cuida dos botões do menu e das telas de pausa e de fim.
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "RTSCursors.h"
 #include "RTSPlayerController.generated.h"
 
 class UStaticMeshComponent;
@@ -133,8 +133,24 @@ public:
 	// prédio; o esquerdo no chão (ou no minimapa) usa, o direito ou o Esc desistem
 	/** O poder sendo mirado (o índice em Rules.Powers; −1 = nenhum): o HUD desenha o círculo do raio no chão. */
 	int32 GetTargetingPower() const { return TargetingPower; }
+	/** (v5, 25/10) A guarda sendo escolhida (G): o centro e o raio da área (cm; o do arraste ou o do grupo) e o amigo debaixo do mouse
+	 *  (0 = o chão: a área); falso = a guarda não está armada. O HUD desenha a área ou o anel no protegido. */
+	bool GetGuardPreview(FVector2D& OutCenterCm, float& OutRadiusCm, uint32& OutTarget, bool& bOutDragging) const;
 	/** A recusa do último pedido de poder (o botão sem estar pronto, o ponto que não vale) e há quantos segundos. */
 	const FText& GetPowerMessage(float& OutAgeS) const;
+
+	// (v5, 24/10) o laboratório (RTSLab.h): a seleção posta por ele (as ops da cena, o jogar como outro), a linha de depuração
+	// (o F10 de fora do laboratório vira o painel dentro dele) e o preset ao vivo sem guardar no .ini
+	void LabSetSelection(const TArray<uint32>& Ids) { Selected = Ids; }
+	/** (simulação 35) O Alt segurado pela cena do laboratório (a prova da fila no vídeo). */
+	void LabHoldAlt(bool bOn) { bLabAlt = bOn; }
+	bool bLabAlt = false;
+	void LabToggleDebugLine() { bShowDebug = !bShowDebug; }
+	void LabApplyQuality(int32 Level) { ApplyQuality(Level, false); }
+	/** O clique de uma op da cena acabou: o jogo volta a ler o mouse de verdade (fora do teste automático). */
+	void LabReleaseTestMouse() { bTestMouse = false; }
+	/** (v5, 25/10) A cena arma (ou desarma) a guarda na seleção, como a tecla G: o HUD desenha a área no mouse da cena. */
+	void LabArmGuard(bool bOn) { bGuardArmed = bOn && !Selected.IsEmpty(); bGuardPressed = false; }
 
 private:
 	void TickMenu();
@@ -187,6 +203,8 @@ private:
 	void* RepairCursorHandle = nullptr;
 	int8 RepairCursorState = 0;   // 0 ainda não tentou, 1 pronto, −1 não deu
 	bool bRepairCursor = false;
+	/** (01/11) Os cursores do jogo (docs/CURSORES.md); sem os arquivos, os do Windows e a chave acima. */
+	FRTSCursors Cursors;
 	bool bTestMouse = false;
 	FVector2D TestMouse = FVector2D::ZeroVector;
 	UPROPERTY() TObjectPtr<AActor> Ghost;
@@ -196,6 +214,18 @@ private:
 	void BeginTargeting(int32 Power);
 	/** O modo de mira pega o clique esquerdo no chão; true = a entrada foi dele neste quadro. */
 	bool TickTargeting(const FVector2D& Mouse, bool bHasMouse);
+	/** (v5, 25/10) A guarda armada (G ou o botão): o esquerdo no chão guarda a área (arrastado, o raio), num amigo escolta; o direito
+	 *  desiste. Verdadeiro = o clique esquerdo é dela (nem caixa nem ordem). */
+	bool TickGuard(const FVector2D& Mouse, bool bHasMouse);
+	bool bGuardArmed = false;
+	bool bGuardPressed = false;
+	bool bGuardDragged = false;
+	FVector2D GuardPressPx = FVector2D::ZeroVector;
+	FVector2D GuardPressCm = FVector2D::ZeroVector;
+	FVector2D GuardHoverCm = FVector2D::ZeroVector;
+	uint32 GuardHoverTarget = 0;
+	uint32 GuardPressTarget = 0;
+	float GuardDragRadiusCm = 0.0f;
 	/** Usa o poder mirado no ponto (cm), se vale; senão guarda o motivo e segue mirando. */
 	bool TryUsePower(const FVector2D& Cm);
 	void SetPowerMessage(const FText& Text);
@@ -207,6 +237,9 @@ private:
 	double LastStrikeNoticeAt = -1.0;
 	int32 LastStrikeNoticeCount = 0;
 	URTSMatchSubsystem* Match() const;
+	/** (01/11) O botão do trabalhador: o próximo construtor parado depois do último que ele pegou (a câmera vai até ele); com o Ctrl, todos. */
+	void SelectIdleBuilders(bool bAll);
+	uint32 LastIdleBuilder = 0;
 	ARTSHUD* GetRTSHUD() const;
 
 	bool bMenu = true;
@@ -221,6 +254,8 @@ private:
 	bool bPauseMenu = false;
 	bool bSurrenderArmed = false;
 	bool bAttackMoveArmed = false;
+	/** (v5, 24/10) A patrulha armada (o botão Patrol): o próximo clique no chão manda as aeronaves patrulhar ali. */
+	bool bPatrolArmed = false;
 	bool bShowDebug = false;
 	bool bEdgeScroll = true;
 	uint32 HoverId = 0;
@@ -257,4 +292,5 @@ private:
 	bool bHasAlert = false;
 	FVector2D LastAlertCm = FVector2D::ZeroVector;
 	double LastAlertTime = -1000.0;
+	bool bGroundBefore = false;   // (29/10) o F11: o chão de hoje de manhã (o MPC_Ground GroundV = 0)
 };

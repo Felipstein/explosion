@@ -555,7 +555,8 @@ void AExplosionVolume::UpdateVolume(float T)
 	{
 		Gain *= FMath::Lerp(EarlyThickness, 1.0f, FMath::SmoothStep(0.7f * EarlyEnd, EarlyEnd, T));
 	}
-	MID->SetScalarParameterValue(ParamDensity, SizeScale * Opacity * Thickness * Gain);
+	// (01/11) × a diluição e o esvaecer do raymarch (o fim das nuvens e o apagar do fogo vão por eles; BlastFxDirector), aqui também
+	MID->SetScalarParameterValue(ParamDensity, SizeScale * Opacity * RaymarchDilute * RaymarchFade * Thickness * Gain);
 	static const float EmissionTest = CommandLineScale(TEXT("-ExplosionEmission="));
 	MID->SetScalarParameterValue(ParamEmission, SizeScale * Opacity * Thickness * Gain * EmissionTest);
 	const FSkirt Skirt = SkirtAt(T, Bake->Duration(), SkirtHeight, SkirtLife);

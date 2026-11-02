@@ -147,14 +147,36 @@ public:
 	float LoopLife = 0.0f;
 	/** (17/10) Viva até esta idade (s), qualquer que seja a gravação: a do raymarch em loop (a carcaça) não acaba sozinha. 0 = pela gravação. */
 	float HoldAge = 0.0f;
+	/** (29/10) A idade em que o diretor moveu a nuvem viva da morte v3 pela última vez: ela anda pelo avanço da idade (o relógio dela),
+	 *  não pelo DeltaTime do diretor (com o mundo desacelerado a nuvem saltava ~6× a conta do vento). < 0 = ainda não andou. */
+	float DriftAge = -1.0f;
+	/** (25/10, o fogo simulado; docs/FOGO.md) O quadro da gravação dado por quem toca (o início, o laço e o fim do fogo: o BlastFxDirector)
+	 *  e o quadro seguinte (o laço emenda o último dele no primeiro). < 0 = pelo relógio (BakeTime), como sempre. */
+	float RaymarchFrame = -1.0f;
+	int32 RaymarchNextFrame = -1;
+	/** (25/10) O ruído de detalhe do WebGL nesta (o deslocamento de ~0,4 m locais e a erosão; 1 = como sempre). O fogo simulado em escala real
+	 *  tem o detalhe da própria simulação (0,1 m): o ruído borrava. */
+	float RaymarchNoise = 1.0f;
+	/** (31/10, a revisão: a fumaça preta do acerto virava uma rosquinha) A diluição no raymarch (BlastRaymarch.h FInstance::Dilute): × a
+	 *  densidade depois da erosão da borda (linear), na vista, no cache de luz e nas sombras. O fim da nuvem viva da ogiva vai por ela, não
+	 *  pela Opacity (que entra antes da erosão: um limiar). 1 = nada. */
+	float RaymarchDilute = 1.0f;
+	/** (01/11, o anel do cerco) Mais um esvaecer linear, como a diluição (× ela; depois da erosão, na vista, na luz e na sombra), de quem
+	 *  some aos poucos sem esvaziar por dentro: o apagar e o fim da gravação do fogo simulado. A diluição fica com o crescimento da
+	 *  fumaça e o deck andando. 1 = nada. */
+	float RaymarchFade = 1.0f;
+	/** (01/11) Até onde a areia da gravação sobe (m acima do pé, na escala da gravação; 0 = a do console blast.DustCapM, que é 0 = sem teto). */
+	float RaymarchDustCapM = 0.0f;
 	/** (23/10, a explosão com vida: a nuvem viva da ogiva) A gravação para neste tempo (s da gravação): o último quadro válido fica na tela
 	 *  (nenhum quadro novo sobe pra placa) e o ruído de detalhe segue andando (HoldExtraS, no relógio do raymarch). 0 = toca até o fim. */
 	float BakeHoldS = 0.0f;
 	/** O tempo da gravação depois da parada (s da gravação; 0 sem a parada): o raymarch soma ao relógio do ruído, senão vira carimbo. */
 	float HoldExtraS() const
 	{
-		return BakeHoldS > 0.0f ? FMath::Max(RawBakeTime() - BakeHoldS, 0.0f) : 0.0f;
+		return BakeHoldS > 0.0f ? FMath::Max(RawBakeTime() - BakeHoldS, 0.0f) : RaymarchHoldExtraS;
 	}
+	/** (01/11) O mesmo tempo pra quem toca a gravação de fora (o fogo da carcaça, pelo RaymarchFrame): o fim da fumaça que se solta (s). */
+	float RaymarchHoldExtraS = 0.0f;
 
 	/**
 	 * O clarão da detonação (um fogo contínuo não tem): a luz curta que acende o

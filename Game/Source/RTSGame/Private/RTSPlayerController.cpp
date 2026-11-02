@@ -17,11 +17,19 @@
 #include "RTSGameData.h"
 #include "RTSGameModes.h"
 #include "RTSHUD.h"
+#include "RTSLab.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSSessionSubsystem.h"
 #include "Scalability.h"
 #include "Misc/ConfigCacheIni.h"
+#include "UnrealClient.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
+
+// (29/10) o chão de hoje de manhã (1) × o de agora (0): o F12 troca; a coleção MPC_Ground (GroundV) vai junto no PlayerTick
+static IConsoleVariable* CVarGroundBefore = IConsoleManager::Get().RegisterConsoleVariable(TEXT("rts.Ground.Before"), 0,
+	TEXT("O chão de hoje de manhã (1) ou o de agora (0); o F12 troca"), ECVF_Default);
 
 namespace
 {
@@ -129,6 +137,10 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 	if (bMenu)
 	{
+		// (01/11) a nossa seta já no menu (ela fica no lugar da do Windows em toda a tela)
+		int32 ViewW = 0, ViewH = 0;
+		GetViewportSize(ViewW, ViewH);
+		CurrentMouseCursor = Cursors.Apply(ERTSCursor::Pointer, ViewH);
 		TickMenu();
 	}
 	else
@@ -218,7 +230,15 @@ void ARTSPlayerController::PlayerTick(float DeltaTime)
 	}
 	if (WasInputKeyJustPressed(EKeys::F10))
 	{
-		bShowDebug = !bShowDebug;
+		// (v5, 24/10) no laboratório o F10 mostra e esconde o painel (a linha de depuração fica na aba Debug)
+		if (FRTSLab* Lab = bMenu ? nullptr : FRTSLab::Get(this))
+		{
+			Lab->TogglePanel();
+		}
+		else
+		{
+			bShowDebug = !bShowDebug;
+		}
 	}
 }
 
@@ -265,6 +285,10 @@ void ARTSPlayerController::OnButton(FName Id)
 	if (Id == TEXT("skirmish"))
 	{
 		Session->StartSkirmish();
+	}
+	else if (Id == TEXT("lab") && FRTSLab::IsAllowed())
+	{
+		FRTSLab::Open(this, FRTSLab::DefaultMap());   // (v5) o laboratório (o chão plano, se existir; o painel troca o mapa)
 	}
 	// a LAN: criar a sala, achar as da rede, a sala de espera
 	else if (Id == TEXT("multiplayer"))
@@ -429,6 +453,15 @@ void ARTSPlayerController::OnButton(FName Id)
 	{
 		Net->SetStartingMoney(Session->StepMoney(Net->GetStartingMoney(), Id == TEXT("lan_money_up") ? 1 : -1));
 	}
+	// (31/10, o elenco das 3 facções) a sua facção e a da IA no skirmish (ficam guardadas)
+	else if (Id == TEXT("faction_up") || Id == TEXT("faction_down"))
+	{
+		Session->SetPlayerFaction(Session->StepFaction(Session->PlayerFaction, Id == TEXT("faction_up") ? 1 : -1));
+	}
+	else if (Id == TEXT("aifaction_up") || Id == TEXT("aifaction_down"))
+	{
+		Session->SetAIFaction(Session->StepFaction(Session->AIFaction, Id == TEXT("aifaction_up") ? 1 : -1));
+	}
 	else if (URTSMatchSubsystem* M = Match())
 	{
 		// o painel provisório da economia: eco_<ação>_<número>
@@ -445,6 +478,21 @@ void ARTSPlayerController::OnButton(FName Id)
 				PruneSelection();
 			}
 			return;
+		}
+		if (S.StartsWith(TEXT("pass_")))
+		{
+			// (01/11) a casa de quem está dentro do transporte selecionado: só ele sai
+			const uint32 One = uint32(FCString::Strtoui64(*S.Mid(5), nullptr, 10));
+			if (Selected.Num() == 1)
+			{
+				M->OrderUnloadOne(Selected[0], One);
+				++Orders;
+			}
+			return;
+		}
+		if (S.StartsWith(TEXT("seat_")))
+		{
+			return;   // (01/11) a vaga livre: nada
 		}
 		if (S.StartsWith(TEXT("unit_")))
 		{
@@ -488,6 +536,15 @@ void ARTSPlayerController::OnButton(FName Id)
 			}
 			return;
 		}
+		if (S == TEXT("cmd_unload"))
+		{
+			if (!Selected.IsEmpty())
+			{
+				M->OrderUnload(Selected);   // (simulação 35)
+				++Orders;
+			}
+			return;
+		}
 		if (S == TEXT("cmd_stop"))
 		{
 			if (!Selected.IsEmpty())
@@ -495,6 +552,34 @@ void ARTSPlayerController::OnButton(FName Id)
 				M->OrderStop(Selected);
 				++Orders;
 			}
+			return;
+		}
+		// (v5, 24/10) o ar: Voltar à base já; a patrulha arma o próximo clique no chão
+		if (S == TEXT("cmd_return_base"))
+		{
+			if (!Selected.IsEmpty())
+			{
+				M->OrderReturnToBase(Selected);
+				++Orders;
+			}
+			return;
+		}
+		if (S == TEXT("cmd_patrol"))
+		{
+			bPatrolArmed = !Selected.IsEmpty();
+			bAttackMoveArmed = false;
+			bGuardArmed = false;
+			TargetingPower = -1;
+			return;
+		}
+		// (v5, 25/10) a guarda: arma o próximo clique (o chão guarda a área, o amigo é escoltado), como a tecla G
+		if (S == TEXT("cmd_guard"))
+		{
+			bGuardArmed = !Selected.IsEmpty();
+			bGuardPressed = false;
+			bPatrolArmed = false;
+			bAttackMoveArmed = false;
+			TargetingPower = -1;
 			return;
 		}
 		if (S == TEXT("cmd_sell"))
@@ -514,6 +599,11 @@ void ARTSPlayerController::OnButton(FName Id)
 				M->OrderSell(Sell);
 				++Orders;
 			}
+			return;
+		}
+		if (S == TEXT("mm_worker"))
+		{
+			SelectIdleBuilders(IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl));
 			return;
 		}
 		if (S == TEXT("mm_settings"))
@@ -607,6 +697,28 @@ void ARTSPlayerController::TickIpEntry()
 void ARTSPlayerController::TickMenu()
 {
 	URTSNetSession* Net = GetGameInstance()->GetSubsystem<URTSNetSession>();
+	{
+		// (v5, 24/10) -RTSLab: o jogo abre direto no laboratório, uma vez por processo (o teste automático e a LAN seguem o menu);
+		// -RTSLabMenuShot=<arquivo>: a foto do menu com o botão LAB (0,6 s depois de ele aparecer)
+		static bool bLabAutoDone = false;
+		static double MenuSince = -1.0;
+		FString Script;
+		FString MenuShot;
+		const bool bTest = FParse::Value(FCommandLine::Get(), TEXT("-RTSAutoTest="), Script);
+		if (!bLabAutoDone && !bTest && FParse::Param(FCommandLine::Get(), TEXT("RTSLab")) && !(Net && Net->IsActive()))
+		{
+			bLabAutoDone = true;
+			FRTSLab::Open(this, FRTSLab::DefaultMap());
+			return;
+		}
+		MenuSince = MenuSince < 0.0 ? FPlatformTime::Seconds() : MenuSince;
+		if (MenuSince > 0.0 && FPlatformTime::Seconds() - MenuSince > 0.6 && FParse::Value(FCommandLine::Get(), TEXT("-RTSLabMenuShot="), MenuShot))
+		{
+			MenuSince = 0.0;   // uma foto só
+			FScreenshotRequest::RequestScreenshot(MenuShot, true, false);
+			UE_LOG(LogTemp, Log, TEXT("RTS laboratório: a foto do menu em %s"), *MenuShot);
+		}
+	}
 	// de volta da partida em rede: o menu abre na mesma sala
 	if (!bNetAutoDone && Net && Net->IsActive())
 	{
@@ -709,6 +821,12 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	float MY = 0.0f;
 	const bool bHasMouse = ReadMouse(MX, MY);
 	const FVector2D Mouse(MX, MY);
+	// (simulação 35, 01/11) o Alt segurado põe as ordens na fila (o waypoint do ZH, com atacar e as obras do Dozer)
+	const bool bAltHeld = IsInputKeyDown(EKeys::LeftAlt) || IsInputKeyDown(EKeys::RightAlt) || bLabAlt;   // (o da cena do laboratório também)
+	if (M)
+	{
+		M->SetQueueOrders(bAltHeld);
+	}
 
 	// (v4) a linha dos dois botões que acabou (mandou ou desistiu) só volta ao normal com os dois soltos: até lá o botão que
 	// ficou apertado não rola, não faz caixa, não clica nem desseleciona
@@ -748,6 +866,24 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	{
 		M->ToggleFogReveal();   // depuração: a névoa liga e desliga na hora
 	}
+	// (29/10, o Felipe: "uma tecla pra trocar de textura no meio da partida") o chão de hoje de manhã × o de agora: as duas versões
+	// moram no mesmo material do chão (WorldForge, a chave GroundV da coleção MPC_Ground; 1 = agora). O F12 troca a rts.Ground.Before (o F11
+	// a Unreal usa pra tela cheia e pega antes do jogo: InputSettings bF11TogglesFullscreen)
+	// (o teste liga pela linha de comando: -Cvars 'rts.Ground.Before 1')
+	if (WasInputKeyJustPressed(EKeys::F12))
+	{
+		CVarGroundBefore->Set(CVarGroundBefore->GetInt() ? 0 : 1, ECVF_SetByCode);
+	}
+	if (CVarGroundBefore && (CVarGroundBefore->GetInt() != 0) != bGroundBefore)
+	{
+		if (UMaterialParameterCollection* Ground = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/Materials/MPC_Ground.MPC_Ground"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			bGroundBefore = CVarGroundBefore->GetInt() != 0;
+			UKismetMaterialLibrary::SetScalarParameterValue(GetWorld(), Ground, TEXT("GroundV"), bGroundBefore ? 0.0f : 1.0f);
+			SetPowerMessage(FText::FromString(bGroundBefore ? TEXT("Ground: BEFORE (this morning)  -  F12 to switch") : TEXT("Ground: NOW  -  F12 to switch")));
+			UE_LOG(LogTemp, Display, TEXT("RTS chão: %s"), bGroundBefore ? TEXT("o de antes") : TEXT("o de agora"));
+		}
+	}
 	// o Esc desiste de posicionar o prédio (ou de mirar o poder) antes de abrir a pausa
 	const bool bEscCancelsPlacement = (PlacingDef >= 0 || TargetingPower >= 0) && WasInputKeyJustPressed(EKeys::Escape);
 	if (bEscCancelsPlacement)
@@ -761,7 +897,14 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	{
 		CancelLine(TEXT("o Esc"));
 	}
-	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement && !bEscCancelsLine)
+	// (v5) e solta a ferramenta do cursor do laboratório
+	FRTSLab* EscLab = M ? M->GetLab() : nullptr;
+	const bool bEscCancelsLab = EscLab && EscLab->HasTool() && !bEscCancelsPlacement && !bEscCancelsLine && WasInputKeyJustPressed(EKeys::Escape);
+	if (bEscCancelsLab)
+	{
+		EscLab->DropTool();   // (a estrada e a corrente de postes: o 1º Esc fecha a linha, o 2º solta)
+	}
+	if (WasInputKeyJustPressed(EKeys::Escape) && !bOver && !bEscCancelsPlacement && !bEscCancelsLine && !bEscCancelsLab)
 	{
 		bPauseMenu = !bPauseMenu;
 		bSurrenderArmed = false;
@@ -839,15 +982,40 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		}
 	}
 	const bool bTargeting = TickTargeting(Mouse, bHasMouse);
+	// (v5, 24/10) o laboratório: os atalhos (P, ., [ ], Delete, H, G) e a ferramenta do cursor (pôr, matar, efeito, atirar no
+	// chão), que pega o clique esquerdo no mapa antes da seleção e das ordens
+	FRTSLab* Lab = M->GetLab();
+	if (Lab)
+	{
+		Lab->TickKeys(*this);
+	}
+	const bool bLabTool = Lab && !bPlacing && !bTargeting && Lab->TickCursor(*this, Mouse, bHasMouse);
 
 	if (WasInputKeyJustPressed(EKeys::A) && !Selected.IsEmpty() && !bPlacing)
 	{
 		bAttackMoveArmed = true;
+		bGuardArmed = false;
 		TargetingPower = -1;
 	}
+	// (v5, 25/10) a guarda (G, o pedido do Felipe): a mesma tecla de novo desiste
+	if (WasInputKeyJustPressed(EKeys::G) && !Selected.IsEmpty() && !bPlacing && !bLabTool)
+	{
+		bGuardArmed = !bGuardArmed;
+		bGuardPressed = false;
+		bAttackMoveArmed = false;
+		bPatrolArmed = false;
+		TargetingPower = -1;
+	}
+	const bool bGuardTool = !bPlacing && !bTargeting && !bLabTool && TickGuard(Mouse, bHasMouse);
 	if (WasInputKeyJustPressed(EKeys::S) && !Selected.IsEmpty())
 	{
 		M->OrderStop(Selected);
+		++Orders;
+	}
+	// (simulação 35) D: os transportes selecionados desembarcam todos (o Evacuate do ZH)
+	if (WasInputKeyJustPressed(EKeys::D) && !Selected.IsEmpty() && !bPlacing)
+	{
+		M->OrderUnload(Selected);
 		++Orders;
 	}
 	// as teclas das casas do HUD novo (as do clássico: QWERTYU em cima, ZXCVBNM embaixo); o R, posicionando um
@@ -859,7 +1027,7 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 			{ 'Z', EKeys::Z }, { 'X', EKeys::X }, { 'C', EKeys::C }, { 'V', EKeys::V }, { 'B', EKeys::B }, { 'N', EKeys::N }, { 'M', EKeys::M } };
 		for (const TPair<TCHAR, FKey>& L : Letters)
 		{
-			if ((L.Key == 'R' && bPlacing) || !WasInputKeyJustPressed(L.Value))
+			if ((L.Key == 'R' && (bPlacing || (Lab && Lab->GetTool() == ERTSLabTool::PlaceProp))) || !WasInputKeyJustPressed(L.Value))   // (v5: o R gira a peça civil do laboratório)
 			{
 				continue;
 			}
@@ -871,40 +1039,162 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	}
 	HandleGroups();
 
-	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH)
+	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH). Os cursores são os nossos (01/11,
+	// docs/CURSORES.md): a mesma ordem de decisão do clique (HandleLeftClick e HandleEconomyClick), pra nunca mentir
 	const bool bMinimapMouse = bOverMinimap || MinimapGesture != EMinimapGesture::None;
 	const bool bLineChord = LineChord == ELineChord::Active || LineChord == ELineChord::Releasing;
 	HoverId = (bHasMouse && !bLeftDown && !bMinimapMouse && LineChord == ELineChord::None) ? PickUnit(Mouse) : 0;
-	EMouseCursor::Type Cursor = EMouseCursor::Default;
+	const bool bCtrlHeld = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
+	const bool bShiftHeld = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+	const ERTSCursor Walk = bAttackMoveArmed ? ERTSCursor::AttackMove : ERTSCursor::Move;   // o clique de andar (com o Alt, ganha a ficha da fila abaixo)
+	int32 ViewW = 0, ViewH = 0;
+	GetViewportSize(ViewW, ViewH);
+	const float EdgeX = !bHasMouse || ViewW <= 0 ? 0.0f : (Mouse.X <= EdgeScrollPx ? -1.0f : (Mouse.X >= ViewW - 1 - EdgeScrollPx ? 1.0f : 0.0f));
+	const float EdgeY = !bHasMouse || ViewH <= 0 ? 0.0f : (Mouse.Y <= EdgeScrollPx ? 1.0f : (Mouse.Y >= ViewH - 1 - EdgeScrollPx ? -1.0f : 0.0f));
+	ERTSCursor Cursor = ERTSCursor::Pointer;
 	FRTSUnitState Hovered;
-	if (bLineChord)
+	const bool bHovered = HoverId != 0 && M->GetUnit(HoverId, Hovered);
+	TArray<uint32> Dozers;
+	SelectedWith(true, Dozers);
+	if (bRightScrolling || bMiddleDown)
 	{
-		// (v4) puxando a linha dos dois botões: o "andar" (a mira com o ataque andando armado)
-		Cursor = bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross;
+		Cursor = ERTSCursor::Pan;   // arrastando a vista
+	}
+	else if (bEdgeScroll && (EdgeX != 0.0f || EdgeY != 0.0f) && !bMinimapMouse && !bLineChord)
+	{
+		// rolando pela borda (a mesma regra do TickCamera): a seta na direção, com a ponta encostada na borda
+		static const ERTSCursor Dirs[3][3] = {   // [linha: em cima, meio, embaixo][coluna: esquerda, meio, direita]
+			{ ERTSCursor::ScrollNW, ERTSCursor::ScrollN, ERTSCursor::ScrollNE },
+			{ ERTSCursor::ScrollW, ERTSCursor::Pointer, ERTSCursor::ScrollE },
+			{ ERTSCursor::ScrollSW, ERTSCursor::ScrollS, ERTSCursor::ScrollSE } };
+		Cursor = Dirs[EdgeY > 0.0f ? 0 : (EdgeY < 0.0f ? 2 : 1)][EdgeX < 0.0f ? 0 : (EdgeX > 0.0f ? 2 : 1)];
+	}
+	else if (bLineChord)
+	{
+		Cursor = bAttackMoveArmed ? ERTSCursor::AttackMove : ERTSCursor::Move;   // (v4) puxando a linha dos dois botões
 	}
 	else if (bMinimapMouse)
 	{
-		// sobre o minimapa: seta sem seleção, "andar" com seleção, mira com o ataque andando armado
-		Cursor = Selected.IsEmpty() ? EMouseCursor::Default : (bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross);
+		// sobre o minimapa: a seta sem seleção, o "andar" com seleção (o ataque andando, se armado)
+		Cursor = Selected.IsEmpty() ? ERTSCursor::Pointer : Walk;
 	}
-	else if (TargetingPower >= 0 || bAttackMoveArmed || (!Selected.IsEmpty() && (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))))
+	else if (bPlacing)
 	{
-		Cursor = EMouseCursor::Crosshairs;   // (com o Ctrl: o tiro forçado, em qualquer coisa ou no chão; v4: a mira do poder)
+		FVector Ground;
+		FVector2D Center, Half;
+		const bool bFits = GroundUnderCursor(Mouse, Ground)
+			&& M->CanPlace(uint16(PlacingDef), PlacingDir, FVector2D(Ground.X, Ground.Y), Center, Half) == ERTSPlace::Ok;
+		Cursor = bFits ? ERTSCursor::Build : ERTSCursor::NoBuild;   // o fantasma verde ou vermelho faz o resto
 	}
-	else if (HoverId != 0 && M->GetUnit(HoverId, Hovered))
+	else if (bLabTool)
+	{
+		Cursor = ERTSCursor::Strike;   // (v5) a ferramenta do laboratório armada
+	}
+	else if (TargetingPower >= 0)
+	{
+		// (v4) a mira do poder: a de ataque se ele lança mísseis, a de apoio se não (o paraquedas, o drone)
+		URTSMatchSubsystem::FPowerInfo Info;
+		Cursor = M->GetPowerInfo(TargetingPower, Info) && Info.Missiles == 0 ? ERTSCursor::Support : ERTSCursor::Strike;
+	}
+	else if (bGuardArmed)
+	{
+		Cursor = bHovered && !M->IsEnemyOfLocal(Hovered.Owner) ? ERTSCursor::Escort : ERTSCursor::Guard;   // (v5) a escolta ou a área
+	}
+	else if (bPatrolArmed)
+	{
+		Cursor = ERTSCursor::Patrol;
+	}
+	else if (bAttackMoveArmed)
+	{
+		Cursor = ERTSCursor::AttackMove;
+	}
+	else if (bCtrlHeld && !Selected.IsEmpty())
+	{
+		// o tiro forçado (Ctrl): na unidade, ou no chão (a sua única selecionada vira tiro no chão, como no clique)
+		const bool bOnUnit = bHovered && !(Selected.Num() == 1 && Selected.Contains(HoverId));
+		Cursor = bOnUnit ? ERTSCursor::Force : ERTSCursor::Ground;
+	}
+	else if (bHovered)
 	{
 		const bool bEnemy = M->IsEnemyOfLocal(Hovered.Owner);
-		Cursor = bEnemy ? (Selected.IsEmpty() ? EMouseCursor::Default : EMouseCursor::Crosshairs) : EMouseCursor::Hand;
-		// (v4, 23/10) o Dozer selecionado sobre o prédio avariado (dele ou do aliado): a chave do conserto, como no ZH; o clique manda
-		TArray<uint32> Dozers;
-		SelectedWith(true, Dozers);
-		if (!bEnemy && Hovered.bStructure && !Dozers.IsEmpty() && M->CanRepair(HoverId) && EnsureRepairCursor())
+		const bool bMine = Hovered.Owner == M->LocalPlayer();
+		if (bEnemy)
 		{
-			Cursor = EMouseCursor::Custom;
+			// o inimigo que ninguém da seleção acerta (o tanque e o avião no ar): o clique continua sendo andar
+			Cursor = Selected.IsEmpty() ? ERTSCursor::Pointer : (M->CanAnyTarget(Selected, HoverId) ? ERTSCursor::Attack : ERTSCursor::Cant);
+		}
+		else if (!Dozers.IsEmpty() && bMine && Hovered.bStructure && Hovered.BuildFraction < 1.0f)
+		{
+			Cursor = ERTSCursor::Resume;   // a obra parada
+		}
+		else if (!Dozers.IsEmpty() && Hovered.bStructure && M->CanRepair(HoverId))
+		{
+			Cursor = ERTSCursor::Repair;   // (v4, 23/10) o prédio avariado, dele ou do aliado
+		}
+		else if (bMine && !bShiftHeld && !Selected.Contains(HoverId) && M->CanEnter(Selected, HoverId))
+		{
+			Cursor = ERTSCursor::Enter;   // (simulação 35) o soldado no transporte com vaga
+		}
+		else
+		{
+			Cursor = bMine ? ERTSCursor::Select : (Selected.IsEmpty() ? ERTSCursor::Pointer : Walk);   // o do aliado: o clique anda
 		}
 	}
-	bRepairCursor = Cursor == EMouseCursor::Custom;
-	CurrentMouseCursor = Cursor;
+	else if (!Selected.IsEmpty())
+	{
+		FVector Ground;
+		if (!GroundUnderCursor(Mouse, Ground))
+		{
+			Cursor = ERTSCursor::Invalid;   // sem chão debaixo (a vista no céu)
+		}
+		else
+		{
+			TArray<uint32> Trucks;
+			SelectedWith(false, Trucks);
+			bool bOnlyStructures = true;
+			for (const uint32 Id : Selected)
+			{
+				FRTSUnitState U;
+				bOnlyStructures &= M->GetUnit(Id, U) && U.bStructure && U.Owner == M->LocalPlayer();
+			}
+			if (!Dozers.IsEmpty() && M->SalvageAt(FVector2D(Ground.X, Ground.Y)) != 0)
+			{
+				Cursor = ERTSCursor::Salvage;   // (simulação 30) a carcaça ou o entulho
+			}
+			else if (!Trucks.IsEmpty() && DockAt(Ground) >= 0)
+			{
+				Cursor = ERTSCursor::Gather;
+			}
+			else
+			{
+				Cursor = bOnlyStructures ? ERTSCursor::Rally : Walk;   // prédio não anda: o clique marca o ponto de encontro
+			}
+		}
+	}
+	bRepairCursor = Cursor == ERTSCursor::Repair || Cursor == ERTSCursor::Salvage;
+	// (01/11, aprovado) a fila do Alt: a ordem ganha a ficha com o número da vez (a fila mais longa da seleção, mais 1)
+	int32 QueueN = 0;
+	if (bAltHeld && !Selected.IsEmpty() && FRTSCursors::IsQueueable(Cursor))
+	{
+		TArray<URTSMatchSubsystem::FRTSOrderStep> Steps;
+		for (const uint32 Id : Selected)
+		{
+			QueueN = FMath::Max(QueueN, M->GetOrderPath(Id, Steps) ? Steps.Num() : 0);
+		}
+		QueueN += 1;
+	}
+	const ERTSCursor Before = Cursors.GetShown();
+	CurrentMouseCursor = Cursors.Apply(Cursor, ViewH, QueueN);
+	// -RTSCursorLog: cada troca no log, com o mouse (a prova dos testes: o cursor do Windows não sai na captura do jogo)
+	static const bool bCursorLog = FParse::Param(FCommandLine::Get(), TEXT("RTSCursorLog"));
+	if (bCursorLog && Cursors.GetShown() != Before)
+	{
+		UE_LOG(LogTemp, Display, TEXT("RTS cursor: %s (fila %d) em (%.0f, %.0f), tela %dx%d"), FRTSCursors::Name(Cursor), QueueN, Mouse.X, Mouse.Y, ViewW, ViewH);
+	}
+	if (!Cursors.IsReady() && bRepairCursor && EnsureRepairCursor())
+	{
+		CurrentMouseCursor = EMouseCursor::Custom;   // sem os arquivos: a chave antiga
+	}
 
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
@@ -919,7 +1209,7 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		{
 			OnButton(Button);
 		}
-		else if (!bPlacing && !bTargeting && LineChord == ELineChord::None)
+		else if (!bPlacing && !bTargeting && !bLabTool && !bGuardTool && LineChord == ELineChord::None)
 		{
 			// (v4, 23/10) o esquerdo arrastado é sempre a caixa de seleção, com tropa selecionada também (o Felipe: arrastar pra
 			// pegar outros tanques virava a linha); a linha agora é o esquerdo + o direito juntos (TickLineChord)
@@ -1038,11 +1328,25 @@ void ARTSPlayerController::TickCamera(float DeltaTime, ARTSCameraPawn* Cam)
 			{
 				TargetingPower = -1;   // (v4) mirando o poder: o mesmo, desiste e mantém a seleção
 			}
+			else if (bGuardArmed)
+			{
+				bGuardArmed = false;   // (v5, 25/10) escolhendo a guarda: o mesmo
+				bGuardPressed = false;
+			}
+			else if (FRTSLab* Lab = FRTSLab::Get(this); Lab && Lab->HasTool())
+			{
+				Lab->DropTool();   // (v5) a ferramenta do laboratório: o mesmo, solta e mantém a seleção (a estrada: fecha a linha antes)
+			}
+			else if ((IsInputKeyDown(EKeys::LeftAlt) || IsInputKeyDown(EKeys::RightAlt)) && Match() && !Selected.IsEmpty())
+			{
+				Match()->OrderTrimQueue(Selected);   // (simulação 35) Alt + o clique rápido do direito tira o último da fila (a seleção fica)
+			}
 			else
 			{
 				UE_LOG(LogTemp, Log, TEXT("RTS clique: direito desfez a seleção em (%.0f, %.0f)"), Mouse.X, Mouse.Y);
 				Selected.Reset();
 				bAttackMoveArmed = false;
+				bPatrolArmed = false;
 			}
 		}
 		bRightDown = false;
@@ -1338,6 +1642,92 @@ bool ARTSPlayerController::TryUsePower(const FVector2D& Cm)
 	return true;
 }
 
+bool ARTSPlayerController::GetGuardPreview(FVector2D& OutCenterCm, float& OutRadiusCm, uint32& OutTarget, bool& bOutDragging) const
+{
+	const URTSMatchSubsystem* M = Match();
+	if (!bGuardArmed || !M)
+	{
+		return false;
+	}
+	bOutDragging = bGuardPressed && bGuardDragged;
+	OutCenterCm = bGuardPressed ? GuardPressCm : GuardHoverCm;
+	OutRadiusCm = bOutDragging ? GuardDragRadiusCm : M->GuardRadiusM(Selected) * 100.0f;
+	OutTarget = bGuardPressed ? GuardPressTarget : GuardHoverTarget;
+	return true;
+}
+
+bool ARTSPlayerController::TickGuard(const FVector2D& Mouse, bool bHasMouse)
+{
+	// (v5, 25/10) a guarda (o AIGuard do ZH, com o que o Felipe pediu): o esquerdo que desce no chão marca o centro; arrastado, a
+	// distância até o mouse é o raio (entre o mínimo e o máximo da simulação); soltou: a ordem. O clique (sem arraste) num amigo, a
+	// unidade ou o prédio, é a escolta dele
+	if (!bGuardArmed)
+	{
+		return false;
+	}
+	URTSMatchSubsystem* M = Match();
+	if (!M || Selected.IsEmpty() || M->IsLocalDefeated())
+	{
+		bGuardArmed = false;
+		bGuardPressed = false;
+		return false;
+	}
+	const ARTSHUD* HUD = GetRTSHUD();
+	if (!bGuardPressed && ((HUD && !HUD->ButtonAt(Mouse).IsNone()) || bOverMinimap))
+	{
+		return false;   // os botões do painel e o minimapa seguem valendo
+	}
+	FVector Ground = FVector::ZeroVector;
+	const bool bGround = bHasMouse && GroundUnderCursor(Mouse, Ground);
+	if (bGround)
+	{
+		GuardHoverCm = FVector2D(Ground.X, Ground.Y);
+	}
+	GuardHoverTarget = 0;
+	const uint32 Under = bHasMouse ? PickUnit(Mouse) : 0;
+	FRTSUnitState U;
+	if (Under != 0 && M->GetUnit(Under, U) && U.Hp > 0 && !M->IsEnemyOfLocal(U.Owner) && !(Selected.Num() == 1 && Selected.Contains(Under)))
+	{
+		GuardHoverTarget = Under;
+	}
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bGround)
+	{
+		bGuardPressed = true;
+		bGuardDragged = false;
+		GuardPressPx = Mouse;
+		GuardPressCm = GuardHoverCm;
+		GuardPressTarget = GuardHoverTarget;
+		GuardDragRadiusCm = 0.0f;
+	}
+	if (bGuardPressed && IsInputKeyDown(EKeys::LeftMouseButton) && FVector2D::Distance(Mouse, GuardPressPx) > DragThresholdPx)
+	{
+		bGuardDragged = true;
+		GuardPressTarget = 0;   // arrastar é sempre a área
+		GuardDragRadiusCm = FMath::Clamp(float(FVector2D::Distance(GuardPressCm, GuardHoverCm)), float(Sim::GuardRadiusMinM) * 100.0f, float(Sim::GuardRadiusMaxM) * 100.0f);
+	}
+	if (bGuardPressed && WasInputKeyJustReleased(EKeys::LeftMouseButton))
+	{
+		const FRTSBakedMap* Map = M->BakedMap();
+		if (GuardPressTarget != 0 && M->GetUnit(GuardPressTarget, U))
+		{
+			M->OrderGuard(Selected, U.PosCm, GuardPressTarget, 0.0f);
+			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), false);
+			UE_LOG(LogTemp, Log, TEXT("RTS guarda: %d unidades escoltam %u"), Selected.Num(), GuardPressTarget);
+		}
+		else
+		{
+			const float Radius = bGuardDragged ? GuardDragRadiusCm : M->GuardRadiusM(Selected) * 100.0f;
+			M->OrderGuard(Selected, GuardPressCm, 0, Radius);
+			AddMarker(FVector(GuardPressCm.X, GuardPressCm.Y, Map ? Map->GroundZCm(GuardPressCm) : 0.0f), false);
+			UE_LOG(LogTemp, Log, TEXT("RTS guarda: %d unidades guardam (%.0f, %.0f) m, raio %.0f m"), Selected.Num(), GuardPressCm.X / 100.0, GuardPressCm.Y / 100.0, Radius / 100.0);
+		}
+		++Orders;
+		bGuardArmed = false;
+		bGuardPressed = false;
+	}
+	return true;
+}
+
 void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 {
 	URTSMatchSubsystem* M = Match();
@@ -1346,6 +1736,19 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 		return;
 	}
 	const bool bShift = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
+	if (bPatrolArmed)
+	{
+		// (v5) a patrulha que volta: as aeronaves armadas do grupo patrulham o ponto (atacam o que entra, rearmam e voltam sozinhas)
+		FVector Ground;
+		if (!Selected.IsEmpty() && GroundUnderCursor(Mouse, Ground))
+		{
+			M->OrderPatrol(Selected, FVector2D(Ground.X, Ground.Y));
+			AddMarker(Ground, true);
+			++Orders;
+		}
+		bPatrolArmed = false;
+		return;
+	}
 	if (bAttackMoveArmed)
 	{
 		FVector Ground;
@@ -1392,6 +1795,15 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 	FRTSUnitState U;
 	if (Hit != 0 && M->GetUnit(Hit, U))
 	{
+		// (simulação 35) com soldado selecionado, o clique no próprio transporte com vaga manda entrar (o ZH); com o Shift, soma à seleção
+		if (U.Owner == M->LocalPlayer() && !bShift && !Selected.Contains(Hit) && M->CanEnter(Selected, Hit))
+		{
+			M->OrderEnter(Selected, Hit);
+			++Orders;
+			const FRTSBakedMap* Map = M->BakedMap();
+			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), false);
+			return;
+		}
 		if (U.Owner == M->LocalPlayer())
 		{
 			const double Now = FPlatformTime::Seconds();
@@ -1411,7 +1823,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 			LastClickTime = Now;
 			return;
 		}
-		if (M->IsEnemyOfLocal(U.Owner))
+		if (M->IsEnemyOfLocal(U.Owner) && (Selected.IsEmpty() || M->CanAnyTarget(Selected, Hit)))   // (v5) o tanque não ataca a aeronave no ar: vira andar
 		{
 			if (!Selected.IsEmpty())
 			{
@@ -1636,7 +2048,7 @@ void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& 
 			continue;   // a caixa só pega unidade própria (ADR-0004), e prédio não (ZH)
 		}
 		FVector2D Screen;
-		const FVector World(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + PickHeightCm);
+		const FVector World(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + (U.bAir ? U.AltCm : 0.0f) + PickHeightCm);   // (v5) a aeronave no ar
 		if (ProjectWorldLocationToScreen(World, Screen) && Box.IsInside(Screen))
 		{
 			Found.Add(U.Id);
@@ -1660,6 +2072,36 @@ void ARTSPlayerController::HandleBoxSelect(const FVector2D& A, const FVector2D& 
 	}
 }
 
+void ARTSPlayerController::SelectIdleBuilders(bool bAll)
+{
+	// (01/11, ele: "pra clicar pra ir pra próxima unidade de construção liberada") cada clique pega o parado seguinte (na ordem do Id, e
+	// volta pro primeiro) e leva a câmera até ele; o Ctrl pega todos (o Ctrl+F1 do StarCraft II) e vai pro primeiro
+	URTSMatchSubsystem* M = Match();
+	if (!M)
+	{
+		return;
+	}
+	TArray<uint32> Idle;
+	M->GetIdleBuilders(M->LocalPlayer(), Idle);
+	if (Idle.IsEmpty())
+	{
+		return;
+	}
+	int32 K = 0;
+	while (K < Idle.Num() && Idle[K] <= LastIdleBuilder)
+	{
+		++K;
+	}
+	const uint32 Next = bAll ? Idle[0] : Idle[K % Idle.Num()];
+	LastIdleBuilder = Next;
+	Selected = bAll ? Idle : TArray<uint32>{ Next };
+	FRTSUnitState U;
+	if (ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(GetPawn()); Cam && M->GetUnit(Next, U))
+	{
+		Cam->JumpTo(U.PosCm);
+	}
+}
+
 void ARTSPlayerController::SelectSameTypeOnScreen(uint32 Id)
 {
 	URTSMatchSubsystem* M = Match();
@@ -1679,7 +2121,7 @@ void ARTSPlayerController::SelectSameTypeOnScreen(uint32 Id)
 	for (const FRTSUnitState& U : Units)
 	{
 		FVector2D P;
-		const FVector World(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + PickHeightCm);
+		const FVector World(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + (U.bAir ? U.AltCm : 0.0f) + PickHeightCm);
 		if (U.Owner == Clicked.Owner && U.Def == Clicked.Def && ProjectWorldLocationToScreen(World, P) && Screen.IsInside(P))
 		{
 			Selected.Add(U.Id);
@@ -1766,7 +2208,8 @@ uint32 ARTSPlayerController::PickUnit(const FVector2D& Mouse) const
 		}
 		const FRTSUnitVisual* Visual = M->VisualOf(U.Def);
 		const float RadiusCm = Visual ? Visual->RadiusM * 100.0f : 300.0f;
-		const FVector Center(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + PickHeightCm);
+		// (v5, 24/10) a aeronave: na tela onde ela está no ar, e na frente do que está no chão embaixo (o clique a pega primeiro)
+		const FVector Center(U.PosCm.X, U.PosCm.Y, (Map ? Map->GroundZCm(U.PosCm) : 0.0f) + (U.bAir ? U.AltCm : 0.0f) + PickHeightCm);
 		FVector2D C;
 		FVector2D Edge;
 		if (!ProjectWorldLocationToScreen(Center, C) || !ProjectWorldLocationToScreen(Center + CamRight * RadiusCm, Edge))
@@ -1775,9 +2218,10 @@ uint32 ARTSPlayerController::PickUnit(const FVector2D& Mouse) const
 		}
 		const float RadiusPx = FMath::Max(14.0f, FVector2D::Distance(C, Edge));
 		const float Dist = FVector2D::Distance(C, Mouse);
-		if (Dist <= RadiusPx && Dist / RadiusPx < BestScore)
+		const float Score = Dist / RadiusPx * (U.bAir && U.AltCm > 200.0f ? 0.6f : 1.0f);
+		if (Dist <= RadiusPx && Score < BestScore)
 		{
-			BestScore = Dist / RadiusPx;
+			BestScore = Score;
 			Best = U.Id;
 		}
 	}
@@ -1824,7 +2268,7 @@ void ARTSPlayerController::PruneSelection()
 	{
 		// (v4, 23/10) o prédio sendo vendido sai da seleção (o OBJECT_STATUS_UNSELECTABLE do ZH)
 		FRTSUnitState U;
-		return !M->GetUnit(Id, U) || U.bSelling;
+		return !M->GetUnit(Id, U) || U.bSelling || U.Inside != 0;   // (simulação 35) quem entrou no transporte sai da seleção
 	});
 }
 

@@ -68,12 +68,16 @@ public:
 	void EnableWreckFlames() { bWreckFlames = true; }
 	/** Os torrões do tiro na areia (16/10, a arte 4.1: o jato de terra escura): pedaços que sobem num cone, caem e ficam. */
 	void StartDirt(const FVector& PointCm, const FVector& AwayDir, int32 Seed);
+	/** (30/10, o DozerDirtFall do ZH) A terra escorregando pela borda de cima da lâmina do Dozer quando ela sobe: torrões que saem
+	 *  devagar pra frente ao longo da largura, caem ~1–1,5 m e ficam. Fwd = a frente da lâmina no chão. */
+	void StartDozerDirt(const FVector& LipCm, const FVector& Fwd, float HalfWidthCm, int32 Seed);
 	/**
 	 * O tiro na areia inteiro, menos o anel (16/10; o estudo com fontes em docs/TIRO_E_ACERTO.md, "O tiro na areia"): o
 	 * clarão de ~2,5 m por 2 quadros e as faíscas, a luz curta, o jato de terra escura (torrões com rastro de terra,
 	 * 50–70° do chão, mais pra frente na direção do tiro) e os torrões que caem e ficam. AwayDir = o rumo do tiro no chão.
 	 */
 	void StartGroundImpact(const FVector& PointCm, const FVector& AwayDir, int32 Seed);
+
 
 	/**
 	 * O míssil da Patriot (16/10; o estudo com fontes: docs/ESTUDO_MISSIL_PATRIOT.md): a chama atrás do bocal (miolo,
@@ -84,8 +88,16 @@ public:
 	void StartMissile(const FVector& PosCm, const FVector& Dir, int32 Seed, bool bSmokeTrail = true);
 	void UpdateMissile(const FVector& PosCm, const FVector& Dir);
 	void EndMissile();
+	/** (30/10, item 37: "nem tem míssil visível ali") O corpo do míssil (Tools/missile_models.py: a ponta na origem, a frente em +X): a ponta
+	 *  no ponto do míssil e a chama, a luz e o rastro na tubeira, LengthCm atrás. Uma vez por míssil (o diretor chama). */
+	void SetMissileBody(UStaticMesh* Mesh, UMaterialInterface* Material, float LengthCm);
+	/** (01/11, o lançamento suave) O motor de voo: apagado, o míssil anda só com o corpo (sem a chama, a luz e o rastro); ao acender, a
+	 *  chama nasce como no lançamento (o relógio do míssil recomeça: os 2 quadros da chama e o sopro grosso de 0,15 s). */
+	void SetMissileMotor(bool bOn);
 	/** O lançamento na boca da caixa: o clarão, a língua, o jato de ré pela grelha de trás e os pedaços da tampa. */
 	void StartLaunch(const FVector& MouthCm, const FVector& Dir, int32 Seed);
+	/** (01/11) O lançamento do trilho (o Hellfire do Apache): a ignição pequena na tubeira (TailCm) e o jato curto pra trás; sem tampa. */
+	void StartRailLaunch(const FVector& TailCm, const FVector& Dir, int32 Seed);
 	/** O acerto do míssil no tanque: o clarão branco-azulado, as faíscas radiais, as fagulhas e as lascas. (23/10, a ogiva v2)
 	 *  Scale = K = (W/4 kg)^⅓, a receita aprovada é a da ogiva de 4 kg: o tamanho e a duração do clarão, a vida das faíscas e a
 	 *  queda da luz × K, a luz × K² (vai com a área), as velocidades iguais (Hopkinson-Cranz conserva a velocidade). bGlowSprite: o
@@ -123,6 +135,26 @@ public:
 	float DirtK = 1.0f, DirtSpeedK = 1.0f, DirtElevDeg = 0.0f;
 	int32 DirtPuffs = 0;
 	bool bDirtOnly = false;
+	/** (30/10, item 29: a rajada na areia "parece um monte de pixelado saindo") a bala na areia: sem os torrões (de 5–20 cm eram cubos
+	 *  escuros de 1–6 px) e os riscos × SprayCountK na quantidade e × SprayWidthK na largura (a cortina de grãos finos). 1/1/falso = de hoje. */
+	bool bNoClods = false;
+	float SprayCountK = 1.0f, SprayWidthK = 1.0f;
+	/** (24/10, o laboratório: o tipo de chão) A cor dos torrões que caem e ficam (R < 0 = a terra escura de hoje) e × as faíscas do
+	 *  StartGroundImpact. Os padrões dão o tiro na areia de hoje, exato. */
+	FLinearColor ClodTint = FLinearColor(-1.0f, 0.0f, 0.0f, 0.0f);
+	float SparkK = 1.0f;
+	/** (30/10, o Felipe: a metralhadora na lataria com "esse impacto assim" do tanque) O tamanho do StartImpact: o clarão × K^0,6, as
+	 *  faíscas, as fagulhas e as lascas × K (o leque nunca abaixo de 6), as velocidades × √K, a luz × K. 1 = o tiro de tanque de hoje,
+	 *  exato; ~0,18 = a bala de 12,7–14,5 mm (docs/ESTUDO_IMPACTOS.md B: o clarão de 0,3–0,6 m, de 8 a 20 faíscas a 10–30 m/s). */
+	float ImpactK = 1.0f;
+	/** (30/10, a 2ª opinião: "uma bola só, sem o branco") A bola da mini explosão vem junto (UBlastFxDirector::ShellBallKg): o miolo branco
+	 *  em 1 quadro e sem o brilho branco-amarelo de 0,3 s (eram duas representações do mesmo fogo somando no branco). */
+	bool bBallFollows = false;
+	/** (30/10, o custo da metralhadora: ~60 balas por segundo) Sem a luz do acerto (o StartImpact; a bala acende 1 em cada 3). */
+	bool bNoLight = false;
+	/** (30/10, o ricochete; docs/ESTUDO_ACERTO_TANQUE.md §6.4) O leque do StartImpact raso e rápido, rente à chapa na direção do tiro refletido
+	 *  (20–40°, o dobro da velocidade), sem as fagulhas que caem e sem lascas: a bala de raspão, não a que entra. */
+	bool bGrazing = false;
 	/** O laser de mira entre as baterias (o LaserFromAssisted do ZH): um risco vermelho fino de A a B. */
 	void StartLaser(const FVector& FromCm, const FVector& ToCm, float LifeS);
 
@@ -151,6 +183,9 @@ public:
 	FLinearColor PlateTint = FLinearColor(-1.0f, 0.0f, 0.0f, 0.0f);
 	float PlateRoughNow = -1.0f;
 	void SetFirePos(const FVector& PointCm) { FirePos = PointCm / 100.0; }
+	/** (25/10, o fogo simulado; docs/FOGO.md) A luz do fogo da carcaça segue a potência da simulação: K × o pico de sempre (1 = o fogo
+	 *  estável; a ignição passa de 1, o fim simulado cai a 0), no centro da queima (cm). Sem as senoides nem o esmaecer próprio. */
+	void SetFireDrive(float K, const FVector& PointCm) { FireDrive = FMath::Max(K, 0.0f); FirePos = PointCm / 100.0; }
 
 	/** Depuração (-ShotFxLog=1): quantos pontos o rastro tem agora e se solta. */
 	int32 TrailPointCount(int32 Trail) const { return Trails.IsValidIndex(Trail) ? Trails[Trail].Points.Num() : -1; }
@@ -163,6 +198,9 @@ public:
 	 */
 	float BallScale = -1.0f;
 	FLinearColor TrailTint = FLinearColor(0.95f, 0.92f, 0.88f, 1.0f);
+	/** (29/10, a morte v3 contra o r1: os rastros dos estilhaços do alvo são jatos de fumaça escura de ~1 m, não fios) a escala dos rastros dos
+	 *  cometas da morte: a largura e o engorda × K, a vida × √K, a opacidade × √K (teto 0,8). 1 = a v2 aprovada. */
+	float CometTrailK = 1.0f;
 	float GlowScale = 1.0f;
 	/**
 	 * (23/10, a ogiva v2) A luz do acerto do míssil quando a bola em volume é da própria ogiva (o corpo que nasceu, ou o aceso de
@@ -336,6 +374,10 @@ private:
 	int32 MissileSpark[3] = { -1, -1, -1 };
 	int32 MissileTrail[2] = { -1, -1 };
 	float MissileT0 = -1.0f;
+	float MissileTailM = 0.0f;                      // (30/10) o comprimento do corpo: a chama sai na tubeira
+	bool bMissileMotor = true;                      // (01/11) o motor de voo aceso (o lançamento suave sai do tubo apagado)
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> MissileBody;
 	bool bLightHold = false;
 	bool bHasOrigin = false;
 	float GroundRefM = -1.0e9f;
@@ -350,6 +392,7 @@ private:
 	// o fogo da carcaça: até quando, o ponto (m), o acumulado de chamas por nascer e as vagas delas nas faíscas
 	float FireUntil = -1.0f, FireAcc = 0.0f;
 	bool bWreckFlames = true;   // (17/10) false: a coluna em volume faz o fogo; aqui só a luz
+	float FireDrive = -1.0f;    // (25/10) ≥ 0: a luz pela potência do fogo simulado (SetFireDrive)
 	FVector FirePos = FVector::ZeroVector;
 	TArray<int32> FireSlots;
 	void UpdateWreckFire(float Dt);

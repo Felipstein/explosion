@@ -59,6 +59,8 @@ private:
 	void DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	void DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	void DrawMarkers(ARTSPlayerController* PC);
+	/** (simulação 35) A linha da fila do Alt: com o Alt segurado e 1,5 s depois de cada ordem enfileirada, de cada selecionado. */
+	void DrawOrderQueues(ARTSPlayerController* PC, class URTSMatchSubsystem* Match);
 	void DrawTopBar(URTSMatchSubsystem* Match);
 	void DrawObjective(URTSMatchSubsystem* Match);
 	void DrawPause();
@@ -67,6 +69,8 @@ private:
 	/** (v4) A linha STARTING MONEY: [ - ] $20,000 [ + ] e um tracinho por escolha, o de agora aceso (ids <Prefix>_down e
 	 *  <Prefix>_up). bCanChange falso: só o valor. bCompact: sem o título em cima (a sala), 34 px de alto. */
 	void DrawMoneyRow(FName Prefix, int32 Money, float X, float Y, float W, bool bCanChange, bool bCompact = false);
+	/** (31/10, o elenco das 3 facções) Um seletor [<] o nome [>] com o título em cima (a sua facção e a da IA no menu). */
+	void DrawFactionPicker(FName Prefix, const FString& Title, const FString& Value, float X, float Y, float W);
 	void DrawResult(URTSMatchSubsystem* Match);
 	/** (16/10) O mapa da batalha na tela do fim: a foto do minimapa e as marcas, num losango de meia diagonal Half. */
 	void DrawBattleMap(URTSMatchSubsystem* Match, const FVector2D& Center, float Half, float Alpha);
@@ -119,6 +123,16 @@ private:
 	TArray<FPopup> Popups;
 	double LastPopupTime = -1.0;
 	void DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color);
+	/** (01/11) A lotação do transporte embaixo da barra de vida: a plaquinha da largura da barra com um bonequinho por vaga. */
+	void DrawSeats(float X, float Y, float W, int32 Slots, int32 Filled, const FLinearColor& Team);
+	/** (01/11, a barra A escolhida) A barra de vida em (X, Y) de W × H px; S = a escala da tela (1 em 900 linhas); ChipFrom/ChipFade = o
+	 *  pedaço perdido no tiro; bBuild = a obra (azul → ciano); Vet = a patente (0 = a marquinha do time, 1 a 3 = a insígnia). */
+	void DrawHealthBar(float X, float Y, float W, float H, float S, float Ratio, float ChipFrom, float ChipFade, bool bBuild, int32 MaxHp, int32 Vet,
+		const FLinearColor& Team);
+	/** O pedaço perdido no tiro de cada unidade (a vida de antes e a hora) e a última vida vista. */
+	struct FBarChip { float From = 0.0f; double At = -1.0; };
+	TMap<uint32, FBarChip> BarChips;
+	TMap<uint32, float> BarLastRatio;
 	/** Texto com sombra; Size em pontos do Slate. Devolve o tamanho desenhado (px). */
 	FVector2D DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter = false, bool bBold = false);
 	FVector2D MeasureLabel(const FString& Text, int32 Size, bool bBold) const;
@@ -152,6 +166,8 @@ private:
 	static FString PromotionText(URTSMatchSubsystem* Match, int32 Rank);
 	/** Depois do plugin: a dica do poder sob o mouse e o relógio do avião no cartão da zona. */
 	void DrawNewHudExtras(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
+	/** (v5, 25/10) A guarda (G): a área no chão escolhendo (o raio, a coleira) ou o anel no protegido, e a área de quem já guarda. */
+	void DrawGuardPreview(ARTSPlayerController* PC, URTSMatchSubsystem* Match);
 	FVector2D NewText(const FString& Text, float X, float Y, float Px, const FLinearColor& Color, bool bBold, bool bRight = false);
 	FVector2D NewMeasure(const FString& Text, float Px, bool bBold) const;
 	TSharedPtr<const FCompositeFont> NewFonts[2];

@@ -1,6 +1,7 @@
 #include "RTSHUD.h"
 #include "Misc/App.h"
 #include "RTSHudPainter.h"
+#include "RTSHudKit.h"
 
 #include "RTSNetSession.h"
 #include "RTSChat.h"
@@ -20,11 +21,14 @@
 #include "RTSCameraPawn.h"
 #include "RTSFogOfWar.h"
 #include "RTSGameData.h"
+#include "RTSLab.h"
 #include "RTSSessionSubsystem.h"
 #include "TextureResource.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "RTSUnitActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -52,14 +56,6 @@ namespace
 	/** Cores da caixa da câmera do ZH (W3DRadar: topo 225,225,0 e o resto 158,158,0). */
 	const FLinearColor ViewBoxTop(FColor(225, 225, 0));
 	const FLinearColor ViewBoxRest(FColor(158, 158, 0));
-
-	FLinearColor HealthColor(float Ratio)
-	{
-		// verde → amarelo → vermelho, nos limiares do ZH (danificado 70%, muito danificado 35%)
-		if (Ratio > 0.7f) { return FLinearColor(0.25f, 0.9f, 0.3f); }
-		if (Ratio > 0.35f) { return FLinearColor(0.95f, 0.8f, 0.15f); }
-		return FLinearColor(0.95f, 0.2f, 0.15f);
-	}
 
 	FLinearColor Brighten(const FLinearColor& C, float T)
 	{
@@ -148,6 +144,56 @@ FString ARTSHUD::ButtonIdsForTest() const
 		Ids.Add(B.Id.ToString());
 	}
 	return FString::Join(Ids, TEXT(" "));
+}
+
+void ARTSHUD::DrawSeats(float X, float Y, float W, int32 Slots, int32 Filled, const FLinearColor& Team)
+{
+	// (01/11, a 3ª: os quadradinhos e os bonequinhos em triângulo reprovados, "horrível, pixelado, sem qualidade, sem criatividade") as
+	// lâmpadas da tripulação: a cápsula de aço rebitado do kit do HUD presa embaixo da barra de vida, uma lâmpada por vaga; acesa (o azul,
+	// com o capacete gravado) quem está dentro, o vidro escuro a vaga livre. As peças são textura (a arte desenhada, a borda suave),
+	// recortadas da direção A do Atelier (captures/concept/72_lotacao_do_transporte_3_direcoes): skin/seat_cap_l, seat_mid, seat_cap_r,
+	// seat_on e seat_off. A cápsula estica pelo número de vagas (4 no Stryker, 8 no Chinook)
+	if (!Canvas || Slots <= 0)
+	{
+		return;
+	}
+	if (!NewKit)
+	{
+		const FString Repo = FPaths::ConvertRelativePathToFull(FPaths::ProjectDir() / TEXT(".."));
+		NewKit = MakeShared<FRTSHudKit>(Repo / TEXT("docs/concept/hud/kit"), Repo / TEXT("HUDLab/LabAssets"));
+	}
+	UTexture2D* CapL = NewKit->Get(TEXT("skin:seat_cap_l"));
+	UTexture2D* CapR = NewKit->Get(TEXT("skin:seat_cap_r"));
+	UTexture2D* Mid = NewKit->Get(TEXT("skin:seat_mid"));
+	UTexture2D* On = NewKit->Get(TEXT("skin:seat_on"));
+	UTexture2D* Off = NewKit->Get(TEXT("skin:seat_off"));
+	if (!CapL || !CapR || !Mid || !On || !Off)
+	{
+		return;
+	}
+	const auto Tile = [this](UTexture2D* T, float TX, float TY, float TW, float TH)
+	{
+		if (T && T->GetResource())
+		{
+			FCanvasTileItem Item(FVector2D(TX, TY), T->GetResource(), FVector2D(TW, TH), FLinearColor::White);
+			Item.BlendMode = SE_BLEND_Translucent;
+			Canvas->DrawItem(Item);
+		}
+	};
+	// as medidas da arte (84 px de alto): as pontas de 29, a casa de cada lâmpada 77,5 e a lâmpada 62; no jogo 14 px de alto
+	constexpr float ArtH = 84.0f, H = 14.0f, K = H / ArtH;
+	const float CapW = 29.0f * K, Cell = 77.5f * K, Lamp = 62.0f * K;
+	const float Inner = Cell * float(Slots) - 10.0f * K;
+	const float Total = 2.0f * CapW + Inner;
+	const float X0 = X + 0.5f * (W - Total);
+	Tile(CapL, X0, Y, CapW, H);
+	Tile(Mid, X0 + CapW, Y, Inner, H);
+	Tile(CapR, X0 + CapW + Inner, Y, CapW, H);
+	for (int32 S = 0; S < Slots; ++S)
+	{
+		const float Cx = X0 + CapW + (S + 0.5f) * Inner / float(Slots);
+		Tile(S < Filled ? On : Off, Cx - 0.5f * Lamp, Y + 0.5f * (H - Lamp), Lamp, Lamp);
+	}
 }
 
 void ARTSHUD::DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color)
@@ -256,9 +302,17 @@ void ARTSHUD::DrawMenu(ARTSPlayerController* PC)
 	const float X = 64.0f;
 	// (v4) com a linha do dinheiro, o menu tem 482 px do PLAY SKIRMISH ao fim do QUIT: em tela baixa (1366×768, 1280×720)
 	// o título e o menu sobem juntos pra o QUIT não passar da borda (de 900 px pra cima nada muda)
-	const float Lift = FMath::Max(0.0f, H * 0.44f + 482.0f + 16.0f - H);
+	const float Lift = FMath::Max(0.0f, H * 0.44f + 482.0f + 72.0f + 16.0f - H);   // (31/10) + a linha das facções
 	float Y = H * 0.20f - Lift;
 	DrawLabel(TEXT("RTS"), X, Y, 54, TextColor, false, true);
+	if (FRTSLab::IsAllowed() && PC->GetMenuPage() == ARTSPlayerController::EMenuPage::Main)
+	{
+		// (v5, 24/10) o laboratório (RTSLab.h): no jogo do desenvolvimento (o editor) e com -RTSLab; o pacote do pai fica igual
+		const float LabW = 120.0f;
+		const float LabX = PanelW - X - LabW;
+		DrawSmallButton(TEXT("lab"), LOCTEXT("LabButton", "LAB").ToString(), LabX, Y + 16.0f, LabW, 36.0f);
+		DrawLabel(LOCTEXT("LabHint", "sandbox · test live").ToString(), LabX + LabW * 0.5f, Y + 58.0f, 9, DimText, true);
+	}
 	Y += 82.0f;
 	DrawPanel(X, Y, 64.0f, 3.0f, Accent);
 	Y += 16.0f;
@@ -286,6 +340,15 @@ void ARTSHUD::DrawMenu(ARTSPlayerController* PC)
 	DrawButton(TEXT("fogsetting"), FogModeText(Fog), X, Y, PanelW - X * 2.0f, 44.0f);
 	DrawLabel(FogModeHint(Fog), X + 2.0f, Y + 52.0f, 10, DimText);
 	Y += 80.0f;
+	// (31/10, o elenco das 3 facções: docs/ELENCO.md) a sua facção e a da IA, lado a lado (ficam guardadas pra próxima vez)
+	{
+		const float Half = (BW - 12.0f) * 0.5f;
+		DrawFactionPicker(TEXT("faction"), LOCTEXT("YourFaction", "YOUR FACTION").ToString(),
+			Session ? Session->FactionDisplayName(Session->PlayerFaction) : TEXT("United States"), X, Y, Half);
+		DrawFactionPicker(TEXT("aifaction"), LOCTEXT("EnemyFaction", "ENEMY FACTION").ToString(),
+			Session ? Session->FactionDisplayName(Session->AIFaction) : TEXT("Random"), X + Half + 12.0f, Y, Half);
+	}
+	Y += 72.0f;
 	// (v4, 22/10) o dinheiro inicial do skirmish, de 10 000 a 50 000 (fica guardado pra próxima vez)
 	DrawMoneyRow(TEXT("money"), Session ? Session->StartingMoney : 10000, X, Y, BW, true);
 	Y += 72.0f;
@@ -551,6 +614,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	{
 		DrawUnits(PC, Match);
 		DrawMarkers(PC);
+		DrawOrderQueues(PC, Match);
 	}
 
 	FVector2D A;
@@ -581,6 +645,7 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		DrawRallyPoints(PC, Match);
 		DrawPlacementGhost(PC, Match);
 		DrawPowerTarget(PC, Match);    // (v4) a mira do poder do general: o círculo no chão (RTSHUDNew.cpp)
+		DrawGuardPreview(PC, Match);   // (v5, 25/10) a guarda: a área no chão (RTSHUDNew.cpp)
 		DrawPowerMessage(PC);
 		DrawDockHover(PC, Match);
 		DrawMoneyPopups(Match, GetWorld()->GetDeltaSeconds());
@@ -738,12 +803,202 @@ void ARTSHUD::DrawGroundRing(const FVector& Center, float RadiusCm, const FLinea
 	}
 }
 
+void ARTSHUD::DrawOrderQueues(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
+{
+	// (simulação 35, 01/11; docs/ESTUDO_TRANSPORTE_E_FILA.md §3.4) a fila de cada selecionado, da posição dele pela ordem de agora e por cada
+	// item: a linha segue o chão (a cada 2 m), 2 px com o contorno escuro por cima de tudo; verde andar, vermelho atacar, âmbar o trabalho
+	// do Dozer; o anel nos pontos de andar, o anel maior no alvo, o quadrado na obra. Só com o Alt ou logo depois da ordem (1,5 s)
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	// (01/11, ele: "não deve exibir a lista de tarefas ali do alt se o alt não tá mais sendo pressionado, ele só vai aparecer novamente
+	// se segurar o alt") só com o Alt apertado: soltou, some na hora
+	(void)Now;
+	if (!Match->IsQueueingOrders())
+	{
+		return;
+	}
+	const FRTSBakedMap* Map = Match->BakedMap();
+	const FLinearColor WorkAmber(1.0f, 0.72f, 0.2f, 1.0f);
+	const FLinearColor Outline(0.0f, 0.0f, 0.0f, 0.55f);
+	TArray<FRTSUnitState> Units;
+	Match->GetUnits(Units);
+	TMap<uint32, FVector2D> PosOf;
+	for (const FRTSUnitState& U : Units)
+	{
+		PosOf.Add(U.Id, U.PosCm);
+	}
+	const auto GroundAt = [Map](const FVector2D& P) { return (Map ? Map->GroundZCm(P) : 0.0f) + 30.0f; };
+	const auto Segment = [&](const FVector& A, const FVector& B, const FLinearColor& Col)
+	{
+		const float Len = float(FVector::Dist2D(A, B));
+		const int32 N = FMath::Clamp(FMath::CeilToInt32(Len / 200.0f), 1, 200);
+		FVector2D Prev;
+		bool bPrev = false;
+		for (int32 K = 0; K <= N; ++K)
+		{
+			const FVector2D P2 = FMath::Lerp(FVector2D(A), FVector2D(B), double(K) / N);
+			FVector2D S;
+			const bool bOk = PlayerOwner->ProjectWorldLocationToScreen(FVector(P2.X, P2.Y, GroundAt(P2)), S);
+			if (bOk && bPrev)
+			{
+				DrawLine(Prev.X, Prev.Y, S.X, S.Y, Outline, 4.0f);
+				DrawLine(Prev.X, Prev.Y, S.X, S.Y, Col, 2.0f);
+			}
+			Prev = S;
+			bPrev = bOk;
+		}
+	};
+	struct FQueueToken { FVector Sum; int32 Count; int32 Index; uint8 Kind; };
+	TArray<FQueueToken> Tokens;
+	int32 Drawn = 0;
+	for (const uint32 Id : PC->GetSelection())
+	{
+		const FVector2D* P0 = PosOf.Find(Id);
+		TArray<URTSMatchSubsystem::FRTSOrderStep> Steps;
+		if (!P0 || Drawn >= 40 || !Match->GetOrderPath(Id, Steps))
+		{
+			continue;
+		}
+		++Drawn;
+		FVector From(P0->X, P0->Y, GroundAt(*P0));
+		for (int32 K = 0; K < Steps.Num(); ++K)
+		{
+			const URTSMatchSubsystem::FRTSOrderStep& St = Steps[K];
+			const FLinearColor Col = St.Kind == 0 ? MoveGreen : (St.Kind == 1 ? AttackRed : WorkAmber);
+			Segment(From, St.Cm, Col);
+			// (01/11, aprovado: "agora sim, tá massa") o ponto vira a ficha numerada, desenhada depois de todas as linhas; as vagas do
+			// mesmo passo do grupo (até 30 m umas das outras) viram uma ficha só, no meio delas
+			FQueueToken* Same = Tokens.FindByPredicate([&](const FQueueToken& T)
+			{
+				return T.Index == K && T.Kind == St.Kind && FVector::Dist2D(T.Sum / float(T.Count), St.Cm) < 3000.0f;
+			});
+			if (Same)
+			{
+				Same->Sum += St.Cm;
+				++Same->Count;
+			}
+			else
+			{
+				Tokens.Add({ St.Cm, 1, K, St.Kind });
+			}
+			From = St.Cm;
+		}
+	}
+	// a ficha (a mesma do cursor da fila): a sombrinha no chão, o disco na cor da linha e o número da vez
+	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;
+	static const FLinearColor TokenColor[3] = { FLinearColor(FColor(79, 224, 90)), FLinearColor(FColor(255, 59, 48)), FLinearColor(FColor(255, 178, 31)) };
+	for (const FQueueToken& T : Tokens)
+	{
+		const FVector At = T.Sum / float(T.Count);
+		FVector2D P;
+		if (!PlayerOwner->ProjectWorldLocationToScreen(FVector(At.X, At.Y, GroundAt(FVector2D(At.X, At.Y))), P))
+		{
+			continue;
+		}
+		const auto Disc = [this](const FVector2D& C, const FVector2D& R, const FLinearColor& Color)
+		{
+			FCanvasNGonItem Item(C, R, 24, Color);
+			Item.BlendMode = SE_BLEND_Translucent;
+			Canvas->DrawItem(Item);
+		};
+		Disc(P + FVector2D(0.0f, 6.0f * S), FVector2D(9.0f, 3.2f) * S, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
+		Disc(P, FVector2D(10.5f, 10.5f) * S, FLinearColor(0.004f, 0.005f, 0.006f, 1.0f));
+		Disc(P, FVector2D(9.0f, 9.0f) * S, TokenColor[FMath::Min<int32>(T.Kind, 2)]);
+		const FString Num = T.Index < 9 ? FString::FromInt(T.Index + 1) : FString(TEXT("+"));
+		const int32 Size = FMath::RoundToInt(10.0f * S);
+		const FVector2D Text = MeasureLabel(Num, Size, true);
+		DrawLabel(Num, P.X, P.Y - Text.Y * 0.5f, Size, FLinearColor::White, true, true);
+	}
+}
+
+void ARTSHUD::DrawHealthBar(float X, float Y, float W, float H, float S, float Ratio, float ChipFrom, float ChipFade, bool bBuild, int32 MaxHp, int32 Vet,
+	const FLinearColor& Team)
+{
+	// (01/11, a barra A escolhida: docs/APROVADOS.md e captures/concept/barras/board.html) a cor corre contínua do verde ao vermelho (a
+	// do ZH, Drawable::drawHealthBar), o contorno no mesmo tom escurecido, o brilho de cima, um risco a cada 100 de vida, o pedaço perdido
+	// no tiro em branco; a obra é a própria barra, azul → ciano (o ZH). As cores em sRGB, como no quadro aprovado
+	const auto Mix = [](const FColor& A, const FColor& B, float T)
+	{
+		return FColor(uint8(FMath::RoundToInt(FMath::Lerp(float(A.R), float(B.R), T))), uint8(FMath::RoundToInt(FMath::Lerp(float(A.G), float(B.G), T))),
+			uint8(FMath::RoundToInt(FMath::Lerp(float(A.B), float(B.B), T))));
+	};
+	static const FColor Green(79, 214, 90), Yellow(242, 204, 58), Red(240, 74, 51), Blue(46, 125, 255), Cyan(63, 224, 240), Gold(236, 196, 92);
+	const float R = FMath::Clamp(Ratio, 0.0f, 1.0f);
+	const FColor Fill = bBuild ? Mix(Blue, Cyan, R) : (R >= 0.5f ? Mix(Yellow, Green, (R - 0.5f) / 0.5f) : Mix(Red, Yellow, R / 0.5f));
+	const FColor Edge(uint8(Fill.R * 0.28f), uint8(Fill.G * 0.28f), uint8(Fill.B * 0.28f));
+	DrawPanel(X - 1.0f, Y - 1.0f, W + 2.0f, H + 2.0f, FLinearColor(Edge).CopyWithNewOpacity(0.95f));
+	DrawPanel(X, Y, W, H, FLinearColor(FColor(20, 24, 29)).CopyWithNewOpacity(0.82f));
+	const float FillW = FMath::RoundToFloat(W * R);
+	DrawPanel(X, Y, FillW, H, FLinearColor(Fill));
+	DrawPanel(X, Y, FillW, 1.0f, FLinearColor(Mix(Fill, FColor::White, 0.35f)));
+	if (!bBuild && ChipFade > 0.0f && ChipFrom > R)
+	{
+		const float ChipW = FMath::RoundToFloat(W * FMath::Min(ChipFrom, 1.0f)) - FillW;
+		if (ChipW > 0.0f)
+		{
+			DrawPanel(X + FillW, Y, ChipW, H, FLinearColor(1.0f, 1.0f, 1.0f, 0.92f * ChipFade));
+		}
+	}
+	if (!bBuild && MaxHp > 100)
+	{
+		for (int32 Hp = 100; Hp < MaxHp; Hp += 100)
+		{
+			const float TickX = X + FMath::RoundToFloat(W * float(Hp) / float(MaxHp));
+			if (TickX < X + FillW)
+			{
+				DrawPanel(TickX, Y + 1.0f, 1.0f, H - 1.0f, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
+			}
+		}
+	}
+	if (Vet <= 0)
+	{
+		// a marquinha do time, à esquerda
+		DrawPanel(X - FMath::RoundToFloat(5.0f * S), Y - 1.0f, FMath::RoundToFloat(4.0f * S), H + 2.0f, FLinearColor(Team.R * 0.4f, Team.G * 0.4f, Team.B * 0.4f, 1.0f));
+		DrawPanel(X - FMath::RoundToFloat(4.0f * S), Y, FMath::RoundToFloat(2.0f * S), H, Team);
+		return;
+	}
+	// a insígnia da patente no lugar da marquinha, afastada 3 px da barra (ele: "não precisa deixar colada na barra"): a plaquinha escura
+	// com a borda na cor do time e as divisas douradas grossas (o contraste ~12:1 na areia); 1 divisa, 2 divisas, a estrela
+	const float IS = FMath::RoundToFloat(15.0f * S);
+	const float PX = X - IS - FMath::RoundToFloat(5.0f * S), PY = FMath::RoundToFloat(Y + H * 0.5f - IS * 0.5f);
+	DrawPanel(PX - 1.0f, PY - 1.0f, IS + 2.0f, IS + 2.0f, FLinearColor(0.002f, 0.002f, 0.003f, 0.95f));
+	DrawPanel(PX, PY, IS, IS, Team);
+	DrawPanel(PX + 1.0f, PY + 1.0f, IS - 2.0f, IS - 2.0f, FLinearColor(FColor(14, 17, 21)));
+	const FLinearColor Gilt(Gold);
+	const float CX = PX + IS * 0.5f, Thick = 2.2f * S;
+	if (Vet >= 3)
+	{
+		// a estrela do heroico: o pentagrama de traço grosso
+		const float Rad = IS * 0.36f, CY = PY + IS * 0.5f + 0.5f;
+		for (int32 K = 0; K < 5; ++K)
+		{
+			const float A0 = -HALF_PI + K * TWO_PI / 5.0f, A1 = A0 + 2.0f * TWO_PI / 5.0f;   // de ponta em ponta, pulando uma
+			DrawLine(CX + FMath::Cos(A0) * Rad, CY + FMath::Sin(A0) * Rad, CX + FMath::Cos(A1) * Rad, CY + FMath::Sin(A1) * Rad, Gilt, Thick * 0.8f);
+		}
+		return;
+	}
+	const float Half = IS * 0.30f, Rise = IS * 0.22f, Gap = IS * 0.27f;
+	const float Top0 = PY + IS * 0.5f - (Vet - 1) * Gap * 0.5f - Rise * 0.5f;
+	for (int32 K = 0; K < Vet; ++K)
+	{
+		const float YY = Top0 + K * Gap;
+		DrawLine(CX - Half, YY + Rise, CX, YY, Gilt, Thick);
+		DrawLine(CX, YY, CX + Half, YY + Rise, Gilt, Thick);
+	}
+}
+
 void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
 	const FRTSBakedMap* Map = Match->BakedMap();
 	TArray<FRTSUnitState> Units;
 	Match->GetUnits(Units);
 	const TArray<uint32>& Selected = PC->GetSelection();
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;   // a escala da barra: 1 em 900 linhas
+	if (BarLastRatio.Num() > 4096)
+	{
+		BarLastRatio.Reset();   // (os mortos não saem um a um; de vez em quando, tudo)
+		BarChips.Reset();
+	}
 	for (const FRTSUnitState& U : Units)
 	{
 		if (!Match->IsUnitShown(U.Id))
@@ -758,30 +1013,106 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		// flashAsSelected). A seleção e o mouse por cima aparecem pela barra de vida
 		// (Drawable::drawHealthBar). Os anéis saíram a pedido do Felipe (09/10).
 
+		// (v5, 24/10) o ar: a aeronave selecionada tem o anel pequeno no chão embaixo dela (a altura lê pela sombra); a defesa e o
+		// antiaéreo selecionados mostram o alcance de ar no chão, diferente do de chão (a crítica 7 do ZH, docs/AEREO.md §3.6)
+		FRTSDefInfo Info;
+		const bool bInfo = (bSelected || bHover) && Match->GetDef(U.Def, Info);
+		if (bSelected && U.bAir && U.AltCm > 200.0f)
+		{
+			DrawGroundRing(Ground, 260.0f, WithAlpha(Team, 0.8f), 1.5f, 24);
+		}
+		if (bInfo && bSelected && Info.AirRangeM > 0.0f && U.Owner == Match->LocalPlayer() && !U.bAir)
+		{
+			DrawGroundRing(Ground, Info.AirRangeM * 100.0f, FLinearColor(0.35f, 0.75f, 1.0f, 0.55f), 1.5f, 72);
+		}
+		if (U.bAir && Match->IsLab() && U.Owner == Match->LocalPlayer())
+		{
+			// (v5) o laboratório: o estado de voo e a altura por cima de cada aeronave (a depuração do ar, docs/AEREO.md §3.13)
+			static const TCHAR* States[] = { TEXT("-"), TEXT("parked"), TEXT("taxi out"), TEXT("runway"), TEXT("takeoff"), TEXT("flying"), TEXT("approach"),
+				TEXT("landing"), TEXT("taxi in") };
+			FVector2D Tag;
+			if (PlayerOwner->ProjectWorldLocationToScreen(Ground + FVector(0, 0, U.AltCm + 650.0f), Tag))
+			{
+				const FString Line = FString::Printf(TEXT("%s  %.0f m%s%s"), U.Flight < UE_ARRAY_COUNT(States) ? States[U.Flight] : TEXT("?"), U.AltCm / 100.0f,
+					U.bReturning ? TEXT("  RTB") : TEXT(""), U.bPatrol ? TEXT("  PATROL") : TEXT(""));
+				DrawLabel(Line, Tag.X, Tag.Y, 10, FLinearColor(0.75f, 0.9f, 1.0f, 0.9f), true);
+			}
+		}
 		const float Ratio = float(U.Hp) / float(U.MaxHp);
+		// (01/11) o pedaço perdido no tiro: a vida de antes fica branca e some em 0,6 s (tiros seguidos somam no mesmo pedaço)
+		float& LastRatio = BarLastRatio.FindOrAdd(U.Id, Ratio);
+		if (Ratio < LastRatio - 0.001f)
+		{
+			FBarChip& Chip = BarChips.FindOrAdd(U.Id);
+			Chip.From = (Chip.At >= 0.0 && Now - Chip.At < 0.6) ? FMath::Max(Chip.From, LastRatio) : LastRatio;
+			Chip.At = Now;
+		}
+		LastRatio = Ratio;
 		// a obra própria mostra o progresso o tempo todo (o ZH escreve "% em construção")
 		const bool bBuilding = U.bStructure && U.BuildFraction < 1.0f && U.Owner == Match->LocalPlayer();
 		if (!bSelected && !bHover && Ratio >= 1.0f && !bBuilding)
 		{
 			continue;
 		}
-		// prédio: a barra mais alta (acima do telhado) e mais larga
-		FVector2D Top;
-		if (!PlayerOwner->ProjectWorldLocationToScreen(Ground + FVector(0, 0, U.bStructure ? 1300.0f : 430.0f), Top))
+		// (01/11, a barra A escolhida) encostada no topo do modelo e da largura dele na tela, como o ZH (computeHealthRegion: o raio
+		// maior + o menor, acompanhando o zoom). Na unidade, o topo e a largura saem das peças de malha visíveis (o casco, a torre);
+		// peça maior que 50 m não conta. No prédio, da planta e do casco (abaixo). Sem o modelo, as alturas de antes
+		FVector TopWorld = Ground + FVector(0, 0, U.bStructure ? 1300.0f : 430.0f + (U.bAir ? U.AltCm : 0.0f));
+		float HalfCm = U.bStructure ? 900.0f : 300.0f;
+		const ARTSUnitActor* View = Match->ViewOf(U.Id);
+		if (View && U.bStructure)
+		{
+			// o prédio: a planta e a altura do casco, com o teto em metade da planta (a torre, a antena e os fios não levantam a barra:
+			// na usina ela voava no topo da torre de transmissão)
+			const FBox2D Foot = View->GetFootprintCm();
+			const FVector Scale = View->GetActorScale3D();
+			const float SizeX = float(Foot.GetSize().X * Scale.X), SizeY = float(Foot.GetSize().Y * Scale.Y);
+			HalfCm = FMath::Max(300.0f, 0.25f * (SizeX + SizeY));
+			const FVector Center = View->GetActorTransform().TransformPosition(FVector(Foot.GetCenter().X, Foot.GetCenter().Y, 0.0));
+			TopWorld = FVector(Center.X, Center.Y, Ground.Z - 25.0f + FMath::Min(View->GetHeightCm() * float(Scale.Z), HalfCm));
+		}
+		else if (View)
+		{
+			FBox Box(ForceInit);
+			View->ForEachComponent<UStaticMeshComponent>(false, [&Box](const UStaticMeshComponent* Part)
+			{
+				if (Part->IsVisible() && Part->GetStaticMesh() && Part->Bounds.BoxExtent.GetMax() < 5000.0f)
+				{
+					Box += Part->Bounds.GetBox();
+				}
+			});
+			if (Box.IsValid)
+			{
+				TopWorld = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Max.Z);
+				HalfCm = 0.5f * float(Box.GetExtent().X + Box.GetExtent().Y);
+			}
+		}
+		FVector2D Top, Side;
+		if (!PlayerOwner->ProjectWorldLocationToScreen(TopWorld, Top))
 		{
 			continue;
 		}
-		const float BarW = U.bStructure ? 110.0f : 54.0f;
-		const float BarH = U.bStructure ? 7.0f : 5.0f;
-		const float X = Top.X - BarW * 0.5f;
-		const float Y = Top.Y - 12.0f;
-		DrawPanel(X - 1.0f, Y - 1.0f, BarW + 2.0f, BarH + 2.0f, WithAlpha(Team, 0.95f));
-		DrawPanel(X, Y, BarW, BarH, FLinearColor(0, 0, 0, 0.75f));
-		DrawPanel(X, Y, BarW * FMath::Clamp(Ratio, 0.0f, 1.0f), BarH, HealthColor(Ratio));
-		if (bBuilding)
+		const FVector CamRight = PlayerOwner->PlayerCameraManager ? PlayerOwner->PlayerCameraManager->GetCameraRotation().RotateVector(FVector::RightVector) : FVector::RightVector;
+		const float RadiusPx = PlayerOwner->ProjectWorldLocationToScreen(TopWorld + CamRight * HalfCm, Side) ? float(FVector2D::Distance(Top, Side)) : 26.0f * S;
+		// a régua do quadro aprovado (1600 × 900): o tanque 52 px, o prédio 104, o soldado 26
+		const float BarW = FMath::RoundToFloat(FMath::Clamp(RadiusPx * (U.bStructure ? 1.2f : 2.0f), 24.0f * S, 150.0f * S));
+		const float BarH = FMath::RoundToFloat((U.bStructure ? 6.0f : 5.0f) * S);
+		const float X = FMath::RoundToFloat(Top.X - BarW * 0.5f);
+		const float Y = FMath::RoundToFloat(Top.Y - 6.0f * S - BarH);
+		const FBarChip* Chip = BarChips.Find(U.Id);
+		const float ChipFade = Chip && Chip->At >= 0.0 ? 1.0f - FMath::Clamp(float(Now - Chip->At - 0.15) / 0.45f, 0.0f, 1.0f) : 0.0f;
+		const int32 Vet = 0;   // a patente da unidade: a simulação ainda não tem (o ZH: sobe com as baixas); o desenho já está pronto
+		DrawHealthBar(X, Y, BarW, BarH, S, bBuilding ? U.BuildFraction : Ratio, Chip ? Chip->From : 0.0f, ChipFade, bBuilding, U.MaxHp, Vet, Team);
+		// (simulação 35; 01/11, ele: "ficou só quadradinhos mal feitos, mal pensados") a lotação do transporte: a plaquinha presa embaixo
+		// da barra de vida, com a mesma moldura do time (as duas leem como uma peça só), e dentro um bonequinho por vaga (a cabeça e os
+		// ombros): aceso quem está dentro, apagado a vaga livre. A forma de gente diz "a tropa lá dentro" sem legenda (o garrison dos RTS de
+		// hoje); os quadradinhos soltos do ZH (o SCPPipFull/Empty) pediam legenda
+		// (01/11; a 1ª e a 2ª REPROVADAS: "horrível, pixelado, sem qualidade, sem criatividade") as lâmpadas da tripulação (DrawSeats), a
+		// direção A do Atelier: NÃO aprovada ("eu não aprovei essa imagem aí"), fora do jogo; só com -RTSSeats=1 pra ele ver e escolher
+		static const bool bSeats = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("RTSSeats="), V); return V != 0; }();
+		if (bSeats && U.TransportSlots > 0 && U.Owner == Match->LocalPlayer())
 		{
-			DrawPanel(X, Y + BarH + 3.0f, BarW, 4.0f, FLinearColor(0, 0, 0, 0.75f));
-			DrawPanel(X, Y + BarH + 3.0f, BarW * U.BuildFraction, 4.0f, FLinearColor(0.98f, 0.80f, 0.20f));
+			DrawSeats(X, Y + BarH + 2.0f, BarW, U.TransportSlots, U.Passengers, Team);
 		}
 	}
 }
@@ -982,6 +1313,23 @@ void ARTSHUD::DrawMoneyRow(FName Prefix, int32 Money, float X, float Y, float W,
 			TickX += TickW + Gap;
 		}
 	}
+}
+
+void ARTSHUD::DrawFactionPicker(FName Prefix, const FString& Title, const FString& Value, float X, float Y, float W)
+{
+	// (31/10) no estilo do dinheiro inicial: o título pequeno, [<] o nome [>] (o nome em maiúsculas no dourado do menu)
+	DrawLabel(Title, X + 2.0f, Y, 10, DimText);
+	Y += 18.0f;
+	const float H = 36.0f;
+	const float StepW = 36.0f;
+	DrawSmallButton(FName(*(Prefix.ToString() + TEXT("_down"))), TEXT("<"), X, Y, StepW, H);
+	DrawSmallButton(FName(*(Prefix.ToString() + TEXT("_up"))), TEXT(">"), X + W - StepW, Y, StepW, H);
+	const float MidX = X + StepW + 4.0f;
+	const float MidW = W - 2.0f * (StepW + 4.0f);
+	DrawPanel(MidX, Y, MidW, H, ButtonFill);
+	const FString Shown = Value.ToUpper();
+	const FVector2D Extent = MeasureLabel(Shown, 13, true);
+	DrawLabel(Shown, MidX + (MidW - Extent.X) * 0.5f, Y + (H - Extent.Y) * 0.5f, 13, FLinearColor(0.98f, 0.82f, 0.30f, 1.0f), false, true);
 }
 
 void ARTSHUD::DrawResult(URTSMatchSubsystem* Match)

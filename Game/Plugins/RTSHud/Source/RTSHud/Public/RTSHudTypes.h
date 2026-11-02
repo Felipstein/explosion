@@ -150,6 +150,8 @@ struct FRTSHudState
 	FName MinimapImage;
 	TArray<FRTSHudMinimapDot> MinimapDots;
 	FBox2D MinimapCamera = FBox2D(ForceInit); // em UV
+	int32 IdleWorkers = -1;          // (01/11) o botão do trabalhador: os construtores parados (−1 = o botão de antes, sem o jogo dizer)
+	FName WorkerImage;               // e a foto do construtor da facção
 
 	// grupos 1–0
 	TArray<FRTSHudGroup> Groups;     // 10

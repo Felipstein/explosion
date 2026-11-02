@@ -1049,6 +1049,32 @@ void FRTSHudPainter::DrawMinimap(const FRTSHudState& State)
 	for (int32 I = 0; I < 4; ++I)
 	{
 		const float BX = X + 611 * K, BY = Y + Rows[I][0] * K, BW = 64 * K, BH = (Rows[I][1] - Rows[I][0]) * K;
+		if (I == 1 && State.IdleWorkers >= 0)
+		{
+			// (01/11, o pedido dele) o botão do trabalhador: a foto do construtor da facção; sem nenhum parado fica apagada e não clica
+			// (o clique cai na peça); com algum, o número dos parados no canto, como o "idle worker" do StarCraft II
+			const bool bOn = State.IdleWorkers > 0;
+			const float In = 6 * K;
+			const FLinearColor Tint = bOn ? FLinearColor::White : FLinearColor(0.30f, 0.30f, 0.30f, 0.8f);
+			if (!State.WorkerImage.IsNone())
+			{
+				Image(State.WorkerImage, BX + In, BY + In, BW - 2 * In, BH - 2 * In, Tint);
+			}
+			else
+			{
+				ImageInset(FName(Icons[I]), BX + 4 * K, BY + 4 * K, BW - 8 * K, BH - 8 * K, 0.1f, Tint);
+			}
+			if (bOn)
+			{
+				const FString N = FString::FromInt(State.IdleWorkers);
+				const float CW = (9.0f + 8.0f * N.Len()) * K, CH = 17.0f * K;
+				Rect(BX + BW - In - CW, BY + BH - In - CH, CW, CH, FLinearColor(0.0f, 0.0f, 0.0f, 0.75f));
+				TextMid(N, BX + BW - In - CW * 0.5f, BY + BH - In - CH * 0.5f, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
+				HoverPress(FName(TEXT("mm_worker")), BX, BY, BW, BH, Accent());
+				Buttons->Add({ FName(TEXT("mm_worker")), FBox2D(FVector2D(BX, BY), FVector2D(BX + BW, BY + BH)) });
+			}
+			continue;
+		}
 		ImageInset(FName(Icons[I]), BX + 4 * K, BY + 4 * K, BW - 8 * K, BH - 8 * K, 0.1f);
 		HoverPress(FName(Ids[I]), BX, BY, BW, BH, Accent());
 		Buttons->Add({ FName(Ids[I]), FBox2D(FVector2D(BX, BY), FVector2D(BX + BW, BY + BH)) });
