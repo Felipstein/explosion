@@ -9,7 +9,9 @@
 <style>
 /* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
 :root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
-  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing;
+  --curb: url(cur/48/menu_busy.png) 7 4, progress; }
+#load, #first.busy { cursor: var(--curb); }   /* o carregando (no jogo o .ani gira o radar; o CSS mostra o 1º quadro) */
 html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body.dragging, body.dragging * { cursor: var(--curd) !important; }
 /* As outras telas do jogo, no mesmo console das aprovadas: o carregando, o Esc, o resultado, as opções, os avisos de rede
    e a primeira abertura. Uma barra de protótipo em cima troca a tela (fora do desenho). */
@@ -520,15 +522,15 @@ function renderNet() {
 // ---------- a primeira abertura: prepara os efeitos (os shaders) com as células enchendo, mede a nossa cena e diz o preset ----------
 let ftimer = null;
 INIT.first = () => {
-  clearInterval(ftimer); let pct = 0, phase = 1; const N = 32;
+  clearInterval(ftimer); let pct = 0, phase = 1; const N = 32; $('#first').classList.add('busy');
   const set = () => { $('#fcells').innerHTML = Array.from({ length: N }, (_, i) => `<i class="${i < Math.round(pct / 100 * N) ? 'f' : ''}"></i>`).join(''); $('#fpct').textContent = phase === 2 ? `${Math.round(30 + pct * .4)} FPS · ${Math.round(pct)}%` : `${Math.round(pct)}%`; };
   $('#fh').textContent = 'PREPARING EFFECTS'; $('#fs').textContent = 'BUILDING THE EXPLOSIONS FOR YOUR GRAPHICS CARD · ONLY THIS ONCE'; $('#fres').classList.remove('on'); $('#fcells').style.display = 'flex'; $('#fpct').style.display = 'block';
   ['st1', 'st2', 'st3'].forEach((s, k) => $('#' + s).className = k === 0 ? 'on' : ''); set();
   ftimer = setInterval(() => { pct = Math.min(100, pct + (phase === 1 ? 2.2 : 3)); set();
     if (pct >= 100 && phase === 1) { phase = 2; pct = 0; $('#st1').className = 'done'; $('#st2').className = 'on'; $('#fh').textContent = 'MEASURING YOUR PC'; $('#fs').textContent = 'A 20 SECOND BATTLE WITH OUR HEAVIEST EXPLOSIONS'; }
-    else if (pct >= 100 && phase === 2) { clearInterval(ftimer); $('#st2').className = 'done'; $('#st3').className = 'on'; $('#fh').textContent = 'READY'; $('#fs').textContent = 'YOU CAN CHANGE THIS ANYTIME IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); } }, 120);
+    else if (pct >= 100 && phase === 2) { clearInterval(ftimer); $('#st2').className = 'done'; $('#st3').className = 'on'; $('#first').classList.remove('busy'); $('#fh').textContent = 'READY'; $('#fs').textContent = 'YOU CAN CHANGE THIS ANYTIME IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); } }, 120);
 };
-$('#fskip').onclick = () => { clearInterval(ftimer); $('#fh').textContent = 'READY'; $('#fs').textContent = 'MEDIUM UNTIL YOU MEASURE IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); $('#fres b').textContent = 'MEDIUM'; $('#fres .pick span').textContent = 'THE SAFE START · NOT MEASURED'; };
+$('#fskip').onclick = () => { clearInterval(ftimer); $('#first').classList.remove('busy'); $('#fh').textContent = 'READY'; $('#fs').textContent = 'MEDIUM UNTIL YOU MEASURE IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); $('#fres b').textContent = 'MEDIUM'; $('#fres .pick span').textContent = 'THE SAFE START · NOT MEASURED'; };
 
 // ---------- o som (o aprovado) ----------
 const MUSIC_VOL = .55, MUSIC_OK = () => !['esc', 'net', 'res'].includes(cur);
