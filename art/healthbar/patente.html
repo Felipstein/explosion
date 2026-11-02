@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Barra A com a patente</title>
+<style>
+  body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1640px; margin: 0 auto; padding: 22px 20px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 26px 0 8px; color: #9a968c; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; }
+  .sub { color: #9a968c; margin: 0 0 6px; }
+  canvas { display: block; border-radius: 6px; }
+  .strip { image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>A barra A (com a cor do time) e a patente da unidade</h1>
+  <p class="sub">A patente como no ZH: recruta (nada), veterano (1 divisa), elite (2), heroico (3, com a estrela). No quadro: o tanque selecionado heroico, o recém-atingido elite, o ferido veterano, o quase morto recruta, a picape inimiga veterana.</p>
+  <div id="boards"></div>
+</div>
+<script>
+const OPTS = [
+  { id: "L", name: "v2 · 1 — A insígnia na ponta esquerda", note: "a plaquinha escura de 15 px (18 em 1080p) com a borda na cor do time e as divisas douradas grossas dentro; a barra sai dela, como uma bandeira do mastro. Recruta: só a marquinha do time" },
+  { id: "C", name: "v2 · 2 — A insígnia em cima, no meio", note: "a mesma plaquinha, centrada em cima da barra, como um distintivo em cima da unidade; a barra fica como está (com a marquinha do time). Recruta: nada em cima" },
+];
+const SCENE = [
+  { x: 612, y: 384, k: "tank", r: 1.00, vet: 3, sel: true },
+  { x: 757, y: 388, k: "tank", r: 0.62, prev: 0.78, vet: 2 },
+  { x: 890, y: 378, k: "tank", r: 0.41, vet: 1 },
+  { x: 1008, y: 414, k: "tank", r: 0.18, vet: 0 },
+  { x: 498, y: 470, k: "car", r: 0.55, enemy: true, vet: 1 },
+  { x: 342, y: 336, k: "bldg", r: 0.45, build: true, vet: 0 },
+  { x: 805, y: 138, k: "bldg", r: 0.66, sel: true, vet: 0 },
+];
+const KIND = { inf: { w: 26, hp: 120 }, car: { w: 44, hp: 240 }, tank: { w: 52, hp: 600 }, bldg: { w: 104, hp: 1200 } };
+const TEAM = { own: [89, 178, 255], enemy: [250, 111, 89] };
+const GOLD = [236, 196, 92];
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const GREEN = [79, 214, 90], YELLOW = [242, 204, 58], RED = [240, 74, 51], BLUE = [46, 125, 255], CYAN = [63, 224, 240];
+const ramp = r => r >= 0.5 ? mix(YELLOW, GREEN, (r - 0.5) / 0.5) : mix(RED, YELLOW, r / 0.5);
+const lighter = (c, t) => mix(c, [255, 255, 255], t);
+const darker = (c, t) => c.map(v => Math.round(v * (1 - t)));
+function rect(g, x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+
+// uma divisa (^) de largura w, em pixels inteiros: dois traços de 2 px, com o contorno escuro de 1 px
+function chevron(g, cx, y, w, col, outline = true) {
+  const half = Math.floor(w / 2);
+  const pts = [];
+  for (let i = 0; i <= half; i++) pts.push([cx - half + i, y + half - i], [cx + half - i, y + half - i]);
+  if (outline) for (const [px, py] of pts) rect(g, px - 1, py - 1, 3, 4, "rgba(10,12,14,0.95)");
+  for (const [px, py] of pts) { rect(g, px, py, 1, 2, rgb(col)); }
+  for (const [px, py] of pts) rect(g, px, py, 1, 1, rgb(lighter(col, 0.35)));
+}
+function star(g, cx, cy, col) {
+  const p = [[0, -3], [1, -1], [3, -1], [1, 0], [2, 2], [0, 1], [-2, 2], [-1, 0], [-3, -1], [-1, -1]];
+  g.fillStyle = "rgba(10,12,14,0.95)"; g.beginPath(); p.forEach(([x, y], i) => i ? g.lineTo(cx + x * 1.6, cy + y * 1.6) : g.moveTo(cx + x * 1.6, cy + y * 1.6)); g.closePath(); g.fill();
+  g.fillStyle = rgb(col); g.beginPath(); p.forEach(([x, y], i) => i ? g.lineTo(cx + x * 1.15, cy + y * 1.15) : g.moveTo(cx + x * 1.15, cy + y * 1.15)); g.closePath(); g.fill();
+}
+// as divisas da patente empilhadas (1 a 3; a 3ª vira a estrela do heroico), a ponta de baixo em (cx, bottom)
+function rank(g, cx, bottom, vet, col, w = 7) {
+  if (!vet) return;
+  const n = Math.min(vet, 2), step = 3;
+  for (let k = 0; k < n; k++) chevron(g, cx, bottom - (k + 1) * step - 1, w, col);
+  if (vet >= 3) star(g, cx, bottom - n * step - 6, col);
+}
+// (v2: a 1ª não lia, "nenhum ficou fácil de ler": divisas de 7 px e contraste de 1,5:1 na areia) a insígnia: a plaquinha escura
+// de S px com a borda na cor do time e as divisas douradas de traço grosso (o contraste ~12:1); 1 divisa, 2 divisas, a estrela
+function insignia(g, x, y, S, vet, team) {
+  g.fillStyle = "rgba(6,8,10,0.95)"; g.fillRect(x - 1, y - 1, S + 2, S + 2);              // o contorno de fora
+  g.fillStyle = rgb(team); g.fillRect(x, y, S, S);                                         // a borda na cor do time
+  g.fillStyle = "rgba(14,17,21,1)"; g.fillRect(x + 1, y + 1, S - 2, S - 2);               // a placa escura
+  g.fillStyle = "rgba(255,255,255,0.10)"; g.fillRect(x + 1, y + 1, S - 2, 1);             // o fio de luz de cima
+  const cx = x + S / 2;
+  g.strokeStyle = rgb(GOLD); g.lineWidth = 2.2; g.lineJoin = "miter"; g.lineCap = "butt";
+  if (vet >= 3) {
+    // a estrela do heroico, cheia
+    const R = S * 0.36, r = R * 0.45, cy = y + S / 2 + 0.5;
+    g.fillStyle = rgb(GOLD); g.beginPath();
+    for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r : R; g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+    g.closePath(); g.fill();
+    return;
+  }
+  const half = S * 0.30, rise = S * 0.22, gap = S * 0.27;
+  const n = vet, top0 = y + S / 2 - ((n - 1) * gap) / 2 - rise / 2;
+  for (let k = 0; k < n; k++) {
+    const yy = top0 + k * gap;
+    g.beginPath(); g.moveTo(cx - half, yy + rise); g.lineTo(cx, yy); g.lineTo(cx + half, yy + rise); g.stroke();
+  }
+}
+// a barra A (a escolhida): a cor contínua, o contorno no tom escuro, o risco a cada 100, o brilho, o pedaço perdido em branco
+function barA(g, cx, top, u, team, mode) {
+  const K = KIND[u.k], w = K.w, h = u.k === "bldg" ? 6 : 5;
+  const x = Math.round(cx - w / 2), y = Math.round(top - h);
+  const col = u.build ? mix(BLUE, CYAN, u.r) : ramp(u.r);
+  rect(g, x - 1, y - 1, w + 2, h + 2, rgb(darker(col, 0.72), 0.95));
+  rect(g, x, y, w, h, "rgba(20,24,29,0.82)");
+  const fw = Math.round(w * u.r);
+  rect(g, x, y, fw, h, rgb(col));
+  rect(g, x, y, fw, 1, rgb(lighter(col, 0.35)));
+  if (u.prev) rect(g, x + fw, y, Math.round(w * u.prev) - fw, h, "rgba(255,255,255,0.92)");
+  if (!u.build) for (let hp = 100; hp < K.hp; hp += 100) { const tx = x + Math.round(w * hp / K.hp); if (tx < x + fw) rect(g, tx, y + 1, 1, h - 1, "rgba(0,0,0,0.35)"); }
+  const vet = u.vet || 0;
+  // a cor do time: a marquinha da esquerda (no modo T, com patente, ela vira o selo)
+  if (mode === "T" && vet) {
+    const bw = 11, bh = 13, bx = x - bw - 1, by = y + h + 1 - bh;   // o selo, com a base na base da barra
+    g.fillStyle = "rgba(10,12,14,0.95)";
+    g.beginPath(); g.moveTo(bx - 1, by - 1); g.lineTo(bx + bw + 1, by - 1); g.lineTo(bx + bw + 1, by + bh - 3); g.lineTo(bx + bw / 2, by + bh + 1); g.lineTo(bx - 1, by + bh - 3); g.closePath(); g.fill();
+    g.fillStyle = rgb(team);
+    g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + bw, by); g.lineTo(bx + bw, by + bh - 3.5); g.lineTo(bx + bw / 2, by + bh - 0.5); g.lineTo(bx, by + bh - 3.5); g.closePath(); g.fill();
+    rect(g, bx, by, bw, 1, rgb(lighter(team, 0.45)));
+    const n = Math.min(vet, 2);
+    for (let k = 0; k < n; k++) chevron(g, bx + Math.floor(bw / 2), by + bh - 6 - k * 3, 7, [255, 255, 255], false);
+    if (vet >= 3) { g.fillStyle = "#ffffff"; star(g, bx + bw / 2, by + 3.2, [255, 255, 255]); }
+  } else if (team) {
+    rect(g, x - 5, y - 1, 4, h + 2, rgb(darker(team, 0.6))); rect(g, x - 4, y, 2, h, rgb(team));
+  }
+  const IS = 15;
+  if (mode === "L" && vet) insignia(g, x - IS - 5, Math.round(y + h / 2 - IS / 2), IS, vet, team);   // (ele: "não precisa deixar colada na barra") o respiro de 3 px
+  if (mode === "C" && vet) insignia(g, Math.round(x + w / 2 - IS / 2), y - IS - 3, IS, vet, team);
+  if (mode === "R") rank(g, x + w + 6, y + h + 1, vet, GOLD);
+  if (mode === "U" && vet) {
+    // deitadas em cima da ponta esquerda (os galões no ombro): divisas lado a lado, apontando pra cima
+    const n = Math.min(vet, 2);
+    for (let k = 0; k < n; k++) chevron(g, x + 4 + k * 7, y - 6, 7, GOLD);
+    if (vet >= 3) star(g, x + 4 + n * 7 + 1, y - 4, GOLD);
+  }
+}
+
+const boards = document.getElementById("boards");
+const img = new Image();
+img.onload = () => {
+  for (const o of OPTS) {
+    boards.insertAdjacentHTML("beforeend", `<h2>${o.name}</h2><p class="sub">${o.note}</p>`);
+    const cv = document.createElement("canvas"); cv.width = 1100; cv.height = 430;
+    const g = cv.getContext("2d");
+    g.drawImage(img, -260, -100);
+    g.save(); g.translate(-260, -100);
+    for (const u of SCENE) barA(g, u.x, u.y, u, u.enemy ? TEAM.enemy : TEAM.own, o.id);
+    g.restore();
+    boards.appendChild(cv);
+    // ampliada 3×: os 4 níveis no tanque e no soldado, e o inimigo veterano
+    const states = [["recruta", { k: "tank", r: 0.9, vet: 0 }], ["veterano", { k: "tank", r: 0.9, vet: 1 }], ["elite", { k: "tank", r: 0.62, prev: 0.78, vet: 2 }],
+      ["heroico", { k: "tank", r: 1, vet: 3 }], ["inimigo veterano", { k: "car", r: 0.55, vet: 1, enemy: true }], ["soldado elite", { k: "inf", r: 0.6, vet: 2 }]];
+    const S = 3, CW = 86, CH = 34, COLS = 6;
+    const sw = document.createElement("canvas"); sw.width = COLS * CW; sw.height = CH;
+    const s = sw.getContext("2d");
+    s.drawImage(img, -1040, -560);
+    states.forEach(([label, u], k) => barA(s, k * CW + CW / 2 + 4, 24, u, u.enemy ? TEAM.enemy : TEAM.own, o.id));
+    const big = document.createElement("canvas"); big.width = sw.width * S; big.height = CH * S + 22; big.className = "strip";
+    const b = big.getContext("2d"); b.imageSmoothingEnabled = false;
+    b.fillStyle = "#15171a"; b.fillRect(0, 0, big.width, big.height);
+    b.drawImage(sw, 0, 0, sw.width * S, CH * S);
+    b.font = "600 13px Segoe UI"; b.fillStyle = "#c9c4b8"; b.textAlign = "center";
+    states.forEach(([label], k) => b.fillText(label, (k * CW + CW / 2) * S, CH * S + 16));
+    boards.appendChild(big);
+  }
+  document.title = "pronto";
+};
+img.src = "../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg";
+</script>
+</body>
+</html>

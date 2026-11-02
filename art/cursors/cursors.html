@@ -13,7 +13,9 @@
     --T: #3D8BFF;  /* a cor do jogador (USA azul) */
     --P: #FF6A1A;  /* poder ofensivo */
     --GR: #B3BAC0; /* não dá */
+    --Y: #E8D84A;  /* a cruzinha do waypoint do ZH (o SCCWaypoint, amarelo) */
     --D: #0B0E11;  /* contorno */
+    --D2: #161B21; /* a plaquinha da fila */
     --bg: #15171a; --ink: #e9e6df; --mute: #9a968c;
   }
   * { box-sizing: border-box; }
@@ -161,7 +163,7 @@
     <path class="p" fill="var(--G)" d="M32 19L42 22.5V30C42 36 38 40.5 32 43.5C26 40.5 22 36 22 30V22.5Z"/>
     <path fill="var(--Gd)" d="M32 19L42 22.5V30C42 36 38 40.5 32 43.5Z"/>
   </svg>
-  <svg data-id="patrol" data-name="Patrulhar" data-when="avião/helicóptero: ronda em volta do ponto" data-hot="32,32" data-patrol="18"
+  <svg data-id="patrol" data-name="Patrulhar" data-when="avião/helicóptero: ronda em volta do ponto" data-hot="32,32" data-patrol="18" data-loop="3"
        data-change="maior (32 → 40 px); as pontas alinhadas com a curva (antes saíam tortas)"></svg>
   <svg data-id="enter" data-name="Embarcar" data-when="soldado sobre o transporte seu (e, depois, prédio pra guarnecer)" data-hot="32,32"
        data-change="virou mira de centro (o clique é no transporte, como no atacar): sem a seta pequena, as setas entrando na caixa">
@@ -227,9 +229,9 @@
     <text class="p" x="44" y="56" font-size="35" font-weight="900" text-anchor="middle" font-family="Segoe UI, Arial" fill="var(--A)">$</text>
   </svg>
 
-  <svg data-id="strike" data-name="Poder ofensivo" data-when="mirando um ataque do general; a área vai no chão" data-hot="32,32" data-power="P"
+  <svg data-id="strike" data-name="Poder ofensivo" data-when="mirando um ataque do general; a área vai no chão" data-hot="32,32" data-power="P" data-loop="0.8"
        data-change="o desenho fica (aprovado); só o contorno fechando nas pontas de cada traço do anel"></svg>
-  <svg data-id="support" data-name="Poder de apoio" data-when="paraquedas, drone espião; a área vai no chão" data-hot="32,32" data-power="T"
+  <svg data-id="support" data-name="Poder de apoio" data-when="paraquedas, drone espião; a área vai no chão" data-hot="32,32" data-power="T" data-loop="0.8"
        data-change="idem ao ofensivo"></svg>
 </template>
 
@@ -278,7 +280,32 @@ const SHADE = { W: "Wd", G: "Gd", A: "Ad" };
 let UID = 0;
 
 // e = a espessura do contorno de cada lado, em unidades da grade 64 (2 px em 48 px = 2,67)
-function build(src, e = 2.67) {
+// (01/11) a fila do Alt: a cor da linha do plano no chão de cada ordem (verde andar, vermelho atacar, âmbar trabalho do Dozer/caminhão)
+const QCOLOR = { move: "G", queue: "G", guard: "G", escort: "G", patrol: "G", enter: "G", attack: "R", force: "R", ground: "R", amove: "R",
+  repair: "A", resume: "A", salvage: "A", gather: "A", build: "A" };
+// a marca da fila no canto de baixo. A v1 (q.n sem q.style: a plaquinha quadrada, a ordem encolhida) ficou "meio estranha"; a v2, com
+// a ordem no tamanho de sempre (q.style): "num" = o número da vez desenhado como os cursores (branco, contorno escuro, sem caixa);
+// "token" = a ficha redonda na cor da linha com o número (a mesma marca do plano no chão); "zh" = a cruzinha do waypoint do ZH
+function queueBadge(q, c) {
+  if (q.style === "num") {
+    return `<text class="p" x="53" y="62" text-anchor="middle" font-size="25" font-weight="900" font-family="Segoe UI, Arial" fill="var(--W)">${q.n}</text>`;
+  }
+  if (q.style === "token") {
+    return `<circle class="p" cx="50" cy="50" r="11.3" fill="var(--${c})"/>`   // o maior que cabe no quadro de 64 com o contorno
+      + `<text x="50" y="56" text-anchor="middle" font-size="17" font-weight="900" font-family="Segoe UI, Arial" fill="#ffffff" stroke="var(--D)" stroke-width="2.4" paint-order="stroke">${q.n}</text>`;
+  }
+  if (q.style === "zh") {
+    return `<path class="p" fill="none" stroke="var(--Y)" stroke-width="4" stroke-linecap="square" d="M52 43V61M43 52H61"/>`;
+  }
+  const plate = `<rect class="p" x="42" y="44" width="21" height="19" rx="3" fill="var(--D2)" stroke="var(--${c})" stroke-width="1.8"/>`;
+  if (q.n === "»") {
+    return plate + `<polyline class="p sharp" fill="none" stroke="var(--${c})" stroke-width="2.6" points="46,49 50.5,53.5 46,58"/>`
+      + `<polyline class="p sharp" fill="none" stroke="var(--${c})" stroke-width="2.6" points="52.5,49 57,53.5 52.5,58"/>`;
+  }
+  return plate + `<text class="p" x="52.5" y="59.3" text-anchor="middle" font-size="15" font-weight="800" font-family="Segoe UI, Arial" fill="var(--W)">${q.n}</text>`;
+}
+
+function build(src, e = 2.67, q = null) {
   const d = src.dataset;
   let inner = src.innerHTML;
   if (d.arrows) inner = arrows(+d.arrows, "G") + inner;
@@ -308,7 +335,19 @@ function build(src, e = 2.67) {
   svg.setAttribute("viewBox", "0 0 64 64");
   svg.setAttribute("class", "cur");
   svg.innerHTML = inner;
-  outline(svg, e);
+  const S = q && !q.style ? 0.82 : 1.0;   // na v1 da fila a ordem encolhia em volta do clique; na v2 fica do tamanho de sempre
+  outline(svg, q ? e / S : e);
+  if (q) {
+    const [hx, hy] = d.hot.split(",").map(Number);
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("transform", `translate(${hx} ${hy}) scale(${S}) translate(${-hx} ${-hy})`);
+    while (svg.firstChild) g.appendChild(svg.firstChild);
+    svg.appendChild(g);
+    const b = document.createElementNS(NS, "g");
+    b.innerHTML = queueBadge(q, QCOLOR[d.id] || "G");
+    svg.appendChild(b);
+    outline(b, e);
+  }
   if (!/#flat/.test(location.hash)) light(svg);
   if (d.id === "cant" || d.id === "invalid" || d.id === "nobuild") svg.querySelectorAll("[class*='a-']").forEach(n => n.style.animation = "none");
   return svg;
@@ -414,6 +453,120 @@ if (RS) {
     svg.style.cssText = `position:absolute;left:${(k % 8) * step + 8}px;top:${Math.floor(k / 8) * step + 8}px;width:${px}px;height:${px}px`;
     document.body.appendChild(svg);
   });
+}
+// #export&t=0.35: os cursores do jogo nos três tamanhos (faixas de 48, 64 e 96 px), com a sombra, no instante t, fundo
+// transparente; o <pre id="manifest"> diz o nome, o clique, a volta e os quadros de cada um (art/tools/make_cursors.py lê)
+const EX = /^#export(?:&t=([\d.]+))?/.exec(location.hash);
+if (EX) {
+  const GAME = [["pointer"], ["select"], ...["n", "ne", "e", "se", "s", "sw", "w", "nw"].map((d, k) => ["scroll_" + d, "scroll", k * 45]),
+    ["pan"], ["invalid"], ["move"], ["queue"], ["attack"], ["cant"], ["force"], ["ground"], ["amove"], ["guard"], ["escort"],
+    ["patrol"], ["enter"], ["rally"], ["build"], ["nobuild"], ["repair"], ["resume"], ["salvage"], ["gather"], ["sell"], ["strike"], ["support"]];
+  const BANDS = [[48, 8, "0 1px 1.3px"], [64, 72, "0 1.3px 1.7px"], [96, 152, "0 2px 2.6px"]];
+  document.body.innerHTML = "";
+  document.documentElement.style.background = document.body.style.background = "transparent";
+  const st = document.createElement("style");
+  st.textContent = `* { animation-play-state: paused !important; animation-delay: -${EX[1] || 0}s !important; }`;
+  document.head.appendChild(st);
+  const manifest = [];
+  GAME.forEach(([name, id = name, rot = 0], k) => {
+    const src = tpl.querySelector(`svg[data-id="${id}"]`);
+    let svgs = [];
+    BANDS.forEach(([px, top, shadow]) => {
+      const s = src.cloneNode(true);
+      if (rot) s.dataset.rot = rot;
+      const svg = build(s, (px <= 64 ? 2 : 3) * 64 / px);
+      svg.style.cssText = `position:absolute;left:${k * 112 + 8}px;top:${top}px;width:${px}px;height:${px}px;filter:drop-shadow(${shadow} rgba(0,0,0,.55))`;
+      document.body.appendChild(svg);
+      svgs.push(svg);
+    });
+    // a volta: a animação mais longa da peça (ou data-loop, quando a forma se repete antes: a patrulha gira 180°, o poder 90°)
+    let loop = 0;
+    svgs[0].querySelectorAll("*").forEach(n => {
+      const cs = getComputedStyle(n);
+      if (cs.animationName && cs.animationName !== "none" && n.style.animation !== "none") loop = Math.max(loop, parseFloat(cs.animationDuration));
+    });
+    if (loop && src.dataset.loop) loop = +src.dataset.loop;
+    const fps = loop > 1.5 ? 12 : 20;
+    let [hx, hy] = src.dataset.hot.split(",").map(Number);
+    if (rot) {
+      const a = rot * Math.PI / 180, dx = hx - 32, dy = hy - 32;
+      [hx, hy] = [32 + dx * Math.cos(a) - dy * Math.sin(a), 32 + dx * Math.sin(a) + dy * Math.cos(a)];
+    }
+    manifest.push({ name, x: k * 112 + 8, hot: [f(hx), f(hy)], loop, fps, frames: loop ? Math.round(loop * fps) : 1 });
+  });
+  const pre = document.createElement("pre");
+  pre.id = "manifest"; pre.style.display = "none";
+  pre.textContent = JSON.stringify({ bands: BANDS.map(([px, top]) => ({ px, top })), cursors: manifest });
+  document.body.appendChild(pre);
+}
+// #fila: a proposta do cursor da fila do Alt (01/11): cada ordem que entra na fila, hoje e nas duas propostas, e o plano no chão
+if (location.hash.startsWith("#fila")) {
+  document.body.innerHTML = "";
+  const st = document.createElement("style");
+  st.textContent = `* { animation: none !important; } body { background: #15171a; }
+    .grid2 { display: grid; grid-template-columns: 140px repeat(5, 120px) 30px 140px repeat(5, 120px); gap: 8px 8px; margin: 16px 20px; align-items: center; }
+    .grid2 .sw { width: 120px; height: 120px; background-position: -1110px -560px; } .grid2 .sw svg:not(.real) { width: 96px; height: 96px; margin: -48px 0 0 -48px; }
+    .grid2 .sw .real { width: 48px; height: 48px; top: 6px; bottom: auto; }
+    .lab { color: #e9e6df; font: 600 14px "Segoe UI"; } .hd { color: #9a968c; font: 600 12px "Segoe UI"; text-transform: uppercase; letter-spacing: 1px; text-align: center; }
+    .plan { position: relative; width: 1600px; height: 900px; margin: 10px 20px; background: url(../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) 0 0 / 1600px 900px; }
+    .plan svg { position: absolute; left: 0; top: 0; }`;
+  document.head.appendChild(st);
+  const ORDERS = [["move", "Mover"], ["amove", "Ataque andando"], ["attack", "Atacar"], ["force", "Tiro forçado"], ["guard", "Guardar a área"], ["patrol", "Patrulhar"],
+    ["enter", "Embarcar"], ["repair", "Consertar"], ["resume", "Retomar a obra"], ["salvage", "Desmanchar"], ["gather", "Coletar"], ["build", "Construir aqui"]];
+  const grid = document.createElement("div"); grid.className = "grid2";
+  const head = ["", "hoje", "v1 (estranho)", "A · o número", "B · a ficha", "C · a cruz do ZH"];
+  [...head, "", ...head].forEach(h => grid.insertAdjacentHTML("beforeend", `<div class="hd">${h}</div>`));
+  const cell = svgs => { const sw = document.createElement("div"); sw.className = "sw"; sw.appendChild(svgs[0]); return sw; };
+  ORDERS.forEach(([id, name], k) => {
+    if (k % 2 === 1) grid.insertAdjacentHTML("beforeend", `<div></div>`);
+    grid.insertAdjacentHTML("beforeend", `<div class="lab">${name}</div>`);
+    const src = tpl.querySelector(`svg[data-id="${id}"]`);
+    const now = id === "move" ? tpl.querySelector(`svg[data-id="queue"]`) : src;   // hoje: só o mover tem o "+"
+    grid.appendChild(cell([build(now), build(now, 2.67 * 64 / 48)]));
+    for (const q of [{ n: "2" }, { n: "2", style: "num" }, { n: "2", style: "token" }, { n: "", style: "zh" }])
+      grid.appendChild(cell([build(src, 2.67, q), build(src, 2.67 * 64 / 48, q)]));
+  });
+  document.body.appendChild(grid);
+  // no tamanho real (48 px, 1080p), na areia: o mover, o atacar, o consertar e o construir em cada versão
+  const strip = document.createElement("div");
+  strip.style.cssText = "position:relative;width:1600px;height:118px;margin:6px 20px;background:url(../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) -980px -600px / 1600px 900px;border-radius:6px";
+  const VERS = [["v1", { n: "2" }], ["A", { n: "2", style: "num" }], ["B", { n: "2", style: "token" }], ["C", { n: "", style: "zh" }]];
+  VERS.forEach(([lab, q], v) => {
+    strip.insertAdjacentHTML("beforeend", `<div style="position:absolute;left:${20 + v * 395}px;top:6px;color:#fff;font:700 13px Segoe UI;text-shadow:0 1px 2px #000">${lab}</div>`);
+    ["move", "attack", "repair", "build"].forEach((id, k) => {
+      const c = build(tpl.querySelector(`svg[data-id="${id}"]`), 2.67 * 64 / 48, q);
+      c.style.cssText = `position:absolute;width:48px;height:48px;left:${20 + v * 395 + k * 82}px;top:40px`;
+      strip.appendChild(c);
+    });
+  });
+  document.body.appendChild(strip);
+  // o plano no chão (no tamanho real): os 4 tanques selecionados; 1 andar, 2 ataque andando, 3 atacar a picape; o cursor no 4º
+  const plan = document.createElement("div"); plan.className = "plan";
+  const G = "#4FE05A", R = "#FF3B30";
+  // (v2: a 1ª tinha a ficha ao lado do ponto, anéis chutados e o "1" em cima da pérgula do prédio: "impreciso, parece mal feito")
+  // a ficha fica centrada no ponto exato do chão; as linhas saem do pé de cada tanque e ligam o centro de uma ficha ao da outra; o 3
+  // fica em cima do alvo. Os pontos medidos no quadro (o asfalto livre; a picape no centro dela)
+  const nodes = [{ x: 690, y: 560, c: G, n: 1 }, { x: 440, y: 610, c: R, n: 2 }, { x: 497, y: 500, c: R, n: 3 }];
+  let s = `<svg width="1600" height="900" viewBox="0 0 1600 900">`;
+  const seg = (a, b, c, dash = "") => `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="rgba(0,0,0,.6)" stroke-width="4.5" stroke-linecap="round" ${dash}/>`
+    + `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${c}" stroke-width="2.2" stroke-linecap="round" ${dash}/>`;
+  const from = [{ x: 612, y: 440 }, { x: 757, y: 442 }, { x: 898, y: 432 }, { x: 1008, y: 462 }];
+  from.forEach(p => s += seg(p, nodes[0], G));
+  s += seg(nodes[0], nodes[1], R) + seg(nodes[1], nodes[2], R);
+  const cur = { x: 340, y: 585 };
+  s += seg(nodes[2], cur, G, `stroke-dasharray="6 6" opacity=".75"`);   // a prévia: onde o clique vai pôr o 4º
+  nodes.forEach(nd => {
+    // a ficha (a mesma do cursor, a B), com a sombrinha no chão embaixo
+    s += `<ellipse cx="${nd.x}" cy="${nd.y + 6}" rx="9" ry="3.2" fill="rgba(0,0,0,.35)"/>`
+      + `<circle cx="${nd.x}" cy="${nd.y}" r="10.5" fill="#0B0E11"/><circle cx="${nd.x}" cy="${nd.y}" r="9" fill="${nd.c}"/>`
+      + `<text x="${nd.x}" y="${nd.y + 4.8}" text-anchor="middle" font-size="13.5" font-weight="900" font-family="Segoe UI" fill="#fff" stroke="#0B0E11" stroke-width="2.2" paint-order="stroke">${nd.n}</text>`;
+  });
+  s += `</svg>`;
+  plan.innerHTML = s;
+  const mv = build(tpl.querySelector(`svg[data-id="move"]`), 2 * 64 / 40, { n: "4", style: "token" });
+  mv.style.cssText = `position:absolute;width:40px;height:40px;left:${cur.x - 20}px;top:${cur.y - 20}px`;
+  plan.appendChild(mv);
+  document.body.appendChild(plan);
 }
 // #cells: só as casas ampliadas (o mesmo chão em todas), em ordem, pro antes e depois
 if (location.hash.startsWith("#cells")) {

@@ -13,8 +13,17 @@ que precisa".
 - **O ataque andando:** o da v2 foi reprovado ("deixou de ser entendido que é um ataque": as setas verdes engoliam a mira
   vermelha pequena). Das três misturas, ele escolheu **a B** ("opção B, gostei"): a mira do atacar inteira manda, e o verde
   vira quatro setas de canto apontando pra ela.
-- **Nada no jogo ainda.** O jogo hoje usa as setas do Windows (seta, cruz, mira, mão), e só a chave do conserto é nossa
-  (`Game/Source/RTSGame/Private/RTSPlayerController.cpp:1033-1081`, `RTSPlayerEconomy.cpp:306`).
+- **No jogo (01/11, falta o teste dele clicando):**
+  - os arquivos: `Content/Cursors/<48|64|96>/` (33 cursores; o rolar nas 8 direções), gerados por
+    `python art/tools/make_cursors.py`. O Windows confere cada arquivo no fim.
+  - o código: `RTSCursors.h/.cpp` carrega e troca. A escolha fica no `TickMatch` do `RTSPlayerController.cpp`, na mesma
+    ordem de decisão do clique. Antes eram as setas do Windows e só a chave do conserto era nossa.
+  - Sem os arquivos, voltam os do Windows e a chave.
+  - `-RTSCursorLog` põe cada troca no log, com o mouse.
+  - O teste `game.ps1 view -Folder cursores_cliques -Scenario v4_cliques -Extra '-RTSCursorLog'` passou com 0 falhas.
+    Os cursores carregam em 48 px (tela de 1600×900) e trocam na ordem dos cliques: selecionar no Dozer, a chave na usina
+    avariada, andar, o encontro com a usina selecionada. A prova com o desenho no ponto do mouse está em
+    `captures/concept/cursores/prova_no_jogo_conserto.jpg`.
 
 ## 1. O que o ZH faz (pelo código e pelos arquivos dele)
 
@@ -104,7 +113,7 @@ o centro de massa contra o ponto do clique e o borrão (a parte da borda que fic
 | **Arrastar a vista** | segurando o direito | quatro pontas + ponto | branco | parada | centro | não tem |
 | **Não dá** | ordem que não vale ali (penhasco, água, fora do mapa) | círculo cinza com a barra vermelha | cinza | parada | centro | `GenericInvalid` |
 | **Mover** | tropa selecionada, no chão | quatro setas em X fechando | verde | fecham | centro | `Move` |
-| **Fila** | com o Alt: entra no fim da fila de ordens (`SetQueueOrders`) | o cursor da ordem + a bolinha "+" | o da ordem | o da ordem | o da ordem | `Waypoint` |
+| **Fila** | com o Alt, em toda ordem que entra na fila (andar, ataque andando, atacar, tiro forçado, guarda, patrulha, embarcar, as obras e a coleta) | o cursor da ordem no tamanho de sempre + **a ficha** (a B, 01/11): a bolinha na cor da linha do plano com o número da vez; a mesma ficha marca cada ponto do plano no chão, centrada no ponto exato | o da ordem | o da ordem | o da ordem | `Waypoint` |
 | **Atacar** | sobre o inimigo que a seleção alcança | anel fino com 4 cortes + quatro triângulos fechando | vermelho | fecham | centro | `AttackObj` |
 | **Não alcança** | sobre o inimigo que ninguém da seleção acerta (o tanque e o avião) | a mira cinza cortada | cinza | parada | centro | não tem (novo: diz "precisa de antiaéreo") |
 | **Tiro forçado** | Ctrl, sobre qualquer unidade | a mira (sem triângulos) travada por quatro cantos | vermelho | os cantos apertam | centro | `ForceAttackObj` (igual ao atacar) |
@@ -131,21 +140,35 @@ prédio; se um dia virar o modo "$" do C&C clássico, o cursor já está desenha
 ou se curar (a unidade sobre a oficina ou o hospital), o sinalizador do minimapa, desembarcar num ponto e os especiais
 de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
 
-## 5. Como entra no jogo
+## 5. Como entra no jogo (feito em 01/11)
 
-- **Mestre em vetor** (SVG, grade 64): `art/cursors/cursors.html`.
-- **Um script gera os quadros** em 48, 64 e 96 px e monta os `.ani` (os animados) e `.cur`.
+- **O mestre em vetor** (SVG, grade 64) é `art/cursors/cursors.html`. O modo `#export&t=<s>` desenha os 33 cursores do
+  jogo nas faixas de 48, 64 e 96 px, com a sombra, no instante t, e escreve o manifesto: o nome, o clique, a volta e os
+  quadros de cada um.
+- **O gerador** é `python art/tools/make_cursors.py`:
+  - tira um quadro por instante pelo Edge headless e corta cada cursor;
+  - grava `.cur` (parado) ou `.ani` (animado) em `Game/Content/Cursors/<px>/`, com os quadros em PNG dentro;
+  - roda a 20 quadros por segundo, e a patrulha a 12 (a volta dela é de 3 s);
+  - no fim, confere cada arquivo no próprio Windows (`LoadImage`). O 1º quadro de cada um fica em
+    `captures/concept/cursores/export/` pra prova.
 - **Cursor de hardware: o Windows desenha e anima.** Não espera o quadro do jogo (a 30 qps um cursor desenhado pela
   Unreal atrasaria 33 ms) e não custa nada na placa.
-- **A Unreal já carrega `.ani`/`.cur`**, inclusive de dentro do pacote (`WindowsCursor.cpp:170-200`, por arquivo
-  temporário), ou de um buffer, que é o caminho da chave de hoje. O `EMouseCursor` tem poucas vagas, então os nossos vão
-  todos pelo `Custom`, trocando a forma.
-- **O tamanho segue a altura da tela.**
-- **A troca no `RTSPlayerController`:** a escolha que já existe (`:1033-1081`) ganha os casos novos: não alcança,
-  fila, guarda, escolta, patrulha, embarcar, encontro, coletar, desmanchar, retomar e os poderes.
+- **A Unreal carrega `.ani`/`.cur`** por `ICursor::CreateCursorFromFile`, inclusive de dentro do pacote
+  (`WindowsCursor.cpp:170-200`, por arquivo temporário). O `DefaultGame.ini` põe `Cursors` no pacote como arquivo solto.
+  - A seta toma o lugar do `Default` do Windows, então vale no HUD e nos menus.
+  - Os outros entram todos pelo `Custom`, trocando a forma: o `EMouseCursor` tem poucas vagas.
+- **O tamanho segue a altura da tela:** 48 px até 1200 linhas, 64 até 1800 e 96 acima.
+- **A escolha (`TickMatch`)** segue a mesma ordem de decisão do clique (`HandleLeftClick`, `HandleEconomyClick`):
+  1. arrastar a vista e a borda;
+  2. a linha dos dois botões e o minimapa;
+  3. posicionar o prédio, o laboratório, o poder (o de mísseis = ofensivo), a guarda, a patrulha, o ataque andando e o Ctrl;
+  4. a unidade debaixo: o inimigo (atacar ou não alcança), a obra parada, o conserto, embarcar e selecionar;
+  5. o chão: a sucata, a coleta, o encontro (só prédios selecionados) e andar (com o Alt, a fila).
+- **O "não alcança" mostra o que acontece:** a mira cortada, mas o clique continua mandando andar, como antes. Mudar
+  isso é regra de jogo, não cursor.
 
 ## 6. Próximos passos
 
-1. Ele vê a prancha (forma, cor, movimento) e diz o que muda.
-2. Aprovado: mestres em `art/cursors/`, o gerador dos `.ani`, a troca no jogo e a prova **no jogo**, em vídeo, em cima
-   da areia, da sombra e da fumaça.
+1. O teste dele no jogo, clicando.
+2. Os cursores que nascem com as unidades e os sistemas novos (guarnecer, capturar, o sinalizador, os especiais) entram
+   no mestre na mesma gramática, e o gerador refaz tudo.

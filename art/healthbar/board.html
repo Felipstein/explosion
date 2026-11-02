@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Barras de vida v1</title>
+<style>
+  :root { --bg: #15171a; --ink: #e9e6df; --mute: #9a968c; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1640px; margin: 0 auto; padding: 22px 20px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 26px 0 8px; color: var(--mute); font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; }
+  .sub { color: var(--mute); margin: 0 0 6px; }
+  canvas { display: block; border-radius: 6px; }
+  .strip { image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Barras de vida — v1 das direções</h1>
+  <p class="sub">No quadro do jogo, no tamanho real (1600×900). As mesmas unidades nas três: o tanque selecionado cheio, o tanque recém-atingido (o pedaço branco é o que acabou de perder), o ferido sob o mouse, o quase morto, a picape inimiga, o prédio em obra e o prédio selecionado.</p>
+  <div id="boards"></div>
+</div>
+<script>
+const OPTS = [
+  { id: "H", name: "Hoje — a do jogo agora (pra comparar)", note: "54 × 5 px nas unidades e 110 × 7 nos prédios, fixos; o contorno de 1 px na cor do time; o fundo escuro; três cores em degrau; a obra numa segunda barra amarela embaixo (no jogo ela ainda fica numa altura fixa: 13 m nos prédios)" },
+  { id: "A", name: "A — Fina (o ZH de hoje)", note: "a cor corre contínua do verde ao vermelho (a do ZH), o contorno no mesmo tom escurecido, um risco a cada 100 de vida, o brilho de cima; a obra é a própria barra, azul → ciano (o ZH)" },
+  { id: "B", name: "B — Células (o C&C + o console de energia aprovado)", note: "a barra em células, como as pílulas do Red Alert 2 e as células da energia do HUD: dá pra contar o que falta; o soldado tem 5, o veículo 10, o prédio 16; a célula perdida pisca branca" },
+  { id: "C", name: "C — Placa (a B na peça do HUD, só na seleção)", note: "selecionado, a barra entra numa plaquinha de aço do HUD com a casa da patente (as divisas) à esquerda; sob o mouse ou ferido, só a barra da B" },
+];
+// as unidades no quadro: centro x, topo do modelo y, tipo, vida, vida antes do tiro, dono, selecionado, sob o mouse, obra
+const SCENE = [
+  { x: 612, y: 384, k: "tank", r: 1.00, sel: true },
+  { x: 757, y: 388, k: "tank", r: 0.62, prev: 0.78 },
+  { x: 890, y: 378, k: "tank", r: 0.41, hover: true },
+  { x: 1008, y: 414, k: "tank", r: 0.18 },
+  { x: 498, y: 470, k: "car", r: 0.55, enemy: true, hover: true },
+  { x: 342, y: 336, k: "bldg", r: 0.45, build: true },
+  { x: 805, y: 138, k: "bldg", r: 0.66, sel: true },
+];
+const KIND = { inf: { w: 26, hp: 120, cells: 5 }, car: { w: 44, hp: 240, cells: 10 }, tank: { w: 52, hp: 600, cells: 10 }, bldg: { w: 104, hp: 1200, cells: 16 } };
+const TEAM = { own: [89, 178, 255], enemy: [250, 111, 89] };
+
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const GREEN = [79, 214, 90], YELLOW = [242, 204, 58], RED = [240, 74, 51], BLUE = [46, 125, 255], CYAN = [63, 224, 240];
+// a cor contínua do ZH (verde → amarelo → vermelho), nos nossos tons
+const ramp = r => r >= 0.5 ? mix(YELLOW, GREEN, (r - 0.5) / 0.5) : mix(RED, YELLOW, r / 0.5);
+// a cor em degraus (o ZH: danificado 70%, muito danificado 35%)
+const step = r => r > 0.7 ? GREEN : (r > 0.35 ? YELLOW : RED);
+const lighter = (c, t) => mix(c, [255, 255, 255], t);
+const darker = (c, t) => c.map(v => Math.round(v * (1 - t)));
+function rect(g, x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+
+// a de hoje (RTSHUD.cpp, DrawUnits): o contorno é sempre a cor do time
+function barH(g, cx, top, u, team) {
+  const w = u.k === "bldg" ? 110 : 54, h = u.k === "bldg" ? 7 : 5;
+  const x = Math.round(cx - w / 2), y = Math.round(top - h);
+  rect(g, x - 1, y - 1, w + 2, h + 2, rgb(u.enemy ? TEAM.enemy : TEAM.own, 0.95));
+  rect(g, x, y, w, h, "rgba(0,0,0,0.75)");
+  if (u.build) {
+    rect(g, x, y, w, h, rgb(GREEN));
+    rect(g, x, y + h + 3, w, 4, "rgba(0,0,0,0.75)"); rect(g, x, y + h + 3, Math.round(w * u.r), 4, "rgb(250,204,51)");
+  } else rect(g, x, y, Math.round(w * u.r), h, rgb(u.r > 0.7 ? [64, 230, 77] : (u.r > 0.35 ? [242, 204, 38] : [242, 51, 38])));
+  return { x, y, w, h };
+}
+// A: a fina contínua
+function barA(g, cx, top, u, team) {
+  const K = KIND[u.k], w = K.w + (u.k === "bldg" ? 0 : 0), h = u.k === "bldg" ? 6 : 5;
+  const x = Math.round(cx - w / 2), y = Math.round(top - h);
+  const col = u.build ? mix(BLUE, CYAN, u.r) : ramp(u.r);
+  rect(g, x - 1, y - 1, w + 2, h + 2, rgb(darker(col, 0.72), 0.95));            // o contorno: o mesmo tom, escuro (o ZH)
+  rect(g, x, y, w, h, "rgba(20,24,29,0.82)");
+  const fw = Math.round(w * u.r);
+  rect(g, x, y, fw, h, rgb(col));
+  rect(g, x, y, fw, 1, rgb(lighter(col, 0.35)));                                // o brilho de cima
+  if (u.prev) rect(g, x + fw, y, Math.round(w * u.prev) - fw, h, "rgba(255,255,255,0.92)");   // o que acabou de perder
+  if (!u.build) for (let hp = 100; hp < K.hp; hp += 100) {                        // um risco a cada 100 de vida
+    const tx = x + Math.round(w * hp / K.hp);
+    if (tx < x + fw) rect(g, tx, y + 1, 1, h - 1, "rgba(0,0,0,0.35)");
+  }
+  if (team) { rect(g, x - 5, y - 1, 4, h + 2, rgb(darker(team, 0.6))); rect(g, x - 4, y, 2, h, rgb(team)); }
+  return { x, y, w, h };
+}
+// B: as células
+function barB(g, cx, top, u, team) {
+  const K = KIND[u.k], n = K.cells, h = u.k === "bldg" ? 7 : 6;
+  const cw = Math.max(2, Math.floor((K.w - (n - 1)) / n)), w = n * cw + (n - 1);
+  const x = Math.round(cx - w / 2), y = Math.round(top - h);
+  rect(g, x - 1, y - 1, w + 2, h + 2, "rgba(11,14,17,0.9)");
+  const lit = Math.ceil(u.r * n - 1e-6), was = u.prev ? Math.ceil(u.prev * n - 1e-6) : lit;
+  const col = u.build ? mix(BLUE, CYAN, u.r) : step(u.r);
+  for (let k = 0; k < n; k++) {
+    const cxk = x + k * (cw + 1);
+    let c = k < lit ? col : (k < was ? [255, 255, 255] : null);
+    if (c) { rect(g, cxk, y, cw, h, rgb(c)); rect(g, cxk, y, cw, 1, rgb(lighter(c, 0.4))); rect(g, cxk, y + h - 1, cw, 1, rgb(darker(c, 0.25))); }
+    else rect(g, cxk, y, cw, h, "rgba(38,43,50,0.92)");
+  }
+  if (team) { rect(g, x - 5, y - 1, 4, h + 2, "rgba(11,14,17,0.9)"); rect(g, x - 4, y, 2, h, rgb(team)); }
+  return { x, y, w, h };
+}
+// C: a B na plaquinha do HUD, só selecionado
+function barC(g, cx, top, u, team) {
+  if (!u.sel) return barB(g, cx, top, u, team);
+  const K = KIND[u.k], n = K.cells, h = u.k === "bldg" ? 7 : 6;
+  const cw = Math.max(2, Math.floor((K.w - (n - 1)) / n)), w = n * cw + (n - 1);
+  const slot = 12, pad = 3;
+  const W = slot + pad + w + pad * 2, H = h + pad * 2;
+  const X = Math.round(cx - W / 2 + slot / 2), Y = Math.round(top - H);
+  const grd = g.createLinearGradient(0, Y, 0, Y + H);
+  grd.addColorStop(0, "#4a5560"); grd.addColorStop(0.5, "#2b333b"); grd.addColorStop(1, "#1a1f25");
+  g.fillStyle = "rgba(8,10,12,0.95)"; g.fillRect(X - slot - 1, Y - 1, W + 2, H + 2);
+  g.fillStyle = grd; g.fillRect(X - slot, Y, W, H);
+  rect(g, X - slot, Y, W, 1, "rgba(150,165,178,0.9)");                            // o fio de luz de cima, como as peças do HUD
+  rect(g, X - 2, Y + 1, 1, H - 2, "rgba(8,10,12,0.8)");                            // a divisão da casa da patente
+  // as divisas (veterano: 2)
+  g.strokeStyle = "#E8C25A"; g.lineWidth = 1.5;
+  for (let k = 0; k < 2; k++) { g.beginPath(); const yy = Y + 4 + k * 3.2; g.moveTo(X - slot + 2.5, yy + 2); g.lineTo(X - slot / 2 - 1, yy); g.lineTo(X - 4.5, yy + 2); g.stroke(); }
+  const r = barB(g, X + pad + w / 2, Y + pad + h, u, null);
+  if (team) rect(g, X - slot, Y + H, W, 1, rgb(team, 0.95));                        // a cor do time: o fio embaixo da placa
+  return r;
+}
+const DRAW = { H: barH, A: barA, B: barB, C: barC };
+
+const boards = document.getElementById("boards");
+const img = new Image();
+img.onload = () => {
+  for (const o of OPTS) {
+    boards.insertAdjacentHTML("beforeend", `<h2>${o.name}</h2><p class="sub">${o.note}</p>`);
+    // o quadro do jogo, no tamanho real (um pedaço do meio: 1100 × 560)
+    const cv = document.createElement("canvas"); cv.width = 1100; cv.height = 560;
+    const g = cv.getContext("2d");
+    g.drawImage(img, -260, -60);
+    g.save(); g.translate(-260, -60);
+    for (const u of SCENE) DRAW[o.id](g, u.x, u.y, u, null);
+    g.restore();
+    boards.appendChild(cv);
+    // a tira ampliada 4×: cada estado sem e com a cor do time
+    const states = [
+      ["cheia", { k: "tank", r: 1 }], ["recém-atingida", { k: "tank", r: 0.62, prev: 0.78 }], ["ferida", { k: "tank", r: 0.41 }],
+      ["quase morta", { k: "tank", r: 0.18 }], ["inimiga", { k: "car", r: 0.55, enemy: true }], ["soldado", { k: "inf", r: 0.6 }],
+      ["em obra", { k: "bldg", r: 0.45, build: true }], ["prédio sel.", { k: "bldg", r: 0.66, sel: true }]];
+    // cada estado numa casa de 130 × 50 px reais (em cima sem a cor do time, embaixo com), 4 por linha, ampliada 3×
+    const S = 3, CW = 130, CH = 50, COLS = 4, ROWS = Math.ceil(states.length / COLS);
+    const sw = document.createElement("canvas"); sw.width = COLS * CW; sw.height = ROWS * CH;
+    const s = sw.getContext("2d");
+    s.drawImage(img, -1040, -540);   // a areia de fundo, no tamanho real
+    states.forEach(([label, u], k) => {
+      const cx = (k % COLS) * CW + CW / 2, cy = Math.floor(k / COLS) * CH;
+      const unit = { ...u, sel: u.sel || (o.id === "C" && k === 0) };
+      DRAW[o.id](s, cx, cy + 20, unit, null);
+      DRAW[o.id](s, cx, cy + 42, unit, u.enemy ? TEAM.enemy : TEAM.own);
+    });
+    const LH = 20;
+    const big = document.createElement("canvas"); big.width = sw.width * S; big.height = ROWS * (CH * S + LH); big.className = "strip";
+    const b = big.getContext("2d"); b.imageSmoothingEnabled = false;
+    b.fillStyle = "#15171a"; b.fillRect(0, 0, big.width, big.height);
+    b.font = "600 13px Segoe UI"; b.fillStyle = "#c9c4b8"; b.textAlign = "center";
+    for (let row = 0; row < ROWS; row++) {
+      b.drawImage(sw, 0, row * CH, sw.width, CH, 0, row * (CH * S + LH), sw.width * S, CH * S);
+      states.slice(row * COLS, row * COLS + COLS).forEach(([label], c) => b.fillText(label, (c * CW + CW / 2) * S, row * (CH * S + LH) + CH * S + 15));
+    }
+    const cap = document.createElement("p"); cap.className = "sub";
+    cap.textContent = "ampliada (cada pixel virou um quadrado): em cima sem a cor do time, embaixo com ela";
+    boards.appendChild(cap); boards.appendChild(big);
+  }
+  document.title = "pronto";
+};
+img.src = "../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg";
+</script>
+</body>
+</html>
