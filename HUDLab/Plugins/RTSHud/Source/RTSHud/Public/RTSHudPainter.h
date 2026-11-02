@@ -49,6 +49,7 @@ private:
 
 	void DrawTop(const FRTSHudState& State);
 	void DrawTop1v1(const FRTSHudState& State);
+	bool DrawTopMany(const FRTSHudState& State);
 	void OutlinePoly(const TArray<FVector2D>& Poly, const FLinearColor& Rim);
 	void DrawCommander(const FRTSHudState& State);
 	void DrawAlerts(const FRTSHudState& State);
@@ -85,6 +86,8 @@ private:
 	void Image(FName Name, float X, float Y, float W, float H, const FLinearColor& Tint = FLinearColor::White, bool bCover = true);
 	/** O ícone sem a moldura dele (Inset = a fração cortada de cada lado): vai no encaixe da pele. */
 	void ImageInset(FName Name, float X, float Y, float W, float H, float Inset, const FLinearColor& Tint = FLinearColor::White);
+	/** Um pedaço da textura (UV0..UV1) esticado na caixa: as peças do topo de muitos jogadores saem da arte do topo 1x1. */
+	void ImageUV(FName Name, float X, float Y, float W, float H, FVector2D UV0, FVector2D UV1, const FLinearColor& Tint);
 	/**
 	 * A pele (as molduras do kit, docs/concept/hud/kit/skin/) em 9 fatias: as margens (em pixels da textura)
 	 * saem na tela vezes Scale e o miolo estica; Src recorta só um pedaço da textura (vazio = ela toda).

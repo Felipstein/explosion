@@ -225,6 +225,18 @@ void FRTSHudPainter::Image(FName Name, float X, float Y, float W, float H, const
 	Canvas->DrawItem(Item);
 }
 
+void FRTSHudPainter::ImageUV(FName Name, float X, float Y, float W, float H, FVector2D UV0, FVector2D UV1, const FLinearColor& Tint)
+{
+	UTexture* Tex = Lookup ? Lookup(Name) : nullptr;
+	if (!Tex || !Tex->GetResource() || W <= 0.0f || H <= 0.0f)
+	{
+		return;
+	}
+	FCanvasTileItem Item(FVector2D(X, Y), Tex->GetResource(), FVector2D(W, H), UV0, UV1, Tint);
+	Item.BlendMode = SE_BLEND_Translucent;
+	Canvas->DrawItem(Item);
+}
+
 void FRTSHudPainter::ImageInset(FName Name, float X, float Y, float W, float H, float Inset, const FLinearColor& Tint)
 {
 	UTexture* Tex = FactionTex(Name);
@@ -658,6 +670,10 @@ void FRTSHudPainter::DrawTop(const FRTSHudState& State)
 		DrawTop1v1(State);
 		return;
 	}
+	if (DrawTopMany(State))
+	{
+		return;
+	}
 	const float CW = 136.0f, CH = 58.0f, TW = 104.0f, ClockX = 960.0f - TW * 0.5f;
 	const int32 Half = (N + 1) / 2;
 	const float LeftStart = ClockX - Half * CW;
@@ -939,6 +955,179 @@ void FRTSHudPainter::DrawTop1v1(const FRTSHudState& State)
 	TextMid(Me.Name, MeC.X, MeC.Y, 26.0f, MeText, EWeight::Bold, EAlign::Center);
 	TextMid(State.Clock, ClockC.X, ClockC.Y, 36.0f, KTextMain, EWeight::Bold, EAlign::Center);
 	TextMid(Foe.Name, FoeC.X, FoeC.Y, 26.0f, FoeText, EWeight::Bold, EAlign::Center);
+}
+
+
+// o topo de 3 a 8 jogadores (02/11, ele: "e o topo com mais jogadores?"): montado com as peças do topo 1x1 aprovado da facção, na mesma
+// linguagem. Cada jogador ganha o anel (a silhueta do emblema pintada na cor dele) e um painel curto na cor dele; o relógio fica no meio;
+// as pontas da facção (as ripas da Rússia, o pano da GLA) só nas extremidades. A metade da esquerda usa o lado "você" da arte (o anel por
+// fora, o painel pra dentro), a da direita o lado do adversário. Escala 0,8 da do 1x1: com 8 jogadores a barra não chega nos avisos.
+bool FRTSHudPainter::DrawTopMany(const FRTSHudState& State)
+{
+	const int32 N = State.Players.Num();
+	const FName F = Cur->SkinFaction;
+	const FString Fac = F.IsNone() ? FString(TEXT("usa")) : F.ToString();
+	const FName Base(*FString::Printf(TEXT("skin:%s/top_bar_1v1"), *Fac));
+	const FName MeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_me"), *Fac)), FoeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_foe"), *Fac));
+	UTexture* BaseTex = Lookup ? Lookup(Base) : nullptr;
+	if (!BaseTex || !Lookup(MeLayer) || !Lookup(FoeLayer))
+	{
+		return false;
+	}
+	const float TW = BaseTex->GetSurfaceWidth(), TH = BaseTex->GetSurfaceHeight();
+	const float MX = FMath::Max(0.0f, (TW - 1087.0f) * 0.5f);
+	auto Glow = [](FLinearColor C)
+	{
+		const float M = FMath::Max3(C.R, C.G, C.B);
+		if (M > 0.001f && M < 0.7f)
+		{
+			C *= 0.7f / M;
+		}
+		C.A = 1.0f;
+		return C;
+	};
+	// os cortes da arte (em unidades da peça de 1087): o anel com o aro, o painel (o começo dele e a ponta chanfrada), o relógio
+	const float RingA = 28, RingB = 140, PanA = 140, PanLen = 135, TipA = 395, TipB = 430, ClockA = 430, ClockB = 657;
+	const float RTipA = 657, RTipB = 692, RPanB = 947, RRingA = 947, RRingB = 1059;
+	const float PanW = PanLen + (TipB - TipA), RingW = RingB - RingA, CellW = RingW + PanW;
+	const int32 NL = (N + 1) / 2;
+	const float CapW = RingA + MX;
+	const float TotalU = CapW * 2 + N * CellW + (ClockB - ClockA);
+	const float K = 0.46f * S;
+	const float H = TH * K;
+	const float X0 = SX(960.0f, EAnchor::Center) - TotalU * K * 0.5f, Y = SY(0, false);
+	float X = X0;
+	auto Piece = [&](float U0, float U1, FName Layer, const FLinearColor& Col)
+	{
+		const float W = (U1 - U0) * K;
+		const FVector2D UV0((MX + U0) / TW, 0.0f), UV1((MX + U1) / TW, 1.0f);
+		ImageUV(Base, X, Y, W, H, UV0, UV1, FLinearColor::White);
+		if (!Layer.IsNone())
+		{
+			ImageUV(Layer, X, Y, W, H, UV0, UV1, Col);
+		}
+		X += W;
+	};
+	struct FCell { float RingX; float PanX; int32 I; bool bLeft; };
+	TArray<FCell> Cells;
+	auto PlayerColor = [&](const FRTSHudPlayer& P) { return P.bDead ? FLinearColor(0.22f, 0.22f, 0.22f) : Glow(P.Color); };
+	Piece(-MX, RingA, NAME_None, FLinearColor::White);
+	for (int32 I = 0; I < NL; ++I)
+	{
+		const FLinearColor C = PlayerColor(State.Players[I]);
+		FCell Cell{ X, 0.0f, I, true };
+		Piece(RingA, RingB, NAME_None, FLinearColor::White);
+		Cell.PanX = X;
+		Piece(PanA, PanA + PanLen, MeLayer, C);
+		Piece(TipA, TipB, MeLayer, C);
+		Cells.Add(Cell);
+	}
+	const float ClockX = X;
+	Piece(ClockA, ClockB, NAME_None, FLinearColor::White);
+	for (int32 I = NL; I < N; ++I)
+	{
+		const FLinearColor C = PlayerColor(State.Players[I]);
+		FCell Cell{ 0.0f, X, I, false };
+		Piece(RTipA, RTipB, FoeLayer, C);
+		Piece(RPanB - PanLen, RPanB, FoeLayer, C);
+		Cell.RingX = X;
+		Piece(RRingA, RRingB, NAME_None, FLinearColor::White);
+		Cells.Add(Cell);
+	}
+	Piece(RRingB, 1087.0f + MX, NAME_None, FLinearColor::White);
+	Bg(X0 + MX * K, Y, (TotalU - 2 * MX) * K, 140 * K);
+	const float CY = Y + 68 * K;
+	TextMid(State.Clock, ClockX + (ClockB - ClockA) * K * 0.5f, CY, 28.0f, KTextMain, EWeight::Bold, EAlign::Center);
+
+	// onde o corpo da barra termina (a mesma tabela do 1x1): as superarmas saem de baixo dele
+	const float Bottom = F == FName(TEXT("china")) ? 128.0f : F == FName(TEXT("gla")) ? 138.0f : F == FName(TEXT("russia")) ? 147.0f : 129.0f;
+	float SWPx = 12.0f;
+	for (const FRTSHudPlayer& P : State.Players)
+	{
+		if (!P.bDead && P.Superweapons.Num() > 0)
+		{
+			SWPx = FMath::Min(SWPx, SuperweaponNamePx(P.Superweapons, CellW * K - 4 * S, 18 * S, 3, 12.0f));
+		}
+	}
+	for (const FCell& Cell : Cells)
+	{
+		const FRTSHudPlayer& P = State.Players[Cell.I];
+		const bool bInTeam = P.bMe || P.bAlly;
+		// o emblema no anel: a silhueta na cor do jogador (TopEmblem 1, o padrão), o inteiro (0) ou a ficha (2)
+		const float CX = Cell.RingX + (Cell.bLeft ? 83.0f - RingA : 1006.0f - RRingA) * K;
+		FString Fe = P.Emblem.ToString();
+		Fe.RemoveFromStart(TEXT("emblem:"));
+		FName Emb = P.Emblem;
+		FLinearColor Tint = P.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FLinearColor::White;
+		float R = 37 * K;
+		if (State.TopEmblem == 1)
+		{
+			Emb = FName(*FString::Printf(TEXT("emblem:glyph_%s"), *Fe));
+			Tint = P.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FMath::Lerp(Glow(P.Color), FLinearColor::White, 0.25f);
+			R *= 0.86f;
+		}
+		else if (State.TopEmblem == 2)
+		{
+			Emb = FName(*FString::Printf(TEXT("emblem:token_%s"), *Fe));
+		}
+		Image(Emb, CX - R, CY - R, 2 * R, 2 * R, Tint, false);
+		if (P.bDead)
+		{
+			Image(SkDefeatedX, CX - R * 0.8f, CY - R * 0.8f, R * 1.6f, R * 1.6f, FLinearColor::White, false);
+		}
+		if (P.bSpied)
+		{
+			// o selo do olho no canto do anel; o tempo que resta da espionagem é o carregamento do C&C no selo
+			const float BS = 22 * S, BX = CX + R - BS * 0.4f, BY = CY + R - BS * 0.55f;
+			Image(SkSpyRing, BX, BY, BS, BS, FLinearColor::White, false);
+			const FVector2D BC(BX + BS * 0.5f, BY + BS * 0.5f);
+			const float PR = BS * 0.5f - 1 * S, A0 = FMath::Clamp(P.SpyLeft, 0.0f, 1.0f) * 2 * PI;
+			TArray<FVector2D> Pie;
+			const int32 Seg = FMath::Max(2, FMath::CeilToInt((1 - P.SpyLeft) * 40));
+			for (int32 Kk = 0; Kk < Seg; ++Kk)
+			{
+				const float Ta = A0 + (2 * PI - A0) * Kk / Seg, Tb = A0 + (2 * PI - A0) * (Kk + 1) / Seg;
+				Pie.Add(BC);
+				Pie.Add(BC + FVector2D(FMath::Sin(Ta), -FMath::Cos(Ta)) * PR);
+				Pie.Add(BC + FVector2D(FMath::Sin(Tb), -FMath::Cos(Tb)) * PR);
+			}
+			if (P.SpyLeft < 1.0f)
+			{
+				Tris(Pie, FLinearColor(0, 0, 0, 0.70f));
+			}
+			Image(SkSpyEye, BX, BY, BS, BS, FLinearColor::White, false);
+		}
+		// o nome no painel, na cor do jogador clareada; aliado ou espionado: o dinheiro e a energia embaixo
+		const float TX0 = Cell.PanX + (Cell.bLeft ? 6.0f : 26.0f) * K, TX1 = Cell.PanX + PanW * K - (Cell.bLeft ? 26.0f : 6.0f) * K;
+		const float TextW = TX1 - TX0, TMid = (TX0 + TX1) * 0.5f;
+		const FLinearColor NameC = P.bDead ? KTextDim : FMath::Lerp(Glow(P.Color), FLinearColor::White, 0.45f);
+		auto FitPx = [&](const FString& Str, float Px, EWeight Wt)
+		{
+			while (Px > 10.0f && Measure(Str, Px, Wt).X > TextW)
+			{
+				Px -= 0.5f;
+			}
+			return Px;
+		};
+		const bool bEco = P.bShowEco && !P.bDead && !P.bMe;
+		if (!bEco)
+		{
+			TextMid(P.Name, TMid, CY, FitPx(P.Name, 16.0f, EWeight::Bold), NameC, EWeight::Bold, EAlign::Center);
+		}
+		else
+		{
+			TextMid(P.Name, TMid, CY - 9 * S, FitPx(P.Name, 14.0f, EWeight::Bold), NameC, EWeight::Bold, EAlign::Center);
+			const bool bLow = P.PowerMade > 0 && P.PowerUsed > P.PowerMade;
+			const FString Eco = P.PowerMade > 0 ? FString::Printf(TEXT("%s  %d/%d"), *P.Money, P.PowerUsed, P.PowerMade) : P.Money;
+			TextMid(Eco, TMid, CY + 9 * S, FitPx(Eco, 12.0f, EWeight::SemiBold), bLow ? KRed : KGoldText, EWeight::SemiBold, EAlign::Center);
+		}
+		if (!P.bDead && P.Superweapons.Num() > 0)
+		{
+			const float CellX = Cell.bLeft ? Cell.RingX : Cell.PanX;
+			DrawSuperweapons(P.Superweapons, CellX + 2 * S, Y + Bottom * K + 2 * S, CellW * K - 4 * S, 18 * S, 3, SWPx, bInTeam);
+		}
+	}
+	return true;
 }
 
 // ---------------------------------------------------------------------------------------------
