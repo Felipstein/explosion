@@ -172,3 +172,17 @@ de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
 1. O teste dele no jogo, clicando.
 2. Os cursores que nascem com as unidades e os sistemas novos (guarnecer, capturar, o sinalizador, os especiais) entram
    no mestre na mesma gramática, e o gerador refaz tudo.
+
+## Onde parou (02/11, pausa pelo limite da conta)
+
+- **Ponto de encontro: APROVADO no jogo e commitado** (cf34cc0, `RTSRallyMarker.h/.cpp`). Sem commit: o ajuste do pano em
+  `RTSRallyMarker.cpp` (a cor `Dye = Pow(V, 1.3)` sem o 0,62 e o pano esticado no mínimo 0,85). A prova dele estava rodando na fila:
+  `captures/game/rally_ponto_v3/` (comparar com `rally_ponto_v2/` e com `docs/aprovados/ui/2026-11-02_ponto_de_encontro_previa_x_jogo.jpg`;
+  se o pano ficou mais vivo e quase na horizontal, commitar; senão, voltar o trecho pro commitado).
+- **Próximo pedido dele: a marca da ordem no chão** ("quando a gente aperta a unidade pra andar [...] o pointer efeito que mostra onde
+  vai andar, não tem hoje né? o ZH tinha"). Hoje existe só `ARTSHUD::DrawMarkers`: um anel fino de 2 px que encolhe em 0,7 s (ninguém
+  vê). O ZH: `InGameUI::createMoveHint` + `W3DInGameUI::drawMoveHints` (um modelo animado deitado no relevo, 40 quadros ≈ 1,3 s, um por
+  ordem, só pra quem anda; o ataque não tem marca). A prancha com as 3 direções animadas: `art/cursors/marca_ordem.html` (A as setas do
+  mover deitadas que fecham no ponto, a recomendada; B o anel cortado que fecha; C o pino que cai com a onda). Faltava: o GIF
+  (`captures/concept/cursores/gif_marca/`, 40 quadros) e mostrar pra ele escolher; depois fazer no jogo com o traço liso do
+  `RTSRallyMarker` (a textura do perfil), substituindo o `DrawMarkers`.

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Marca da ordem no chão</title>
+<style>
+  :root { --G: #4FE05A; --Gl: #A6F2AD; --R: #FF3B30; --Rl: #FF9A93; --D: #0A0B0C; }
+  html, body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 940px; padding: 14px 20px; }
+  h2 { font-size: 15px; margin: 14px 0 2px; font-weight: 700; }
+  .sub { color: #9a968c; margin: 0 0 6px; font-size: 13px; }
+  .fr { position: relative; width: 900px; height: 450px; overflow: hidden; border-radius: 6px;
+        background: url(../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) -380px -330px / 1600px 900px; }
+  svg { position: absolute; left: 0; top: 0; overflow: visible; }
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+<script>
+// (02/11) a marca que a ordem deixa no chão no clique (o MoveHint do ZH: um modelo animado deitado no relevo, 40 quadros ≈ 1,3 s,
+// uma por ordem, só pra quem anda; o ataque no ZH não tem marca). Hoje o jogo tem um anel fino de 2 px que encolhe em 0,7 s: ninguém vê.
+// As três direções no traço dos cursores aprovados (as setas farpadas do mover, o anel cortado da mira, o contorno escuro).
+// Escala: o tanque tem ~70 px de largura (3,7 m) neste quadro, ~19 px/m; a marca tem ~2,2 m de raio (com 1,6 m sumia perto do tanque). O chão: câmera a 40°, o
+// círculo vira elipse de 0,64. #t=0.3 congela no instante; sem nada, roda em laço.
+const LOOP = 1.6;
+const SQ = 0.64;
+const K = 1.35;   // a marca na grade de 64 → px
+const OX = 380, OY = 330;   // o recorte do quadro (1600 × 900)
+const SPOTS = { G: { x: 690 - OX, y: 562 - OY }, R: { x: 1088 - OX, y: 600 - OY } };
+const ease = t => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+const lin = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)));
+const f = n => +n.toFixed(2);
+
+// no chão: a marca desenhada na grade de 64 (centro 32,32) deitada no relevo em P
+const ground = (P, s, inner, op = 1) => `<g opacity="${f(op)}" transform="translate(${P.x} ${P.y}) scale(${s} ${f(s * SQ)}) translate(-32 -32)">${inner}</g>`;
+// o traço com o contorno escuro do cursor (a cópia mais grossa embaixo)
+const ink = (shape, color, w) => shape(`stroke="var(--D)" stroke-width="${f(w + 2.6)}" fill="var(--D)" stroke-linejoin="round"`)
+  + shape(`stroke="${color}" stroke-width="${w}" fill="${color}" stroke-linejoin="round"`);
+
+// as setas farpadas do mover (a mesma conta do cursors.html), com a ponta a "tip" do canto; d = o quanto ainda faltam pra fechar
+function arrows(color, d) {
+  const u = Math.SQRT1_2, L = 11, H = 7, N = 3.5, s = 10, w = 4.5;
+  const T = 26 - d, B = T - L * u, Nn = T - (L - N) * u, hv = H * u, S = s - d;
+  const line = (c, sw) => `<line x1="${f(S)}" y1="${f(S)}" x2="${f(Nn - 1)}" y2="${f(Nn - 1)}" stroke="${c}" stroke-width="${f(sw)}" stroke-linecap="square"/>`;
+  const head = (c, sw) => `<polygon points="${f(T)},${f(T)} ${f(B + hv)},${f(B - hv)} ${f(Nn)},${f(Nn)} ${f(B - hv)},${f(B + hv)}" fill="${c}" stroke="${c}" stroke-width="${f(sw)}" stroke-linejoin="miter" stroke-miterlimit="2.2"/>`;
+  // o contorno das duas peças embaixo, as cores em cima (a ponta não corta a cauda)
+  const one = line("var(--D)", w + 2.6) + head("var(--D)", 2.6) + line(color, w) + head(color, 0.01);
+  return [0, 90, 180, 270].map(r => `<g transform="rotate(${r} 32 32)">${one}</g>`).join("");
+}
+// o anel cortado em 4 (a mira), raio r
+function ring(color, r, w = 3.4, gap = 4) {
+  const C = 2 * Math.PI * r, q = C / 4, dash = Math.max(0.1, q - gap - w);
+  const c = a => `<circle cx="32" cy="32" r="${f(r)}" fill="none" ${a.replace(/fill="[^"]+"/, "")} stroke-linecap="round" stroke-dasharray="${f(dash)} ${f(q - dash)}" stroke-dashoffset="${f(dash + (q - dash) / 2 + q / 2)}"/>`;
+  return ink(c, color, w);
+}
+const dot = (color, r) => ink(a => `<circle cx="32" cy="32" r="${f(r)}" ${a}/>`, color, 0.01);
+
+// A — o mover deitado: as quatro setas do cursor chegam de fora e fecham no ponto; no toque, um anel fino abre e some
+function dirA(t, P, c) {
+  const close = ease(t / 0.32), fade = 1 - lin(t, 0.62, 1.0);
+  let s = ground(P, K, arrows(`var(--${c})`, 16 * (1 - close)), fade);
+  const k = lin(t, 0.3, 0.75);
+  if (k > 0 && k < 1) s += ground(P, K, ring(`var(--${c}l)`, 8 + 18 * ease(k), 2.2, 0.01), 1 - k);
+  return s;
+}
+// B — o anel que fecha: o anel cortado da mira encolhe até o ponto, as quatro setas pequenas nos cortes; fica o ponto
+function dirB(t, P, c) {
+  const k = ease(t / 0.4), fade = 1 - lin(t, 0.62, 1.0);
+  const r = 26 - 15 * k;
+  const tris = [0, 90, 180, 270].map(a => `<g transform="rotate(${a + 45} 32 32)">${ink(x => `<polygon points="${f(32 - 3.6)},${f(32 - r - 2)} ${f(32 + 3.6)},${f(32 - r - 2)} 32,${f(32 - r + 5)}" ${x}/>`, `var(--${c})`, 0.01)}</g>`).join("");
+  return ground(P, K, ring(`var(--${c})`, r, 3.4, 7) + tris + (t > 0.3 ? dot(`var(--${c})`, 2.6) : ""), fade);
+}
+// C — o pino que cai: a seta em pé desce no ponto (como o cursor apontando o chão) e bate uma onda no chão
+function dirC(t, P, c) {
+  const drop = ease(t / 0.24), fade = 1 - lin(t, 0.55, 0.95);
+  const y = P.y - 46 * (1 - drop) - 6;
+  const pin = `<g opacity="${f(fade)}" transform="translate(${P.x} ${f(y)})">`
+    + ink(a => `<polygon points="0,0 -9,-13 -3.2,-11 -3.2,-26 3.2,-26 3.2,-11 9,-13" ${a}/>`, `var(--${c})`, 0.01) + `</g>`;
+  const k = lin(t, 0.22, 0.85);
+  let s = "";
+  if (k > 0 && k < 1) s += ground(P, K, ring(`var(--${c})`, 6 + 22 * ease(k), 3.0, 0.01), 1 - k * k);
+  return s + ground(P, K, dot(`var(--${c})`, 2.8), fade) + pin;
+}
+const DIRS = [
+  ["A — O mover deitado no chão", "as quatro setas farpadas do cursor de mover chegam de fora e fecham no ponto em 0,3 s; no toque, um anel fino abre e some (1 s ao todo). A mesma forma do cursor: o clique e a marca falam a mesma língua", dirA],
+  ["B — O anel que fecha", "o anel cortado (o da mira) encolhe até o ponto com as quatro setinhas nos cortes, e o ponto fica até sumir (perto do de hoje, mas grosso, com contorno e vivo)", dirB],
+  ["C — O pino que cai", "a seta em pé desce e crava no ponto, e uma onda abre no chão (o estilo dos RTS novos); lê mais longe, mas sai do chão", dirC],
+];
+const T = /t=([\d.]+)/.exec(location.hash);
+const page = document.getElementById("page");
+DIRS.forEach(([name, note]) => {
+  page.insertAdjacentHTML("beforeend", `<h2>${name}</h2><p class="sub">${note}. Verde: andar; vermelho: ataque andando.</p><div class="fr"><svg width="900" height="450"></svg></div>`);
+});
+const svgs = [...document.querySelectorAll(".fr svg")];
+function draw(t) {
+  DIRS.forEach(([, , fn], k) => {
+    // o vermelho entra 0,25 s depois (as duas ordens não batem juntas)
+    const tr = (t - 0.25 + LOOP) % LOOP;
+    svgs[k].innerHTML = (t < 1.05 ? fn(t, SPOTS.G, "G") : "") + (tr < 1.05 ? fn(tr, SPOTS.R, "R") : "");
+  });
+}
+if (T) draw(+T[1]);
+else { const t0 = performance.now(); const tick = now => { draw(((now - t0) / 1000) % LOOP); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+</script>
+</body>
+</html>
