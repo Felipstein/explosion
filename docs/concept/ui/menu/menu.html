@@ -7,6 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
+:root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body.dragging, body.dragging * { cursor: var(--curd) !important; }
 :root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; }
 html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; }
 #wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
@@ -23,7 +27,7 @@ canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
 .big { margin-top: 12px; font: 900 88px/0.92 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
 .sub { margin-top: 14px; font: 500 18px 'Barlow Semi Condensed'; color: var(--mute); letter-spacing: 1px; max-width: 420px; line-height: 1.35; }
 .menu { list-style: none; margin: 48px 0 0; padding: 0; counter-reset: op; }
-.menu li { position: relative; padding: 13px 0 13px 64px; border-top: 1px solid rgba(230,220,190,.10); cursor: pointer; }
+.menu li { position: relative; padding: 13px 0 13px 64px; border-top: 1px solid rgba(230,220,190,.10); cursor: var(--curh); }
 .menu li:last-child { border-bottom: 1px solid rgba(230,220,190,.10); }
 .menu li::after { counter-increment: op; content: '0' counter(op); position: absolute; left: 0; top: 20px; font: 600 16px 'Barlow Semi Condensed'; color: rgba(230,220,190,.42); letter-spacing: 2px; transition: color .2s; }
 .menu li::before { content: ''; position: absolute; left: 34px; top: 33px; width: 0; height: 3px; background: rgb(var(--ac)); box-shadow: 0 0 10px rgba(var(--ac),.85); transition: width .25s; }
@@ -34,7 +38,7 @@ canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
 .menu li:hover::before, .menu li.hv::before { width: 18px; }
 .menu li:hover::after, .menu li.hv::after { color: rgb(var(--ac)); }
 svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-events: none; }
-.dbg { position: absolute; left: 196px; bottom: 38px; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); padding: 5px 10px; border: 1px dashed rgba(230,220,190,.3); cursor: pointer; z-index: 6; }
+.dbg { position: absolute; left: 196px; bottom: 38px; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); padding: 5px 10px; border: 1px dashed rgba(230,220,190,.3); cursor: var(--curh); z-index: 6; }
 .dbg:hover { color: rgb(var(--ac)); border-color: rgba(var(--ac),.7); }
 .dbgp { position: absolute; left: 110px; bottom: 76px; z-index: 7; width: 560px; padding: 16px 18px 18px; background: rgba(10,13,12,.96); border: 1px solid rgba(230,220,190,.2); box-shadow: 0 20px 60px rgba(0,0,0,.6); display: none; }
 .dbgp.on { display: block; }
@@ -411,7 +415,7 @@ if (actx) {
 function click(vol = .6, rate = 1) { if (!actx || !clickBuf) return; const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; s.playbackRate.value = rate; g.gain.value = vol; s.connect(g).connect(actx.destination); s.start(); }
 function clickable(el) {           // tudo que se clica: botão, link, campo, ou o que tem a mãozinha
   for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
-    if (/^(BUTTON|A|SELECT|INPUT|LABEL|SUMMARY)$/.test(e.tagName) || e.getAttribute('role') === 'button' || getComputedStyle(e).cursor === 'pointer') return true; }
+    if (/^(BUTTON|A|SELECT|INPUT|LABEL|SUMMARY)$/.test(e.tagName) || e.getAttribute('role') === 'button' || /(^|,\s*)pointer$/.test(getComputedStyle(e).cursor)) return true; }
   return false; }
 function audioOn() { if (!actx) return; actx.resume(); if (!musicOn) { musicOn = true; music.play().catch(() => { }); } }
 addEventListener('pointerdown', e => { audioOn(); if (clickable(e.target)) click(); }, true);

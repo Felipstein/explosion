@@ -185,6 +185,10 @@ quadros e a memória de vídeo estimados (6 GB). SOUND, CONTROLS (câmera, EDGE 
 teclas), GAME (LANGUAGE e **UNIT VOICES: no idioma da facção ou no do jogo**) e ACCESSIBILITY (daltonismo, contorno das unidades, tamanho da
 interface, tremor, clarões, legendas). **Sem HEALTH BARS**: a vida só aparece nas selecionadas ou com o mouse em cima (decisão dele).
 
+**O cursor dos menus (01/11):** o aprovado na sessão dos cursores (a seta do jogo em versão de menu, `art/cursors/menu.html`) em todas as
+telas, o menu principal incluído: a seta no normal, o colchete âmbar em cima do que se clica, a barra nos campos de digitar e a mão
+segurando o dinheiro inicial ou os controles deslizantes das opções. No protótipo, 48 px (o 1080p) com o ponto do clique em (7, 4).
+
 ## 4. A primeira rodada, olhada com rigor
 
 - **Menu:** forte. O console desligado na borda de baixo é a assinatura que pedimos. Veio uma fileira com os 4 emblemas que não pedi: lê

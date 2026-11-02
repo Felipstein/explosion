@@ -7,6 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
+:root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body.dragging, body.dragging * { cursor: var(--curd) !important; }
 /* O multiplayer: de onde jogar (online, LAN, IP direto), a lista de salas que ordena e se atualiza sozinha, sem mostrar sala
    cheia como livre (as queixas do AoE II DE e do AoM Retold), e a sala escolhida com o minimapa, quem está nela e as regras. */
 :root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; --line: rgba(230,220,190,.10); --card: rgba(16,21,19,.62); --ok: 120,200,120; --bad: 240,110,90; }
@@ -21,9 +25,9 @@ html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; col
 .c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
 .c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
 .kicker { font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 8px; color: rgb(var(--ac)); display: flex; gap: 16px; }
-.kicker .back { cursor: pointer; color: rgba(230,220,190,.55); letter-spacing: 3px; transition: color .15s; }
+.kicker .back { cursor: var(--curh); color: rgba(230,220,190,.55); letter-spacing: 3px; transition: color .15s; }
 .kicker .back:hover { color: #fff; }
-.backbtn { position: absolute; left: 110px; top: 30px; z-index: 35; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 10px; cursor: pointer;
+.backbtn { position: absolute; left: 110px; top: 30px; z-index: 35; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 10px; cursor: var(--curh);
   font: 800 19px 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.9); background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.32); transition: all .15s; }
 .backbtn:hover { color: rgb(216,173,78); border-color: rgba(216,173,78,.8); }
 .backbtn svg { width: 22px; height: 22px; } .backbtn kbd { font: 600 11px 'IBM Plex Mono'; letter-spacing: 1px; padding: 2px 6px; border: 1px solid currentColor; opacity: .7; }
@@ -33,7 +37,7 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 /* a coluna da esquerda: de onde jogar */
 .side { position: absolute; left: 110px; top: 88px; width: 400px; }
 .src { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; }
-.srcb { position: relative; padding: 16px 18px; background: var(--card); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s, background .15s; }
+.srcb { position: relative; padding: 16px 18px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); transition: border-color .15s, background .15s; }
 .srcb:hover { border-color: rgba(230,220,190,.26); background: rgba(22,28,26,.78); }
 .srcb.on { border-color: rgba(var(--ac),.75); }
 .srcb.on::before, .srcb.on::after { content: ''; position: absolute; width: 10px; height: 10px; border: 2px solid rgb(var(--ac)); }
@@ -41,7 +45,7 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 .srcb b { display: block; font: 800 30px/1 'Big Shoulders Display'; letter-spacing: 3px; color: #fff; }
 .srcb span { display: block; margin-top: 6px; font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
 .srcb .n { position: absolute; right: 18px; top: 18px; font: 600 13px 'IBM Plex Mono'; color: rgba(230,220,190,.55); }
-.host { margin-top: 18px; height: 60px; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; font: 900 28px 'Big Shoulders Display'; letter-spacing: 5px; color: rgb(var(--ac)); border: 1px solid rgba(var(--ac),.8); background: rgba(216,173,78,.05); transition: all .15s; }
+.host { margin-top: 18px; height: 60px; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: var(--curh); font: 900 28px 'Big Shoulders Display'; letter-spacing: 5px; color: rgb(var(--ac)); border: 1px solid rgba(var(--ac),.8); background: rgba(216,173,78,.05); transition: all .15s; }
 .host:hover { background: rgb(var(--ac)); color: #0a0d0b; letter-spacing: 7px; }
 .me { position: absolute; left: 110px; bottom: 50px; display: flex; align-items: center; gap: 12px; font: 600 14px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); }
 .me b { color: #fff; font: 800 20px 'Big Shoulders Display'; letter-spacing: 2px; }
@@ -53,7 +57,7 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 .search { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 44px; border: 1px solid rgba(230,220,190,.2); background: rgba(16,21,19,.8); }
 .search input { flex: 1; background: none; border: 0; outline: 0; color: #fff; font: 600 17px 'Barlow Semi Condensed'; letter-spacing: 1px; }
 .search input::placeholder { color: rgba(230,220,190,.35); }
-.chip { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 0 12px; height: 44px; display: flex; align-items: center; color: rgba(238,241,244,.6); border: 1px solid rgba(230,220,190,.14); cursor: pointer; transition: all .12s; white-space: nowrap; }
+.chip { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 0 12px; height: 44px; display: flex; align-items: center; color: rgba(238,241,244,.6); border: 1px solid rgba(230,220,190,.14); cursor: var(--curh); transition: all .12s; white-space: nowrap; }
 .chip:hover { color: #fff; border-color: rgba(230,220,190,.35); }
 .chip.on { color: rgb(var(--ac)); border-color: rgba(var(--ac),.75); background: rgba(216,173,78,.07); }
 .live { display: flex; align-items: center; gap: 8px; font: 600 12px 'IBM Plex Mono'; color: rgba(230,220,190,.55); margin-left: 4px; white-space: nowrap; }
@@ -61,14 +65,14 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 @keyframes spin { to { transform: rotate(360deg); } }
 .th, .rm { display: grid; grid-template-columns: 1fr 210px 120px 80px 70px; align-items: center; }
 .th { margin-top: 14px; height: 28px; font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.42); }
-.th div { padding-left: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.th div { padding-left: 14px; cursor: var(--curh); display: flex; align-items: center; gap: 6px; }
 .th div:hover { color: rgba(238,241,244,.8); }
 .th div.on { color: rgb(var(--ac)); }
 .th div i { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
 .th div.on.up i { transform: rotate(-135deg); margin-top: 3px; }
 .rows { position: absolute; top: 90px; left: 0; right: 0; bottom: 0; overflow-y: auto; }
 .rows::-webkit-scrollbar { width: 8px; } .rows::-webkit-scrollbar-thumb { background: rgba(230,220,190,.18); }
-.rm { height: 62px; margin-bottom: 6px; background: var(--card); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s, background .15s, opacity .2s; }
+.rm { height: 62px; margin-bottom: 6px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); transition: border-color .15s, background .15s, opacity .2s; }
 .rm:hover { border-color: rgba(230,220,190,.26); background: rgba(22,28,26,.8); }
 .rm.on { border-color: rgba(var(--ac),.75); }
 .rm > div { padding: 0 14px; min-width: 0; }
@@ -101,10 +105,10 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 .tok { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--pc); box-shadow: inset 0 -2px 4px rgba(0,0,0,.35); }
 .tok img { width: 19px; height: 19px; }
 .crown { width: 16px; height: 12px; }
-.join { position: absolute; left: 0; right: 0; bottom: 0; height: 72px; display: flex; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
+.join { position: absolute; left: 0; right: 0; bottom: 0; height: 72px; display: flex; align-items: center; justify-content: center; gap: 14px; cursor: var(--curh);
   font: 900 34px 'Big Shoulders Display'; letter-spacing: 6px; color: #0a0d0b; background: rgb(var(--ac)); box-shadow: 0 0 40px rgba(216,173,78,.25); transition: letter-spacing .2s, box-shadow .2s; }
 .join:hover { letter-spacing: 8px; box-shadow: 0 0 60px rgba(216,173,78,.45); }
-.join.no { background: rgba(230,220,190,.12); color: rgba(238,241,244,.45); box-shadow: none; cursor: default; letter-spacing: 4px; font-size: 24px; }
+.join.no { background: rgba(230,220,190,.12); color: rgba(238,241,244,.45); box-shadow: none; cursor: var(--cur); letter-spacing: 4px; font-size: 24px; }
 
 /* o IP direto */
 .ip { position: absolute; left: 560px; top: 88px; width: 840px; display: none; }
@@ -113,9 +117,9 @@ h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spaci
 .ip .row { margin-top: 8px; display: flex; gap: 8px; }
 .ip input { height: 64px; background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.22); color: #fff; font: 600 30px 'IBM Plex Mono'; padding: 0 18px; outline: 0; }
 .ip input:focus { border-color: rgba(var(--ac),.8); }
-.ip .go { width: 200px; height: 66px; display: grid; place-items: center; cursor: pointer; font: 900 30px 'Big Shoulders Display'; letter-spacing: 5px; color: #0a0d0b; background: rgb(var(--ac)); }
+.ip .go { width: 200px; height: 66px; display: grid; place-items: center; cursor: var(--curh); font: 900 30px 'Big Shoulders Display'; letter-spacing: 5px; color: #0a0d0b; background: rgb(var(--ac)); }
 .ip .rec { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
-.ip .rec div { display: flex; align-items: center; gap: 16px; height: 50px; padding: 0 16px; background: var(--card); border: 1px solid var(--line); cursor: pointer; font: 600 18px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
+.ip .rec div { display: flex; align-items: center; gap: 16px; height: 50px; padding: 0 16px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); font: 600 18px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
 .ip .rec div:hover { border-color: rgba(230,220,190,.28); }
 .ip .rec div span { margin-left: auto; font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); }
 </style>
@@ -269,7 +273,7 @@ const music = $('#music'); let track = 0; music.src = `snd/Main_Menu_1.mp3`; mus
 music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
 const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
 if (actx) fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
-function clickable(el) { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (/^(BUTTON|A|SELECT|INPUT|LABEL)$/.test(e.tagName) || getComputedStyle(e).cursor === 'pointer') return true; } return false; }
+function clickable(el) { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (/^(BUTTON|A|SELECT|INPUT|LABEL)$/.test(e.tagName) || /(^|,\s*)pointer$/.test(getComputedStyle(e).cursor)) return true; } return false; }
 addEventListener('pointerdown', e => { if (!actx) return; actx.resume(); if (!musicOn && !Q.get('nomusic')) { musicOn = true; music.play().catch(() => { }); }
   if (clickable(e.target) && clickBuf) { const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; g.gain.value = .6; s.connect(g).connect(actx.destination); s.start(); } }, true);
 // a trilha atravessa as telas: ao sair, cada tela guarda a faixa, o ponto e o volume; a próxima continua dali e vai suave pro seu volume
