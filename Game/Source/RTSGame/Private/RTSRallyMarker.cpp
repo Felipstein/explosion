@@ -407,9 +407,10 @@ namespace
 		C->SetCustomPrimitiveDataFloat(5, ClothLengthCm);
 		C->SetCustomPrimitiveDataFloat(6, ClothHeightCm);
 		C->SetCustomPrimitiveDataFloat(11, 0.0f);   // sem emblema: o pano liso na cor do jogador
-		// (a 1ª prova: o pano no sol saía (130, 205, 233), lavado, contra o 59B2FF do mestre: o azul no ombro do tonemapper) o tecido
-		// tingido mais fundo, a mesma cor com menos luz e mais saturação
-		const auto Dye = [](float V) { return 0.62f * FMath::Pow(V, 1.3f); };
+		// (a 1ª prova: o pano no sol saía (130, 205, 233), lavado, contra o 59B2FF do mestre; com 0,62 × cor^1,3 saiu (103, 133, 186),
+		// apagado: o vermelho vem da luz quente e o azul não passa de ~0,8 na tela) o tecido tingido mais fundo só no expoente: o
+		// canal forte fica, os fracos descem (a saturação)
+		const auto Dye = [](float V) { return FMath::Pow(V, 1.3f); };
 		C->SetCustomPrimitiveDataVector4(0, FVector4(Dye(Team.R), Dye(Team.G), Dye(Team.B), 1.0f));
 		F.Actor = A;
 		F.Cloth = C;
@@ -426,8 +427,9 @@ namespace
 		}
 		const float Yaw = FMath::DegreesToRadians(Match->GetWindYawDeg());
 		const float Speed = Match->GetWindSpeedMs();
-		// (a 1ª prova: no vento fraco o pano caía e a bandeira não lia) o marcador sempre tremula: no mínimo 0,6 esticado
-		const float Lift = FMath::Clamp(Speed / 7.0f, 0.6f, 1.0f);
+		// (a 1ª prova: no vento fraco o pano caía e a bandeira não lia; com 0,6 ainda caía ~30°) o marcador sempre tremula quase
+		// na horizontal, como no mestre: no mínimo 0,85 esticado
+		const float Lift = FMath::Clamp(Speed / 7.0f, 0.85f, 1.0f);
 		const float Rate = 0.6f + 0.32f * Speed;
 		if (FMath::Abs(FMath::FindDeltaAngleRadians(F.SentYaw, Yaw)) < FMath::DegreesToRadians(1.5f) && FMath::Abs(F.SentLift - Lift) < 0.02f
 			&& FMath::Abs(F.SentRate - Rate) < 0.04f)
