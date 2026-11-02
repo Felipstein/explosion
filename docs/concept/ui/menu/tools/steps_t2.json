@@ -1,0 +1,7 @@
+[
+ {"go": "skirmish.html?fresh=1"}, {"wait": 2500},
+ {"js": "(async () => { await chooseMap(CAT[2]); st.slots[0] = mk('you', 'usa', 5, 1, 2); st.slots[1] = mk('ai', 'russia', 9, 1, -1, 2); st.slots[2] = mk('ai', 'gla', 14, 2, 0, 1); st.slots[3] = mk('open', 'random', -1, 0, -1); render(); return JSON.stringify(gameSetup()); })()"},
+ {"wait": 800}, {"shot": "6_setup"},
+ {"js": "($('#start').click(), 'START')"},
+ {"end": true}
+]

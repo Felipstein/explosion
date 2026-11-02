@@ -1,0 +1,11 @@
+[
+ {"wait": 4000},
+ {"label": "menu", "log": "JSON.stringify({ue: !!(window.ue && window.ue.shell), dev: document.getElementById('dev').classList.contains('on'), scn: document.getElementById('scn').textContent, dbg: getComputedStyle(document.getElementById('dbg')).display, url: location.href, fonts: document.fonts.check('40px \"Big Shoulders Display\"')})"},
+ {"shot": "1_menu"},
+ {"go": "skirmish.html?fresh=1"}, {"wait": 3000}, {"label": "skirmish", "log": "JSON.stringify({maps: CAT.map(c => c.name), slots: st.slots.filter(live).length})"}, {"shot": "2_skirmish"},
+ {"go": "multiplayer.html"}, {"wait": 2500}, {"label": "lan", "log": "JSON.stringify({src, lan: ROOMS.lan.length})"}, {"shot": "3_multiplayer"},
+ {"go": "screens.html?s=opt&from=menu"}, {"wait": 2000}, {"label": "opcoes", "log": "JSON.stringify({pre, custom})"}, {"shot": "4_options"},
+ {"go": "script.html"}, {"wait": 3000}, {"label": "script", "log": "JSON.stringify({n: ALL.length, armed, sel: sel && sel.name})"}, {"shot": "5_script"},
+ {"js": "(run(), 'RUN')"},
+ {"end": true}
+]

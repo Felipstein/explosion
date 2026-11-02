@@ -17,11 +17,13 @@ html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body
    e a primeira abertura. Uma barra de protótipo em cima troca a tela (fora do desenho). */
 :root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; --line: rgba(230,220,190,.10); --card: rgba(16,21,19,.62); --ok: 120,200,120; --bad: 240,110,90; }
 html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; user-select: none; }
+/*fora-do-jogo*/
 #proto { position: fixed; left: 10px; bottom: 10px; z-index: 50; display: flex; gap: 6px; align-items: center; font: 600 13px 'Barlow Semi Condensed'; background: rgba(10,12,12,.86); padding: 6px 8px; border: 1px solid #2a2f2c; border-radius: 4px; }
 #proto button { font: 600 13px 'Barlow Semi Condensed'; color: #e8e6df; background: #191d1b; border: 1px solid #343a36; border-radius: 3px; padding: 4px 9px; cursor: var(--curh); }
 #proto button.on { background: #3a3220; border-color: rgb(var(--ac)); }
 #proto span { color: #8b938e; margin: 0 4px; }
 body.clean #proto { display: none; }
+/*/fora-do-jogo*/
 #wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 #stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center;
   background-color: rgb(10,13,11);
@@ -41,8 +43,10 @@ body.clean #proto { display: none; }
 
 .lab { font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); }
 .big { font: 900 88px/0.92 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+/*fora-do-jogo*/
 .tok { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--pc); box-shadow: inset 0 -3px 6px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.4); }
 .tok img { width: 25px; height: 25px; }
+/*/fora-do-jogo*/
 .btn { box-sizing: border-box; height: 64px; display: flex; align-items: center; justify-content: center; gap: 12px; white-space: nowrap; padding: 0 26px; cursor: var(--curh); font: 900 28px 'Big Shoulders Display'; letter-spacing: 5px; color: rgba(238,241,244,.9); border: 1px solid rgba(230,220,190,.22); background: rgba(16,21,19,.6); transition: all .15s; }
 .btn:hover { color: #fff; border-color: rgba(230,220,190,.45); letter-spacing: 7px; }
 .btn.gold { color: #0a0d0b; background: rgb(var(--ac)); border-color: rgb(var(--ac)); box-shadow: 0 0 40px rgba(216,173,78,.25); }
@@ -50,6 +54,7 @@ body.clean #proto { display: none; }
 .btn.red { color: rgb(var(--bad)); border-color: rgba(var(--bad),.55); }
 .btn.red:hover { background: rgba(240,110,90,.1); }
 .btn kbd { font: 600 12px 'IBM Plex Mono'; letter-spacing: 1px; padding: 3px 6px; border: 1px solid currentColor; opacity: .6; }
+/*fora-do-jogo*/
 .cells { display: flex; gap: 3px; } .cells i { width: 12px; height: 22px; background: rgba(230,220,190,.1); transform: skewX(-12deg); } .cells i.f { background: var(--pc); box-shadow: 0 0 8px var(--pc); }
 .gamebg { position: absolute; inset: 0; background: url(ref/game_bg.jpg) center/cover; }
 .dim { position: absolute; inset: 0; background: rgba(6,8,7,.72); backdrop-filter: blur(3px) saturate(.6); }
@@ -108,6 +113,7 @@ body.clean #proto { display: none; }
 #res .actions { position: absolute; left: 110px; right: 110px; bottom: 60px; display: flex; gap: 12px; }
 #res .actions .btn { flex: 1; }
 
+/*/fora-do-jogo*/
 /* as opções: os presets no topo (preenchem tudo; mexer vira CUSTOM), os grupos de um AAA, e à direita o que cada item faz,
    quanto custa e a memória de vídeo com os quadros estimados */
 #opt .left { position: absolute; left: 110px; top: 88px; }
@@ -167,6 +173,7 @@ body.clean #proto { display: none; }
 #opt .foot { position: absolute; right: 70px; bottom: 50px; display: flex; gap: 12px; }
 #opt .foot .btn { width: 240px; }
 
+/*fora-do-jogo*/
 /* os avisos de rede */
 #net .panel { position: absolute; left: 50%; top: 50%; width: 760px; transform: translate(-50%, -50%); padding: 36px 44px 40px; background: rgba(12,16,15,.94); border: 1px solid rgba(230,220,190,.16); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
 #net .panel.badp { border-color: rgba(var(--bad),.45); }
@@ -201,15 +208,19 @@ body.clean #proto { display: none; }
 #first .result .pick span { display: block; margin-top: 6px; font: 600 15px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
 #first .result .btn { width: 340px; margin: 26px auto 0; }
 #first .skip { position: absolute; right: 110px; bottom: 60px; font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); cursor: var(--curh); }
-#first .skip:hover { color: #fff; }
+#first .skip:hover { color: #fff; }/*/fora-do-jogo*/
+
 </style>
 </head>
 <body>
+<!--fora-do-jogo-->
 <div id="proto"><span>Tela</span>
   <button data-s="load">Carregando</button><button data-s="esc">Esc</button><button data-s="res" data-r="win">Vitória</button><button data-s="res" data-r="def">Derrota</button><button data-s="opt">Opções</button><button data-s="net">Aviso de rede</button><button data-s="first">Primeira abertura</button>
 </div>
+<!--/fora-do-jogo-->
 <div id="wrap"><div id="stage">
 
+<!--fora-do-jogo-->
   <!-- o carregando -->
   <div class="scr" id="load">
     <div class="left">
@@ -251,6 +262,7 @@ body.clean #proto { display: none; }
     <div class="actions"><div class="btn" id="rmap">VIEW MAP</div><div class="btn">BACK TO LOBBY</div><div class="btn gold">REMATCH</div><div class="btn" id="rmenu">MAIN MENU</div></div>
   </div>
 
+<!--/fora-do-jogo-->
   <!-- as opções -->
   <div class="scr" id="opt">
     <div class="backbtn" id="oback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg><span>BACK</span><kbd>ESC</kbd></div>
@@ -269,6 +281,7 @@ body.clean #proto { display: none; }
     <div class="foot"><div class="btn" id="oreset">RESET</div><div class="btn gold" id="oapply">APPLY</div></div>
   </div>
 
+<!--fora-do-jogo-->
   <!-- os avisos de rede -->
   <div class="scr" id="net">
     <div class="gamebg"></div><div class="dim"></div>
@@ -290,16 +303,22 @@ body.clean #proto { display: none; }
     <div class="skip" id="fskip">SKIP THE TEST ▸</div>
   </div>
 
+<!--/fora-do-jogo-->
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
 </div></div>
 <audio id="music" preload="auto"></audio>
+<!--fora-do-jogo-->
 <script src="shared_maps.js"></script>
+<!--/fora-do-jogo-->
 <script>
 const W = 1920, H = 1080, Q = new URLSearchParams(location.search), $ = s => document.querySelector(s);
 const stage = $('#stage');
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
 addEventListener('resize', fit); fit();
+/*fora-do-jogo*/
 if (Q.get('clean')) document.body.classList.add('clean');
+/*/fora-do-jogo*/
+/*fora-do-jogo*/
 const COLORS = { blue: '#3d7fe0', red: '#d83a2e', gold: '#e3b23c', purple: '#9a5ad8' };
 const tok = (f, c, z = 34) => `<div class="tok" style="--pc:${c};width:${z}px;height:${z}px"><img src="../../factions/small/glyph_${f}.png" style="width:${z * .74}px;height:${z * .74}px"></div>`;
 const cells = (n, k, c) => `<div class="cells" style="--pc:${c}">${Array.from({ length: n }, (_, i) => `<i class="${i < k ? 'f' : ''}"></i>`).join('')}</div>`;
@@ -308,12 +327,16 @@ const PLAYERS = [
   { n: 'PAI', f: 'russia', c: COLORS.purple, t: 1, base: 2, human: true },
   { n: 'AI · HARD', f: 'china', c: COLORS.red, t: 2, base: 1 },
   { n: 'AI · MEDIUM', f: 'gla', c: COLORS.gold, t: 2, base: 3 }];
+/*/fora-do-jogo*/
 let cur = Q.get('s') || 'load';
-function show(s) { cur = s; document.querySelectorAll('.scr').forEach(e => e.classList.toggle('on', e.id === s)); document.querySelectorAll('#proto [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === s && (!b.dataset.r || b.dataset.r === resVar))); if (INIT[s]) INIT[s](); }
+function show(s) { cur = s; document.querySelectorAll('.scr').forEach(e => e.classList.toggle('on', e.id === s)); /*fora-do-jogo*/document.querySelectorAll('#proto [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === s && (!b.dataset.r || b.dataset.r === resVar)));/*/fora-do-jogo*/ if (INIT[s]) INIT[s](); }
+/*fora-do-jogo*/
 document.querySelectorAll('#proto [data-s]').forEach(b => b.onclick = () => { if (b.dataset.r) resVar = b.dataset.r; show(b.dataset.s); });
+/*/fora-do-jogo*/
 let resVar = Q.get('r') || 'win', optFrom = Q.get('from') || 'menu';
 const INIT = {};
 
+/*fora-do-jogo*/
 // ---------- o carregando: a sua facção grande, o mapa com as bases, uma barra de células por jogador na cor dele (a IA sem barra, como no ZH) ----------
 let lprog = [0, 0], ltimer = null, lT = 0;
 INIT.load = async () => {
@@ -383,6 +406,7 @@ function drawGraph() {
       const X = pad + (w - pad - 30) * t, Y = h - pad - v * (h - pad * 2); k ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke(); });
 }
 
+/*/fora-do-jogo*/
 // ---------- as opções: os presets preenchem tudo (CLASSIC, LOW, MEDIUM, HIGH, ULTRA, AUTO); mexer em qualquer item vira CUSTOM;
 // o painel da direita diz o que o item faz, quanto custa e estima a memória de vídeo e os quadros (a GTX 1660 de 6 GB) ----------
 const PRESETS = [['CLASSIC', 'THE 2003 LOOK · CRISP, VIVID'], ['LOW', 'PCS FROM 2014'], ['MEDIUM', 'BALANCED'], ['HIGH', 'FULL VOLUME SMOKE'], ['ULTRA', 'EVERYTHING ON'], ['AUTO', 'MEASURED ON THIS PC']];
@@ -506,6 +530,7 @@ function renderKeys() {
 }
 $('#kq').oninput = renderKeys;
 
+/*fora-do-jogo*/
 // ---------- os avisos de rede: um desenho só pros quatro casos ----------
 let nv = 'wait', ntimer = null, nleft = 42;
 INIT.net = () => { document.querySelectorAll('#nvar span').forEach(s => s.classList.toggle('on', s.dataset.v === nv)); clearInterval(ntimer); nleft = 42; renderNet(); if (nv === 'wait') ntimer = setInterval(() => { nleft = Math.max(0, nleft - 1); if (cur === 'net') renderNet(); }, 1000); };
@@ -535,6 +560,7 @@ INIT.first = () => {
 };
 $('#fskip').onclick = () => { clearInterval(ftimer); $('#first').classList.remove('busy'); $('#fh').textContent = 'READY'; $('#fs').textContent = 'MEDIUM UNTIL YOU MEASURE IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); $('#fres b').textContent = 'MEDIUM'; $('#fres .pick span').textContent = 'THE SAFE START · NOT MEASURED'; };
 
+/*/fora-do-jogo*/
 // ---------- o som (o aprovado) ----------
 const MUSIC_VOL = .55, MUSIC_OK = () => !['esc', 'net', 'res'].includes(cur);
 const music = $('#music'); let track = 0; music.src = `snd/Main_Menu_1.mp3`; music.volume = MUSIC_VOL;
@@ -553,7 +579,7 @@ function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume
   track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
   if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
 addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
-(async () => { await document.fonts.ready; if (Q.get('esc')) escMode = Q.get('esc'); if (Q.get('nv')) nv = Q.get('nv'); show(cur); setTimeout(() => window.__ready = true, 1600); })();
+(async () => { await document.fonts.ready; /*fora-do-jogo*/if (Q.get('esc')) escMode = Q.get('esc'); if (Q.get('nv')) nv = Q.get('nv'); /*/fora-do-jogo*/show(cur); setTimeout(() => window.__ready = true, 1600); })();
 </script>
 </body>
 </html>

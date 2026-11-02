@@ -1,4 +1,5 @@
 #include "RTSHUD.h"
+#include "RTSShellGame.h"   // (01/11) as telas novas (plugin RTSShell)
 #include "Misc/App.h"
 #include "RTSHudPainter.h"
 #include "RTSHudKit.h"
@@ -270,7 +271,10 @@ void ARTSHUD::DrawHUD()
 	}
 	if (PC->IsMenu())
 	{
-		DrawMenu(PC);
+		if (!RTSShellGame::IsCovering())   // (01/11) com as telas novas por cima, o menu antigo não se desenha
+		{
+			DrawMenu(PC);
+		}
 		return;
 	}
 	URTSMatchSubsystem* Match = GetWorld()->GetSubsystem<URTSMatchSubsystem>();

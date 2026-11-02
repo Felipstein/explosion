@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Main Menu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
+:root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body.dragging, body.dragging * { cursor: var(--curd) !important; }
+:root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; }
+html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; }
+#wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center;
+  background-color: rgb(10,13,11);
+  background-image: radial-gradient(at 62% 0%, rgba(216,173,78,.07), rgba(0,0,0,0) 60%),
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px; }
+canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
+.vign { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 62% 50%, transparent 40%, rgba(0,0,0,.66)); }
+.scan { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.018) 0 1px, transparent 1px 3px); }
+.side { position: absolute; left: 110px; top: 150px; width: 540px; }
+.kicker { font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 8px; color: rgb(var(--ac)); }
+.big { margin-top: 12px; font: 900 88px/0.92 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.sub { margin-top: 14px; font: 500 18px 'Barlow Semi Condensed'; color: var(--mute); letter-spacing: 1px; max-width: 420px; line-height: 1.35; }
+.menu { list-style: none; margin: 48px 0 0; padding: 0; counter-reset: op; }
+.menu li { position: relative; padding: 13px 0 13px 64px; border-top: 1px solid rgba(230,220,190,.10); cursor: var(--curh); }
+.menu li:last-child { border-bottom: 1px solid rgba(230,220,190,.10); }
+.menu li::after { counter-increment: op; content: '0' counter(op); position: absolute; left: 0; top: 20px; font: 600 16px 'Barlow Semi Condensed'; color: rgba(230,220,190,.42); letter-spacing: 2px; transition: color .2s; }
+.menu li::before { content: ''; position: absolute; left: 34px; top: 33px; width: 0; height: 3px; background: rgb(var(--ac)); box-shadow: 0 0 10px rgba(var(--ac),.85); transition: width .25s; }
+.menu li .t { font: 800 40px/1 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.62); display: inline-block; transition: color .18s, transform .25s cubic-bezier(.2,.9,.3,1.2), letter-spacing .25s; }
+.menu li .d { display: block; height: 0; overflow: hidden; font: 500 17px 'Barlow Semi Condensed'; color: var(--mute); letter-spacing: 1px; transition: height .2s, margin .2s; }
+.menu li:hover .t, .menu li.hv .t { color: #fff; transform: translateX(8px); letter-spacing: 5px; }
+.menu li:hover .d, .menu li.hv .d { height: 24px; margin-top: 6px; padding-left: 8px; }
+.menu li:hover::before, .menu li.hv::before { width: 18px; }
+.menu li:hover::after, .menu li.hv::after { color: rgb(var(--ac)); }
+svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-events: none; }
+.ver { position: absolute; left: 110px; bottom: 44px; font: 500 15px 'Barlow Semi Condensed'; color: rgba(230,220,190,.38); letter-spacing: 2px; }
+.corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; }
+.c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
+.c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
+/* o LAB e o SCRIPT (só no desenvolvimento): o bloco de ferramenta, em ciano de planta e borda tracejada, fora da lista do jogo */
+.dev { margin-top: 30px; display: none; } .dev.on { display: block; }
+.devh { display: flex; align-items: center; gap: 12px; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 6px; color: rgba(120,190,220,.85); }
+.devh::after { content: ''; flex: 1; height: 0; border-top: 1px dashed rgba(120,190,220,.35); }
+.devh span { font: 700 10px 'Barlow Semi Condensed'; letter-spacing: 2.5px; padding: 2px 7px; border: 1px dashed rgba(120,190,220,.55); color: rgba(120,190,220,.75); }
+.devrow { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dv { position: relative; height: 84px; padding: 14px 16px 0 66px; background: rgba(10,22,26,.55); border: 1px dashed rgba(120,190,220,.32); cursor: var(--curh); transition: border-color .15s, background .15s; overflow: hidden; }
+.dv::before { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(120,190,220,.05) 1px, transparent 1px) 0 0 / 100% 12px, linear-gradient(90deg, rgba(120,190,220,.05) 1px, transparent 1px) 0 0 / 12px 100%; pointer-events: none; }
+.dv:hover { border-color: rgba(120,190,220,.85); border-style: solid; background: rgba(14,34,40,.7); }
+.dv svg { position: absolute; left: 16px; top: 18px; width: 36px; height: 36px; color: rgba(120,190,220,.8); transition: transform .3s cubic-bezier(.2,.9,.3,1.2); }
+.dv:hover svg { transform: scale(1.12) rotate(-6deg); color: rgb(150,215,240); }
+.dv b { display: block; font: 800 30px/1 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.8); transition: color .15s, letter-spacing .25s; }
+.dv:hover b { color: #fff; letter-spacing: 5px; }
+.dv span { display: block; margin-top: 6px; font: 500 14px 'Barlow Semi Condensed'; letter-spacing: 1px; color: rgba(152,161,154,.95); white-space: nowrap; }
+.dv em { position: absolute; right: 10px; top: 10px; font: 600 11px 'IBM Plex Mono'; font-style: normal; color: rgba(216,173,78,.95); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv em.n { color: rgba(120,190,220,.7); }
+.dtoast { position: absolute; left: 110px; bottom: 120px; padding: 10px 16px; font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: #fff; background: rgba(10,13,12,.95); border: 1px solid rgba(120,190,220,.6); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 8; }
+.dtoast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage">
+  <canvas id="cv" width="1920" height="1080"></canvas>
+  <div class="scan"></div>
+  <div class="vign"></div>
+  <svg class="link" id="link"></svg>
+  <div class="side">
+    <div class="kicker">OPERATIONS · THEATER 04</div>
+    <div class="big">FOUR ARMIES.<br>ONE MAP.</div>
+    <div class="sub">The ground changes as you fight: craters, ruins, burned palms. Read it, then take it.</div>
+    <ul class="menu" id="menu">
+      <li data-k="skirmish"><span class="t">SKIRMISH</span><span class="d">You against the AI · up to 8 players</span></li>
+      <li data-k="multi"><span class="t">MULTIPLAYER</span><span class="d">Steam · LAN · Direct IP</span></li>
+      <li data-k="options"><span class="t">OPTIONS</span><span class="d">Quality · Sound · Controls</span></li>
+      <li data-k="quit"><span class="t">QUIT</span><span class="d">Back to the desktop</span></li>
+    </ul>
+    <div class="dev" id="dev">
+      <div class="devh">DEVELOPMENT<span>NOT IN THE RELEASE</span></div>
+      <div class="devrow">
+        <div class="dv" data-k="lab"><svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="28" height="28"/><path d="M4 13h28M4 23h28M13 4v28M23 4v28" opacity=".45"/><circle cx="18" cy="18" r="5.5"/><path d="M18 9v4M18 23v4M9 18h4M23 18h4"/></svg><b>LAB</b><span>Sandbox world · test live</span></div>
+        <div class="dv" data-k="script"><svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 5h16l6 6v20H7z"/><path d="M23 5v6h6"/><path d="M15 15l8 5-8 5z" fill="currentColor" stroke="none"/></svg><b>SCRIPT</b><span>Ready-made test match</span><em class="n" id="scn">273 SCENES</em></div>
+      </div>
+    </div>
+  </div>
+  <div class="ver">v0.5.2</div>
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+</div></div>
+<audio id="music" preload="auto"></audio>
+<script>
+// =====================================================================================
+// O fundo do menu: o painel do radar de vigilância do teatro. Tudo vem do radar de verdade:
+//  - o tubo PPI de fósforo de longa persistência (tipo P7): o eco acende claro na passagem do
+//    feixe e fica um brilho âmbar que some devagar (aqui a persistência é calculada pelo ângulo
+//    desde a passagem, sem acumular quadro);
+//  - o eco do chão sai do relevo do mapa: a encosta virada pro radar devolve mais, e atrás do
+//    morro fica a sombra do radar, onde ele não enxerga;
+//  - o A-scope (o osciloscópio do eco na direção do feixe), a cascata de sinais (que ouve a
+//    trilha do menu), os rótulos das trilhas, o bloqueio, o míssil e o eco do impacto.
+// =====================================================================================
+const W = 1920, H = 1080, Q = new URLSearchParams(location.search);
+const stage = document.getElementById('stage');
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const MONO = "'IBM Plex Mono', monospace", COND = "'Barlow Semi Condensed', sans-serif";
+const AMB = [255, 172, 62], FLASH = [255, 238, 205];
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+// a geometria do painel e do tubo
+const PX0 = 818, PY0 = 64, PX1 = 1866, PY1 = 1016;               // a moldura do painel
+const SCX = 1312, SCY = 540, R = 424, RANGE = 40;                 // o tubo: 40 km no raio
+const KM = R / RANGE;
+let PERIOD = 6.5;                                                 // uma volta do feixe (s)
+const TAU = 3.6;                                                  // persistência do fósforo (s)
+const polar = (brg, r) => [SCX + Math.sin(brg) * r, SCY - Math.cos(brg) * r];   // rumo a partir do norte, sentido horário
+const brgOf = (x, y) => (Math.atan2(x - SCX, -(y - SCY)) + Math.PI * 2) % (Math.PI * 2);
+const D2R = Math.PI / 180;
+
+// ---------- o relevo do teatro (em px a partir do centro do tubo) ----------
+function hash(x, y) { let h = x * 374761393 + y * 668265263; h = (h ^ (h >> 13)) * 1274126177; return ((h ^ (h >> 16)) & 0xffff) / 0xffff; }
+function vn(x, y) { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, s = t => t * t * (3 - 2 * t);
+  const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1); return a + (b - a) * s(xf) + (c - a) * s(yf) + (a - b - c + d) * s(xf) * s(yf); }
+const fbm = (x, y) => vn(x, y) * .5 + vn(x * 2.03, y * 2.03) * .25 + vn(x * 4.1, y * 4.1) * .125 + vn(x * 8.3, y * 8.3) * .0625;
+const riverY = x => 60 + 70 * Math.sin(x / 150 + .6) + 20 * Math.sin(x / 47);                 // o rio corta o mapa de oeste a leste
+const TOWN = polar(35 * D2R, .45 * R);
+function height(x, y) {               // metros
+  const dx = x - SCX, dy = y - SCY;
+  let h = 40 + fbm(dx / 160 + 11, dy / 160 + 3) * 160 + Math.max(0, fbm(dx / 90 - 4, dy / 90 + 7) - .55) * 900;   // dunas e as cristas
+  const dr = Math.abs(dy - riverY(dx)); h -= 70 * Math.exp(-dr * dr / 900);
+  const dt = Math.hypot(x - TOWN[0], y - TOWN[1]); h = h * (1 - Math.exp(-dt * dt / 2500) * .7);
+  h += 260 * Math.exp(-(dx * dx + dy * dy) / 2600);          // o radar fica no alto de um morro
+  return h;
+}
+
+// ---------- o eco do chão, pré-calculado: polar (rumo × distância), com a sombra do radar ----------
+const NB = 1440, NR = 300, DR = R / NR, ret = new Float32Array(NB * NR);
+(() => {
+  const h0 = height(SCX, SCY) + 40;                // a antena num mastro, no topo do morro
+  for (let b = 0; b < NB; b++) {
+    const brg = b / NB * Math.PI * 2; let maxAng = -1e9, prev = height(SCX, SCY);
+    for (let i = 1; i < NR; i++) {
+      const r = i * DR, [x, y] = polar(brg, r), h = height(x, y), ang = (h - h0) / (r / KM * 1000);
+      const vis = ang > maxAng; if (vis) maxAng = ang;
+      const slope = (h - prev) / (DR / KM * 1000); prev = h;
+      const sp = hash(b, i * 7);                                                                         // o grão do eco (muda de célula pra célula)
+      let s = vis ? Math.min(1, Math.min(1, Math.max(0, (slope - .006) * 34)) * (.2 + .8 * sp * sp * sp) + (sp > .93 ? .12 : 0) + (hash(b * 3, i) > .992 ? .7 : 0)) : 0;   // encosta pro radar + o grão + refletores soltos
+      if (Math.hypot(x - TOWN[0], y - TOWN[1]) < 18 && vis) s = Math.max(s, .65 + .35 * hash(b, i));   // a vila: eco forte
+      if (r < 8) s = Math.max(s, .5 - r / 16);                                                            // o eco perto do mastro
+      ret[b * NR + i] = s;
+    }
+  }
+})();
+// desenha o eco no canvas estático: cada célula vira um arquinho (a largura do feixe abre com a distância)
+function bakeReturns(col) {
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.translate(SCX, SCY);
+  for (let b = 0; b < NB; b++) {
+    g.save(); g.rotate(b / NB * Math.PI * 2);
+    for (let i = 2; i < NR; i++) { const s = ret[b * NR + i]; if (s < .06) continue; const r = i * DR, w = Math.max(1.2, r * 1.1 * D2R);
+      g.fillStyle = rgba(col, Math.min(1, s)); g.fillRect(-w / 2, -r - DR, w, DR * 1.1); }
+    g.restore();
+  }
+  return c;
+}
+const retAmber = bakeReturns(AMB), retFlash = bakeReturns(FLASH);
+const gRet = retAmber.getContext('2d');
+
+// ---------- a camada de vetor por cima (o mapa sintético): rio, estradas, grade, anéis, a rosa ----------
+const over = document.createElement('canvas'); over.width = W; over.height = H;
+(() => {
+  const g = over.getContext('2d');
+  g.save(); g.beginPath(); g.arc(SCX, SCY, R, 0, 7); g.clip();
+  // grade de 5 km
+  g.strokeStyle = 'rgba(216,173,78,.05)'; g.lineWidth = 1;
+  for (let k = -8; k <= 8; k++) { const o = k * 5 * KM; g.beginPath(); g.moveTo(SCX + o, SCY - R); g.lineTo(SCX + o, SCY + R); g.moveTo(SCX - R, SCY + o); g.lineTo(SCX + R, SCY + o); g.stroke(); }
+  // o rio, as estradas
+  g.strokeStyle = 'rgba(120,190,200,.16)'; g.lineWidth = 2; g.beginPath(); for (let x = -R; x <= R; x += 4) { const y = riverY(x); x === -R ? g.moveTo(SCX + x, SCY + y) : g.lineTo(SCX + x, SCY + y); } g.stroke();
+  g.strokeStyle = 'rgba(216,173,78,.13)'; g.lineWidth = 1.2; g.setLineDash([7, 5]);
+  const road = pts => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.stroke(); };
+  road([polar(225 * D2R, R), polar(215 * D2R, .6 * R), polar(120 * D2R, .1 * R), TOWN, polar(48 * D2R, R)]);
+  road([polar(300 * D2R, R), polar(320 * D2R, .55 * R), TOWN]); road([TOWN, polar(110 * D2R, .55 * R), polar(140 * D2R, R)]);
+  g.setLineDash([]); g.restore();
+  // anéis de distância de 10 km e a linha do norte
+  g.strokeStyle = 'rgba(216,173,78,.16)'; g.lineWidth = 1;
+  for (let k = 1; k <= 4; k++) { g.beginPath(); g.arc(SCX, SCY, k * 10 * KM, 0, 7); g.stroke(); }
+  g.strokeStyle = 'rgba(216,173,78,.07)'; for (let a = 0; a < 360; a += 30) { const [x, y] = polar(a * D2R, R); g.beginPath(); g.moveTo(SCX, SCY); g.lineTo(x, y); g.stroke(); }
+  g.font = `500 11px ${MONO}`; g.fillStyle = 'rgba(216,173,78,.35)';
+  for (let k = 1; k <= 4; k++) g.fillText(`${k * 10}`, SCX + 4, SCY - k * 10 * KM + 13);
+  // a rosa dos rumos: tracinho a cada 2°, maior a cada 10°, o número a cada 30°
+  for (let a = 0; a < 360; a += 2) { const big = a % 10 === 0, [x0, y0] = polar(a * D2R, R + 3), [x1, y1] = polar(a * D2R, R + (big ? 15 : 8));
+    g.strokeStyle = `rgba(216,173,78,${big ? .5 : .25})`; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+  g.font = `500 12px ${MONO}`; g.fillStyle = 'rgba(216,173,78,.55)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let a = 0; a < 360; a += 30) { const [x, y] = polar(a * D2R, R + 30); g.fillText(String(a).padStart(3, '0'), x, y); }
+  g.strokeStyle = 'rgba(216,173,78,.3)'; g.lineWidth = 1.2; g.beginPath(); g.arc(SCX, SCY, R, 0, 7); g.stroke();
+  g.strokeStyle = 'rgba(216,173,78,.12)'; g.beginPath(); g.arc(SCX, SCY, R + 44, 0, 7); g.stroke();
+  // a moldura do painel (como os cartões do assgets): fundo bem leve, borda fina, cantoneiras douradas
+  g.fillStyle = 'rgba(18,24,22,.35)'; g.fillRect(PX0, PY0, PX1 - PX0, PY1 - PY0);
+  g.strokeStyle = 'rgba(230,220,190,.08)'; g.lineWidth = 1; g.strokeRect(PX0 + .5, PY0 + .5, PX1 - PX0, PY1 - PY0);
+  g.strokeStyle = 'rgba(216,173,78,.6)'; g.lineWidth = 2; const cl = 16;
+  [[PX0, PY0, 1, 1], [PX1, PY0, -1, 1], [PX0, PY1, 1, -1], [PX1, PY1, -1, -1]].forEach(([x, y, sx, sy]) => { g.beginPath(); g.moveTo(x + sx * cl, y); g.lineTo(x, y); g.lineTo(x, y + sy * cl); g.stroke(); });
+  // as caixas dos instrumentos
+  const box = (x, y, w, h) => { g.strokeStyle = 'rgba(230,220,190,.10)'; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w, h); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x + 1, y + 1, w - 1, h - 1); };
+  box(842, 872, 238, 120); box(1630, 872, 212, 120); box(1630, 88, 212, 118);
+  g.font = `600 10px ${MONO}`; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillStyle = 'rgba(230,220,190,.32)';
+  g.fillText('A-SCOPE', 850, 886); g.fillText('ESM · 2–18 GHZ', 1638, 886); g.fillText('TRACKS', 1638, 102);
+})();
+
+// ---------- o que se mexe: as trilhas dos quatro exércitos, os caças, o helicóptero, o míssil, a chuva ----------
+const EMB = {}; for (const id of ['usa', 'china', 'gla', 'russia']) { const im = new Image(); im.src = `a/${id}_emblem.webp`; EMB[id] = im; }
+const ARMY = [
+  { id: 'usa', name: 'USA · 1-64 AR', col: [92, 160, 240], frame: 'rect', from: [225, .95], spd: 11 },
+  { id: 'russia', name: 'RUS · 2 GTD', col: [214, 222, 232], frame: 'square', from: [318, .95], spd: 10 },
+  { id: 'china', name: 'PLA · 112 MECH', col: [226, 86, 70], frame: 'diamond', from: [72, .96], spd: 9 },
+  { id: 'gla', name: 'GLA · CELL 7', col: [214, 182, 104], frame: 'clover', from: [142, .94], spd: 14 }];
+const LEG = 240;                                  // segundos pra cada exército chegar perto da vila
+function armyPos(a, t) {
+  const p0 = polar(a.from[0] * D2R, a.from[1] * R), k = ((t / LEG) + ARMY.indexOf(a) * .13) % 1, e = k * .82;   // param antes de chegar
+  const wob = Math.sin(t * .05 + a.spd) * 8;
+  const x = p0[0] + (TOWN[0] - p0[0]) * e, y = p0[1] + (TOWN[1] - p0[1]) * e, dx = TOWN[0] - p0[0], dy = TOWN[1] - p0[1], l = Math.hypot(dx, dy);
+  return [x - dy / l * wob, y + dx / l * wob, Math.atan2(dx, -dy)];
+}
+function jetPos(t) { const k = (t % 26) / 26, a = polar(262 * D2R, R * 1.05), b = polar(78 * D2R, R * 1.05); return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, Math.atan2(b[0] - a[0], -(b[1] - a[1]))]; }
+function heloPos(t) { const a = t / 20 * Math.PI * 2; return [TOWN[0] + Math.cos(a) * 30, TOWN[1] + Math.sin(a) * 30, a + Math.PI]; }
+const MIS = { every: 44, fly: 9, from: polar(58 * D2R, R * 1.02) };
+function missile(t) { const c = t % MIS.every; if (c > MIS.fly) return null; const k = c / MIS.fly; return [MIS.from[0] + (TOWN[0] - MIS.from[0]) * k, MIS.from[1] + (TOWN[1] - MIS.from[1]) * k, k]; }
+const RAIN = Array.from({ length: 420 }, (_, i) => { const a = Math.random() * 7, r = Math.pow(Math.random(), .7) * 80; return [Math.cos(a) * r * 1.3, Math.sin(a) * r, Math.random()]; });
+function rainCenter(t) { return polar((300 + t * .04) * D2R, .62 * R); }
+
+// ---------- o laço ----------
+let T = 0, beam = 0, dim = 1, dimT = 1, gain = 1, gainT = 1, knob = 0, knobT = 0, hovered = null, off = 0, offT = 0, impacts = 0;
+const hist = ARMY.map(() => []);
+let lastBeam = 0, analyser = null, fft = null;
+const wf = document.createElement('canvas'); wf.width = 210; wf.height = 98; const wfg = wf.getContext('2d');
+function since(brg) { return ((beam - brg + Math.PI * 4) % (Math.PI * 2)) / (Math.PI * 2) * PERIOD; }   // segundos desde que o feixe passou
+const glow = s => Math.exp(-s / TAU);
+function frame(dt) {
+  T += dt; dim += (dimT - dim) * (1 - Math.exp(-dt * 3)); gain += (gainT - gain) * (1 - Math.exp(-dt * 4)); knob += (knobT - knob) * (1 - Math.exp(-dt * 5)); off += (offT - off) * (1 - Math.exp(-dt * 6));
+  const spd = (Math.PI * 2 / PERIOD) * (hovered && hovered.dataset.k === 'quit' ? .25 : 1);
+  lastBeam = beam; beam = (beam + spd * dt) % (Math.PI * 2);
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(over, 0, 0);
+  const D = dim * (1 - off);
+  { const gg = ctx.createRadialGradient(SCX - 60, SCY - 80, 20, SCX, SCY, R); gg.addColorStop(0, rgba(AMB, .035 * D)); gg.addColorStop(1, rgba(AMB, 0)); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(SCX, SCY, R, 0, 7); ctx.fill(); }
+  // o eco do chão com a persistência: máscara cônica (o ângulo atrás do feixe vira o tempo desde a passagem)
+  drawPersist(retAmber, D * .34 * gain, t => glow(t));
+  ctx.globalCompositeOperation = 'lighter'; drawPersist(retFlash, D * .4 * gain, t => Math.exp(-t / .16)); ctx.globalCompositeOperation = 'source-over';
+  // o fio do feixe e o brilho logo atrás
+  ctx.save(); ctx.translate(SCX, SCY); ctx.rotate(beam);
+  const lg = ctx.createLinearGradient(0, 0, 0, -R); lg.addColorStop(0, rgba(FLASH, .5 * D)); lg.addColorStop(1, rgba(FLASH, .12 * D));
+  ctx.strokeStyle = lg; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -R); ctx.stroke(); ctx.restore();
+  // o brilho do fósforo que ainda não apagou (a "névoa" atrás do feixe)
+  { ctx.save(); ctx.beginPath(); ctx.arc(SCX, SCY, R, 0, 7); ctx.clip();
+    const cg = ctx.createConicGradient(beam - Math.PI / 2 - .5, SCX, SCY); cg.addColorStop(0, rgba(AMB, 0)); cg.addColorStop(.5 / (Math.PI * 2), rgba(AMB, .05 * D)); cg.addColorStop(.5 / (Math.PI * 2) + .001, rgba(AMB, 0)); cg.addColorStop(1, rgba(AMB, 0));
+    ctx.fillStyle = cg; ctx.fillRect(SCX - R, SCY - R, R * 2, R * 2); ctx.restore(); }
+  // a chuva (eco de tempo): pontinhos que andam devagar
+  { const [cx, cy] = rainCenter(T); for (const [x, y, s] of RAIN) { const px = cx + x, py = cy + y; if (Math.hypot(px - SCX, py - SCY) > R) continue;
+      const a = glow(since(brgOf(px, py))) * (.18 + .3 * s) * D * gain; if (a < .01) continue; ctx.fillStyle = rgba(AMB, a); ctx.fillRect(px, py, 1.6, 1.6); } }
+  // o bloqueio (de vez em quando): um raio de ruído vindo de um rumo
+  const jam = (T % 33) < 3.4; if (jam) { const jb = 142 * D2R + Math.sin(T * 3) * .02; for (let i = 0; i < 160; i++) { const r = Math.random() * R, [x, y] = polar(jb + (Math.random() - .5) * .03, r);
+      ctx.fillStyle = rgba(AMB, (.15 + Math.random() * .4) * D * glow(since(jb))); ctx.fillRect(x, y, 2, 2); } }
+  // as trilhas
+  ctx.font = `500 11px ${MONO}`; ctx.textBaseline = 'alphabetic';
+  ARMY.forEach((a, i) => {
+    const [x, y, hd] = armyPos(a, T), s = since(brgOf(x, y)), A = (.3 + .7 * glow(s)) * D;
+    if (s < dt * 1.5 || !hist[i].length) { hist[i].push([x, y]); if (hist[i].length > 9) hist[i].shift(); }
+    hist[i].forEach(([hx, hy], j) => { ctx.fillStyle = rgba(a.col, A * .35 * (j + 1) / hist[i].length); ctx.fillRect(hx - 1, hy - 1, 2, 2); });
+    symbol(a.frame, x, y, a.col, A); vector(x, y, hd, 18 + a.spd * 1.6, a.col, A);
+    ctx.fillStyle = rgba(a.col, A * .85); ctx.fillText(a.name, x + 14, y - 8);
+    ctx.fillStyle = rgba(AMB, A * .5); ctx.fillText(`${String(Math.round(hd / D2R + 360) % 360).padStart(3, '0')} ${a.spd}KT`, x + 14, y + 5);
+    if (hovered && hovered.dataset.k === 'multi') {          // IFF: a trilha responde e mostra o emblema
+      const im = EMB[a.id]; if (im.complete && im.naturalWidth) { ctx.globalAlpha = .9 * D; ctx.drawImage(im, x - 44, y - 14, 28, 28); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = rgba(a.col, .7 * D); ctx.lineWidth = 1; brackets(x, y, 12);
+    }
+  });
+  { const [x, y, hd] = jetPos(T), A = (.3 + .7 * glow(since(brgOf(x, y)))) * D; if (Math.hypot(x - SCX, y - SCY) < R) {
+      symbol('air', x, y, [92, 160, 240], A); symbol('air', x - 10, y + 7, [92, 160, 240], A * .8); vector(x, y, hd, 46, [92, 160, 240], A);
+      ctx.fillStyle = rgba([92, 160, 240], A * .8); ctx.fillText('F-22 ×2 · 480KT', x + 12, y - 9); } }
+  { const [x, y] = heloPos(T), A = (.3 + .7 * glow(since(brgOf(x, y)))) * D; symbol('helo', x, y, [92, 160, 240], A); }
+  // o objetivo
+  { const A = (.35 + .4 * glow(since(brgOf(...TOWN)))) * D; ctx.strokeStyle = rgba(FLASH, A); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(TOWN[0], TOWN[1] - 11); ctx.lineTo(TOWN[0] + 11, TOWN[1]); ctx.lineTo(TOWN[0], TOWN[1] + 11); ctx.lineTo(TOWN[0] - 11, TOWN[1]); ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = rgba(FLASH, A * .8); ctx.fillText('OBJ ALPHA', TOWN[0] + 16, TOWN[1] + 22); }
+  // o míssil e o eco do impacto (o chão muda: a cratera fica no eco)
+  const m = missile(T);
+  if (m) { const [x, y, k] = m, A = D; ctx.fillStyle = rgba([255, 90, 60], A); ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 7); ctx.fill();
+    vector(x, y, Math.atan2(TOWN[0] - MIS.from[0], -(TOWN[1] - MIS.from[1])), 34, [255, 90, 60], A);
+    if ((T * 3 | 0) % 2) { ctx.fillStyle = rgba([255, 110, 80], A); ctx.fillText('VAMPIRE', x + 10, y - 8); } }
+  const sinceImp = (T % MIS.every) - MIS.fly;
+  if (sinceImp > 0 && sinceImp < 4) { const k = sinceImp / 4; for (let i = 0; i < 3; i++) { const kk = Math.max(0, k - i * .12);
+      ctx.strokeStyle = rgba(FLASH, (1 - kk) * .5 * D); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(TOWN[0], TOWN[1], 6 + kk * 60, 0, 7); ctx.stroke(); }
+    const n = Math.floor(T / MIS.every); if (n > impacts) { impacts = n; crater(); } }
+  // os instrumentos
+  aScope(D); waterfall(D, dt); trackList(D); clock(D); dials(D);
+  // o hover
+  if (hovered) hoverDeco(hovered, D);
+  if (off > .01) crt();
+  if (hovered) drawLink(hovered);
+}
+function drawPersist(img, a, fn) {
+  if (a < .005) return;
+  const tmp = drawPersist.c || (drawPersist.c = Object.assign(document.createElement('canvas'), { width: W, height: H })), g = tmp.getContext('2d');
+  g.globalCompositeOperation = 'source-over'; g.clearRect(SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4); g.drawImage(img, SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4, SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4);
+  const cg = g.createConicGradient(beam - Math.PI / 2, SCX, SCY);
+  for (let i = 0; i <= 24; i++) { const f = i / 24, t = (1 - f) * PERIOD; cg.addColorStop(f, `rgba(0,0,0,${Math.min(1, fn(t))})`); }
+  g.globalCompositeOperation = 'destination-in'; g.fillStyle = cg; g.fillRect(SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4);
+  ctx.globalAlpha = a; ctx.drawImage(tmp, SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4, SCX - R - 2, SCY - R - 2, R * 2 + 4, R * 2 + 4); ctx.globalAlpha = 1;
+}
+function crater() { const g = gRet; for (let i = 0; i < 40; i++) { const a = Math.random() * 7, r = Math.random() * 9; g.fillStyle = rgba(AMB, .5 + Math.random() * .5); g.fillRect(TOWN[0] + Math.cos(a) * r, TOWN[1] + Math.sin(a) * r, 1.6, 1.6); } }
+// a simbologia (frames do APP-6: amigo retângulo, hostil losango, desconhecido trevo, neutro quadrado)
+function symbol(kind, x, y, col, a) {
+  ctx.strokeStyle = rgba(col, a); ctx.fillStyle = rgba(col, a * .18); ctx.lineWidth = 1.3; ctx.beginPath();
+  if (kind === 'rect') ctx.rect(x - 9, y - 6, 18, 12);
+  else if (kind === 'diamond') { ctx.moveTo(x, y - 9); ctx.lineTo(x + 9, y); ctx.lineTo(x, y + 9); ctx.lineTo(x - 9, y); ctx.closePath(); }
+  else if (kind === 'square') ctx.rect(x - 7, y - 7, 14, 14);
+  else if (kind === 'clover') { for (const [ox, oy] of [[0, -4], [4, 0], [0, 4], [-4, 0]]) { ctx.moveTo(x + ox + 4.5, y + oy); ctx.arc(x + ox, y + oy, 4.5, 0, 7); } }
+  else if (kind === 'air') { ctx.moveTo(x - 6, y + 3); ctx.arc(x, y + 3, 6, Math.PI, 0); }
+  else if (kind === 'helo') { ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 6); ctx.moveTo(x + 4, y); ctx.arc(x, y, 4, 0, 7); }
+  ctx.fill(); ctx.stroke();
+  if (kind === 'rect' || kind === 'diamond' || kind === 'square' || kind === 'clover') { ctx.beginPath(); ctx.moveTo(x - 2.5, y - 12); ctx.lineTo(x - 2.5, y - 16); ctx.moveTo(x + 2.5, y - 12); ctx.lineTo(x + 2.5, y - 16); ctx.stroke(); }   // o escalão (batalhão)
+}
+function vector(x, y, hd, len, col, a) { ctx.strokeStyle = rgba(col, a * .6); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + Math.sin(hd) * 10, y - Math.cos(hd) * 10); ctx.lineTo(x + Math.sin(hd) * (10 + len), y - Math.cos(hd) * (10 + len)); ctx.stroke(); }
+function brackets(x, y, s) { const c = 5; ctx.beginPath(); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => { ctx.moveTo(x + sx * s, y + sy * (s - c)); ctx.lineTo(x + sx * s, y + sy * s); ctx.lineTo(x + sx * (s - c), y + sy * s); }); ctx.stroke(); }
+// o A-scope: o eco ao longo do feixe agora, com o capim de ruído (que ouve a música)
+function aScope(D) {
+  const x0 = 852, y0 = 980, w = 218, h = 80, b = Math.floor(beam / (Math.PI * 2) * NB) % NB;
+  ctx.strokeStyle = 'rgba(230,220,190,.06)'; ctx.lineWidth = 1; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(x0 + k * w / 4, y0 - h); ctx.lineTo(x0 + k * w / 4, y0); ctx.stroke(); }
+  let lvl = 0; if (analyser) { analyser.getByteTimeDomainData(fft.td); for (let i = 0; i < fft.td.length; i += 8) lvl = Math.max(lvl, Math.abs(fft.td[i] - 128) / 128); }
+  ctx.strokeStyle = rgba(AMB, .75 * D); ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let i = 0; i < w; i++) { const ri = Math.floor(i / w * NR), s = ret[b * NR + ri] * gain, grass = Math.random() * (.06 + lvl * .25);
+    const y = y0 - 4 - Math.min(1, s * .9 + grass) * h * .85; i ? ctx.lineTo(x0 + i, y) : ctx.moveTo(x0 + i, y); }
+  ctx.stroke();
+  ctx.font = `500 10px ${MONO}`; ctx.fillStyle = rgba(AMB, .45 * D); ctx.fillText(`BRG ${String(Math.round(beam / D2R)).padStart(3, '0')}`, x0 + 150, y0 - h + 2);
+}
+// a cascata do ESM: cada linha nova é o espectro de agora (a trilha do menu, quando toca; senão, os emissores do teatro)
+function waterfall(D, dt) {
+  wfg.drawImage(wf, 0, 0, 210, 97, 0, 1, 210, 97);
+  const line = wfg.createImageData(210, 1); let spec = null;
+  if (analyser) { analyser.getByteFrequencyData(fft.fd); spec = fft.fd; }
+  const jam = (T % 33) < 3.4;
+  for (let i = 0; i < 210; i++) {
+    let v = Math.random() * .12;
+    if (spec) v += spec[Math.floor(i / 210 * spec.length * .6)] / 255 * .9;
+    for (const [f, s] of [[34, .7], [61, .45], [118, .8], [163, .35]]) v += s * Math.exp(-Math.pow(i - f - Math.sin(T * .3 + f) * 1.5, 2) / 3) * (.7 + .3 * Math.sin(T * 2 + f));   // os emissores fixos
+    if (jam) v += .6 * Math.random();
+    v = Math.min(1, v); const k = i * 4; line.data[k] = AMB[0] * v; line.data[k + 1] = AMB[1] * v; line.data[k + 2] = AMB[2] * v; line.data[k + 3] = 255 * v;
+  }
+  wfg.putImageData(line, 0, 0);
+  ctx.globalAlpha = .7 * D; ctx.drawImage(wf, 1632, 892); ctx.globalAlpha = 1;
+}
+function trackList(D) {
+  ctx.font = `500 10.5px ${MONO}`; let y = 120;
+  const rows = ARMY.map((a, i) => { const [x, yy, hd] = armyPos(a, T); const brg = brgOf(x, yy) / D2R, rng = Math.hypot(x - SCX, yy - SCY) / KM; return [`T0${14 + i * 7}`, a.id.toUpperCase().slice(0, 3), brg, rng, a.spd, a.col]; });
+  const [jx, jy] = jetPos(T); rows.push(['T051', 'AIR', brgOf(jx, jy) / D2R, Math.hypot(jx - SCX, jy - SCY) / KM, 480, [92, 160, 240]]);
+  ctx.fillStyle = rgba(AMB, .3 * D); ctx.fillText('ID    SIDE BRG  RNG   SPD', 1638, y); y += 15;
+  for (const [id, side, brg, rng, spd, col] of rows) { ctx.fillStyle = rgba(col, .6 * D); ctx.fillText(`${id}  ${side.padEnd(4)} ${String(Math.round(brg)).padStart(3, '0')}  ${rng.toFixed(1).padStart(4)}  ${String(spd).padStart(3)}`, 1638, y); y += 14; }
+}
+function clock(D) {
+  const d = new Date(), z = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}Z`;
+  ctx.font = `500 22px ${MONO}`; ctx.fillStyle = rgba(AMB, .7 * D); ctx.fillText(z, 842, 108);
+  ctx.font = `500 10.5px ${MONO}`; ctx.fillStyle = rgba(AMB, .38 * D);
+  ctx.fillText(`PPI · ${RANGE} KM · ${(60 / PERIOD).toFixed(1)} RPM`, 842, 128); ctx.fillText('MODE 3/C · IFF ON', 842, 143);
+}
+// os dois botões do tubo: ganho e brilho (o OPTIONS mexe neles)
+const DIALS = [[868, 182], [930, 182]];
+function dials(D) {
+  DIALS.forEach(([x, y], i) => {
+    ctx.strokeStyle = rgba(AMB, .35 * D); ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x, y, 18, 0, 7); ctx.stroke();
+    for (let k = 0; k <= 10; k++) { const a = (-135 + k * 27) * D2R; ctx.beginPath(); ctx.moveTo(x + Math.sin(a) * 21, y - Math.cos(a) * 21); ctx.lineTo(x + Math.sin(a) * 24, y - Math.cos(a) * 24); ctx.stroke(); }
+    const a = (-30 + knob * (i ? -70 : 80) + i * 50) * D2R; ctx.strokeStyle = rgba(FLASH, .7 * D); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(a) * 14, y - Math.cos(a) * 14); ctx.stroke();
+    ctx.font = `600 9.5px ${MONO}`; ctx.fillStyle = rgba(AMB, .35 * D); ctx.textAlign = 'center'; ctx.fillText(i ? 'BRILL' : 'GAIN', x, y + 36); ctx.textAlign = 'left';
+  });
+}
+function hoverDeco(li, D) {
+  const k = li.dataset.k;
+  if (k === 'skirmish') {        // o cursor de rumo e o estrobo de distância travam no objetivo
+    const b = brgOf(...TOWN), r = Math.hypot(TOWN[0] - SCX, TOWN[1] - SCY);
+    ctx.setLineDash([4, 5]); ctx.strokeStyle = rgba(FLASH, .4); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(SCX, SCY); ctx.lineTo(...polar(b, R)); ctx.stroke();
+    ctx.beginPath(); ctx.arc(SCX, SCY, r, b - Math.PI / 2 - .25, b - Math.PI / 2 + .25); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = rgba(FLASH, .8); brackets(TOWN[0], TOWN[1], 18 + Math.sin(T * 6) * 2);
+  }
+}
+function crt() {                  // o tubo desligando: a imagem fecha numa linha e num ponto
+  const k = off, g = ctx; g.save(); g.globalCompositeOperation = 'source-over';
+  const ry = Math.max(1, R * (1 - Math.min(1, k * 1.6))), rx = R * (k < .62 ? 1 : 1 - (k - .62) / .38);
+  g.fillStyle = `rgba(10,13,11,${Math.min(1, k * 1.4)})`; g.beginPath(); g.arc(SCX, SCY, R + 1, 0, 7); g.fill();
+  g.fillStyle = rgba(FLASH, (1 - Math.max(0, k - .7) / .3) * .7); g.beginPath(); g.ellipse(SCX, SCY, Math.max(1, rx), ry < 3 ? 1.2 : 0, 0, 0, 7); g.fill();
+  g.restore();
+}
+// ---------- o menu: a linha até o ponto (a aprovada) ----------
+const link = document.getElementById('link');
+function anchor(k) {
+  if (k === 'skirmish') return TOWN; if (k === 'multi') { const p = armyPos(ARMY[0], T); return [p[0], p[1]]; }
+  if (k === 'options') return DIALS[0]; if (k === 'quit') return [SCX, SCY]; }
+function drawLink(li) {
+  const p = anchor(li.dataset.k); const sr = stage.getBoundingClientRect(), sc = sr.width / W, r = li.querySelector('.t').getBoundingClientRect();
+  const x0 = (r.right - sr.left) / sc + 20, y0 = (r.top + r.height / 2 - sr.top) / sc, [x1, y1] = p, ph = (performance.now() / 1200) % 1;
+  link.innerHTML = `<path d="M${x0},${y0} L${x0 + 50},${y0} L${x1 - 40},${y1} L${x1 - 24},${y1}" fill="none" stroke="rgba(216,173,78,.85)" stroke-width="2" stroke-dasharray="5 5"/>
+    <circle cx="${x1}" cy="${y1}" r="20" fill="none" stroke="#fff" stroke-width="2" opacity=".85"/><circle cx="${x1}" cy="${y1}" r="3.5" fill="rgb(216,173,78)"/>
+    <circle cx="${x1}" cy="${y1}" r="${20 + ph * 26}" fill="none" stroke="rgba(216,173,78,${(1 - ph) * .5})" stroke-width="1.5"/>`;
+}
+function hover(li) { hovered = li; const k = li && li.dataset.k; dimT = k === 'quit' ? .35 : 1; gainT = k === 'options' ? 1.6 : 1; knobT = k === 'options' ? 1 : 0; if (!li) link.innerHTML = ''; }
+document.querySelectorAll('#menu li').forEach(li => {
+  li.addEventListener('mouseenter', () => hover(li));
+  li.addEventListener('mouseleave', () => hover(null));
+  li.addEventListener('mousedown', () => { if (li.dataset.k === 'quit') { offT = 1; setTimeout(() => offT = 0, 1800); } });
+  li.addEventListener('click', () => { const go = { skirmish: 'skirmish.html', multi: 'multiplayer.html', options: 'screens.html?s=opt&from=menu' }[li.dataset.k]; if (go) setTimeout(() => location.href = go, 260);
+    if (li.dataset.k === 'quit' && window.ue && window.ue.shell) setTimeout(() => window.ue.shell.quit(), 900); });   // no jogo o QUIT fecha (depois do monitor apagar)   // cada item abre a sua tela
+});
+// ---------- o som do site: a trilha do menu no primeiro clique, o clique da interface; a cascata ouve a trilha ----------
+// as três trilhas do menu do assgets, uma depois da outra (V1, V2, V3 e volta)
+const MUSIC_VOL = .55, MUSIC_OK = () => true;
+const music = document.getElementById('music'); let track = (+(Q.get('music') || 1) - 1) % 3;
+music.src = `snd/Main_Menu_${track + 1}.mp3`; music.volume = MUSIC_VOL;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
+// o clique do menu do assgets em todo clique dos menus: o contexto nasce já (suspenso) com o som decodificado, então o 1º clique também toca
+const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
+if (actx) {
+  fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
+  try { const src = actx.createMediaElementSource(music); analyser = actx.createAnalyser(); analyser.fftSize = 512; src.connect(analyser); analyser.connect(actx.destination);
+    fft = { fd: new Uint8Array(analyser.frequencyBinCount), td: new Uint8Array(analyser.fftSize) }; } catch (e) { }
+}
+function click(vol = .6, rate = 1) { if (!actx || !clickBuf) return; const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; s.playbackRate.value = rate; g.gain.value = vol; s.connect(g).connect(actx.destination); s.start(); }
+function clickable(el) {           // tudo que se clica: botão, link, campo, ou o que tem a mãozinha
+  for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+    if (/^(BUTTON|A|SELECT|INPUT|LABEL|SUMMARY)$/.test(e.tagName) || e.getAttribute('role') === 'button' || /(^|,\s*)pointer$/.test(getComputedStyle(e).cursor)) return true; }
+  return false; }
+function audioOn() { if (!actx) return; actx.resume(); if (!musicOn) { musicOn = true; music.play().catch(() => { }); } }
+addEventListener('pointerdown', e => { audioOn(); if (clickable(e.target)) click(); }, true);
+addEventListener('keydown', audioOn, { once: true });
+// a trilha atravessa as telas: ao sair, cada tela guarda a faixa, o ponto e o volume; a próxima continua dali e vai suave pro seu volume
+// (o skirmish e o multiplayer abaixam a música uns 8 dB: são telas de conversa e decisão; a volta pro menu sobe de novo)
+function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume, t0 = performance.now();
+  musicFade.t = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); music.volume = v0 + (to - v0) * k * k * (3 - 2 * k); if (k >= 1) clearInterval(musicFade.t); }, 30); }
+(() => { let m = null; try { m = JSON.parse(sessionStorage.getItem('menu_music')); } catch (e) { }
+  if (!m || Date.now() - m.at > 20000 || Q.get('mute') || Q.get('nomusic') || !MUSIC_OK()) return;
+  track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
+  if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
+addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+// ---------- o LAB e o SCRIPT: só no desenvolvimento. No jogo a ponte diz (o editor ou -RTSLab) e abre o laboratório; no protótipo,
+// aparecem neste PC (localhost) ou com ?dev=1, e não na rede (o pai vê o jogo como vai sair) ----------
+(async () => {
+  const UE = window.ue && window.ue.shell, dev = UE ? await UE.isdev() : (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || Q.get('dev') === '1');
+  if (!dev) return; document.getElementById('dev').classList.add('on');
+  let armed = UE && UE.armedscenario ? await UE.armedscenario() : (Q.get('armed') || '');
+  const scn = document.getElementById('scn');
+  if (armed) { scn.textContent = '▸ ' + armed; scn.classList.remove('n'); }
+  else fetch(UE ? 'api/scenarios.json' : 'data/scenarios.json').then(r => r.json()).then(d => scn.textContent = d.scenarios.length + ' SCENES').catch(() => { });
+  const toast = t => { let e = document.querySelector('.dtoast'); if (!e) { e = document.createElement('div'); e.className = 'dtoast'; stage.appendChild(e); } e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1800); };
+  document.querySelectorAll('.dv').forEach(d => d.addEventListener('click', () => {
+    if (d.dataset.k === 'lab') { if (UE) setTimeout(() => UE.openlab(), 200); else toast('IN THE GAME THIS OPENS THE LAB WORLD'); }
+    else setTimeout(() => location.href = 'script.html' + (armed ? '?armed=' + encodeURIComponent(armed) : ''), 200);
+  }));
+})();
+// ---------- o laço (ou o passo a passo pra gravar) ----------
+const t0 = +(Q.get('t') || 30);
+document.fonts.ready.then(() => {
+  // aquece: o feixe já deu umas voltas, as trilhas já têm rastro
+  T = t0; beam = (t0 * Math.PI * 2 / PERIOD) % (Math.PI * 2); impacts = Math.floor(T / MIS.every);
+  for (let i = 0; i < 98; i++) { T += 1 / 30; waterfall(0, 1 / 30); } T = t0;
+  ARMY.forEach((a, i) => { hist[i] = [8, 7, 6, 5, 4, 3, 2, 1].map(k => armyPos(a, T - k * PERIOD).slice(0, 2)); });
+  dim = dimT; gain = gainT; knob = knobT;
+  if (Q.get('rec') || Q.get('still')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); window.__ready = true; }, 400); }
+  else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last);   // (02/11) no navegador do jogo o tempo do quadro às vezes volta: nunca passo negativo window.__ready = true; }
+});
+</script>
+</body>
+</html>

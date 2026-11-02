@@ -78,7 +78,22 @@ if MODE == 'check':
         for a, b in pairs:
             print('ok ' if s.count(a) == 1 else f'FALTA ({s.count(a)}) ', rel, a.strip()[:60].replace('\n', ' '))
     sys.exit(0)
+def ubt_running():
+    import subprocess
+    ps = "(Get-CimInstance Win32_Process -Filter \"Name='dotnet.exe'\" | Where-Object { $_.CommandLine -like '*UnrealBuildTool*' -and $_.CommandLine -like '*RTSGame*' } | Measure-Object).Count"
+    out = subprocess.run(['powershell', '-NoProfile', '-Command', ps], capture_output=True, text=True).stdout.strip()
+    return out not in ('', '0')
+
+
 if MODE == 'apply':
+    # nunca no meio da compilação de outro (o cabeçalho mudado quebra a dele): espera ela acabar, até 90 min
+    import time
+    for _ in range(540):
+        if not ubt_running():
+            break
+        time.sleep(10)
+    else:
+        print('outra compilação do jogo não acabou em 90 min: nada aplicado'); sys.exit(1)
     for rel, pairs in PATCHES.items():
         def f(s, pairs=pairs, rel=rel):
             for a, b in pairs:

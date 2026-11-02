@@ -169,14 +169,19 @@ const COLORS = [['BLUE', '#3d7fe0'], ['RED', '#d83a2e'], ['GOLD', '#e3b23c'], ['
 const FACS = ['usa', 'russia', 'china', 'gla'];   // a Rússia sempre em segundo
 const MAPS_LIST = [
   { id: 0, real: 'World_TestSalt2', name: 'SALT FLATS', players: 4, terr: 'DESERT', cond: 'DAY' },
-  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, terr: 'DESERT', cond: 'DUSK' },
+  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, terr: 'DESERT', cond: 'DUSK' }];
+/*fora-do-jogo*/
+MAPS_LIST.push(
   { id: 2, seed: 1000 + 2 * 7919, name: 'IRON COAST', players: 4, terr: 'COAST', cond: 'DAY' },
   { id: 3, seed: 1000 + 3 * 7919, name: 'COLD PASS', players: 2, terr: 'SNOW', cond: 'DAY' },
   { id: 4, seed: 1000 + 4 * 7919, name: 'RED MESA', players: 6, terr: 'MOUNTAIN', cond: 'DUSK' },
-  { id: 5, seed: 1000 + 5 * 7919, name: 'OLD HARBOR', players: 8, terr: 'URBAN', cond: 'NIGHT' }];
-// as salas (de mentira, pro protótipo): cheia, em jogo, versão diferente, amigo, senha
+  { id: 5, seed: 1000 + 5 * 7919, name: 'OLD HARBOR', players: 8, terr: 'URBAN', cond: 'NIGHT' });
+/*/fora-do-jogo*/
 const P = (n, f, c, ai) => ({ n, f, c, ai });
-const ROOMS = {
+const ROOMS = { online: [], lan: [] };
+// as salas de mentira do protótipo: cheia, em jogo, versão diferente, amigo, senha
+/*fora-do-jogo*/
+Object.assign(ROOMS, {
   online: [
     { name: 'SUNDAY 2V2 · NO RUSH 10', host: 'RAFA', friend: true, map: 0, mode: '2V2', pl: [P('RAFA', 'gla', 2), P('TOM', 'usa', 0)], max: 4, ping: 38, ver: '0.5.2', cash: 20000, sw: 'LIMITED' },
     { name: 'FFA CHILL', host: 'MARINA', map: 4, mode: 'FFA', pl: [P('MARINA', 'china', 1), P('KOVAC', 'russia', 6), P('JIN', 'china', 4)], max: 6, ping: 72, ver: '0.5.2', cash: 10000, sw: 'UNLIMITED' },
@@ -189,7 +194,9 @@ const ROOMS = {
     { name: 'COAST DEFENSE', host: 'PEDRO', map: 2, mode: '2V2', pl: [P('PEDRO', 'china', 1), P('LIA', 'china', 4)], max: 4, ping: 33, ver: '0.5.2', cash: 30000, sw: 'OFF' }],
   lan: [
     { name: "PAI'S ROOM", host: 'PAI', friend: true, map: 0, mode: '1V1', pl: [P('PAI', 'russia', 6)], max: 4, ping: 2, ver: '0.5.2', cash: 20000, sw: 'UNLIMITED' },
-    { name: 'NOTEBOOK TEST', host: 'NOTE-2014', map: 3, mode: '1V1', pl: [P('NOTE-2014', 'usa', 0)], max: 2, ping: 4, ver: '0.5.1', cash: 10000, sw: 'UNLIMITED' }] };
+    { name: 'NOTEBOOK TEST', host: 'NOTE-2014', map: 3, mode: '1V1', pl: [P('NOTE-2014', 'usa', 0)], max: 2, ping: 4, ver: '0.5.1', cash: 10000, sw: 'UNLIMITED' }]
+});
+/*/fora-do-jogo*/
 let src = Q.get('src') || 'online', sortK = 'ping', sortUp = true, F = { full: true, game: false, ver: true }, selI = 0;
 
 // ---------- a lista ----------
@@ -255,12 +262,17 @@ async function renderDet(r) {
     const im = new Image(); im.onload = () => g.drawImage(im, a - 9, b - 9, 18, 18); im.src = `../../factions/small/glyph_${p.f}.png`; });
   if (!full && !bad && !r.game) $('#join').onclick = () => join(r);
 }
-let join = function (r) { if (r.pl.length >= r.max || r.ver !== '0.5.2' || r.game) return; location.href = `skirmish.html?mp=1&room=${encodeURIComponent(r.name)}&host=${encodeURIComponent(r.host)}&src=${src}`; }
+let join = null;
+/*fora-do-jogo*/
+join = function (r) { if (r.pl.length >= r.max || r.ver !== '0.5.2' || r.game) return; location.href = `skirmish.html?mp=1&room=${encodeURIComponent(r.name)}&host=${encodeURIComponent(r.host)}&src=${src}`; }
+/*/fora-do-jogo*/
 $('#src').addEventListener('click', e => { const b = e.target.closest('.srcb'); if (b) { src = b.dataset.s; selI = 0; renderList(); } });
 $('#th').addEventListener('click', e => { const d = e.target.closest('[data-k]'); if (!d) return; if (sortK === d.dataset.k) sortUp = !sortUp; else { sortK = d.dataset.k; sortUp = true; } renderList(); });
 document.querySelectorAll('.chip').forEach(c => c.onclick = () => { F[c.dataset.f] = !F[c.dataset.f]; renderList(); });
 $('#q').addEventListener('input', renderList);
+/*fora-do-jogo*/
 $('#host').onclick = () => { location.href = `skirmish.html?mp=1&host=FELIPE&room=FELIPE'S ROOM&src=${src === 'ip' ? 'online' : src}`; };
+/*/fora-do-jogo*/
 $('#back').onclick = () => { location.href = 'menu.html'; };
 addEventListener('keydown', e => { if (e.key !== 'Escape') return; const q = $('#q'); if (document.activeElement === q && q.value) { q.value = ''; renderList(); return; } location.href = 'menu.html'; });
 $('#ipgo').onclick = () => { $('#ipgo').textContent = '···'; setTimeout(() => { $('#ipgo').textContent = 'JOIN'; }, 1200); };
@@ -289,6 +301,7 @@ addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', 
 const UE = window.ue && window.ue.shell;
 if (UE) {
   src = 'lan'; ROOMS.online = []; ROOMS.lan = [];
+  document.querySelector('.me').innerHTML = '<div class="dot"></div><b>LAN</b> v0.5.2 · YOUR NETWORK';   // o online ainda não existe
   document.querySelectorAll('.srcb[data-s="online"], .srcb[data-s="ip"]').forEach(b => { b.style.opacity = '.35'; b.style.pointerEvents = 'none'; });
   UE.lan('browse');
   const poll = async () => { try { const d = await fetch('api/lan.json').then(r => r.json());

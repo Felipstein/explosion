@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multiplayer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
+:root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); } body.dragging, body.dragging * { cursor: var(--curd) !important; }
+/* O multiplayer: de onde jogar (online, LAN, IP direto), a lista de salas que ordena e se atualiza sozinha, sem mostrar sala
+   cheia como livre (as queixas do AoE II DE e do AoM Retold), e a sala escolhida com o minimapa, quem está nela e as regras. */
+:root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; --line: rgba(230,220,190,.10); --card: rgba(16,21,19,.62); --ok: 120,200,120; --bad: 240,110,90; }
+html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; user-select: none; }
+#wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center;
+  background-color: rgb(10,13,11);
+  background-image: radial-gradient(at 50% 0%, rgba(216,173,78,.07), rgba(0,0,0,0) 60%),
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px; }
+.corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; }
+.c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
+.c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
+.kicker { font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 8px; color: rgb(var(--ac)); display: flex; gap: 16px; }
+.kicker .back { cursor: var(--curh); color: rgba(230,220,190,.55); letter-spacing: 3px; transition: color .15s; }
+.kicker .back:hover { color: #fff; }
+.backbtn { position: absolute; left: 110px; top: 30px; z-index: 35; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 10px; cursor: var(--curh);
+  font: 800 19px 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.9); background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.32); transition: all .15s; }
+.backbtn:hover { color: rgb(216,173,78); border-color: rgba(216,173,78,.8); }
+.backbtn svg { width: 22px; height: 22px; } .backbtn kbd { font: 600 11px 'IBM Plex Mono'; letter-spacing: 1px; padding: 2px 6px; border: 1px solid currentColor; opacity: .7; }
+
+h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+
+/* a coluna da esquerda: de onde jogar */
+.side { position: absolute; left: 110px; top: 88px; width: 400px; }
+.src { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; }
+.srcb { position: relative; padding: 16px 18px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); transition: border-color .15s, background .15s; }
+.srcb:hover { border-color: rgba(230,220,190,.26); background: rgba(22,28,26,.78); }
+.srcb.on { border-color: rgba(var(--ac),.75); }
+.srcb.on::before, .srcb.on::after { content: ''; position: absolute; width: 10px; height: 10px; border: 2px solid rgb(var(--ac)); }
+.srcb.on::before { left: -4px; top: -4px; border-right: 0; border-bottom: 0; } .srcb.on::after { right: -4px; bottom: -4px; border-left: 0; border-top: 0; }
+.srcb b { display: block; font: 800 30px/1 'Big Shoulders Display'; letter-spacing: 3px; color: #fff; }
+.srcb span { display: block; margin-top: 6px; font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+.srcb .n { position: absolute; right: 18px; top: 18px; font: 600 13px 'IBM Plex Mono'; color: rgba(230,220,190,.55); }
+.host { margin-top: 18px; height: 60px; display: flex; align-items: center; justify-content: center; gap: 12px; cursor: var(--curh); font: 900 28px 'Big Shoulders Display'; letter-spacing: 5px; color: rgb(var(--ac)); border: 1px solid rgba(var(--ac),.8); background: rgba(216,173,78,.05); transition: all .15s; }
+.host:hover { background: rgb(var(--ac)); color: #0a0d0b; letter-spacing: 7px; }
+.me { position: absolute; left: 110px; bottom: 50px; display: flex; align-items: center; gap: 12px; font: 600 14px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); }
+.me b { color: #fff; font: 800 20px 'Big Shoulders Display'; letter-spacing: 2px; }
+.me .dot { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--ok)); box-shadow: 0 0 8px rgb(var(--ok)); }
+
+/* a lista de salas */
+.list { position: absolute; left: 560px; top: 88px; width: 840px; bottom: 50px; }
+.tools { display: flex; align-items: center; gap: 10px; height: 46px; }
+.search { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 44px; border: 1px solid rgba(230,220,190,.2); background: rgba(16,21,19,.8); }
+.search input { flex: 1; background: none; border: 0; outline: 0; color: #fff; font: 600 17px 'Barlow Semi Condensed'; letter-spacing: 1px; }
+.search input::placeholder { color: rgba(230,220,190,.35); }
+.chip { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 0 12px; height: 44px; display: flex; align-items: center; color: rgba(238,241,244,.6); border: 1px solid rgba(230,220,190,.14); cursor: var(--curh); transition: all .12s; white-space: nowrap; }
+.chip:hover { color: #fff; border-color: rgba(230,220,190,.35); }
+.chip.on { color: rgb(var(--ac)); border-color: rgba(var(--ac),.75); background: rgba(216,173,78,.07); }
+.live { display: flex; align-items: center; gap: 8px; font: 600 12px 'IBM Plex Mono'; color: rgba(230,220,190,.55); margin-left: 4px; white-space: nowrap; }
+.live svg { width: 18px; height: 18px; animation: spin 3s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.th, .rm { display: grid; grid-template-columns: 1fr 210px 120px 80px 70px; align-items: center; }
+.th { margin-top: 14px; height: 28px; font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.42); }
+.th div { padding-left: 14px; cursor: var(--curh); display: flex; align-items: center; gap: 6px; }
+.th div:hover { color: rgba(238,241,244,.8); }
+.th div.on { color: rgb(var(--ac)); }
+.th div i { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
+.th div.on.up i { transform: rotate(-135deg); margin-top: 3px; }
+.rows { position: absolute; top: 90px; left: 0; right: 0; bottom: 0; overflow-y: auto; }
+.rows::-webkit-scrollbar { width: 8px; } .rows::-webkit-scrollbar-thumb { background: rgba(230,220,190,.18); }
+.rm { height: 62px; margin-bottom: 6px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); transition: border-color .15s, background .15s, opacity .2s; }
+.rm:hover { border-color: rgba(230,220,190,.26); background: rgba(22,28,26,.8); }
+.rm.on { border-color: rgba(var(--ac),.75); }
+.rm > div { padding: 0 14px; min-width: 0; }
+.rm .nm b { display: block; font: 800 22px/1 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm .nm span { display: block; margin-top: 5px; font: 600 12.5px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); white-space: nowrap; overflow: hidden; }
+.rm .nm span em { font-style: normal; color: rgb(var(--ac)); }
+.rm .mp { display: flex; align-items: center; gap: 10px; font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgba(238,241,244,.85); white-space: nowrap; overflow: hidden; }
+.rm .mp canvas { width: 40px; height: 40px; flex: none; }
+.pips { display: flex; gap: 3px; } .pips i { width: 9px; height: 14px; background: rgba(230,220,190,.16); } .pips i.f { background: rgb(var(--ac)); }
+.rm .pl small { display: block; margin-top: 5px; font: 500 12px 'IBM Plex Mono'; color: rgba(230,220,190,.6); }
+.ping { display: flex; align-items: flex-end; gap: 2px; height: 16px; } .ping i { width: 4px; background: rgba(230,220,190,.18); } .ping i.f { background: var(--pc); }
+.rm .pg small { display: block; margin-top: 4px; font: 500 11px 'IBM Plex Mono'; color: rgba(230,220,190,.55); }
+.badge { display: inline-block; font: 700 11px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 2px 6px; border: 1px solid; margin-left: 8px; vertical-align: 2px; }
+.badge.full { color: rgba(238,241,244,.6); border-color: rgba(238,241,244,.3); }
+.badge.game { color: rgb(var(--ac)); border-color: rgba(var(--ac),.5); }
+.badge.ver { color: rgb(var(--bad)); border-color: rgba(var(--bad),.6); }
+.rm.off { opacity: .5; }
+.empty { padding: 60px 0; text-align: center; font: 600 15px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+
+/* a sala escolhida */
+.det { position: absolute; left: 1440px; top: 88px; width: 380px; bottom: 50px; }
+.det canvas.pv { width: 380px; height: 380px; }
+.det h3 { margin: 6px 0 0; font: 900 36px/1 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.det .meta { margin-top: 6px; font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+.det .who { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.det .p { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--pc); }
+.det .p b { font: 800 18px 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.det .p span { margin-left: auto; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); }
+.det .p.open { border-left-color: rgba(230,220,190,.15); border-style: dashed; } .det .p.open b { color: rgba(238,241,244,.4); }
+.tok { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--pc); box-shadow: inset 0 -2px 4px rgba(0,0,0,.35); }
+.tok img { width: 19px; height: 19px; }
+.crown { width: 16px; height: 12px; }
+.join { position: absolute; left: 0; right: 0; bottom: 0; height: 72px; display: flex; align-items: center; justify-content: center; gap: 14px; cursor: var(--curh);
+  font: 900 34px 'Big Shoulders Display'; letter-spacing: 6px; color: #0a0d0b; background: rgb(var(--ac)); box-shadow: 0 0 40px rgba(216,173,78,.25); transition: letter-spacing .2s, box-shadow .2s; }
+.join:hover { letter-spacing: 8px; box-shadow: 0 0 60px rgba(216,173,78,.45); }
+.join.no { background: rgba(230,220,190,.12); color: rgba(238,241,244,.45); box-shadow: none; cursor: var(--cur); letter-spacing: 4px; font-size: 24px; }
+
+/* o IP direto */
+.ip { position: absolute; left: 560px; top: 88px; width: 840px; display: none; }
+.ip.on { display: block; }
+.ip .l { margin-top: 30px; font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); }
+.ip .row { margin-top: 8px; display: flex; gap: 8px; }
+.ip input { height: 64px; background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.22); color: #fff; font: 600 30px 'IBM Plex Mono'; padding: 0 18px; outline: 0; }
+.ip input:focus { border-color: rgba(var(--ac),.8); }
+.ip .go { width: 200px; height: 66px; display: grid; place-items: center; cursor: var(--curh); font: 900 30px 'Big Shoulders Display'; letter-spacing: 5px; color: #0a0d0b; background: rgb(var(--ac)); }
+.ip .rec { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ip .rec div { display: flex; align-items: center; gap: 16px; height: 50px; padding: 0 16px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); font: 600 18px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
+.ip .rec div:hover { border-color: rgba(230,220,190,.28); }
+.ip .rec div span { margin-left: auto; font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage">
+  <div class="side">
+    <div class="kicker"><span>MULTIPLAYER</span></div>
+    <h1>FIND A BATTLE</h1>
+    <div class="src" id="src">
+      <div class="srcb on" data-s="online"><b>ONLINE</b><span>STEAM · FRIENDS FIRST</span><div class="n" id="n-online"></div></div>
+      <div class="srcb" data-s="lan"><b>LAN</b><span>YOUR NETWORK</span><div class="n" id="n-lan"></div></div>
+      <div class="srcb" data-s="ip"><b>DIRECT IP</b><span>JOIN BY ADDRESS</span></div>
+    </div>
+    <div class="host" id="host">HOST GAME</div>
+  </div>
+  <div class="backbtn" id="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg><span>BACK</span><kbd>ESC</kbd></div>
+  <div class="me"><div class="dot"></div><b>FELIPE</b> v0.5.2 · STEAM ONLINE · NAT OPEN</div>
+
+  <div class="list" id="list">
+    <div class="tools">
+      <div class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(230,220,190,.6)" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><input id="q" placeholder="Search rooms, hosts, maps" spellcheck="false"></div>
+      <div class="chip on" data-f="full">HIDE FULL</div><div class="chip" data-f="game">HIDE IN GAME</div><div class="chip on" data-f="ver">MY VERSION</div>
+      <div class="live"><svg viewBox="0 0 24 24" fill="none" stroke="rgb(216,173,78)" stroke-width="1.6"><circle cx="12" cy="12" r="9" opacity=".35"/><path d="M12 12 L12 3"/></svg><span id="upd">LIVE</span></div>
+    </div>
+    <div class="th" id="th"><div data-k="name">ROOM<i></i></div><div data-k="map">MAP<i></i></div><div data-k="pl">PLAYERS<i></i></div><div data-k="mode">MODE<i></i></div><div data-k="ping" class="on">PING<i></i></div></div>
+    <div class="rows" id="rows"></div>
+  </div>
+  <div class="ip" id="ip">
+    <div class="l">ADDRESS</div>
+    <div class="row"><input id="addr" value="192.168.0.24" style="width:420px" spellcheck="false"><input id="port" value="7777" style="width:150px" spellcheck="false"><div class="go" id="ipgo">JOIN</div></div>
+    <div class="l">RECENT</div>
+    <div class="rec"><div>192.168.0.24 : 7777<span>PAI'S PC · 2 DAYS AGO</span></div><div>45.172.91.8 : 7777<span>RAFA · LAST WEEK</span></div><div>10.0.0.12 : 7777<span>LAN PARTY · OCT 14</span></div></div>
+  </div>
+
+  <div class="det" id="det"></div>
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+</div></div>
+<audio id="music" preload="auto"></audio>
+<script src="shared_maps.js"></script>
+<script>
+const W = 1920, H = 1080, Q = new URLSearchParams(location.search), $ = s => document.querySelector(s);
+const stage = $('#stage');
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+const COLORS = [['BLUE', '#3d7fe0'], ['RED', '#d83a2e'], ['GOLD', '#e3b23c'], ['GREEN', '#4caf50'], ['ORANGE', '#ef7f22'], ['CYAN', '#3fc6d6'], ['PURPLE', '#9a5ad8'], ['PINK', '#e86aa8']];
+const FACS = ['usa', 'russia', 'china', 'gla'];   // a Rússia sempre em segundo
+const MAPS_LIST = [
+  { id: 0, real: 'World_TestSalt2', name: 'SALT FLATS', players: 4, terr: 'DESERT', cond: 'DAY' },
+  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, terr: 'DESERT', cond: 'DUSK' }];
+const P = (n, f, c, ai) => ({ n, f, c, ai });
+const ROOMS = { online: [], lan: [] };
+// as salas de mentira do protótipo: cheia, em jogo, versão diferente, amigo, senha
+let src = Q.get('src') || 'online', sortK = 'ping', sortUp = true, F = { full: true, game: false, ver: true }, selI = 0;
+
+// ---------- a lista ----------
+const thumbC = {};
+async function thumb(m, size) {      // a miniatura do mapa, em losango (o mesmo minimapa da sala)
+  const key = m.id + ':' + size; if (thumbC[key]) return thumbC[key];
+  const M = m.real ? await getMap(m) : Object.assign(genMap(m, size > 100 ? 256 : 64), { terr: m.terr, cond: m.cond });
+  const flat = renderMinimap(M, size > 100 ? 420 : 72),   // a prévia tem 231 px de lado: 420 já é o dobro (720 travava a entrada meio segundo)
+  c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
+  g.translate(size / 2, size / 2); g.rotate(Math.PI / 4); const s2 = size / Math.SQRT2 * (size > 100 ? .86 : 1); g.drawImage(flat, -s2 / 2, -s2 / 2, s2, s2);
+  if (size > 100) { g.strokeStyle = 'rgba(230,220,190,.35)'; g.lineWidth = 1.5; g.strokeRect(-s2 / 2, -s2 / 2, s2, s2); }
+  return thumbC[key] = { c, M };
+}
+const pingCol = p => p < 60 ? 'rgb(120,200,120)' : p < 120 ? 'rgb(216,173,78)' : 'rgb(240,110,90)';
+const pingBars = p => { const n = p < 40 ? 4 : p < 80 ? 3 : p < 140 ? 2 : 1; return `<div class="ping" style="--pc:${pingCol(p)}">${[5, 8, 11, 15].map((h, k) => `<i class="${k < n ? 'f' : ''}" style="height:${h}px"></i>`).join('')}</div>`; };
+function rooms() {
+  const q = $('#q').value.trim().toUpperCase();
+  let L = (ROOMS[src] || []).map((r, i) => ({ ...r, i }));
+  L = L.filter(r => (!q || (r.name + ' ' + r.host + ' ' + MAPS_LIST[r.map].name).includes(q)) && !(F.full && r.pl.length >= r.max) && !(F.game && r.game) && !(F.ver && r.ver !== '0.5.2'));
+  const key = { name: r => r.name, map: r => MAPS_LIST[r.map].name, pl: r => r.max - r.pl.length, mode: r => r.mode, ping: r => r.ping }[sortK];
+  L.sort((a, b) => (b.friend ? 1 : 0) - (a.friend ? 1 : 0) || (key(a) > key(b) ? 1 : key(a) < key(b) ? -1 : 0) * (sortUp ? 1 : -1));   // amigos primeiro
+  return L;
+}
+function renderList() {
+  $('#n-online').textContent = ROOMS.online.length + ' ROOMS'; $('#n-lan').textContent = ROOMS.lan.length + ' ROOMS';
+  document.querySelectorAll('.srcb').forEach(b => b.classList.toggle('on', b.dataset.s === src));
+  $('#list').style.display = src === 'ip' ? 'none' : 'block'; $('#ip').classList.toggle('on', src === 'ip'); $('#det').style.display = src === 'ip' ? 'none' : 'block';
+  if (src === 'ip') return;
+  document.querySelectorAll('#th div').forEach(d => { d.classList.toggle('on', d.dataset.k === sortK); d.classList.toggle('up', d.dataset.k === sortK && !sortUp); });
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', F[c.dataset.f]));
+  const L = rooms(), el = $('#rows'); el.innerHTML = '';
+  if (!L.length) { el.innerHTML = '<div class="empty">NO ROOMS MATCH · HOST ONE</div>'; renderDet(null); return; }
+  if (!L.some(r => r.i === selI)) selI = L[0].i;
+  for (const r of L) {
+    const m = MAPS_LIST[r.map], full = r.pl.length >= r.max, bad = r.ver !== '0.5.2';
+    const d = document.createElement('div'); d.className = 'rm' + (r.i === selI ? ' on' : '') + (full || bad ? ' off' : '');
+    d.innerHTML = `<div class="nm"><b>${r.lock ? '🔒 ' : ''}${r.name}</b><span>${r.friend ? '<em>FRIEND · </em>' : ''}HOST ${r.host}${full ? '<i class="badge full">FULL</i>' : ''}${r.game ? '<i class="badge game">IN GAME</i>' : ''}${bad ? `<i class="badge ver">v${r.ver}</i>` : ''}</span></div>
+      <div class="mp"><canvas width="40" height="40"></canvas>${m.name}</div>
+      <div class="pl"><div class="pips">${Array.from({ length: r.max }, (_, k) => `<i class="${k < r.pl.length ? 'f' : ''}"></i>`).join('')}</div><small>${r.pl.length} / ${r.max}</small></div>
+      <div style="font:800 20px 'Big Shoulders Display';letter-spacing:2px">${r.mode}</div>
+      <div class="pg">${pingBars(r.ping)}<small>${r.ping} MS</small></div>`;
+    thumb(m, 40).then(t => d.querySelector('canvas').getContext('2d').drawImage(t.c, 0, 0));
+    d.onclick = () => { selI = r.i; renderList(); };
+    d.ondblclick = () => join(r);
+    el.appendChild(d);
+  }
+  renderDet(ROOMS[src][selI]);
+}
+async function renderDet(r) {
+  const det = $('#det'); if (!r) { det.innerHTML = ''; return; }
+  const m = MAPS_LIST[r.map], full = r.pl.length >= r.max, bad = r.ver !== '0.5.2';
+  det.innerHTML = `<canvas class="pv" width="380" height="380"></canvas><h3>${r.name}</h3><div class="meta">${m.name} · ${r.mode} · $${r.cash.toLocaleString('en-US')} · SUPERWEAPONS ${r.sw}</div>
+    <div class="who">${Array.from({ length: r.max }, (_, k) => { const p = r.pl[k]; if (!p) return '<div class="p open"><b>OPEN SLOT</b></div>';
+      return `<div class="p" style="--pc:${COLORS[p.c][1]}"><div class="tok" style="--pc:${COLORS[p.c][1]}"><img src="a/glyph/${p.f}.png"></div><b>${p.ai ? 'AI · HARD' : p.n}</b>${p.n === r.host ? '<svg class="crown" viewBox="0 0 16 12"><path d="M1 11h14L13 3l-3 4-2-6-2 6-3-4z" fill="rgb(216,173,78)"/></svg>' : ''}<span>${p.f.toUpperCase()}</span></div>`; }).join('')}</div>
+    <div class="join ${full || bad ? 'no' : ''}" id="join">${bad ? `NEEDS v${r.ver}` : full ? 'ROOM FULL' : r.game ? 'IN GAME · WAIT' : 'JOIN'}</div>`;
+  if (!thumbC[m.id + ':380']) await new Promise(res => requestAnimationFrame(() => setTimeout(res, 0)));   // a tela aparece (e a música volta) antes da prévia grande
+  const t = await thumb(m, 380), g = det.querySelector('canvas').getContext('2d'); g.drawImage(t.c, 0, 0);
+  // as bases ocupadas na prévia: a ficha de cada um no lugar dele
+  const S = 380, s2 = S / Math.SQRT2 * .86, sc = s2 / 1024, toP = (x, y) => { const u = (x) * sc, v = (y) * sc; return [S / 2 + (u - v) * Math.SQRT1_2, S / 2 + (u + v) * Math.SQRT1_2]; };
+  t.M.starts.slice(0, r.max).forEach(([x, y], k) => { const [a, b] = toP(x, y), p = r.pl[k];
+    if (!p) { g.setLineDash([3, 3]); g.strokeStyle = 'rgba(238,241,244,.7)'; g.lineWidth = 1.4; g.beginPath(); g.arc(a, b, 11, 0, 7); g.stroke(); g.setLineDash([]); return; }
+    g.fillStyle = COLORS[p.c][1]; g.beginPath(); g.arc(a, b, 13, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
+    const im = new Image(); im.onload = () => g.drawImage(im, a - 9, b - 9, 18, 18); im.src = `a/glyph/${p.f}.png`; });
+  if (!full && !bad && !r.game) $('#join').onclick = () => join(r);
+}
+let join = null;
+$('#src').addEventListener('click', e => { const b = e.target.closest('.srcb'); if (b) { src = b.dataset.s; selI = 0; renderList(); } });
+$('#th').addEventListener('click', e => { const d = e.target.closest('[data-k]'); if (!d) return; if (sortK === d.dataset.k) sortUp = !sortUp; else { sortK = d.dataset.k; sortUp = true; } renderList(); });
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { F[c.dataset.f] = !F[c.dataset.f]; renderList(); });
+$('#q').addEventListener('input', renderList);
+$('#back').onclick = () => { location.href = 'menu.html'; };
+addEventListener('keydown', e => { if (e.key !== 'Escape') return; const q = $('#q'); if (document.activeElement === q && q.value) { q.value = ''; renderList(); return; } location.href = 'menu.html'; });
+$('#ipgo').onclick = () => { $('#ipgo').textContent = '···'; setTimeout(() => { $('#ipgo').textContent = 'JOIN'; }, 1200); };
+// a lista se atualiza sozinha: o ping mexe um pouco, e o "agora" do ícone
+setInterval(() => { for (const k in ROOMS) ROOMS[k].forEach(r => { r.ping = Math.max(1, Math.round(r.ping + (Math.random() - .5) * 6)); }); if (src !== 'ip') { const sc = $('#rows').scrollTop; renderList(); $('#rows').scrollTop = sc; } }, 5000);
+
+// ---------- o som (o aprovado) ----------
+const MUSIC_VOL = .55 * .4, MUSIC_OK = () => true;
+const music = $('#music'); let track = 0; music.src = `snd/Main_Menu_1.mp3`; music.volume = MUSIC_VOL;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
+const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
+if (actx) fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
+function clickable(el) { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (/^(BUTTON|A|SELECT|INPUT|LABEL)$/.test(e.tagName) || /(^|,\s*)pointer$/.test(getComputedStyle(e).cursor)) return true; } return false; }
+addEventListener('pointerdown', e => { if (!actx) return; actx.resume(); if (!musicOn && !Q.get('nomusic')) { musicOn = true; music.play().catch(() => { }); }
+  if (clickable(e.target) && clickBuf) { const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; g.gain.value = .6; s.connect(g).connect(actx.destination); s.start(); } }, true);
+// a trilha atravessa as telas: ao sair, cada tela guarda a faixa, o ponto e o volume; a próxima continua dali e vai suave pro seu volume
+// (o skirmish e o multiplayer abaixam a música uns 8 dB: são telas de conversa e decisão; a volta pro menu sobe de novo)
+function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume, t0 = performance.now();
+  musicFade.t = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); music.volume = v0 + (to - v0) * k * k * (3 - 2 * k); if (k >= 1) clearInterval(musicFade.t); }, 30); }
+(() => { let m = null; try { m = JSON.parse(sessionStorage.getItem('menu_music')); } catch (e) { }
+  if (!m || Date.now() - m.at > 20000 || Q.get('mute') || Q.get('nomusic') || !MUSIC_OK()) return;
+  track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
+  if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
+addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+// no jogo: a LAN de verdade (api/lan.json a cada segundo), CREATE e JOIN pelo jogo; a sala ainda é a antiga do jogo
+const UE = window.ue && window.ue.shell;
+if (UE) {
+  src = 'lan'; ROOMS.online = []; ROOMS.lan = [];
+  document.querySelector('.me').innerHTML = '<div class="dot"></div><b>LAN</b> v0.5.2 · YOUR NETWORK';   // o online ainda não existe
+  document.querySelectorAll('.srcb[data-s="online"], .srcb[data-s="ip"]').forEach(b => { b.style.opacity = '.35'; b.style.pointerEvents = 'none'; });
+  UE.lan('browse');
+  const poll = async () => { try { const d = await fetch('api/lan.json').then(r => r.json());
+    const key = JSON.stringify(d.games); if (key !== poll.k) { poll.k = key;
+      ROOMS.lan = d.games.map(g => ({ name: g.name.toUpperCase(), host: g.name.toUpperCase(), map: 0, mode: g.players + ' IN', pl: Array.from({ length: g.players }, (_, k) => P(k ? 'PLAYER' : g.name.toUpperCase(), 'usa', k)), max: 8, ping: 2, ver: g.open ? '0.5.2' : '?', game: !g.open, cash: 10000, sw: 'UNLIMITED', idx: g.index }));
+      renderList(); } } catch (e) { } };
+  setInterval(poll, 1000); poll();
+  join = r => { if (r.game) return; UE.lan('join:' + r.idx); };
+  $('#host').onclick = () => UE.lan('host');
+  $('#back').onclick = () => { UE.lan('stop'); location.href = 'menu.html'; };
+}
+(async () => { await document.fonts.ready; renderList(); setTimeout(() => window.__ready = true, 1500); })();
+</script>
+</body>
+</html>

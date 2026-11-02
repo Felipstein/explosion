@@ -274,8 +274,18 @@ namespace
 
 void RTSShellGame::OnPlayerBegin(ARTSPlayerController* PC, bool bMenu)
 {
-	if (!PC || !PC->IsLocalController() || !Wanted())
+	if (!PC || !PC->IsLocalController())
 	{
+		return;
+	}
+	if (!Wanted())
+	{
+		static bool bSaid = false;
+		if (bMenu && !bSaid)
+		{
+			bSaid = true;
+			UE_LOG(LogTemp, Log, TEXT("RTS telas: o menu antigo (teste automático, -RTSOldMenu, sem placa ou sem o navegador embutido; páginas em %s)"), *FRTSShell::UiDir());
+		}
 		return;
 	}
 	Install();

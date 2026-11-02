@@ -2,6 +2,8 @@
 #include "RTSShellBridge.h"
 #include "Modules/ModuleManager.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/App.h"
+#include "Misc/CoreDelegates.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Engine/Engine.h"
@@ -13,8 +15,6 @@
 #include "IWebBrowserSchemeHandler.h"
 #include "IWebBrowserWindow.h"
 #include "SWebBrowser.h"
-
-IMPLEMENT_MODULE(FDefaultModuleImpl, RTSShell)
 
 namespace
 {
@@ -149,11 +149,11 @@ namespace
 			return MakeUnique<FShellRequest>();
 		}
 	};
-	TUniquePtr<FShellSchemeFactory> GFactory;
+	FShellSchemeFactory* GFactory = nullptr;   // fica até o fim do processo (o navegador pode pedir até fechar)
 
 	void FocusBrowser()
 	{
-		if (GBrowser.IsValid() && FSlateApplication::IsInitialized())
+		if (GShown && GBrowser.IsValid() && FSlateApplication::IsInitialized())   // escondido, nunca rouba o teclado da partida
 		{
 			FSlateApplication::Get().SetAllUserFocus(GBrowser, EFocusCause::SetDirectly);
 		}
@@ -178,8 +178,12 @@ FString FRTSShell::UiDir()
 
 bool FRTSShell::IsAvailable()
 {
-	return FApp::CanEverRender() && IWebBrowserModule::IsAvailable() && IWebBrowserModule::Get().IsWebModuleAvailable()
-		&& FPaths::FileExists(UiDir() / TEXT("menu.html"));
+	if (!FApp::CanEverRender() || !FPaths::FileExists(UiDir() / TEXT("menu.html")))
+	{
+		return false;
+	}
+	// carrega o módulo (o IWebBrowserModule::IsAvailable só diz se alguém já carregou, e no jogo ninguém carrega antes)
+	return IWebBrowserModule::Get().IsWebModuleAvailable();
 }
 
 bool FRTSShell::IsShown()
@@ -201,10 +205,10 @@ void FRTSShell::Show(const FString& Page)
 		{
 			return;
 		}
-		if (!GFactory.IsValid())
+		if (!GFactory)
 		{
-			GFactory = MakeUnique<FShellSchemeFactory>();
-			Singleton->RegisterSchemeHandlerFactory(TEXT("https"), TEXT("rts.ui"), GFactory.Get());
+			GFactory = new FShellSchemeFactory();
+			Singleton->RegisterSchemeHandlerFactory(TEXT("https"), TEXT("rts.ui"), GFactory);
 		}
 		GBridge.Reset(NewObject<URTSShellBridge>());
 		// a ponte entra antes da 1ª página: o navegador nasce vazio, liga o window.ue.shell e só então abre a página
@@ -247,21 +251,23 @@ void FRTSShell::Show(const FString& Page)
 	{
 		GPendingPage = Url;
 	}
-	if (!GShown)
-	{
-		GEngine->GameViewport->AddViewportWidgetContent(GBrowser.ToSharedRef(), 1000);
-		GEngine->GameViewport->bDisableWorldRendering = true;   // as telas cobrem tudo: o mapa do fundo não precisa ser desenhado
-		GShown = true;
-	}
+	// tira e põe de novo: o widget solto no viewport atravessa as trocas de mapa, e nunca fica dois
+	GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
+	GEngine->GameViewport->AddViewportWidgetContent(GBrowser.ToSharedRef(), 1000);
+	GEngine->GameViewport->bDisableWorldRendering = true;   // as telas cobrem tudo: o mapa do fundo não precisa ser desenhado
+	GShown = true;
 	FocusBrowser();
 	UE_LOG(LogTemp, Log, TEXT("RTS telas: %s"), *Page);
 }
 
 void FRTSShell::Hide()
 {
-	if (GShown && GEngine && GEngine->GameViewport && GBrowser.IsValid())
+	if (GEngine && GEngine->GameViewport)
 	{
-		GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
+		if (GBrowser.IsValid())
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
+		}
 		GEngine->GameViewport->bDisableWorldRendering = false;
 	}
 	if (GBrowser.IsValid())
@@ -270,6 +276,34 @@ void FRTSShell::Hide()
 	}
 	GShown = false;
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// o módulo: solta o navegador e a ponte antes da Unreal fechar (um widget ou um UObject preso num global estático cairia no fim)
+
+class FRTSShellModule : public IModuleInterface
+{
+public:
+	virtual void StartupModule() override
+	{
+		FCoreDelegates::OnEnginePreExit.AddStatic(&FRTSShellModule::Release);
+	}
+	virtual void ShutdownModule() override
+	{
+		Release();
+	}
+	static void Release()
+	{
+		if (GBrowser.IsValid() && GEngine && GEngine->GameViewport)
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
+		}
+		GBrowser.Reset();
+		GBridge.Reset();
+		GShown = false;
+	}
+};
+
+IMPLEMENT_MODULE(FRTSShellModule, RTSShell)
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // a ponte (window.ue.shell)

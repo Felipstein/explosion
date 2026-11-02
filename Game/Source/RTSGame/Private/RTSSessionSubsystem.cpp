@@ -1,4 +1,5 @@
 #include "RTSSessionSubsystem.h"
+#include "RTSShellGame.h"   // (01/11) as telas novas (plugin RTSShell)
 
 #include "RTSGameData.h"
 #include "RTSNetSession.h"
@@ -78,6 +79,12 @@ void URTSSessionSubsystem::SetStartingMoney(int32 Money, bool bSave)
 
 FString URTSSessionSubsystem::SkirmishMapName()
 {
+	// (01/11, as telas novas) o mapa escolhido na sala do skirmish ou o da cena do SCRIPT
+	const FString Chosen = RTSShellGame::MapOverride();
+	if (!Chosen.IsEmpty())
+	{
+		return Chosen;
+	}
 	// a cena lida uma vez (o nome dela não muda no processo); sem cena ou sem "map", o mapa do skirmish
 	static const FString Map = []()
 	{

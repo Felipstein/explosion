@@ -263,20 +263,22 @@ function condFor(terr, r) {     // a condição que cabe no tipo: nevasca só na
   const base = ['MORNING', 'DAY', 'DAY', 'LOW SUN', 'DUSK', 'NIGHT', 'RAIN'];
   const extra = terr === 'SNOW' ? ['SNOWFALL', 'BLIZZARD'] : terr === 'JUNGLE' ? ['MONSOON', 'RAIN'] : (terr === 'ISLANDS' || terr === 'COAST') ? ['STORM'] : terr === 'DESERT' || terr === 'STEPPE' ? [] : ['RAIN'];
   const L = terr === 'SNOW' ? base.filter(c => c !== 'RAIN').concat(extra) : base.concat(extra); return L[Math.floor(r() * L.length)]; }
+/*fora-do-jogo*/
 const W1 = ['SALT', 'IRON', 'RED', 'BROKEN', 'GLASS', 'SILENT', 'BLACK', 'COLD', 'HOLLOW', 'DUST', 'STONE', 'ASH', 'SUN', 'WOLF', 'EAGLE', 'COPPER', 'NORTH', 'EAST', 'DRY', 'HIGH', 'OLD', 'TWIN', 'LONG', 'PALE'];
 const W2 = ['FLATS', 'MESA', 'COAST', 'RIDGE', 'VALLEY', 'CROSSING', 'HARBOR', 'PASS', 'BASIN', 'OASIS', 'DELTA', 'PLATEAU', 'GORGE', 'FIELDS', 'DUNES', 'DOCKS', 'QUARRY', 'BRIDGE', 'CITADEL', 'STEPPE', 'FJORD', 'PINES', 'CANYON', 'SHORE'];
+/*/fora-do-jogo*/
 const CAT = [
   { id: 0, real: 'World_TestSalt2', name: 'SALT FLATS', players: 4, size: 'M', terr: 'DESERT', cond: 'DAY', src: 'OFFICIAL', plays: 9999, date: 999 },
-  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, size: 'M', terr: 'DESERT', cond: 'DUSK', src: 'OFFICIAL', plays: 4200, date: 998 }];
+  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, size: 'M', terr: 'DESERT', cond: 'DUSK', src: 'OFFICIAL', plays: 4200, date: 998 },
+  { id: 2, real: 'World_TestHills', name: 'BROKEN HILLS', players: 4, size: 'M', terr: 'DESERT', cond: 'LOW SUN', src: 'OFFICIAL', plays: 3100, date: 997 }];
+/*fora-do-jogo*/
 (() => { const r = rng(7); const used = new Set(CAT.map(c => c.name));
-  for (let i = 2; i < 100; i++) { let n; do n = W1[Math.floor(r() * W1.length)] + ' ' + W2[Math.floor(r() * W2.length)]; while (used.has(n) && used.size < 90); if (used.has(n)) n += ' ' + (2 + Math.floor(r() * 7)); used.add(n);
+  for (let i = 3; i < 100; i++) { let n; do n = W1[Math.floor(r() * W1.length)] + ' ' + W2[Math.floor(r() * W2.length)]; while (used.has(n) && used.size < 90); if (used.has(n)) n += ' ' + (2 + Math.floor(r() * 7)); used.add(n);
     const pl = [2, 2, 3, 4, 4, 4, 5, 6, 8, 8, 12, 16][Math.floor(r() * 12)], terr = TERR[Math.floor(r() * TERR.length)];
     CAT.push({ id: i, seed: 1000 + i * 7919, name: n, players: pl, size: SIZE[Math.min(3, Math.floor(pl / 2.4 + r() * 1.4))], terr, cond: condFor(terr, r), naval: terr === 'ISLANDS' || terr === 'COAST', src: i < 48 ? 'OFFICIAL' : 'WORLDFORGE', plays: Math.floor(Math.pow(r(), 3) * 5000), date: Math.floor(r() * 990) }); } })();
-// no jogo, só os mapas reais (os que existem no jogo e têm o minimapa exportado em maps/)
+/*/fora-do-jogo*/
+// a ponte do jogo (só existe dentro do jogo)
 const UE = window.ue && window.ue.shell;
-if (UE) { CAT.length = 0; CAT.push({ id: 0, real: 'World_TestSalt2', name: 'SALT FLATS', players: 4, size: 'M', terr: 'DESERT', cond: 'DAY', src: 'OFFICIAL', plays: 3, date: 3 },
-  { id: 1, real: 'World_TestDunesSim', name: 'DUNE SEA', players: 4, size: 'M', terr: 'DESERT', cond: 'DUSK', src: 'OFFICIAL', plays: 2, date: 2 },
-  { id: 2, real: 'World_TestHills', name: 'BROKEN HILLS', players: 4, size: 'M', terr: 'DESERT', cond: 'LOW SUN', src: 'OFFICIAL', plays: 1, date: 1 }); }
 const FAV = new Set([0]);
 
 // ---------- o minimapa: o chão desenhado como no jogo (a luz dos game shots, a sombra pro mesmo lado) ----------
@@ -773,6 +775,7 @@ function startBtn() {
 }
 function cancelCd(why) { clearInterval(cdTimer); cd = 0; if (why) say(`Countdown canceled: ${why}`, true); startBtn(); }
 // a sala pro jogo: as vagas vivas na ordem (você primeiro), a cor aleatória já resolvida numa livre, o time, a base e a IA
+let gameStarting = false;   // um START só (o anel da largada é só desenho)
 function gameSetup() {
   const n = CUR.starts.length, L = st.slots.slice(0, n).filter(live), used = new Set(L.filter(s => s.color >= 0).map(s => s.color));
   const free = COLORS.map((c, k) => k).filter(k => !used.has(k));
@@ -780,7 +783,7 @@ function gameSetup() {
     slots: L.map(s => ({ kind: s.kind === 'you' ? 'you' : 'ai', fac: s.fac, color: COLORS[s.color >= 0 ? s.color : free.shift()][1], team: s.team, base: s.base, ai: s.ai || 0 })) };
 }
 $('#start').addEventListener('click', () => {
-  if (!MP && UE) { if (launch > 0) return; launch = 1.4; const setup = JSON.stringify(gameSetup()); setTimeout(() => UE.startskirmish(setup), 900); return; }
+  if (!MP && UE) { if (gameStarting) return; gameStarting = true; launch = 1.4; const setup = JSON.stringify(gameSetup()); setTimeout(() => UE.startskirmish(setup), 900); return; }
   if (!MP) { launch = 1.4; return; }
   const me = st.slots.find(s => s.kind === 'you');
   if (!IAMHOST) { me.ready = !me.ready; say(`FELIPE is ${me.ready ? 'ready' : 'not ready'}`, true); render(); return; }
@@ -802,13 +805,15 @@ function say(txt, sys, who) {
   msgs.appendChild(p); msgs.scrollTop = msgs.scrollHeight;
 }
 $('#say').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && e.target.value.trim()) { say(e.target.value.trim(), false, 'FELIPE'); e.target.value = '';
-  if (IAMHOST && Math.random() < .7) setTimeout(() => say(['bora', 'fechou', 'sem rush hein', 'gg'][Math.floor(Math.random() * 4)], false, 'PAI'), 1400); } });
+  /*fora-do-jogo*/if (IAMHOST && Math.random() < .7) setTimeout(() => say(['bora', 'fechou', 'sem rush hein', 'gg'][Math.floor(Math.random() * 4)], false, 'PAI'), 1400);/*/fora-do-jogo*/ } });
 if (MP) {
   document.body.classList.add('mp');
   if (!IAMHOST) document.body.classList.add('guest');      // só o anfitrião mexe no mapa e nas regras
   document.querySelector('.kicker').innerHTML = `<span>${SRCN} ROOM · ${ROOM || HOSTN + "'S ROOM"}</span>`;
+/*fora-do-jogo*/
   if (IAMHOST) { say('Room created · LAN · v0.5.2', true); say('PAI joined the room', true); say('PAI is ready', true); setTimeout(() => say('bora? sem rush 10', false, 'PAI'), 600); }
   else { say(`You joined ${HOSTN}'s room · v0.5.2`, true); say(`${HOSTN} is the host`, true); setTimeout(() => say('welcome! pick your army', false, HOSTN), 700); }
+/*/fora-do-jogo*/
   const r0 = render; render = function () { r0(); startBtn(); };
 }
 
@@ -834,7 +839,9 @@ function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume
 addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
 
 // ---------- começa ----------
-window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };
+/*fora-do-jogo*/
+window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };/*/fora-do-jogo*/
+
 window.__pop = (row, f) => { sel = row; const c = rowsEl.children[row].querySelector(`[data-f="${f}"]`); openPop(c, row, f); };
 (async () => {
   await document.fonts.ready; await chooseMap(CAT[+(Q.get('map') || 0)]); fade = 1;
@@ -842,7 +849,7 @@ window.__pop = (row, f) => { sel = row; const c = rowsEl.children[row].querySele
   if (Q.get('browser')) openBrowser();
   if (Q.get('pop')) { const [r, f] = Q.get('pop').split(','); window.__pop(+r, f); }
   if (Q.get('still') || Q.get('rec')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); if (Q.get('browser')) drawGrid(false); setTimeout(() => window.__ready = true, Q.get('browser') ? 1500 : 200); }, 400); }
-  else { let last = performance.now(); (function loop(now) { frame(Math.min((now - last) / 1000, .1)); last = now; requestAnimationFrame(loop); })(last); window.__ready = true; }
+  else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last);   // (02/11) no navegador do jogo o tempo do quadro às vezes volta: nunca passo negativo window.__ready = true; }
 })();
 </script>
 </body>

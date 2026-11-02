@@ -38,6 +38,7 @@ canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
 .menu li:hover::before, .menu li.hv::before { width: 18px; }
 .menu li:hover::after, .menu li.hv::after { color: rgb(var(--ac)); }
 svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-events: none; }
+/*fora-do-jogo*/
 .dbg { position: absolute; left: 196px; bottom: 38px; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); padding: 5px 10px; border: 1px dashed rgba(230,220,190,.3); cursor: var(--curh); z-index: 6; }
 .dbg:hover { color: rgb(var(--ac)); border-color: rgba(var(--ac),.7); }
 .dbgp { position: absolute; left: 110px; bottom: 76px; z-index: 7; width: 560px; padding: 16px 18px 18px; background: rgba(10,13,12,.96); border: 1px solid rgba(230,220,190,.2); box-shadow: 0 20px 60px rgba(0,0,0,.6); display: none; }
@@ -45,6 +46,7 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
 .dbgp .g { font: 600 11px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); margin: 12px 0 6px; } .dbgp .g:first-child { margin-top: 0; }
 .dbgp .l { display: flex; flex-wrap: wrap; gap: 6px; } .dbgp a { font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgba(238,241,244,.85); padding: 7px 11px; border: 1px solid rgba(230,220,190,.16); text-decoration: none; }
 .dbgp a:hover { color: #fff; border-color: rgba(var(--ac),.7); background: rgba(216,173,78,.07); }
+/*/fora-do-jogo*/
 .ver { position: absolute; left: 110px; bottom: 44px; font: 500 15px 'Barlow Semi Condensed'; color: rgba(230,220,190,.38); letter-spacing: 2px; }
 .corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; }
 .c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
@@ -94,6 +96,7 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
     </div>
   </div>
   <div class="ver">v0.5.2</div>
+<!--fora-do-jogo-->
   <div class="dbg" id="dbg">DEBUG · ALL SCREENS ▸</div>
   <div class="dbgp" id="dbgp">
     <div class="g">BEFORE THE MATCH</div><div class="l"><a href="skirmish.html">SKIRMISH ROOM</a><a href="multiplayer.html">MULTIPLAYER LIST</a><a href="skirmish.html?mp=1&host=FELIPE&src=lan">MP ROOM · HOST</a><a href="skirmish.html?mp=1&host=RAFA&room=SUNDAY%202V2&src=online">MP ROOM · GUEST</a><a href="screens.html?s=load">LOADING</a><a href="screens.html?s=first">FIRST LAUNCH</a></div>
@@ -101,6 +104,7 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
     <div class="g">AFTER THE MATCH</div><div class="l"><a href="screens.html?s=res&r=win">VICTORY</a><a href="screens.html?s=res&r=def">DEFEAT</a></div>
     <div class="g">SETTINGS</div><div class="l"><a href="screens.html?s=opt&from=menu">OPTIONS</a></div>
   </div>
+<!--/fora-do-jogo-->
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
 </div></div>
 <audio id="music" preload="auto"></audio>
@@ -423,9 +427,11 @@ document.querySelectorAll('#menu li').forEach(li => {
   li.addEventListener('click', () => { const go = { skirmish: 'skirmish.html', multi: 'multiplayer.html', options: 'screens.html?s=opt&from=menu' }[li.dataset.k]; if (go) setTimeout(() => location.href = go, 260);
     if (li.dataset.k === 'quit' && window.ue && window.ue.shell) setTimeout(() => window.ue.shell.quit(), 900); });   // no jogo o QUIT fecha (depois do monitor apagar)   // cada item abre a sua tela
 });
-if (window.ue && window.ue.shell) { document.getElementById('dbg').style.display = 'none'; }   // no jogo as telas da partida são as de verdade
+/*fora-do-jogo*/
 document.getElementById('dbg').onclick = () => document.getElementById('dbgp').classList.toggle('on');     // o painel de debug: todas as telas a um clique (F2 também)
+
 addEventListener('keydown', e => { if (e.key === 'F2') { e.preventDefault(); document.getElementById('dbgp').classList.toggle('on'); } if (e.key === 'Escape') document.getElementById('dbgp').classList.remove('on'); });
+/*/fora-do-jogo*/
 // ---------- o som do site: a trilha do menu no primeiro clique, o clique da interface; a cascata ouve a trilha ----------
 // as três trilhas do menu do assgets, uma depois da outra (V1, V2, V3 e volta)
 const MUSIC_VOL = .55, MUSIC_OK = () => true;
@@ -472,10 +478,14 @@ addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', 
   }));
 })();
 // ---------- o laço (ou o passo a passo pra gravar) ----------
+/*fora-do-jogo*/
 window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };
 window.__hover = i => { document.querySelectorAll('#menu li').forEach(l => l.classList.remove('hv')); if (i) { const li = document.querySelector(`#menu li:nth-child(${i})`); li.classList.add('hv'); hover(li); } else hover(null); };
+/*/fora-do-jogo*/
 const t0 = +(Q.get('t') || 30);
+/*fora-do-jogo*/
 if (Q.get('hv')) window.__hover(+Q.get('hv'));
+/*/fora-do-jogo*/
 document.fonts.ready.then(() => {
   // aquece: o feixe já deu umas voltas, as trilhas já têm rastro
   T = t0; beam = (t0 * Math.PI * 2 / PERIOD) % (Math.PI * 2); impacts = Math.floor(T / MIS.every);
@@ -483,7 +493,7 @@ document.fonts.ready.then(() => {
   ARMY.forEach((a, i) => { hist[i] = [8, 7, 6, 5, 4, 3, 2, 1].map(k => armyPos(a, T - k * PERIOD).slice(0, 2)); });
   dim = dimT; gain = gainT; knob = knobT;
   if (Q.get('rec') || Q.get('still')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); window.__ready = true; }, 400); }
-  else { let last = performance.now(); (function loop(now) { frame(Math.min((now - last) / 1000, .1)); last = now; requestAnimationFrame(loop); })(last); window.__ready = true; }
+  else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last);   // (02/11) no navegador do jogo o tempo do quadro às vezes volta: nunca passo negativo window.__ready = true; }
 });
 </script>
 </body>

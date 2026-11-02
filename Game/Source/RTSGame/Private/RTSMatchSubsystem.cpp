@@ -1,4 +1,5 @@
 #include "RTSMatchSubsystem.h"
+#include "RTSShellGame.h"   // (01/11) as telas novas (plugin RTSShell)
 
 #include "RTSTreadDust.h"
 #include "Scalability.h"
@@ -321,10 +322,17 @@ namespace
 {
 	/** A cor de cada jogador da partida (o índice da paleta): na LAN, a escolhida na sala. */
 	uint8 GPlayerPalette[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
+	/** (01/11) A cor escolhida na sala nova do skirmish (as 24 da tela), no lugar da paleta. */
+	bool GColorChosen[8] = {};
+	FLinearColor GColorValue[8];
 }
 
 FLinearColor URTSMatchSubsystem::PlayerColor(uint8 Player)
 {
+	if (GColorChosen[Player % 8])
+	{
+		return GColorValue[Player % 8];
+	}
 	return PaletteColor(GPlayerPalette[Player % 8]);
 }
 
@@ -549,8 +557,11 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 	}
 	// quantos jogam: na LAN, todos da sala (um por base do mapa); no skirmish, você e a IA; (v5) no laboratório, os pedidos (a
 	// cena: um por largada dela), até as bases do mapa
+	// (01/11) o skirmish montado na sala nova (RTSShellGame.h): as vagas dela no lugar do você contra uma IA
+	const TArray<FRTSLocalSlot>* LocalSlots = (!bNet && !bLab && !bScenario) ? RTSShellGame::LocalSlots() : nullptr;
 	const int32 PlayerCount = bNet ? NetSession->PlayerCount()
-		: (bLab ? FMath::Clamp(bScenario ? Info->StartsM.Num() : LabPlayers, 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num()))) : 2);
+		: (bLab ? FMath::Clamp(bScenario ? Info->StartsM.Num() : LabPlayers, 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num())))
+			: (LocalSlots ? FMath::Clamp(LocalSlots->Num(), 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num()))) : 2));
 	if (Info->StartsM.Num() < FMath::Max(2, PlayerCount))
 	{
 		OutError = FString::Printf(TEXT("o mapa tem %d posições iniciais; a partida precisa de %d"), Info->StartsM.Num(), FMath::Max(2, PlayerCount));
@@ -559,6 +570,8 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 	for (int32 P = 0; P < 8; ++P)
 	{
 		GPlayerPalette[P] = bNet ? NetSession->ColorOfSlot(uint8(P)) : uint8(P);
+		GColorChosen[P] = LocalSlots && LocalSlots->IsValidIndex(P) && (*LocalSlots)[P].bHasColor;
+		GColorValue[P] = GColorChosen[P] ? (*LocalSlots)[P].Color : FLinearColor::White;
 	}
 	if (!RTSMapBaker::Bake(GetWorld(), *Info, S->Baked, OutError))
 	{
@@ -872,7 +885,7 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 			uint8 NextTeam = 0;
 			for (int32 P = 0; P < PlayerCount; ++P)
 			{
-				const uint8 LobbyTeam = bNet ? NetSession->TeamOfSlot(uint8(P)) : 0;
+				const uint8 LobbyTeam = bNet ? NetSession->TeamOfSlot(uint8(P)) : (LocalSlots && LocalSlots->IsValidIndex(P) ? (*LocalSlots)[P].Team : 0);
 				if (LobbyTeam == 0)
 				{
 					SlotTeam.Add(NextTeam++);
@@ -887,7 +900,7 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 					SlotTeam.Add(NextTeam++);
 				}
 				SlotAI.Add(bNet ? NetSession->IsAISlot(uint8(P)) : bScenario ? Scenario.AIPlayers.IsValidIndex(P) && Scenario.AIPlayers[P]
-					: (bLab ? false : P != 0));   // (v5) no laboratório a IA começa desligada (o painel liga por jogador)
+					: (LocalSlots && LocalSlots->IsValidIndex(P) ? (*LocalSlots)[P].bAI : (bLab ? false : P != 0)));   // (v5) no laboratório a IA começa desligada (o painel liga por jogador)
 			}
 		}
 		// (31/10, o elenco das 3 facções: docs/ELENCO.md) a facção de cada lugar: sozinho, a sua (o menu) e a da IA; na LAN, os humanos
@@ -902,6 +915,10 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 				if (FacSession && !bScenario)
 				{
 					F = SlotAI[P] ? FacSession->AIFaction : (bNet ? FString(TEXT("usa")) : FacSession->PlayerFaction);
+				}
+				if (LocalSlots && LocalSlots->IsValidIndex(P))
+				{
+					F = (*LocalSlots)[P].Faction;   // (01/11) a de cada vaga da sala nova
 				}
 				if (F == TEXT("random") && S->Data.Factions.Num() > 0)
 				{
@@ -960,6 +977,33 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 			} while (std::next_permutation(Perm.begin(), Perm.end()));
 			UE_LOG(LogTemp, Log, TEXT("RTS largadas com times: %s"), *FString::JoinBy(StartOf, TEXT(" "), [&](int32 K)
 				{ return FString::Printf(TEXT("(%.0f, %.0f)"), Starts[K].X, Starts[K].Y); }));
+		}
+		// (01/11, a sala nova) a base escolhida em cada vaga; as sorteadas ficam com as livres, na ordem de cima
+		if (LocalSlots)
+		{
+			TArray<int32> Chosen;
+			Chosen.Init(-1, PlayerCount);
+			for (int32 P = 0; P < PlayerCount; ++P)
+			{
+				const int32 B = LocalSlots->IsValidIndex(P) ? (*LocalSlots)[P].Start : -1;
+				if (Starts.IsValidIndex(B) && !Chosen.Contains(B))
+				{
+					Chosen[P] = B;
+				}
+			}
+			for (int32 P = 0; P < PlayerCount; ++P)
+			{
+				int32 Pick = StartOf[P];
+				for (int32 K = 0; Chosen[P] < 0 && Chosen.Contains(Pick) && K < Starts.Num(); ++K)
+				{
+					Pick = K;
+				}
+				if (Chosen[P] < 0)
+				{
+					Chosen[P] = Pick;
+				}
+			}
+			StartOf = Chosen;
 		}
 		TArray<FVector2D> SlotStarts;
 		for (int32 P = 0; P < PlayerCount; ++P)

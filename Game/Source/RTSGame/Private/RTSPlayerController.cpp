@@ -1,4 +1,5 @@
 #include "RTSPlayerController.h"
+#include "RTSShellGame.h"   // (01/11) as telas novas (plugin RTSShell)
 
 #include "RTSNetSession.h"
 
@@ -105,6 +106,7 @@ void ARTSPlayerController::BeginPlay()
 	{
 		It->ApplyPreset(Level);
 	}
+	RTSShellGame::OnPlayerBegin(this, bMenu);   // (01/11) no menu, as telas novas cobrem o jogo (RTSShellGame.h)
 }
 
 URTSMatchSubsystem* ARTSPlayerController::Match() const
