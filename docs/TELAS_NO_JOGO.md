@@ -60,3 +60,16 @@ partida ainda não ligadas). Os ganchos nos arquivos compartilhados estão no co
    a dificuldade da IA (a IA tem um nível só), as superarmas, o CLASSIC de verdade, a música pelo volume do jogo, o pacote do pai
    (conferir que o CEF e `Resources/UI` vão junto).
 4. A linha no CLAUDE.md apontando este guia (o Felipe pediu pras outras sessões saberem).
+
+**Pra quem continua (o necessário pra seguir sem perguntar):**
+- **Primeiro:** ver o resultado do último teste que ficou rodando: `captures/concept/ui/shell/shots/game/t2_skirmish/` e `t3_lab/`
+  (o `game.log` de cada um; procurar `RTS telas: skirmish em`, `RTS facção do jogador`, `RTS laboratório: abrindo`).
+- **A fonte das páginas** é o protótipo em `captures/concept/ui/shell/` (fora do git, neste PC); `docs/concept/ui/menu/` é a cópia
+  aprovada. Mudou página: `python captures/concept/ui/shell/tools/export_game.py` (pro jogo, sem compilar) e
+  `python captures/concept/ui/shell/tools/export_docs.py` (pra cópia do git). O que não vai pro jogo fica entre as marcas
+  `fora-do-jogo` (pedido dele: no jogo só o que o jogo usa, nada escondido).
+- **Mudou C++** (o plugin ou o `RTSShellGame`): compilar só na vez da fila da placa, sem compilação de outra sessão rodando
+  (memória "Compilar com segurança"); se falhar, voltar o arquivo pra versão que compilou.
+- **Teste no jogo:** sempre curto e fora da tela dele (o `shell_game_test.ps1` já faz; memória "Teste não segura a fila").
+- **O site na rede pro pai:** `http://192.168.1.88:8135/menu.html` (servidor Python, PID 15028; depois de reiniciar o PC, subir de
+  novo com `python -m http.server 8135 --bind 0.0.0.0 --directory captures/concept/ui/shell`).
