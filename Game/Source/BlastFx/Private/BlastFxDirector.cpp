@@ -27,6 +27,9 @@
 #include "Misc/Parse.h"
 #include "ShaderCompiler.h"
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "HAL/PlatformFileManager.h"
+#include "GenericPlatform/GenericPlatformFile.h"
+#include "Misc/Paths.h"
 
 // as mortes no perfil (-csvGpuStats -csvCaptureFrames=N): um evento por morte de tanque, pra achar o quadro
 CSV_DEFINE_CATEGORY(BlastFxDirector, true);
@@ -45,6 +48,8 @@ namespace
 	// poeira com 40% da altura e metade da vida, a gravação no relógio dela.
 	// (Desde 13/10 a morte de tanque é a nova, abaixo; estas ficam pro aquecimento e pra volta, -TankBlast=0.)
 	constexpr float TankBallScale = 0.55f;
+	// (30/10) o fogo da carcaça espera o jato da munição começar a apagar (o emissor do EmberGen cai de 3,0 a 4,5 s)
+	constexpr double JetWreckDelayS = 3.0;
 
 	// A morte de tanque da v2 (o Felipe, 13/10: "ficaremos desse jeito pra explosão de tanques"; as construções mantêm
 	// a antiga): a gravação do EmberGen do BlastLab (eg_tq_v2: a bola e a areia que sobe), do tamanho e no ritmo medidos
@@ -57,6 +62,87 @@ namespace
 	const FVector4f TankSoot(1.0f, 0.97f, 0.94f, 0.30f), TankDust(0.90f, 0.72f, 0.50f, 0.80f);
 	constexpr float TankSunFull = 1.0f, TankSkyGain = 6.28f;
 	const FVector4f TankGround(0.50f, 0.38f, 0.26f, 1.0f);
+
+	// A morte v3 (29/10, o Felipe: "a explosão em si é a que mais falta"; o alvo r1_raid_slabs e a cena do Blender, que mediu
+	// nele: a nuvem de ~12 × 15 m, a fumaça marrom-cinza de albedo ~0,21, a bola laranja no miolo e a coluna escura que fica).
+	// Na v2 a mesma gravação (eg_tq_v2, 3 s) tocava a 0,35 e acabava em 1,8 s: uma nuvem creme que sumia antes de virar coluna.
+	// Aqui: a gravação a 0,5 (≈ 12 m) no relógio de Froude (√0,5), a fuligem marrom-cinza mais escura, o fogo mais forte só nela
+	// e a nuvem viva: a gravação para no quadro da fumaça cheia (antes da areia assentar, que dava a borda clara em volta do casco)
+	// e a nuvem sobe e esmaece por alguns segundos. A/B pela linha de comando: -DeathScale= -DeathEmit= -DeathSoot=r,g,b,albedo
+	// -DeathHold= (s da gravação; 0 = sem parar) -DeathLinger= (s) -DeathRise= (cm/s) -DeathWind= (a fração do vento do mapa); -DeathV=2 volta a v2 de 13/10.
+	struct FDeathLook
+	{
+		float Scale = TankBlastScale, Time = TankBlastTime, Emit = 1.0f, HoldS = 0.0f, LingerS = 0.0f, RiseCmS = 0.0f, WindK = 0.0f, Ring = 0.0f, RingThick = 1.0f, Jets = 1.0f; int32 RingV = 1;
+		FVector4f RingCol = FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
+		FString Src = TEXT("eg_tq_v2");   // a gravação da bola (-DeathSrc=; a simulação nova entra por aqui no A/B)
+		float SrcScale = 0.0f;              // a escala dela quando não é a eg_tq_v2 (-DeathSrcScale=; 0 = a Scale de sempre)
+		FVector4f Soot = TankSoot;
+	};
+	const FDeathLook& DeathLook()
+	{
+		static const FDeathLook L = []
+		{
+			FDeathLook O;
+			int32 V = 3;
+			FParse::Value(FCommandLine::Get(), TEXT("DeathV="), V);
+			if (V >= 3)
+			{
+				O.Scale = 0.5f;
+				O.Emit = 1.6f;      // (a folha explo_e: 2,5 deixava a bola branca até 0,3 s; 1,6 dá o amarelo-laranja do alvo aos 0,25 s)
+				O.HoldS = 0.9f;
+				O.LingerS = 3.5f;   // (5 s e 0,8 m/s: com 3 mortes juntas as nuvens cobriam as unidades, o defeito 7; v11_seq.jpg)
+				O.RiseCmS = 250.0f;  // a térmica quente sobe a metros por segundo: em ~1 s a base da nuvem sai da altura das unidades
+				// a nuvem vai com o ar a 0,8 do vento na altura dela (a inércia da térmica quente no começo)
+				O.WindK = 0.8f;
+				// o anel de areia rente ao chão (o alvo: a areia clara correndo até ~15 m, o contraste com a fumaça escura; a gravação
+				// não tem a saia, BASE_JOGAVEL "anel de poeira da morte"): o anel simulado do tiro na areia aprovado (sim_chao_anel,
+				// ~7 m a 1) a 2,0 (≈ 14 m, o do alvo; a 1,6 quase não lia, explo_j.jpg), no relógio de Froude
+				O.Ring = 2.0f;
+				// 3× mais denso e na cor da poeira levantada pela explosão (a da cena do Blender, 0,50/0,42/0,32: mais escura e quente
+				// que o véu): na cor clara do véu ele virava uma névoa pálida que lavava as unidades (rc_cmp.jpg)
+				// (a folha sk_cmp: o anel do tiro, baixo e com o meio limpo, não fazia a base da nuvem do alvo; a saia simétrica do
+				// EmberGen, o domo que sobe ~metade da bola, faz) a saia v2, 6× a espessura
+				O.RingV = 2;
+				O.RingThick = 6.0f;
+				// (st_cmp.jpg) melhor ainda: a areia simulada do ataque de mísseis aprovada em 24/10 (a cortina, a onda de base que espalha
+				// pros lados como no alvo) a 0,55 (Ring 2,75 ÷ 5): a saia larga e baixa do r1 sem cobrir as unidades em volta
+				O.RingV = 4;
+				O.Ring = 2.75f;
+				// os rastros dos estilhaços como os jatos de fumaça escura do alvo (~1 m de largura, ~1,5 s): 3× a v2 (a 1 eram fios; jets_cmp.jpg)
+				O.Jets = 3.0f;
+				O.RingCol = FVector4f(0.78f, 0.62f, 0.45f, 0.6f);
+				O.Soot = FVector4f(1.0f, 0.80f, 0.62f, 0.14f);   // (a folha explo_d: 0,22 ainda lia creme no sol forte; 0,14 dá o marrom-escuro do alvo)
+			}
+			FParse::Value(FCommandLine::Get(), TEXT("DeathScale="), O.Scale);
+			O.Time = V >= 3 ? FMath::Sqrt(O.Scale) : TankBlastTime;
+			FParse::Value(FCommandLine::Get(), TEXT("DeathEmit="), O.Emit);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathHold="), O.HoldS);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathLinger="), O.LingerS);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathRise="), O.RiseCmS);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathWind="), O.WindK);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathRing="), O.Ring);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathRingThick="), O.RingThick);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathRingV="), O.RingV);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathJets="), O.Jets);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathSrc="), O.Src);
+			FParse::Value(FCommandLine::Get(), TEXT("DeathSrcScale="), O.SrcScale);
+			FString S;
+			TArray<FString> P;
+			if (FParse::Value(FCommandLine::Get(), TEXT("DeathSoot="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4)
+			{
+				O.Soot = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3]));
+			}
+			P.Reset();
+			if (FParse::Value(FCommandLine::Get(), TEXT("DeathRingCol="), S, false) && S.ParseIntoArray(P, TEXT(",")) == 4)
+			{
+				O.RingCol = FVector4f(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]), FCString::Atof(*P[3]));
+			}
+			UE_LOG(LogTemp, Display, TEXT("BlastFx morte v%d: escala %.2f, relógio %.2f, fogo %.2f, parada %.2f s, nuvem %.1f s a %.0f cm/s, fuligem %.2f,%.2f,%.2f,%.2f"),
+				V, O.Scale, O.Time, O.Emit, O.HoldS, O.LingerS, O.RiseCmS, O.Soot.X, O.Soot.Y, O.Soot.Z, O.Soot.W);
+			return O;
+		}();
+		return L;
+	}
 	// os destroços da v2 (BlastDebris, 14/10: "rastro de fumaça também, é tudo que a gente homologou"): chapas, cometas
 	// com rastro da cor da fuligem e faíscas do alto do casco (~1,8 m), como no vídeo aprovado (-DebrisGlow=0.15: as
 	// cabeças e faíscas laranja de dia, não brancas), e o rastro escuro da torre arremessada (BlastLabSimulation.cpp)
@@ -75,7 +161,12 @@ namespace
 	// da fx_acerto_v8, cuja cor dos riscos bateu com a 4.2 (matiz 41°, saturação 0,07)
 	// (16/10, depois da correção da conversão sRGB dos brilhos: a cor do miolo ficou igual e a área acesa do leque caiu 30%,
 	// srgb_acerto × fx_acerto_v10; 0,8 → 1,1 devolve a área com a cor mais quente)
-	constexpr float MuzzleGlow = 0.3f, TracerGlow = 0.3f, ImpactGlow = 1.1f;
+	// (29/10, a cena do r1 contra os game shots: o leque de faíscas do acerto, o do tiro na areia e o clarão da boca saíam riscos e
+	// borrões brancos, a saturação da curva de tom; nos game shots não há leque branco e as faíscas da morte, a 0,15, já saem laranja)
+	// o acerto 1,1 → 0,35, o chão 0,5 → 0,2 e a boca 0,3 → 0,2: as faíscas e o clarão em amarelo-laranja. -ImpactGlow= -GroundGlow=
+	// -MuzzleGlow= trocam (os de antes: 1.1, 0.5, 0.3)
+	float CmdGlow(const TCHAR* Key, float Def) { float V = Def; FParse::Value(FCommandLine::Get(), Key, V); return V; }
+	const float MuzzleGlow = CmdGlow(TEXT("MuzzleGlow="), 0.2f), TracerGlow = 0.3f, ImpactGlow = CmdGlow(TEXT("ImpactGlow="), 0.35f);
 	// a bola do disparo no raymarch: a eg_tq_v2 (38 m) a 0,07 (~2,7 m), tocada a 0,18 (~1 s inteira, o fogo nos primeiros
 	// ~0,15–0,25 s), 1,6 m à frente da boca; a fumaça do propelente cinza-clara (não a fuligem preta da morte)
 	constexpr float MuzzleBallScale = 0.07f, MuzzleBallTime = 0.18f, MuzzleBallThickness = 6.0f;
@@ -140,8 +231,9 @@ namespace
 	// (16/10, lado a lado com a 4.2: a fumaça cinza da arte sobe atrás do leque e a areia cobre a base; as nossas mal
 	// apareciam) a baforada maior, mais rápida e cinza-escura; a areia um pouco maior
 	constexpr float HitDustScale = 0.28f, HitDustTime = 0.6f, HitDustOpacity = 0.9f;
-	constexpr float HitPuffScale = 0.14f, HitPuffTime = 0.6f, HitPuffOpacity = 0.85f;
-	const FVector4f HitPuffColor(0.45f, 0.43f, 0.40f, 0.6f);         // cinza: a fumaça do metal e da tinta, não a areia
+	// (29/10, "falta vida no impacto dos tiros") a baforada 0,14 → 0,2 (no relógio de Froude, √(0,2/0,14) × 0,6) e um tom mais escura
+	constexpr float HitPuffScale = 0.2f, HitPuffTime = 0.72f, HitPuffOpacity = 0.85f;
+	const FVector4f HitPuffColor(0.38f, 0.36f, 0.33f, 0.6f);         // cinza: a fumaça do metal e da tinta, não a areia
 	constexpr float GroundDustScale = 0.25f, GroundDustTime = 0.6f, GroundDustOpacity = 0.85f;
 	// (16/10, contra a 4.1: o anel de areia da onda de choque; a saia simétrica do EmberGen a 0,6 (raio final ~8,5 m), o
 	// golpe (3,6 s da gravação) em 0,3 s e o resto a 0,6 (~1,4 s), rala no alto (espessura 0,7)
@@ -161,7 +253,10 @@ namespace
 	constexpr float GroundHitSize = 0.85f;
 	constexpr float GroundCurtainOpacity = 0.9f, GroundCurtainThickness = 1.0f;
 	const FVector4f GroundCurtainDirt(0.22f, 0.17f, 0.12f, 0.3f);
-	constexpr float GroundImpactGlow = 0.5f;
+	const float GroundImpactGlow = CmdGlow(TEXT("GroundGlow="), 0.2f);
+	// (30/10) o foguinho do tiro no chão: a ignição do fogo da carcaça (a escala 1 = o fogo de veículo, chama de ~3 m) a ~0,22, a
+	// chama de ~0,5 m (Heskestad: ~30 kW num buraco de 0,3 m). -GroundFireScale=X pro A/B; 0 desliga
+	const float GroundFireScale = CmdGlow(TEXT("GroundFireScale="), 0.22f);   // (29/10: 0,5 → 0,2, o leque branco na areia; ver o MuzzleGlow)
 	// a Patriot (16/10; docs/ESTUDO_MISSIL_PATRIOT.md): o brilho da chama, a poeira do lançamento (a areia gravada a 0,2,
 	// ~8 m, o golpe a 0,5 e o resto a 0,35) e a bola da ogiva (a de antes: a Carga Pesada a 0,07; a v2, de 23/10, mais abaixo)
 	constexpr float MissileGlow = 0.3f;
@@ -398,6 +493,7 @@ namespace
 	const FVector4f GroundJetDirt(0.26f, 0.20f, 0.14f, 0.35f);   // (v6: mais escura, a terra revirada da 4.1)
 	// o tanque ferido (16/10): os limiares do ZH; o deck do motor 2,3 m atrás do centro a 2,0 m, o anel da torre a 2,3 m
 	constexpr float DamagedHealth = 0.7f, ReallyDamagedHealth = 0.35f;
+	constexpr double FireDeckCm = 182.0;   // (30/10) a altura da chama na gravação do fogo (o 'hull_h' do firesim)
 	constexpr float DeckBackCm = 230.0f, DeckUpCm = 200.0f, RingUpCm = 230.0f;
 	// a carcaça (16/10): começa 4 s depois da morte (a bola e a areia da morte já se desfizeram: duas fumaças no mesmo
 	// quadro é o defeito nº 1) e dura 30 s, o mesmo tempo do miolo quente do material da carcaça (RTSUnitActor)
@@ -439,6 +535,24 @@ namespace
 		return Best;
 	}
 	// a unidade perto de um ponto (o alvo do traçante: o jogo manda o centro dela): o ator com a TurretPivot mais perto
+	/** (01/11) O prédio cuja caixa (no plano) tem o ponto (o tiro de tanque mirado nele: a simulação mira o centro). */
+	AActor* FindStructureAt(const UWorld* World, const FVector& At)
+	{
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->ActorHasTag(TEXT("RTSStructure")))
+			{
+				FVector C, E;
+				It->GetActorBounds(false, C, E);
+				if (FMath::Abs(At.X - C.X) <= E.X + 50.0 && FMath::Abs(At.Y - C.Y) <= E.Y + 50.0)
+				{
+					return *It;
+				}
+			}
+		}
+		return nullptr;
+	}
+
 	AActor* FindUnitNear(const UWorld* World, const FVector& At)
 	{
 		AActor* Best = nullptr;
@@ -446,7 +560,8 @@ namespace
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
 			const double D = FVector::DistSquared2D(It->GetActorLocation(), At);
-			if (D < BestD)
+			// (30/10) o prédio leva o acerto de prédio (o BuildingHit, chamado pelo jogo), não as faíscas de metal do traçante
+			if (D < BestD && !It->ActorHasTag(TEXT("RTSStructure")))
 			{
 				for (UActorComponent* C : It->GetComponents())
 				{
@@ -579,6 +694,121 @@ namespace
 	// de baixo e a fuligem da carga, no canal da fuligem) na cor da cortina de terra do tiro na areia aprovado (v8), não na carvão
 	constexpr float StrikeSandFadeInS = 0.06f;
 
+	// (25/10, a poeira que fica; o Felipe: "a areia que sobe na explosão, depois cai e desaparece, e outra coisa que aparece como poeira
+	// flutuando: duas coisas distintas mal encaixadas, sem vida") a fração fina da cortina e da onda de base é a nuvem que fica: o MESMO
+	// volume da gravação (a mesma forma, a mesma cor, a mesma luz), parado no quadro da parada, segue como nuvem rala (MakeLinger):
+	//  - a parada: a strike_chao em 0,75 da gravação (o começo do esmaecer de antes: o aprovado de 24/10 fica exato até ali; dali a areia
+	//    grossa já caiu e o que se vê é o fino); o anel do tipo (sim_chao_anel, a neve e a terra) em 0,31 (0,76 s de 2,47: a poeira dele
+	//    em ~40% do pico, antes de a dissipação do Mantaflow comer o resto, que no ar de verdade fica);
+	//  - a frente da onda de base, que ainda abria na parada (a velocidade radial medida na gravação), para em ~1 s [E];
+	//  - o espalhamento turbulento (Taylor 1921): σ(t) = σv·t/√(1 + t/2T_L), σv = 1,9·u*, σw = 1,25·u* (Panofsky e Dutton 1984, a camada
+	//    neutra perto do chão), u* = κ·U10/ln(10/z0), T_L = 0,5·z/σw [E, a ordem de grandeza de Hanna 1982]; mais o cisalhamento no rumo do
+	//    vento, σx,c = (∂U/∂z)·σz·t/√3 (Smith 1965), com ∂U/∂z = u*/(κz). Sem vento sobra a turbulência fraca do ar parado [E];
+	//  - a massa se conserva: a profundidade óptica vista de cima cai com a área (1/(Gx·Gy)); o volume da Unreal só cresce por igual, então
+	//    o tamanho vai pelo lado (Gy) e o resto do rumo do vento entra na espessura (o estiramento no rumo do vento pede o shader);
+	//  - os finos assentam: Stokes de 25 µm de quartzo, ~0,05 m/s (a areia e a terra); o pó de neve, 0,08 [E]; dDep/dt = −Dep·vs/z;
+	//  - deriva no vento do mapa na altura do meio da nuvem (o perfil logarítmico, o mesmo do rastro do míssil), pegando o vento em ~1 s [E];
+	//  - acaba quando a profundidade óptica cai a 6% da da parada, ou no fim da vida do preset (Média 10 s, Alta 16, Ultra 20: o tempo de
+	//    jogo comprimido), num esmaecer de 1,5 s. O teto de nuvens vivas por preset (3, 6, 8): a mais velha sai esmaecendo
+	constexpr float LingerZ0M = 0.01f, LingerKappa = 0.4f, LingerSigVK = 1.9f, LingerSigWK = 1.25f;
+	constexpr float LingerCalmSigVMs = 0.15f, LingerCalmSigWMs = 0.08f, LingerTLK = 0.5f;
+	constexpr float LingerFrontTauS = 1.0f, LingerAirTauS = 1.0f, LingerSettleSand = 0.05f, LingerSettleSnow = 0.08f;
+	constexpr float LingerStrikeHold = 0.75f, LingerRingHold = 0.31f, LingerEndTau = 0.06f, LingerRetireS = 1.5f;
+	constexpr float LingerLifeByPreset[4] = { 0.0f, 10.0f, 16.0f, 20.0f };
+	constexpr int32 LingerMaxByPreset[4] = { 0, 3, 6, 8 };
+	// (25/10, o vento ao vivo) a coluna da carcaça vira pro vento novo com τ = 4 s: a fumaça nova sai no rumo novo e a velha vai sendo
+	// trocada (a coluna de ~20 m se renova em ~10 s a ~2 m/s de subida) [E]
+	constexpr float WreckColumnTurnTauS = 4.0f;
+
+	// (25/10, o fogo simulado; docs/FOGO.md) a gravação do firesim (BlastLab/Tools/firesim: o anel da torre arrancada queimando em escala
+	// real, o vento de 1,5 m/s a 10 m) e como ela toca: a fuligem, o sol, o céu e o chão da morte de tanque aprovada (o mesmo material:
+	// um fenômeno só), a emissão da chama e o ruído de detalhe do WebGL quase desligado (a simulação já tem o detalhe de 10 cm). A
+	// entrada: 0,4 s (a gravação começa na ignição, por baixo da bola da morte); o giro pro vento com o τ da coluna de 17/10
+	const FName FireSource(TEXT("fire_wreck"));
+	// (01/11) o fim: 4 s (antes 2) em que a fumaça que sobra se solta e sobe (abaixo, no Tick do fogo)
+	constexpr float FireFadeInS = 0.4f, FireYawTauS = 4.0f, FireTailS = 4.0f;
+	// (31/10, o Felipe vendo a sucata: "a fumaça do fogo [...] parece que virou um PNG") depois do último quadro do fim simulado, a fumaça
+	// que sobra segue viva FireHoldS como a nuvem da ogiva: sobe e alarga como uma térmica (o tamanho × √((t₁ + t)/t₁), Morton, Taylor e
+	// Turner), vai com o vento do mapa e rareia (a massa se conserva: ÷ o cubo do crescimento) até zero. Antes ela parava e esmaecia por
+	// 2 s no lugar: a mesma forma clareando, o carimbo
+	constexpr float FireHoldS = 8.0f;
+	TAutoConsoleVariable<int32> CVarFireVersion(TEXT("blast.Fire.Version"), 2,   // (30/10) o simulado é o padrão: o de sprite deixava a carcaça sem fogo de cima
+		TEXT("O fogo das carcaças (tanque e aeronave caída): 1 = o de hoje (o fogo de sprite do tanque, o eg_fogo_ar_64 das aeronaves); 2 = o simulado (fire_wreck; docs/FOGO.md)"));
+	// (30/10: a 1,0 a chama quase não lia de cima)
+	TAutoConsoleVariable<float> CVarFireEmit(TEXT("blast.Fire.Emit"), 1.4f, TEXT("O fogo simulado: a emissão da chama (× a do raymarch)"));
+	TAutoConsoleVariable<float> CVarFireNoise(TEXT("blast.Fire.Noise"), 0.15f, TEXT("O fogo simulado: o ruído de detalhe do WebGL (0 = só a simulação)"));
+	TAutoConsoleVariable<float> CVarFireThick(TEXT("blast.Fire.Thick"), 1.0f, TEXT("O fogo simulado: a fuligem por metro (× 1/escala)"));
+	TAutoConsoleVariable<int32> CVarFireLog(TEXT("blast.Fire.Log"), 0, TEXT("O fogo simulado: o quadro, o rumo e a luz de cada fogo a cada 1 s no registro"));
+
+	/** O que o firesim.py grava no cabeçalho da gravação ("fire": os quadros do início, do laço, a saída do laço e o fim; o anel; a luz
+	 *  do fogo estável), lido uma vez do arquivo (o cabeçalho JSON no começo do .brm2). */
+	struct FFireMeta
+	{
+		bool bValid = false;
+		float Fps = 10.0f, RingX = -4.0f, LightSteady = 1.0f;
+		int32 Intro = 0, Loop = 1, Exit = 0, Outro = 0, Frames = 0;
+	};
+	const FFireMeta& FireMeta()
+	{
+		static FFireMeta M;
+		static bool bRead = false;
+		if (bRead)
+		{
+			return M;
+		}
+		bRead = true;
+		const FString Path = FPaths::Combine(FPaths::ProjectIntermediateDir(), TEXT("Raymarch"), FireSource.ToString() + TEXT(".brm2"));
+		TUniquePtr<IFileHandle> H(FPlatformFileManager::Get().GetPlatformFile().OpenRead(*Path));
+		if (!H)
+		{
+			return M;
+		}
+		uint8 Head[8];
+		if (!H->Read(Head, 8) || FMemory::Memcmp(Head, "BRM2", 4) != 0)
+		{
+			return M;
+		}
+		const uint32 Len = uint32(Head[4]) | (uint32(Head[5]) << 8) | (uint32(Head[6]) << 16) | (uint32(Head[7]) << 24);
+		if (Len == 0 || Len > (64u << 20))
+		{
+			return M;
+		}
+		TArray<uint8> Json;
+		Json.SetNumUninitialized(int32(Len) + 1);
+		if (!H->Read(Json.GetData(), Len))
+		{
+			return M;
+		}
+		Json[Len] = 0;
+		const FString S = UTF8_TO_TCHAR(reinterpret_cast<const ANSICHAR*>(Json.GetData()));
+		const int32 At = S.Find(TEXT("\"fire\":{"));
+		if (At < 0)
+		{
+			return M;
+		}
+		const FString Fire = S.Mid(At, 600);
+		auto Num = [&Fire](const TCHAR* Key, float Default)
+		{
+			const FString K = FString::Printf(TEXT("\"%s\":"), Key);
+			const int32 I = Fire.Find(K);
+			return I < 0 ? Default : FCString::Atof(*Fire.Mid(I + K.Len(), 24));
+		};
+		const int32 FramesAt = S.Find(TEXT("\"frames\":"));
+		const int32 Frames = FramesAt >= 0 ? FCString::Atoi(*S.Mid(FramesAt + 9, 12)) : 0;
+		M.Fps = Num(TEXT("fps"), 10.0f);
+		M.Intro = FMath::RoundToInt32(Num(TEXT("intro"), 0.0f));
+		M.Loop = FMath::Max(FMath::RoundToInt32(Num(TEXT("loop"), 1.0f)), 1);
+		M.Exit = FMath::RoundToInt32(Num(TEXT("exit"), 0.0f));
+		M.Outro = FMath::RoundToInt32(Num(TEXT("outro"), 0.0f));
+		M.RingX = Num(TEXT("ringX"), -4.0f);
+		M.LightSteady = FMath::Max(Num(TEXT("lightSteady"), 1.0f), 1e-4f);
+		M.Frames = Frames;
+		M.bValid = Frames > 0 && M.Intro + M.Loop + M.Outro == Frames && M.Exit >= 0 && M.Exit < M.Loop && M.Fps > 0.0f;
+		UE_LOG(LogTemp, Display, TEXT("BlastFx fogo simulado: %s, %d quadros a %.0f qps (início %d, laço %d com a saída no %d, fim %d), o anel em x %.2f m, %s"),
+			*Path, M.Frames, M.Fps, M.Intro, M.Loop, M.Exit, M.Outro, M.RingX, M.bValid ? TEXT("ok") : TEXT("INVÁLIDO"));
+		return M;
+	}
+
 	/** A normal do terreno num ponto (cm), pelas diferenças de ±1,5 m na grade guardada do chão. */
 	FVector GroundNormalAt(const UWorld* World, const FVector& AtCm)
 	{
@@ -662,8 +892,466 @@ AExplosionVolume* UBlastFxDirector::Spawn(const FVector& Ground, UExplosionBake*
 	return E;
 }
 
-AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Variant, bool bClassic, AActor* WreckOf)
+AExplosionVolume* UBlastFxDirector::FireLoop(const FVector& FootCm, float Scale, uint32 Variant)
 {
+	// (24/10, o escopo B do ar) a gravação do fogo em loop; o relógio e a chama da noite de 13/10 (o fogo_carcaca_loop_v4: relógio 0,5,
+	// a chama a 50%, a espessura 4×), a fuligem cinza da morte de tanque (a regra da cor de 13/10)
+	static const FName Source(TEXT("eg_fogo_ar_64"));
+	const UBlastRaymarchSubsystem* Rm = GetWorld() ? GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>() : nullptr;
+	const float Dur = Rm ? Rm->SourceDuration(Source) : 0.0f;
+	if (Dur <= 0.0f || !LoadAssets() || Bakes.Num() == 0)
+	{
+		return nullptr;
+	}
+	// (25/10) sem a luz do volume: ela segue a curva da Carga Pesada (a gravação do ator), e o clarão dela voltava a cada volta do
+	// loop (a luz piscando). A luz é a da carcaça (UpdateLoopFires), pela potência desta gravação
+	AExplosionVolume* E = Spawn(FootCm, Bakes[Variant % uint32(Bakes.Num())], Scale, VariantFraction(Variant, 0xF1AE), false);
+	if (!E)
+	{
+		return nullptr;
+	}
+	E->RaymarchSource = Source;
+	E->bFlash = false;
+	E->TimeScale = 0.5f;
+	// o ciclo da gravação em loop: um quadro a mais que a duração (o último emenda no primeiro; com a duração o raymarch pulava a emenda)
+	const int32 Frames = Rm->SourceFrames(Source);
+	E->LoopPeriod = Frames > 1 ? Dur * float(Frames) / float(Frames - 1) : Dur;
+	E->LoopLife = 1.0e6f;
+	E->Thickness = 4.0f;
+	E->RaymarchEmit = 0.5f;
+	E->RaymarchSoot = TankSoot;
+	E->RaymarchSunFull = TankSunFull;
+	E->RaymarchSkyGain = TankSkyGain;
+	E->RaymarchGround = TankGround;
+	E->Age = Dur * VariantFraction(Variant, 0x10F) / 0.5f;   // a fase do loop sorteada: duas carcaças não pulsam juntas
+	if (ABlastDebris* L = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		L->StartWreckFire(1.0e6f, false);   // só a luz (sem as chamas de sprite); quem apaga é o UpdateLoopFires
+		L->SetFireDrive(0.0f, FootCm);
+		LoopFires.Add({ E, L, Scale });
+	}
+	return E;
+}
+
+void UBlastFxDirector::UpdateLoopFires()
+{
+	if (LoopFires.IsEmpty() || !GetWorld())
+	{
+		return;
+	}
+	static const FName Source(TEXT("eg_fogo_ar_64"));
+	const UBlastRaymarchSubsystem* Rm = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+	const int32 Frames = Rm ? Rm->SourceFrames(Source) : 0;
+	if (LoopFireMeanPower < 0.0f && Frames > 1)
+	{
+		// a média do ciclo (a gravação de 13/10 sai normalizada no pico da Carga Pesada, ~48–83: só a forma da curva vale)
+		double Sum = 0.0;
+		FVector P;
+		float Pw = 0.0f;
+		for (int32 F = 0; F < Frames; ++F)
+		{
+			Sum += Rm->SourceLight(Source, float(F), (F + 1) % Frames, P, Pw) ? Pw : 0.0f;
+		}
+		LoopFireMeanPower = float(Sum / Frames);
+	}
+	for (int32 K = LoopFires.Num() - 1; K >= 0; --K)
+	{
+		FLoopFire& F = LoopFires[K];
+		AExplosionVolume* E = F.E.Get();
+		ABlastDebris* L = F.Light.Get();
+		if (!E || E->IsFinished() || !L)
+		{
+			if (L)
+			{
+				L->SetFireDrive(0.0f, L->GetActorLocation());
+				L->SetLifeSpan(0.5f);
+			}
+			LoopFires.RemoveAtSwap(K);
+			continue;
+		}
+		// o quadro do raymarch (o ciclo com a emenda: FrameOfTime da gravação em loop) e a potência gravada nele, no centro da queima.
+		// A força: a média do ciclo = a luz da carcaça de hoje na escala da carcaça da aeronave (0,17; o tremor médio 0,78 do
+		// ABlastDebris::UpdateLight), pela área (Scale², como a luz das explosões e a do fogo simulado), e a entrada/saída de quem chama
+		FVector Lp = FVector(0.0, 0.0, 2.5);
+		float Pw = LoopFireMeanPower;
+		if (Frames > 1 && E->LoopPeriod > 0.0f)
+		{
+			const float Fr = FMath::Fmod(FMath::Max(E->BakeTime(), 0.0f), E->LoopPeriod) / E->LoopPeriod * float(Frames);
+			const int32 F0 = FMath::Clamp(FMath::FloorToInt32(Fr), 0, Frames - 1);
+			if (!Rm->SourceLight(Source, Fr, (F0 + 1) % Frames, Lp, Pw))
+			{
+				Pw = LoopFireMeanPower;
+			}
+		}
+		const float Shape = LoopFireMeanPower > 0.0f ? Pw / LoopFireMeanPower : 1.0f;
+		L->SetFireDrive(Shape * 0.78f * FMath::Square(F.Scale / 0.17f) * FMath::Clamp(E->Opacity, 0.0f, 1.0f),
+			E->GetActorLocation() + Lp * (double(E->SizeScale) * 100.0));
+	}
+}
+
+void UBlastFxDirector::StartGroundFire(const FVector& AtCm, const FVector& FromCm, uint32 Variant, float Scale, float LifeS)
+{
+	constexpr int32 MaxGroundFires = 6;
+	GroundFires.RemoveAll([this](const FGroundFire& F) { return F.Fire < 0 || !FireAlive(F.Fire); });
+	if (GroundFires.Num() >= MaxGroundFires)
+	{
+		FireOut(GroundFires[0].Fire, 0.3f);
+		GroundFires.RemoveAt(0);
+	}
+	// no buraco, um pouco à frente no rumo do tiro (os pedaços quentes vão pra lá)
+	const FVector Fwd = (AtCm - FromCm).GetSafeNormal2D();
+	const FVector At = AtCm + Fwd * (40.0 * VariantFraction(Variant, 0xF0C1));
+	// (v11: com o fogo em loop da aeronave encolhido, a fumaça batia no teto da caixa da gravação e saía um bloco cinza de bordas retas) a
+	// ignição da gravação do fogo da carcaça (docs/FOGO.md: os primeiros segundos são o fogo pequeno nascendo, com pouca fumaça perto da
+	// base) no tamanho de um fogo de resto de carga e mato (Scale da carcaça), e apagado antes da coluna crescer. A chama da gravação
+	// nasce FireDeckCm acima do chão dela (o teto do casco simulado): o chão dela fica isso abaixo do buraco
+	const int32 Id = StartFire(At - FVector(0.0, 0.0, FireDeckCm * Scale), Scale, Variant ^ 0xF0C0u, LifeS);
+	if (Id >= 0)
+	{
+		GroundFires.Add({ Id, 0.0f, LifeS });
+	}
+}
+
+void UBlastFxDirector::UpdateGroundFires(float Dt)
+{
+	for (int32 K = GroundFires.Num() - 1; K >= 0; --K)
+	{
+		FGroundFire& F = GroundFires[K];
+		F.Age += Dt;
+		if (F.Fire < 0 || !FireAlive(F.Fire) || F.Age > F.LifeS + 3.0f)
+		{
+			GroundFires.RemoveAtSwap(K);
+		}
+	}
+}
+
+int32 UBlastFxDirector::BulletSandVersion()
+{
+	// (30/10, item 29) 2 = a areia da bala nova (sem torrões, a cortina fina, o véu ralo e mais longo); -BulletSandV=1 = a de antes, pro A/B
+	static const int32 V = [] { int32 X = 2; FParse::Value(FCommandLine::Get(), TEXT("BulletSandV="), X); return X; }();
+	return V;
+}
+
+int32 UBlastFxDirector::FireVersion()
+{
+	return CVarFireVersion.GetValueOnGameThread();
+}
+
+int32 UBlastFxDirector::StartFire(const FVector& GroundCm, float Scale, uint32 Variant, float BurnS, ABlastDebris* LightOf)
+{
+	const FFireMeta& M = FireMeta();
+	UWorld* World = GetWorld();
+	const UBlastRaymarchSubsystem* Rm = World ? World->GetSubsystem<UBlastRaymarchSubsystem>() : nullptr;
+	if (!M.bValid || !Rm || Rm->SourceFrames(FireSource) != M.Frames || !LoadAssets() || Bakes.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("BlastFx fogo simulado: sem a gravação %s (o firesim.py grava; o game.ps1 worlds liga)"), *FireSource.ToString());
+		return -1;
+	}
+	Scale = FMath::Max(Scale, 0.1f);
+	AExplosionVolume* E = Spawn(GroundCm, Bakes[Variant % uint32(Bakes.Num())], Scale, VariantFraction(Variant, 0xF12E), false);
+	if (!E)
+	{
+		return -1;
+	}
+	E->RaymarchSource = FireSource;
+	E->bFlash = false;
+	E->bLights = false;
+	E->TimeScale = 1.0f;
+	E->HoldAge = BurnS + 120.0f;                // quem apaga é o UpdateFires (o fim simulado ou o esmaecer)
+	E->Thickness = CVarFireThick.GetValueOnGameThread() / Scale;
+	E->RaymarchEmit = CVarFireEmit.GetValueOnGameThread();
+	E->RaymarchNoise = CVarFireNoise.GetValueOnGameThread();
+	// (30/10, o Felipe: o fogo da carcaça "nenhum dos dois presta"; a fumaça do simulado saía branca, vapor) a fuligem do incêndio de
+	// veículo (diesel, borracha, plástico) é carbono preto: com o albedo 0,30 da bola da morte e o sol cheio ela saía branca, e mais
+	// densa (blast.Fire.Thick 2,5, medido) só ficava mais branca e opaca. Com 0,06 a coluna lê escura ao sol, como no vídeo de
+	// referência dele (o carro queimando) e nos game shots
+	E->RaymarchSoot = FVector4f(1.0f, 0.95f, 0.9f, 0.06f);
+	E->RaymarchSunFull = TankSunFull;
+	E->RaymarchSkyGain = TankSkyGain;
+	E->RaymarchGround = TankGround;
+	E->Opacity = 0.0f;
+	E->RaymarchFrame = 0.0f;
+	E->RaymarchNextFrame = FMath::Min(1, M.Frames - 1);
+	FFire F;
+	F.Id = ++FireSerial;
+	F.E = E;
+	F.GroundCm = GroundCm;
+	F.Scale = Scale;
+	F.YawRad = WindYawRad;
+	F.BurnS = BurnS;
+	if (LightOf)
+	{
+		F.Light = LightOf;
+	}
+	else if (ABlastDebris* L = World->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		L->StartWreckFire(BurnS + 1.0f, false);
+		F.Light = L;
+		F.bOwnLight = true;
+	}
+	// a saída do laço: a última volta em que o fim simulado ainda acaba até BurnS (sem nenhuma, a 1ª e esmaece no fim)
+	const int32 K = FMath::FloorToInt32((BurnS * M.Fps - float(M.Intro + M.Exit + M.Outro)) / float(M.Loop));
+	F.ExitG = float(FMath::Max(K, 0) * M.Loop + M.Exit);
+	if (K < 0)
+	{
+		F.FadeFrom = FMath::Max(BurnS - 1.5f, 0.2f);
+		F.FadeS = 1.5f;
+	}
+	const float EndS = (float(M.Intro) + F.ExitG + float(M.Outro)) / M.Fps;
+	Fires.Add(F);
+	UE_LOG(LogTemp, Display, TEXT("BlastFx fogo simulado %d: nasceu em %s, escala %.2f, queima %.1f s (%d voltas do laço; o fim simulado acaba aos %.1f s), vento %.0f graus"),
+		F.Id, *GroundCm.ToString(), Scale, BurnS, FMath::Max(K, 0), EndS, FMath::RadiansToDegrees(WindYawRad));
+	return F.Id;
+}
+
+void UBlastFxDirector::FireOut(int32 Id, float WithinS)
+{
+	const FFireMeta& M = FireMeta();
+	FFire* F = Fires.FindByPredicate([Id](const FFire& X) { return X.Id == Id; });
+	if (!F || !M.bValid)
+	{
+		return;
+	}
+	WithinS = FMath::Max(WithinS, 0.0f);
+	const float G = F->Age * M.Fps - float(M.Intro);
+	const bool bInOutro = F->ExitG >= 0.0f && G >= F->ExitG;
+	if (!bInOutro)
+	{
+		// a próxima saída que ainda vem e a última que cabe no prazo
+		const int32 KMin = FMath::Max(FMath::CeilToInt32((G - float(M.Exit)) / float(M.Loop)), 0);
+		const int32 KMax = FMath::FloorToInt32(((F->Age + WithinS) * M.Fps - float(M.Intro + M.Exit + M.Outro)) / float(M.Loop));
+		if (KMax >= KMin)
+		{
+			F->ExitG = FMath::Min(F->ExitG, float(KMax * M.Loop + M.Exit));
+			return;
+		}
+	}
+	else if ((float(M.Frames - 1) - (float(M.Intro + M.Loop) + G - F->ExitG)) / M.Fps <= WithinS)
+	{
+		return;     // o fim simulado já acaba antes
+	}
+	// não cabe: esmaece (a carcaça afundando, a aeronave que some)
+	if (F->FadeFrom < 0.0f || F->FadeFrom + F->FadeS > F->Age + WithinS)
+	{
+		F->FadeFrom = F->Age;
+		F->FadeS = FMath::Max(WithinS, 0.05f);
+	}
+}
+
+float UBlastFxDirector::FireEndSoon(int32 Id)
+{
+	// (31/10, a sucata) o FireOut escolhe a última saída do laço que cabe num prazo (e esmaece o volume inteiro se nenhuma cabe); aqui não há
+	// prazo: a carcaça está indo embora e o fogo baixa já, na primeira saída que vem (no máximo uma volta do laço), pelo fim simulado
+	const FFireMeta& M = FireMeta();
+	FFire* F = Fires.FindByPredicate([Id](const FFire& X) { return X.Id == Id; });
+	if (!F || !M.bValid)
+	{
+		return -1.0f;
+	}
+	const float G = F->Age * M.Fps - float(M.Intro);
+	if (F->ExitG < 0.0f || G < F->ExitG)
+	{
+		const int32 KMin = FMath::Max(FMath::CeilToInt32((G - float(M.Exit)) / float(M.Loop)), 0);
+		const float FirstExit = float(KMin * M.Loop + M.Exit);
+		F->ExitG = F->ExitG < 0.0f ? FirstExit : FMath::Min(F->ExitG, FirstExit);
+	}
+	// o último quadro: no UpdateFires o quadro do fim é Intro + Loop + (G − ExitG) e acaba em Frames − 1
+	float LeftS = (float(M.Frames - 1 - M.Loop) + F->ExitG) / M.Fps - F->Age;
+	if (F->FadeFrom >= 0.0f)
+	{
+		LeftS = FMath::Min(LeftS, F->FadeFrom + F->FadeS - F->Age);   // já esmaecendo (um prazo curto de antes)
+	}
+	return FMath::Max(LeftS, 0.0f);
+}
+
+void UBlastFxDirector::FireFollow(int32 Id, const FVector& GroundCm)
+{
+	if (FFire* F = Fires.FindByPredicate([Id](const FFire& X) { return X.Id == Id; }))
+	{
+		F->GroundCm = GroundCm;
+	}
+}
+
+bool UBlastFxDirector::FireAlive(int32 Id) const
+{
+	return Fires.ContainsByPredicate([Id](const FFire& X) { return X.Id == Id && X.E.IsValid(); });
+}
+
+void UBlastFxDirector::UpdateFires(float Dt)
+{
+	if (Fires.IsEmpty() || !GetWorld())
+	{
+		return;
+	}
+	const FFireMeta& M = FireMeta();
+	const UBlastRaymarchSubsystem* Rm = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+	const float Sd = SimDelta(Dt);
+	const float Turn = 1.0f - FMath::Exp(-Sd / FireYawTauS);
+	const bool bLog = CVarFireLog.GetValueOnGameThread() != 0;
+	// (31/10) a fumaça que sobra no fim da gravação segue viva depois do último quadro (FireHoldS); -BlastFireHold=0 volta a de antes
+	// (esmaece nos últimos FireTailS, parada)
+	static const bool bHold = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("BlastFireHold="), V); return V != 0; }();   // (01/11) desligado: é o congelar-e-andar que ele reprovou
+	for (int32 K = Fires.Num() - 1; K >= 0; --K)
+	{
+		FFire& F = Fires[K];
+		AExplosionVolume* E = F.E.Get();
+		bool bDone = !E || !M.bValid;
+		float Frame = 0.0f;
+		int32 Next = 0;
+		if (!bDone)
+		{
+			F.Age += Sd;
+			const float Fr = F.Age * M.Fps;
+			if (Fr < float(M.Intro))
+			{
+				// o início (a ignição): contínuo até o 1º quadro do laço
+				Frame = Fr;
+				Next = FMath::FloorToInt32(Fr) + 1;
+			}
+			else
+			{
+				const float G = Fr - float(M.Intro);
+				if (F.ExitG >= 0.0f && G >= F.ExitG)
+				{
+					// o fim simulado: sai do laço no ponto puro (o 1º quadro do fim é o mesmo instante da simulação)
+					Frame = float(M.Intro + M.Loop) + (G - F.ExitG);
+					Next = FMath::FloorToInt32(Frame) + 1;
+					if (!bHold)
+					{
+						bDone = Frame >= float(M.Frames - 1);
+					}
+					else if (Frame >= float(M.Frames - 1))
+					{
+						// a fumaça que sobra segue sozinha no último quadro (abaixo); a idade dela é o tempo desde a saída do laço
+						if (F.HoldAt < 0.0f)
+						{
+							F.HoldAt = F.Age;
+							F.HoldT1 = FMath::Max((G - F.ExitG) / M.Fps, 2.0f);
+						}
+						Frame = float(M.Frames - 1);
+						Next = M.Frames - 1;
+						bDone = F.Age - F.HoldAt >= FireHoldS;
+					}
+				}
+				else
+				{
+					// o laço: o último quadro emenda no primeiro (os do fim da volta foram misturados com os logo antes do começo)
+					const float Gm = FMath::Fmod(G, float(M.Loop));
+					Frame = float(M.Intro) + Gm;
+					const int32 I0 = FMath::FloorToInt32(Gm);
+					Next = I0 + 1 >= M.Loop ? M.Intro : M.Intro + I0 + 1;
+				}
+			}
+		}
+		float Fade = 1.0f;
+		if (!bDone && F.FadeFrom >= 0.0f)
+		{
+			Fade = 1.0f - FMath::Clamp((F.Age - F.FadeFrom) / FMath::Max(F.FadeS, 0.01f), 0.0f, 1.0f);
+			bDone = Fade <= 0.0f;
+		}
+		if (bDone)
+		{
+			if (E)
+			{
+				E->Destroy();
+			}
+			if (ABlastDebris* L = F.Light.Get())
+			{
+				L->SetFireDrive(0.0f, L->GetActorLocation());
+				if (F.bOwnLight)
+				{
+					L->SetLifeSpan(0.5f);
+				}
+			}
+			UE_LOG(LogTemp, Display, TEXT("BlastFx fogo simulado %d: apagou aos %.1f s"), F.Id, F.Age);
+			Fires.RemoveAtSwap(K);
+			continue;
+		}
+		E->RaymarchFrame = Frame;
+		E->RaymarchNextFrame = FMath::Clamp(Next, 0, M.Frames - 1);
+		// a fumaça que ainda sobra no fim da gravação (a de antes: esmaece nos últimos FireTailS, parada; agora segue viva, abaixo)
+		const float Tail = bHold ? 1.0f : FMath::Clamp((float(M.Frames - 1) - Frame) / (FireTailS * M.Fps), 0.0f, 1.0f);
+		// (01/11, o "quadrado" do cerco, v37/v39_v4_siege 15,8–17,4 s: o fogo da Patriot destruída se apagava esvaziando por dentro e ficava um
+		// anel preto com a borda da caixa) o apagar (FireOut) e o fim da gravação iam pela Opacity, que é a Keep do raymarch: ela multiplica a
+		// densidade ANTES da erosão da borda (BlastRaymarch.usf, SampleInst), então baixar ela era um limiar subindo e o miolo mais ralo da
+		// gravação sumia primeiro. Agora vão pelo esvaecer linear depois da erosão (RaymarchFade): a fumaça rareia por igual. O acender fica
+		E->Opacity = FMath::SmoothStep(0.0f, 1.0f, FMath::Clamp(F.Age / FireFadeInS, 0.0f, 1.0f));
+		E->RaymarchFade = FMath::SmoothStep(0.0f, 1.0f, Fade) * FMath::SmoothStep(0.0f, 1.0f, Tail);
+		float Grow = 1.0f;
+		if (F.HoldAt >= 0.0f)
+		{
+			const float T = F.Age - F.HoldAt;
+			Grow = FMath::Sqrt((F.HoldT1 + T) / F.HoldT1);
+			E->SizeScale = F.Scale * Grow;
+			E->RaymarchDilute = (1.0f - FMath::SmoothStep(0.0f, FireHoldS, T)) / (Grow * Grow * Grow);
+			// o vento no meio da fumaça (~8 m × a escala na gravação da carcaça), mais forte no alto (a mesma lei de todos)
+			const float Wind = WindSpeedMs * WindProfileK(FMath::Max(8.0f * F.Scale * Grow, 2.0f));
+			F.DriftCm += FVector(FMath::Cos(WindYawRad), FMath::Sin(WindYawRad), 0.0f) * (Wind * Sd * 100.0f);
+		}
+		// (01/11, a sucata: "parece que na parte da névoa ele virou um PNG"; a prova captures/leitura/prova_fumaca_parada: no fim da gravação a
+		// fumaça que sobra ficava quase parada, esmaecendo no lugar) nos últimos FireTailS a fumaça vira a térmica que se solta da carcaça
+		// quando o fogo apaga: sobe (~1 m/s, a térmica de um fogo pequeno), alarga (√ do tempo, Morton–Taylor; a massa conservada pela
+		// diluição) e o campo de deformação do raymarch anda (HoldWarp), com os quadros da gravação seguindo até o último. Nada fica parado
+		float RiseCm = 0.0f;
+		if (F.HoldAt < 0.0f && !bHold)
+		{
+			const float TailT = FMath::Max(0.0f, FireTailS - (float(M.Frames - 1) - Frame) / M.Fps);
+			if (TailT > 0.0f && Frame >= float(M.Intro + M.Loop))
+			{
+				Grow = FMath::Sqrt((2.0f + TailT) / 2.0f);
+				E->SizeScale = F.Scale * Grow;
+				E->RaymarchDilute = 1.0f / (Grow * Grow * Grow);
+				E->RaymarchHoldExtraS = TailT;
+				RiseCm = 100.0f * TailT * F.Scale;
+			}
+		}
+		// o rumo: a gravação foi simulada com o vento pra +x; gira pro vento do mapa e acompanha o vento ao vivo
+		F.YawRad += FMath::FindDeltaAngleRadians(F.YawRad, WindYawRad) * Turn;
+		E->RaymarchYawRad = F.YawRad;
+		const FVector Dir(FMath::Cos(F.YawRad), FMath::Sin(F.YawRad), 0.0), Side(-Dir.Y, Dir.X, 0.0);
+		// o anel (x = RingX na gravação) no chão sob o meio do casco; (31/10) a fumaça que sobra alarga a partir dele e vai com o vento
+		E->SetActorLocation(F.GroundCm - Dir * (double(M.RingX) * F.Scale * Grow * 100.0) + F.DriftCm + FVector(0.0, 0.0, RiseCm));
+		// a luz da cena pela potência simulada, no centro da queima
+		FVector Lp;
+		float Pw = 0.0f;
+		if (ABlastDebris* L = F.Light.Get(); L && Rm && Rm->SourceLight(FireSource, Frame, E->RaymarchNextFrame, Lp, Pw))
+		{
+			const FVector W = E->GetActorLocation() + (Dir * Lp.X + Side * Lp.Y + FVector(0.0, 0.0, Lp.Z)) * (F.Scale * 100.0);
+			L->SetFireDrive(Pw / M.LightSteady * E->Opacity * E->RaymarchFade * F.Scale * F.Scale, W);
+		}
+		if (bLog && FMath::FloorToInt32(F.Age) != FMath::FloorToInt32(F.Age - Sd))
+		{
+			UE_LOG(LogTemp, Display, TEXT("BlastFx fogo simulado %d: %.1f s, quadro %.1f (seguinte %d), opacidade %.2f, rumo %.0f graus, luz %.2f"),
+				F.Id, F.Age, Frame, E->RaymarchNextFrame, E->Opacity, FMath::RadiansToDegrees(F.YawRad), Pw / M.LightSteady);
+		}
+	}
+}
+
+AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Variant, bool bClassic, AActor* WreckOf, float SizeK, int32 DeathKind,
+	FName JetBake, const FVector& JetRingCm, float JetScale, float JetBaseCm)
+{
+	SizeK = FMath::Clamp(SizeK, 0.2f, 1.5f);
+	if (DeathKind == 3 && GetWorld())
+	{
+		// (30/10, docs/ESTUDO_IMPACTOS.md D: o antiaéreo de lagarta, "a assinatura são os estouros de munição em 5–10 s e um míssil que sai
+		// torto") a munição que cozinha depois da morte: 4–6 estouros pequenos espalhados até ~8 s (cada um um clarão, faíscas pra cima e a
+		// luz) e, entre 2 e 4 s, um míssil que sai torto e risca o céu
+		const double Now = GetWorld()->GetTimeSeconds();
+		const int32 Pops = 4 + int32(VariantFraction(Variant, 0xC00C) * 2.99f);
+		for (int32 K = 0; K < Pops; ++K)
+		{
+			const uint32 Hk = Variant * 2654435761u + uint32(K) * 0x9E3779B9u;
+			FCookOff& C = CookOffs.AddDefaulted_GetRef();
+			C.At = Now + 1.5 + 6.5 * double(VariantFraction(Hk, 0x11)) ;
+			C.Cm = Ground + FVector(FMath::Lerp(-120.0f, 120.0f, VariantFraction(Hk, 0x22)), FMath::Lerp(-90.0f, 90.0f, VariantFraction(Hk, 0x33)), 150.0f);
+			C.Seed = Hk;
+		}
+		FCookOff& M = CookOffs.AddDefaulted_GetRef();
+		M.At = Now + 2.0 + 2.0 * double(VariantFraction(Variant, 0x5157));
+		M.Cm = Ground + FVector(0.0, 0.0, 220.0);
+		M.Seed = Variant ^ 0x51551Eu;
+		M.bMissile = true;
+	}
 	CSV_EVENT(BlastFxDirector, TEXT("TankDeath"));
 	CSV_SCOPED_TIMING_STAT(BlastFxDirector, TankDeath);
 	// a carcaça acende pela morte (17/10): se o tiro que matou não passou pelo ArmorHit (a morte por míssil, por ordem da cena,
@@ -675,6 +1363,10 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 		{
 			EndDamaged(WreckOf);
 			StartWreck(WreckOf);
+		}
+		if (FDamaged* Dw = Damaged.Find(WreckOf))
+		{
+			Dw->FireScale = SizeK;       // (30/10) o fogo da carcaça na escala da morte
 		}
 	}
 	if (!LoadAssets())
@@ -688,7 +1380,7 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 	{
 		RecentBigBlasts.Add({ FVector2D(Ground.X, Ground.Y), WorldB->GetTimeSeconds() });
 		RetireWarheadsNear(Ground, 400.0f);
-		MakeRoomForPriority(Ground, NewTankBlast() && !bClassic ? TankBlastScale : TankBallScale);
+		MakeRoomForPriority(Ground, (NewTankBlast() && !bClassic ? DeathLook().Scale : TankBallScale) * SizeK);
 	}
 	UExplosionBake* Bake = Bakes[Variant % uint32(Bakes.Num())];
 	const float Jitter = 1.0f + (VariantFraction(Variant, 0x51ED) - 0.5f) * SizeJitter;
@@ -701,31 +1393,155 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 		// abaixo dela em volta do casco (o avental da cratera afunda até 50–90 cm; na vila as molduras seguiam o contorno de
 		// cada casco). A/B fx_acerto_67_v2 × fx67_drop70: a moldura some e a bola fica igual. -DeathFloorDrop= troca
 		static const float FloorDrop = [] { float V = 70.0f; FParse::Value(FCommandLine::Get(), TEXT("DeathFloorDrop="), V); return V; }();
-		AExplosionVolume* N = Spawn(Ground - FVector(0.0, 0.0, FloorDrop), Bake, TankBlastScale * Jitter, VariantFraction(Variant, 0xA11CE));
+		const FDeathLook& DL = DeathLook();      // (29/10) a morte v3 (o tamanho, o relógio, a fuligem, o fogo e a nuvem viva)
+		// (30/10) SizeK: o veículo leve morre menor (a bola pela raiz cúbica da massa que queima) e mais rápido (o relógio × √K, Froude)
+		AExplosionVolume* N = Spawn(Ground - FVector(0.0, 0.0, FloorDrop * SizeK), Bake, DL.Scale * Jitter * SizeK, VariantFraction(Variant, 0xA11CE));
 		if (!N)
 		{
 			return nullptr;
 		}
-		N->RaymarchSource = FName(TEXT("eg_tq_v2"));
-		N->TimeScale = TankBlastTime * Jitter;
-		N->Thickness = 1.0f / TankBlastScale;
-		N->RaymarchSoot = TankSoot;
+		N->RaymarchSource = FName(*DL.Src);
+		if (DL.SrcScale > 0.0f)
+		{
+			// outra gravação (a simulação em metros reais): o tamanho e o relógio dela, a espessura de volta à de escala 1
+			N->SizeScale = DL.SrcScale * Jitter * SizeK;
+			N->Thickness = 1.0f / (DL.SrcScale * SizeK);
+		}
+		N->TimeScale = (DL.SrcScale > 0.0f ? FMath::Sqrt(DL.SrcScale * SizeK) : DL.Time * FMath::Sqrt(SizeK)) * Jitter;
+		if (DL.SrcScale <= 0.0f)
+		{
+			N->Thickness = 1.0f / (DL.Scale * SizeK);
+		}
+		N->RaymarchSoot = DL.Soot;
 		N->RaymarchDust = TankDust;
+		N->RaymarchEmit = DL.Emit;
+		// (30/10, a assinatura de cada morte; docs/ESTUDO_IMPACTOS.md D) a gasolina da picape queima mais clara e amarela (a bola de
+		// hidrocarboneto leve, quase sem fuligem no começo); o diesel do Stryker solta a fuligem preta (o albedo pela metade)
+		if (DeathKind == 1)
+		{
+			N->RaymarchEmit = DL.Emit * 1.45f;
+		}
+		else if (DeathKind == 2)
+		{
+			N->RaymarchSoot = FVector4f(DL.Soot.X, DL.Soot.Y, DL.Soot.Z, DL.Soot.W * 0.5f);
+		}
+		if (DL.HoldS > 0.0f)
+		{
+			// a nuvem viva: a gravação para no quadro da fumaça cheia e o volume vive até o fim da nuvem (o Tick sobe e esmaece)
+			N->BakeHoldS = DL.HoldS;
+			N->HoldAge = DL.HoldS * N->TimeScale + DL.LingerS * SizeK;
+		}
+		{
+			// (25/10, o impacto pelo chão) fora da areia a saia baixa é o que o chão tem (a neve, a terra) ou o gás da carga (o concreto,
+			// o asfalto: não há areia pra levantar); na areia, a de hoje
+			FVector4f Skirt;
+			bool bGas = false;
+			if (GroundSkirtAt(Ground, Skirt, bGas))
+			{
+				N->RaymarchDust = bGas ? TankSoot : Skirt;
+			}
+		}
 		N->RaymarchSunFull = TankSunFull;
 		N->RaymarchSkyGain = TankSkyGain;
 		N->RaymarchGround = TankGround;
 		Alive.Add(N);
+		// (30/10, a aula do EmberGen com o Felipe: FXLab/EmberGen/m1_morte_jato_v01.ember) o tanque sem painel de alívio (o T-55 da GLA): a
+		// munição do carrossel queima, a torre voa e o fogo sai em jato pelo anel dela por ~3 s, morrendo até os 4,5 s. A gravação (o recorte
+		// de 9 m em volta do jato, 5,6 cm por voxel) nasce no anel da torre, na escala do tanque, com a fuligem preta do fogo da carcaça (o
+		// albedo 0,06 que ele aprovou). O fogo da carcaça entra quando o jato começa a apagar (dois fogos juntos: "nada a ver")
+		if (!JetBake.IsNone())
+		{
+			const UBlastRaymarchSubsystem* RmJet = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+			if (RmJet && RmJet->SourceDuration(JetBake) > 0.0f)
+			{
+				const float Js = FMath::Max(JetScale, 0.1f);
+				if (AExplosionVolume* J = Spawn(JetRingCm - FVector(0.0, 0.0, JetBaseCm * Js), Bake, Js, VariantFraction(Variant, 0x7E7u)))
+				{
+					J->RaymarchSource = JetBake;
+					J->SizeScale = Js;
+					J->Thickness = 1.0f / Js;
+					J->TimeScale = FMath::Sqrt(Js);                // Froude
+					J->RaymarchSoot = FVector4f(1.0f, 0.95f, 0.9f, 0.06f);
+					J->RaymarchDust = TankDust;
+					J->RaymarchEmit = DL.Emit;
+					J->RaymarchSunFull = TankSunFull;
+					J->RaymarchSkyGain = TankSkyGain;
+					J->RaymarchGround = TankGround;
+					J->bFlash = false;                             // o clarão é o da bola da morte
+					Alive.Add(J);
+					if (WreckOf)
+					{
+						if (FDamaged* Dj = Damaged.Find(WreckOf))
+						{
+							const double Shift = JetWreckDelayS * Js;
+							Dj->WreckLightStart += Shift;
+							Dj->WreckStart += Shift;
+							Dj->WreckUntil += Shift;
+						}
+					}
+					UE_LOG(LogTemp, Display, TEXT("BlastFx morte: o jato %s no anel da torre (%s), escala %.2f"), *JetBake.ToString(), *JetRingCm.ToString(), Js);
+				}
+			}
+		}
+		if (DL.Ring > 0.0f)
+		{
+			// o anel de areia da morte v3 (fora da areia o chão diz o que solta: o GroundDustAt, como no acerto)
+			const UBlastRaymarchSubsystem* RmRing = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+			float RingO = GroundSimOpacity;
+			FVector4f RingC(-1.0f, 0.0f, 0.0f, 0.0f);
+			if (RmRing && RmRing->SourceDuration(FName(GroundSimSource)) > 0.0f && GroundDustAt(Ground, RingO, RingC))
+			{
+				if (RingC.X < 0.0f && DL.RingCol.X >= 0.0f)
+				{
+					RingC = DL.RingCol;      // na areia: a poeira levantada pela explosão, mais escura e quente que o véu (a da cena do Blender)
+				}
+				if (DL.RingV == 4 && RmRing->SourceDuration(FName(StrikeBakeGround)) > 0.0f)
+				{
+					// (A/B) a areia simulada do ataque de mísseis (aprovada 24/10: a cortina, a onda de base, os anéis do véu) na carga da morte:
+					// a 0,7 ela é a areia de ~50 kg; a morte do veículo (o combustível e a munição, ~10 kg) pela raiz cúbica, 0,7·(10/50)^⅓ ≈ 0,4;
+					// Ring/5 (a 2,0: 0,4)
+					const float Ks = DL.Ring * SizeK / 5.0f;
+					if (AExplosionVolume* Sk = SpawnDust(Ground, Ks, Ks, RingO, 1, Variant ^ 0xA9u, FVector4f(-1.0f, 0.0f, 0.0f, 0.0f),
+						StrikeBakeGround, 1.0f, GroundCurtainDirt))
+					{
+						Dusts.Last().FadeInS = StrikeSandFadeInS;
+						Sk->RaymarchYawRad = 2.0f * PI * VariantFraction(Variant, 0x5A2Du);
+					}
+				}
+				else if (DL.RingV >= 2 && RmRing->SourceDuration(FName(TEXT("eg_poeira3_96"))) > 0.0f)
+				{
+					// (A/B) a saia simétrica do EmberGen (o domo de areia que sobe ~metade da bola, a v6 do tiro na areia) no tamanho da morte:
+					// a escala da saia × Ring/1,6 (a 2,0: ~1,0 = 28,5 m de domínio), o golpe rápido e o resto pairando
+					const float K = DL.Ring * SizeK / 1.6f;
+					if (AExplosionVolume* Sk = SpawnDust(Ground, GroundRingScale * K, GroundRingTime * FMath::Sqrt(K), RingO, 1, Variant ^ 0xA9u, RingC,
+						TEXT("eg_poeira3_96"), GroundRingThickness * DL.RingThick / (3.0f * K)))
+					{
+						Sk->SlowAfterS = GroundRingSlowAfterS;
+						Sk->SlowTimeScale = GroundRingSlowTime * FMath::Sqrt(K);
+					}
+				}
+				if (DL.RingV != 2 && DL.RingV != 4)
+				{
+				// o anel baixo que corre o chão (na v3 junto do domo: o domo faz a base da nuvem e o anel o espalhado pros lados)
+				SpawnDust(Ground, GroundSimScale * DL.Ring * SizeK, GroundSimTime * FMath::Sqrt(DL.Ring * SizeK), RingO, 1, Variant ^ 0xA9u, RingC,
+					GroundSimSource, GroundSimThickness * FMath::Min(DL.RingThick, 3.0f) / (DL.Ring * SizeK));
+				}
+			}
+		}
 		if (ABlastDebris* Debris = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 		{
-			Debris->BallScale = TankBlastScale;
+			Debris->BallScale = DL.Scale * SizeK;
+			Debris->CometTrailK = DL.Jets * SizeK;
 			// o orçamento da morte em massa (16/10, o custo de processador: as 11 mortes juntas da vila davam picos de
 			// 2,8 ms nos destroços): da 5ª morte em 3 s em diante, metade das peças (o ZH corta partículas por
 			// prioridade quando a cena enche; numa morte em massa a diferença não se vê)
 			const double NowD = GetWorld()->GetTimeSeconds();
 			RecentDeaths.RemoveAll([NowD](double T0) { return NowD - T0 > 3.0; });
-			Debris->DetailK = RecentDeaths.Num() >= 4 ? 0.5f : 1.0f;
+			Debris->DetailK = (RecentDeaths.Num() >= 4 ? 0.5f : 1.0f) * FMath::Max(SizeK, 0.35f);   // (30/10) a morte leve: menos peças
 			RecentDeaths.Add(NowD);
-			Debris->TrailTint = FLinearColor(TankSoot.X, TankSoot.Y, TankSoot.Z, 1.0f);
+			// o rastro dos estilhaços na cor da fuligem, escurecido na proporção do albedo (a v2 tinha 0,30: ~1 de tinta)
+			const float TrailK = FMath::Clamp(DL.Soot.W / 0.30f, 0.2f, 1.0f);
+			Debris->TrailTint = FLinearColor(DL.Soot.X * TrailK, DL.Soot.Y * TrailK, DL.Soot.Z * TrailK, 1.0f);
 			Debris->GlowScale = DebrisGlow;
 			Debris->Start(Ground + FVector(0.0, 0.0, DebrisHeightCm), int32(Variant * 2654435761u >> 1));
 			// a torre solta fuligem (albedo ~0,07): rastro de ~0,7 m que engorda 0,7 m/s e se desfaz em 2,5 s
@@ -733,15 +1549,25 @@ AExplosionVolume* UBlastFxDirector::TankDeath(const FVector& Ground, uint32 Vari
 		}
 		return N;
 	}
-	AExplosionVolume* E = Spawn(Ground, Bake, TankBallScale * Jitter, VariantFraction(Variant, 0xA11CE));
+	AExplosionVolume* E = Spawn(Ground, Bake, TankBallScale * Jitter * SizeK, VariantFraction(Variant, 0xA11CE));
 	if (!E)
 	{
 		return nullptr;
 	}
 	E->TimeScale = Jitter;                    // a gravação no relógio dela, sem esticar pelo tamanho
-	E->Thickness = 1.0f / TankBallScale;      // a bola menor tão opaca quanto a Carga Pesada aprovada
+	E->Thickness = 1.0f / (TankBallScale * SizeK);   // a bola menor tão opaca quanto a Carga Pesada aprovada
 	E->SkirtHeight = TankSkirtHeight;
 	E->SkirtLife = TankSkirtLife;
+	{
+		// (25/10, o impacto pelo chão) a clássica (a metade pesada do ataque, o prédio) fora da areia: a saia do tipo ou o gás da carga, na
+		// fuligem da clássica (a global do raymarch, a mesma do teto do casco no SpawnWarhead); na areia, a de hoje
+		FVector4f Skirt;
+		bool bGas = false;
+		if (GroundSkirtAt(Ground, Skirt, bGas))
+		{
+			E->RaymarchDust = bGas ? FVector4f(0.55f, 0.545f, 0.535f, 0.30f) : Skirt;
+		}
+	}
 	// sem o halo de ofuscamento: é um cartaz virado pra câmera que, na câmera alta do jogo,
 	// atravessa o chão e mostra uma borda reta (o BlastLab também o tirou da morte de tanque nova)
 	Alive.Add(E);
@@ -871,6 +1697,28 @@ void UBlastFxDirector::Tick(float DeltaTime)
 	UpdateDusts();
 	UpdateWarheads();
 	UpdateDamaged();
+	for (auto It = StructDamaged.CreateIterator(); It; ++It)
+	{
+		if (!It->IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+	// (30/10) o prédio que sumiu sem morrer à vista (vendido, tirado pela simulação): o fogo do telhado apaga
+	for (auto It = StructFires.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid())
+		{
+			for (const int32 Id : It.Value())
+			{
+				FireOut(Id, 1.0f);
+			}
+			It.RemoveCurrent();
+		}
+	}
+	UpdateFires(DeltaTime);      // (25/10) depois da carcaça: a luz dela fica com a potência do fogo simulado
+	UpdateGroundFires(DeltaTime);   // (30/10) o foguinho do tiro no chão (antes da luz dos fogos em loop: a força segue a opacidade)
+	UpdateLoopFires();           // (25/10) a luz do fogo em loop das aeronaves (FireLoop), antes de juntar as luzes da cena
 	UpdateCrushes();
 	UpdateCrushTest();
 	UpdateArcTest();
@@ -889,6 +1737,53 @@ void UBlastFxDirector::Tick(float DeltaTime)
 				}
 				It.RemoveCurrent();
 			}
+		}
+	}
+	if (CookOffs.Num() && GetWorld())
+	{
+		// (30/10) a munição do Linebacker cozinhando depois da morte: os estouros e o míssil torto (TankDeath, DeathKind 3)
+		const double Now = GetWorld()->GetTimeSeconds();
+		for (int32 I = CookOffs.Num() - 1; I >= 0; --I)
+		{
+			if (Now < CookOffs[I].At)
+			{
+				continue;
+			}
+			const FCookOff C = CookOffs[I];
+			CookOffs.RemoveAtSwap(I);
+			bool bInView = true;
+			ScreenFraction(C.Cm, 2500.0f, bInView);   // (o ShotNearView, que vem mais abaixo no arquivo)
+			if (!bInView)
+			{
+				continue;
+			}
+			if (C.bMissile)
+			{
+				// o míssil sai torto: 30–60° acima do chão, rumo qualquer, 40–80 m, num clarão de motor
+				const float Yaw = 2.0f * PI * VariantFraction(C.Seed, 0x7A);
+				const float El = FMath::DegreesToRadians(30.0f + 30.0f * VariantFraction(C.Seed, 0x7B));
+				const FVector Dir(FMath::Cos(Yaw) * FMath::Cos(El), FMath::Sin(Yaw) * FMath::Cos(El), FMath::Sin(El));
+				const float Reach = 4000.0f + 4000.0f * VariantFraction(C.Seed, 0x7C);
+				if (ABlastDebris* T = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+				{
+					T->GlowScale = TracerGlow * 1.5f;
+					T->StartTracer(C.Cm, C.Cm + Dir * Reach, 4500.0f, int32(C.Seed * 3266489917u >> 1));
+				}
+			}
+			if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+			{
+				// o estouro: o clarão curto, as faíscas pra cima e a luz (o acerto em ~0,45 do tiro de tanque, apontado pro céu)
+				Fx->GlowScale = ImpactGlow;
+				Fx->ImpactK = C.bMissile ? 0.35f : 0.45f;
+				Fx->StartImpact(C.Cm, FVector::UpVector, -FVector::UpVector, int32(C.Seed * 2654435761u >> 1));
+			}
+		}
+	}
+	for (auto It = BuildingShots.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid() || It.Value().Num() == 0)
+		{
+			It.RemoveCurrent();   // (01/11) o prédio que caiu, ou sem tiro a caminho
 		}
 	}
 	if (DelayedHits.Num() || PendingShots.Num())
@@ -949,7 +1844,9 @@ void UBlastFxDirector::Tick(float DeltaTime)
 	{
 		AExplosionVolume* E = Alive[I];
 		const float Own = IsValid(E) && RmLife && !E->RaymarchSource.IsNone() ? RmLife->SourceDuration(E->RaymarchSource) : 0.0f;
-		const bool bDone = !IsValid(E) || (Own > 0.0f ? E->BakeTime() >= Own : E->IsFinished());
+		// (29/10) a morte v3 com a nuvem viva: a gravação parada não chega no fim; quem acaba é a idade (HoldAge)
+		const bool bHeld = IsValid(E) && Own > 0.0f && E->BakeHoldS > 0.0f && E->HoldAge > 0.0f;
+		const bool bDone = !IsValid(E) || (bHeld ? E->IsFinished() : (Own > 0.0f ? E->BakeTime() >= Own : E->IsFinished()));
 		if (bDone)
 		{
 			if (IsValid(E))
@@ -959,7 +1856,34 @@ void UBlastFxDirector::Tick(float DeltaTime)
 			Alive.RemoveAtSwap(I);
 			continue;
 		}
-		if (Own > 0.0f)
+		if (bHeld)
+		{
+			// a nuvem viva da morte v3: da parada ao fim ela esmaece (a fuligem dilui) e sobe como térmica
+			const float HoldReal = E->BakeHoldS * FMath::Max(E->TimeScale, 0.01f);
+			E->Opacity = 1.0f - FMath::SmoothStep(HoldReal, E->HoldAge, E->Age);
+			if (E->Age > HoldReal)
+			{
+				// e anda com o vento do mapa, na mesma lei das nuvens dos mísseis (o perfil logarítmico na altura do miolo: a nuvem
+				// da v3 tem o miolo a ~6 m e sobe): a fumaça solta vai com o ar
+				const float Zc = 6.0f + (E->Age - HoldReal) * DeathLook().RiseCmS * 0.01f;
+				const float Wind = WindSpeedMs * WindProfileK(Zc) * DeathLook().WindK;
+				// pelo avanço da idade dela (o relógio do volume, o mesmo do esmaecer). Conferido no registro (-DeathDriftLog): a 0,8 do
+				// vento de 5,6 m/s do mapa ela anda 4,2 m/s e sobe 2,5 m/s (o "6×" da folha explo_h era a régua errada de pixel pra metro)
+				const float A0 = E->DriftAge < 0.0f ? HoldReal : FMath::Max(E->DriftAge, HoldReal);
+				static const bool bDriftLog = FParse::Param(FCommandLine::Get(), TEXT("DeathDriftLog"));
+				if (bDriftLog)
+				{
+					UE_LOG(LogTemp, Display, TEXT("BlastFx nuvem: idade %.3f parada %.3f vento %.2f m/s (mapa %.2f) dt %.3f anda %.1f cm, pos %s"),
+						E->Age, HoldReal, Wind, WindSpeedMs, DeltaTime, Wind * 100.0f * FMath::Max(E->Age - A0, 0.0f), *E->GetActorLocation().ToString());
+				}
+				E->DriftAge = E->Age;
+				E->AddActorWorldOffset(FVector(FMath::Cos(WindYawRad) * Wind * 100.0f, FMath::Sin(WindYawRad) * Wind * 100.0f,
+					DeathLook().RiseCmS) * FMath::Max(E->Age - A0, 0.0f));
+				// o quadro parado ainda tem o miolo quente: o fogo esfria (τ 0,35 s) e fica a fumaça; sem isso a bola ficava acesa
+				E->RaymarchEmit = DeathLook().Emit * FMath::Exp(-(E->Age - HoldReal) / 0.35f);
+			}
+		}
+		else if (Own > 0.0f)
 		{
 			// (A/B, 16/10: -DeathFadeFrom= s da gravação onde começa o esmaecer; padrão os últimos 0,8 s)
 			static const float FadeFrom = [] { float V = -1.0f; FParse::Value(FCommandLine::Get(), TEXT("DeathFadeFrom="), V); return V; }();
@@ -1068,7 +1992,12 @@ AExplosionVolume* UBlastFxDirector::SpawnDust(const FVector& GroundCm, float Sca
 		for (int32 k = 0; k < Dusts.Num(); ++k)
 		{
 			const AExplosionVolume* V = Dusts[k].E.Get();
-			const float Done = Dusts[k].LifeS > 0.0f ? V->Age / Dusts[k].LifeS : V->BakeTime() / FMath::Max(Dusts[k].Duration, 0.01f);
+			float Done = Dusts[k].LifeS > 0.0f ? V->Age / Dusts[k].LifeS : V->BakeTime() / FMath::Max(Dusts[k].Duration, 0.01f);
+			if (Dusts[k].bLinger && V->Age > Dusts[k].HoldAge)
+			{
+				// (25/10) a nuvem que fica é a menos importante (a areia que ainda cai e as explosões vêm antes): sai primeiro, a mais velha
+				Done = 2.0f + (V->Age - Dusts[k].HoldAge) / FMath::Max(Dusts[k].LingerLifeS, 1.0f);
+			}
 			const float Score = (OnScreen(V) ? 0.0f : 10.0f) + (V->Age < 0.25f ? -20.0f : 0.0f) + Done;
 			if (Score > Most)
 			{
@@ -1118,6 +2047,15 @@ void UBlastFxDirector::UpdateDusts()
 		}
 		const float T = E->BakeTime();
 		const float Life = Dusts[I].LifeS;
+		if (Dusts[I].bLinger)
+		{
+			if (!UpdateLinger(Dusts[I], E))
+			{
+				E->Destroy();
+				Dusts.RemoveAtSwap(I);
+			}
+			continue;
+		}
 		if (T >= Dusts[I].Duration || (Life > 0.0f && E->Age >= Life))
 		{
 			E->Destroy();
@@ -1134,6 +2072,126 @@ void UBlastFxDirector::UpdateDusts()
 			E->Opacity *= 1.0f - FMath::SmoothStep(Dusts[I].FadeFromS, Life, E->Age);
 		}
 	}
+}
+
+bool UBlastFxDirector::UpdateLinger(FDust& D, AExplosionVolume* E)
+{
+	// (25/10, a poeira que fica: a conta em MakeLinger e nas constantes Linger*) até a parada, a gravação de sempre sem o esmaecer do fim;
+	// depois, a mesma nuvem parada no quadro (o ruído andando) abrindo, ralando, assentando e indo com o vento
+	const float FadeIn = FMath::SmoothStep(0.0f, FMath::Max(D.FadeInS, 0.01f), E->BakeTime());
+	const float Dt = FMath::Max(E->Age - D.LastAge, 0.0f);
+	D.LastAge = E->Age;
+	const float Tl = E->Age - D.HoldAge;
+	if (Tl <= 0.0f)
+	{
+		E->Opacity = D.Opacity0 * FadeIn;
+		return true;
+	}
+	if (!D.bHeld)
+	{
+		// (25/10, o custo: 6 nuvens do mesmo ataque custavam ~9 ms de marcha na 1660) a que para em cima de outra já parada da mesma gravação
+		// passa a massa pra ela: esta esmaece em 1,5 s enquanto aquela engrossa (a massa somada) e alarga (o espalhamento dos centros) e o pé
+		// vai pro centro de massa. Vista de cima a soma fica a mesma; a forma é a da que ficou
+		D.bHeld = true;
+		D.Foot0 = D.Foot1 = D.FootBase;
+		FDust* Host = nullptr;
+		const FVector At = E->GetActorLocation();
+		for (FDust& O : Dusts)
+		{
+			AExplosionVolume* Oe = O.E.Get();
+			if (&O == &D || !Oe || !O.bLinger || !O.bHeld || O.RetireAt >= 0.0f || Oe->RaymarchSource != E->RaymarchSource
+				|| FVector::Dist2D(Oe->GetActorLocation(), At) > 80.0 * FMath::Max(O.R0M, D.R0M))
+			{
+				continue;
+			}
+			if (!Host || O.MassK > Host->MassK)
+			{
+				Host = &O;
+			}
+		}
+		if (Host)
+		{
+			AExplosionVolume* He = Host->E.Get();
+			const float M = (D.Opacity0 * D.Thick0) / FMath::Max(Host->Opacity0 * Host->Thick0, 1.0e-3f) * D.MassK;
+			const float Mt = Host->MassK + M;
+			const FVector Off = FVector(At.X - He->GetActorLocation().X, At.Y - He->GetActorLocation().Y, 0.0) / 100.0;   // m
+			const double Dm = Off.Size();
+			Host->MassK0 = Host->MassK;
+			Host->UnionK0 = Host->UnionK;
+			Host->Foot0 = Host->FootBase;
+			Host->Foot1 = Host->FootBase + Off * (100.0 * M / Mt);
+			// o segundo momento dos centros em volta do centro de massa novo
+			Host->VarM2 += D.VarM2 + float(Host->MassK * FMath::Square(Dm * M / Mt) + M * FMath::Square(Dm * Host->MassK / Mt));
+			Host->MassK1 = Mt;
+			Host->UnionK1 = FMath::Sqrt(1.0f + Host->VarM2 / (Mt * Host->R0M * Host->R0M));
+			Host->MergeAt = He->Age;
+			D.RetireAt = E->Age;
+		}
+	}
+	if (D.MergeAt >= 0.0f)
+	{
+		const float W = FMath::SmoothStep(D.MergeAt, D.MergeAt + LingerRetireS, E->Age);
+		D.MassK = FMath::Lerp(D.MassK0, D.MassK1, W);
+		D.UnionK = FMath::Lerp(D.UnionK0, D.UnionK1, W);
+		D.FootBase = FMath::Lerp(D.Foot0, D.Foot1, double(W));
+	}
+	// o vento de agora (ao vivo: o painel do laboratório muda no meio)
+	const float U10 = WindSpeedMs;
+	const FVector2D WDir(FMath::Cos(WindYawRad), FMath::Sin(WindYawRad));
+	const float UStar = LingerKappa * U10 / FMath::Loge(10.0f / LingerZ0M);
+	const float SigV = LingerSigVK * UStar + LingerCalmSigVMs, SigW = LingerSigWK * UStar + LingerCalmSigWMs;
+	// o tamanho de agora (pelo lado) e a altura do meio da nuvem (o volume cresce por igual)
+	const float Rk = D.R0M + D.VrMs * LingerFrontTauS * (1.0f - FMath::Exp(-Tl / LingerFrontTauS));
+	auto SizeK = [&D, Rk](float Sig) { return FMath::Sqrt(Rk * Rk + 4.0f * Sig * Sig) / D.R0M; };
+	const float Gy0 = SizeK(D.SigY);
+	const float Zc = D.ZcM * Gy0;
+	const float TL = LingerTLK * Zc / SigW;
+	if (Dt > 0.0f)
+	{
+		// Taylor: dσ/dt = σv·(1 + t/4T_L)/(1 + t/2T_L)^1,5 (a derivada de σv·t/√(1 + t/2T_L), integrada: o vento pode mudar no meio)
+		auto Rate = [Tl, TL](float S) { const float A = Tl / (2.0f * TL); return S * (1.0f + 0.5f * A) / FMath::Pow(1.0f + A, 1.5f); };
+		const float DSigZ = Rate(SigW) * Dt;
+		const float Shear = UStar / (LingerKappa * FMath::Max(Zc, 0.2f));
+		D.SigXs += Shear * (D.SigZ + Tl * DSigZ / FMath::Max(Dt, 1.0e-4f)) * Dt / FMath::Sqrt(3.0f);
+		D.SigY += Rate(SigV) * Dt;
+		D.SigZ += DSigZ;
+		// os finos assentam (a nuvem mais alta leva mais tempo)
+		D.Dep *= FMath::Exp(-D.SettleMs * Dt / FMath::Max(Zc, 0.2f));
+		// a deriva: o vento na altura do meio, pego em ~1 s
+		const FVector2D Target = WDir * (U10 * WindProfileK(Zc));
+		D.DriftVelMs += (Target - D.DriftVelMs) * (1.0f - FMath::Exp(-Dt / LingerAirTauS));
+		D.DriftCm += FVector(D.DriftVelMs.X, D.DriftVelMs.Y, 0.0) * (double(Dt) * 100.0);
+	}
+	const float Gy = SizeK(D.SigY);
+	const float Gx = SizeK(FMath::Sqrt(D.SigY * D.SigY + D.SigXs * D.SigXs));
+	E->SizeScale = D.Scale0 * Gy * D.UnionK;
+	// a massa se conserva: vista de cima, ∝ M/(Gx·Gy·U²); o volume cresce Gy·U por igual (o caminho do raio também), então a espessura
+	// ÷ Gx·Gy²·U³ (M e U: as nuvens do mesmo ataque somadas nesta)
+	E->Thickness = D.Thick0 * D.Dep * D.MassK / (Gx * Gy * Gy * D.UnionK * D.UnionK * D.UnionK);
+	const FVector At = D.FootBase + D.DriftCm;
+	const double Gz = GetWorld() ? BlastFxGround::HeightAtCached(GetWorld(), At.X, At.Y) : At.Z;
+	const FVector Foot(At.X, At.Y, D.DriftCm.IsNearlyZero() ? D.FootBase.Z : Gz);
+	if (!Foot.Equals(E->GetActorLocation(), 0.5))
+	{
+		E->SetActorLocation(Foot);
+	}
+	// o fim: a nuvem rala (6% da profundidade óptica da parada) ou a vida do preset; a aposentadoria (o teto) esmaece em 1,5 s
+	const float TauRel = D.Dep / (Gx * Gy);
+	if (D.RetireAt < 0.0f && (TauRel < LingerEndTau || Tl >= D.LingerLifeS))
+	{
+		D.RetireAt = E->Age;
+	}
+	float Out = 1.0f;
+	if (D.RetireAt >= 0.0f)
+	{
+		Out = 1.0f - FMath::SmoothStep(0.0f, LingerRetireS, E->Age - D.RetireAt);
+		if (Out <= 0.0f)
+		{
+			return false;
+		}
+	}
+	E->Opacity = D.Opacity0 * FadeIn * Out;
+	return true;
 }
 
 void UBlastFxDirector::MuzzleBlast(const FVector& MuzzleCm, const FVector& Dir, float GroundZCm, uint32 Variant)
@@ -1196,9 +2254,16 @@ void UBlastFxDirector::MuzzleBlast(const FVector& MuzzleCm, const FVector& Dir, 
 		Ball->SlowTimeScale = BallSlow;
 		Ball->RaymarchEmit = BallEmit;
 	}
-	// a areia que o sopro levanta do chão em volta, à frente da boca (a sobrepressão bate no chão)
-	if (AExplosionVolume* Sand = SpawnDust(FVector(MuzzleCm.X + D.X * MuzzleDustAheadCm, MuzzleCm.Y + D.Y * MuzzleDustAheadCm, GroundZCm),
-		MuzzleDustScale, MuzzleDustTime, MuzzleDustOpacity, 0, Variant))
+	// a areia que o sopro levanta do chão em volta, à frente da boca (a sobrepressão bate no chão). (25/10, o impacto pelo chão) só o que
+	// o chão dali tem pra soltar (no concreto, nada; na neve, o pó)
+	const FVector SandAt(MuzzleCm.X + D.X * MuzzleDustAheadCm, MuzzleCm.Y + D.Y * MuzzleDustAheadCm, GroundZCm);
+	float SandO = MuzzleDustOpacity;
+	FVector4f SandC(-1.0f, 0.0f, 0.0f, 0.0f);
+	if (!GroundDustAt(SandAt, SandO, SandC))
+	{
+		return;
+	}
+	if (AExplosionVolume* Sand = SpawnDust(SandAt, MuzzleDustScale, MuzzleDustTime, SandO, 0, Variant, SandC))
 	{
 		Sand->SlowAfterS = MuzzleDustSlowAfterS;
 		Sand->SlowTimeScale = DustSlow;
@@ -1213,7 +2278,21 @@ void UBlastFxDirector::Tracer(const FVector& FromCm, const FVector& ToCm, float 
 	}
 	// o tiro no tanque: o ponto na blindagem já aqui, e o traçante termina nele (o acerto usa o mesmo ponto)
 	FVector End = ToCm;
-	if (AActor* Target = FindUnitNear(GetWorld(), ToCm))
+	// (01/11) o tiro no prédio: o ponto da mira deste atirador na fachada (BuildingAimPoint), e o acerto usa o mesmo (BuildingHit)
+	AActor* UnitNear = FindUnitNear(GetWorld(), ToCm);
+	if (AActor* Building = UnitNear ? nullptr : FindStructureAt(GetWorld(), ToCm))
+	{
+		FShotPoint Shot;
+		if (BuildingAimPoint(Building, FromCm, float(ToCm.Z - 120.0), Variant, Shot))
+		{
+			const double Now = GetWorld()->GetTimeSeconds();
+			Shot.Born = Now;
+			Shot.Arrive = Now + FVector::Dist(FromCm, Shot.Point) / FMath::Max(double(SpeedCmPerS), 1.0);
+			BuildingShots.FindOrAdd(Building).Add(Shot);
+			End = Shot.Point;
+		}
+	}
+	else if (AActor* Target = UnitNear)
 	{
 		FShotPoint Shot;
 		const uint32 ShotVariant = Variant ^ (++ShotSerial) * 0x9E3779B9u;
@@ -1224,10 +2303,12 @@ void UBlastFxDirector::Tracer(const FVector& FromCm, const FVector& ToCm, float 
 			Shot.Arrive = Now + FVector::Dist(FromCm, Shot.Point) / FMath::Max(double(SpeedCmPerS), 1.0);
 			Shot.Variant = ShotVariant;
 			Shot.GroundZCm = float(ToCm.Z - 120.0);
+			Shot.bRicochet = bNextShotRicochet;
 			PendingShots.Add(Target, Shot);
 			End = Shot.Point;
 		}
 	}
+	bNextShotRicochet = false;
 	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 	{
 		Fx->GlowScale = TracerGlow;
@@ -1242,6 +2323,8 @@ void UBlastFxDirector::ArmorHit(const FVector& AtCm, const FVector& FromCm, AAct
 		return;
 	}
 	CSV_SCOPED_TIMING_STAT(BlastFxDirector, ArmorHit);
+	const bool bRicochetNow = bNextShotRicochet;   // (30/10) o aviso do ricochete vale só pra esta chamada
+	bNextShotRicochet = false;
 	Variant ^= (++ShotSerial) * 0x9E3779B9u;
 	// no máximo um efeito por vítima a cada 100 ms (o ZH, ActiveBody.cpp): vários tiros no mesmo quadro não somam clarões
 	const double Now = GetWorld()->GetTimeSeconds();
@@ -1288,6 +2371,7 @@ void UBlastFxDirector::ArmorHit(const FVector& AtCm, const FVector& FromCm, AAct
 		Shot.Variant = Variant;
 		Shot.Arrive = Now;
 	}
+	Shot.bRicochet = Shot.bRicochet || bRicochetNow;
 	if (bKill)
 	{
 		EndDamaged(Target);                         // a morte assume (a fumaça do ferido para)
@@ -1369,19 +2453,118 @@ bool UBlastFxDirector::ArmorPoint(AActor* Target, const FVector& FromCm, const F
 
 void UBlastFxDirector::SpawnArmorImpact(const FShotPoint& Shot, AActor* Target, float GroundZCm, bool bKill)
 {
+	if (Shot.bRicochet && !bKill && Target)
+	{
+		SpawnRicochet(Shot, Target, GroundZCm);   // (30/10) o tiro que ricocheteou tem a cara dele
+		return;
+	}
+	// (30/10) a mini explosão: a bola da carga no quadro das faíscas (no tiro que mata, a morte traz a dela e tira esta)
+	const bool bBall = ShellBallKg > 0.0f && !bKill && Target;
 	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 	{
 		Fx->GlowScale = ImpactGlow;
+		Fx->bBallFollows = bBall;
 		Fx->StartImpact(Shot.Point, Shot.Normal, Shot.ShellDir, int32(Shot.Variant * 2654435761u >> 1));
 	}
 	MarkHull(Shot.Part.Get(), Shot.LocalCm, 0);
+	if (bBall)
+	{
+		// (30/10, o Felipe: "não quero bolinha de fogo assim mal feita"; docs/ESTUDO_ACERTO_TANQUE.md §2.2 e §6.2) a flecha não tem
+		// explosivo: no lugar da bola bege de 2,5 m, a língua de chama de 0,5–1 m que sai do furo (a bola da carga pequena, rts.ShellBlastKg
+		// 0,15) e a fumaça escura saindo dele por uns segundos (q2–q90: 0,3 → 1,2 m, em volume, na cor da fuligem)
+		ShellBall(Shot.Point, Shot.Normal, Target, GroundZCm, ShellBallKg, Shot.Variant);
+		SpawnDust(Shot.Point + Shot.Normal * 30.0, HitPuffScale * 0.6f, HitPuffTime * 3.0f, 1.0f, 0, Shot.Variant ^ 0x51ADu,
+			FVector4f(0.07f, 0.065f, 0.06f, 0.75f));
+		return;
+	}
 	// a areia que a onda de choque levanta em volta do tanque (no tiro que mata, a morte já traz a dela)
 	if (!bKill)
 	{
-		SpawnDust(FVector(Shot.Point.X, Shot.Point.Y, GroundZCm), HitDustScale, HitDustTime, HitDustOpacity, 1, Shot.Variant);
+		// (25/10, o impacto pelo chão) o chão embaixo do tanque: o que ele tem pra soltar (no concreto, nada; na neve, o pó)
+		float DustO = HitDustOpacity;
+		FVector4f DustC(-1.0f, 0.0f, 0.0f, 0.0f);
+		const FVector DustAt(Shot.Point.X, Shot.Point.Y, GroundZCm);
+		if (GroundDustAt(DustAt, DustO, DustC))
+		{
+			SpawnDust(DustAt, HitDustScale, HitDustTime, DustO, 1, Shot.Variant, DustC);
+		}
 		// a baforada cinza no ponto do acerto (0,25–0,4 do tanque, alfa 0,3–0,5): a primeira a cair quando falta orçamento
 		SpawnDust(Shot.Point - FVector(0.0, 0.0, 60.0), HitPuffScale, HitPuffTime, HitPuffOpacity, 0, Shot.Variant ^ 0x9E37u, HitPuffColor);
 	}
+}
+
+void UBlastFxDirector::WeldSpark(const FVector& PointCm, const FVector& OutDir, uint32 Seed)
+{
+	// (30/10, a obra com vida) a solda: o arco é um clarão branco-azulado pequeno com a luz (que pisca na estrutura) e as faíscas que caem
+	// da junta, como o FX de construção do ZH; o StartImpact na escala da bala, apontado pra fora e pra baixo
+	if (!ShotFxEnabled() || !GetWorld() || !ShotNearView(*this, PointCm, 600.0f))
+	{
+		return;
+	}
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->GlowScale = ImpactGlow * 1.5f;   // (2ª volta, obra_v1: na escala da bala era um lampejo de 1 px; o arco da solda é muito claro)
+		Fx->ImpactK = 0.4f;
+		Fx->StartImpact(PointCm, (OutDir + FVector(0.0, 0.0, -0.6)).GetSafeNormal(), -OutDir, int32(Seed >> 1));
+		Fx->SetLifeSpan(1.6f);
+	}
+}
+
+void UBlastFxDirector::DozerDirtFall(const FVector& LipCm, const FVector& Fwd, float HalfWidthCm, uint32 Variant)
+{
+	if (!ShotFxEnabled() || !GetWorld() || !ShotNearView(*this, LipCm, 600.0f))
+	{
+		return;
+	}
+	Variant ^= (++ShotSerial) * 0x9E3779B9u;
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->ClodTint = FLinearColor(0.30f, 0.23f, 0.15f, 1.0f);   // o torrão do tiro na areia (BulletGroundHit)
+		Fx->StartDozerDirt(LipCm, Fwd, HalfWidthCm, int32(Variant >> 1));
+	}
+	// a areia que a terra levanta ao cair (a poeira da bala no chão, BulletGroundHit, no tamanho da largura da lâmina), ~0,8 m na frente
+	// da borda, fora da sombra dela pra câmera de cima; só com sobra no orçamento da poeira
+	Dusts.RemoveAll([](const FDust& D) { return !D.E.IsValid(); });
+	if (Dusts.Num() < MaxDustsHigh / 2)
+	{
+		FVector At = LipCm + Fwd.GetSafeNormal2D() * 80.0f;
+		At.Z = BlastFxGround::HeightAtCached(GetWorld(), At.X, At.Y);
+		SpawnDust(At, HitDustScale * 0.5f, HitDustTime, HitDustOpacity * 0.9f, 0, Variant, FVector4f(0.56f, 0.44f, 0.31f, 0.5f));
+	}
+}
+
+void UBlastFxDirector::SpawnRicochet(const FShotPoint& Shot, AActor* Target, float GroundZCm)
+{
+	// (30/10, o ricochete decidido pelo Felipe: 25% do dano e "o jogo DAR A ENTENDER"; docs/ESTUDO_ACERTO_TANQUE.md §6.4) o estalo menor
+	// (1 quadro), o leque raso de faíscas colado na chapa na direção do tiro, o traçante que bate e sai torto 8–18° acima da face e vai
+	// embora, um fiapo de pó e a marca; sem bola, sem fumaça densa
+	(void)Target;
+	(void)GroundZCm;
+	const FVector N = Shot.Normal.GetSafeNormal();
+	const FVector D = Shot.ShellDir.GetSafeNormal();
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->GlowScale = ImpactGlow;
+		Fx->bBallFollows = true;   // o estalo de 1 quadro, sem o brilho que fica
+		Fx->ImpactK = 0.6f;        // menor que o acerto que entra (o estalo de 0,8–1,2 m)
+		Fx->bGrazing = true;       // o leque raso e rápido, rente à chapa
+		Fx->StartImpact(Shot.Point, N, D, int32(Shot.Variant * 2654435761u >> 1));
+	}
+	MarkHull(Shot.Part.Get(), Shot.LocalCm, 0);
+	// o traçante que sai: no rumo refletido na chapa, levantado 8–18°, por 60–120 m (some no ar, longe)
+	const FVector R = (D - 2.0f * FVector::DotProduct(D, N) * N).GetSafeNormal();
+	FVector Flat(R.X, R.Y, 0.0);
+	Flat = Flat.SizeSquared() > 0.01 ? Flat.GetSafeNormal() : FVector(D.X, D.Y, 0.0).GetSafeNormal();
+	const float Up = FMath::DegreesToRadians(8.0f + 10.0f * VariantFraction(Shot.Variant, 0x2C1));
+	const FVector Out = (Flat * FMath::Cos(Up) + FVector::UpVector * FMath::Sin(Up)).GetSafeNormal();
+	const float Reach = 6000.0f + 6000.0f * VariantFraction(Shot.Variant, 0x7E3);
+	if (ABlastDebris* T = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		T->GlowScale = TracerGlow;
+		T->StartTracer(Shot.Point + Out * 40.0, Shot.Point + Out * Reach, 9000.0f, int32(Shot.Variant * 3266489917u >> 1));
+	}
+	// o fiapo de pó de tinta (0,5–1 m, ~1 s)
+	SpawnDust(Shot.Point - FVector(0.0, 0.0, 30.0), HitPuffScale * 0.35f, HitPuffTime * 0.8f, HitPuffOpacity * 0.5f, 0, Shot.Variant ^ 0x9E37u, HitPuffColor);
 }
 
 void UBlastFxDirector::GroundHit(const FVector& AtCm, const FVector& FromCm, uint32 Variant)
@@ -1420,6 +2603,15 @@ void UBlastFxDirector::GroundHit(const FVector& AtCm, const FVector& FromCm, uin
 	{
 		return;                                     // fora da vista (a cratera de cima já ficou lembrada pro próximo tiro)
 	}
+	// (24/10, o laboratório) o tipo de chão do ponto (RTSGroundTypes): a areia segue o caminho de sempre, exato
+	{
+		FGroundResponse Typed;
+		if (GroundResponseOf && GroundResponseOf(AtCm, Typed) && Typed.Weight >= 0.5f && Typed.Kind != 0)
+		{
+			GroundHitTyped(AtCm, FromCm, Variant, bCrater, Typed);
+			return;
+		}
+	}
 	const UBlastRaymarchSubsystem* Rm = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
 	if ((Ver == 0 || Ver >= 7) && Rm && Rm->SourceDuration(FName(GroundSimSource)) > 0.0f)
 	{
@@ -1454,6 +2646,560 @@ void UBlastFxDirector::GroundHit(const FVector& AtCm, const FVector& FromCm, uin
 		Fx->TrailTint = FLinearColor(1.0f, 0.82f, 0.62f, 1.0f);   // × o albedo 0,18 do rastro: terra marrom-escura
 		Fx->StartGroundImpact(AtCm, (AtCm - FromCm).GetSafeNormal2D(), int32(Variant * 3266489917u >> 1));
 	}
+	// (30/10) o foguinho: na areia pura, pouco e curto (o resto da carga e os pedaços quentes; nada pra pegar fogo em volta): ~0,5 m de
+	// chama, 2–3,5 s, em 2 de cada 3 tiros
+	if (GroundFireScale > 0.0f && VariantFraction(Variant, 0xF0C2) < 0.67f)
+	{
+		StartGroundFire(AtCm, FromCm, Variant, GroundFireScale, FMath::Lerp(2.0f, 3.5f, VariantFraction(Variant, 0xF0C3)));
+	}
+}
+
+bool UBlastFxDirector::BulletHit(const FVector& PointCm, const FVector& FromCm, AActor* Victim, float GroundZCm, uint32 Variant, FVector& OutPointCm, FVector& OutNormal)
+{
+	OutPointCm = PointCm;
+	OutNormal = (FromCm - PointCm).GetSafeNormal();
+	if (!ShotFxEnabled() || !GetWorld())
+	{
+		return false;
+	}
+	Variant ^= (++ShotSerial) * 0x9E3779B9u;
+	// o ponto na chapa virada pro atirador (a mesma conta do tiro de canhão): o leque das faíscas sai pelo ricochete nela
+	FShotPoint Shot;
+	if (Victim && ArmorPoint(Victim, FromCm, PointCm, GroundZCm, Variant, Shot))
+	{
+		OutPointCm = Shot.Point;
+		OutNormal = Shot.Normal;
+	}
+	if (!ShotNearView(*this, OutPointCm, 600.0f))
+	{
+		return false;
+	}
+	// (docs/ESTUDO_IMPACTOS.md B) o acerto do tiro de tanque em miniatura: o clarão branco-amarelo de ~0,3 m por 2–3 quadros, ~20 faíscas
+	// curtas no leque do ricochete, umas fagulhas e a luz de ~4 m
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->GlowScale = ImpactGlow;
+		Fx->ImpactK = 0.3f;   // (2ª volta: a 0,18 sumia a 28 m) o clarão de ~0,4 m e ~33 faíscas a 8–19 m/s
+		// (30/10, o Felipe: "no casco aparece uma estrelinha branca de desenho animado") sem o brilho de 0,3 s que fica: o clarão no
+		// metal é de 1 quadro (o estudo B: 0,3–0,6 m por 2–3 quadros) e o que lê são as faíscas finas
+		Fx->bBallFollows = true;
+		Fx->bNoLight = Variant % 3u != 0u;   // (o custo) a luz de ~4 m em 1 bala de cada 3
+		Fx->StartImpact(OutPointCm, OutNormal, (OutPointCm - FromCm).GetSafeNormal(), int32(Variant * 2654435761u >> 1));
+		Fx->SetLifeSpan(1.2f);   // (o custo, 30/10) as faíscas vivem 0,45 s; com 3 s e ~50 balas/s no casco eram ~150 atores vivos
+	}
+	// o pó da tinta e do metal (0,3–0,6 m): em 1 de cada 3, e só com sobra no orçamento da poeira (a rajada não tira a do tanque de cena)
+	if (Variant % 3u == 0u)
+	{
+		Dusts.RemoveAll([](const FDust& D) { return !D.E.IsValid(); });
+		if (Dusts.Num() < MaxDustsHigh / 3)
+		{
+			SpawnDust(OutPointCm - FVector(0.0, 0.0, 40.0), HitPuffScale * 0.3f, HitPuffTime * 0.6f, HitPuffOpacity * 0.6f, 0, Variant ^ 0x9E37u, HitPuffColor);
+		}
+	}
+	return true;
+}
+
+void UBlastFxDirector::BulletGroundHit(const FVector& AtCm, const FVector& FromCm, uint32 Variant, bool bPuff)
+{
+	if (!ShotFxEnabled() || !GetWorld())
+	{
+		return;
+	}
+	Variant ^= (++ShotSerial) * 0x9E3779B9u;
+	if (!ShotNearView(*this, AtCm, 600.0f))
+	{
+		return;
+	}
+	// (docs/ESTUDO_IMPACTOS.md A) o esguicho: os jatos de terra do tiro na areia a ~1/7 (a cortina a 55–65° com 1,5–3 m de alcance), sem o
+	// clarão, as faíscas e a luz (a bala comum não acende) e sem cratera; os grãos voltam pro chão em ~0,6 s
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		// (30/10, 2ª volta: a 0,14 o esguicho sumia a 28 m) os riscos e os torrões a 0,3 do tiro de tanque, a 5–8,4 m/s a 60°: até ~2,7 m
+		Fx->DirtK = 0.45f;        // (2ª volta: a 0,3 o jato da bala não lia no zoom do jogo; o estudo A: 1,5–3 m de alcance, 1,5–2,5 m de altura)
+		Fx->DirtSpeedK = 0.5f;
+		Fx->DirtElevDeg = 60.0f;
+		Fx->bDirtOnly = true;
+		Fx->SparkK = 0.0f;
+		// (30/10, o Felipe: "na areia quase nada acontece, um pontinho escuro") a bala na areia seca levanta areia CLARA, acesa pelo sol,
+		// não a terra escura e úmida de baixo que o tiro de tanque cava: os riscos × o albedo 0,18 do rastro dão ~0,45/0,36/0,25 (a areia
+		// do mapa, 0,49/0,40/0,27) e os grãos na mesma cor
+		// (2ª volta, mg_v1: o grão claro na areia clara sumia de cima) o que lê é o contraste: a areia revirada de logo abaixo da
+		// superfície, mais escura que ela (o estudo A: "tom de areia mais escuro que o chão"), e o véu claro no campo de poeira
+		Fx->TrailTint = FLinearColor(1.7f, 1.3f, 0.85f, 1.0f);
+		Fx->ClodTint = FLinearColor(0.30f, 0.23f, 0.15f, 1.0f);
+		if (BulletSandVersion() >= 2)
+		{
+			// (30/10, item 29, o Felipe: "parece um monte de pixelado saindo, sem textura, sem vivência"; docs/PENDENCIAS_NOITE.md, o estudo
+			// do impacto de bala na areia) os torrões de 5–20 cm eram cubos escuros de 1–6 px: saem. A cortina é de grão fino (Marston, Li e
+			// Thoroddsen 2012: a folha de grãos e os finos levados pelo ar), então mais riscos, mais finos, no mesmo leque e alcance
+			Fx->bNoClods = true;
+			Fx->SprayCountK = 1.8f;
+			Fx->SprayWidthK = 0.6f;
+		}
+		Fx->StartGroundImpact(AtCm, (AtCm - FromCm).GetSafeNormal2D(), int32(Variant * 3266489917u >> 1));
+		Fx->SetLifeSpan(1.2f);   // (o custo) os grãos voltam pro chão em ~0,6 s; os 12 s do tiro de tanque deixavam centenas de atores vivos (30/10: 3 → 1,2 s)
+	}
+	// a baforada baixa de areia em volume (o estudo: 2–2,5 m, 1,5–3 s, rala; a escala 0,12 da areia em volta do tanque, que a 0,28 cobre
+	// ~5,5 m): quem chama manda 1 tiro em cada 2, e só com sobra no orçamento (a metade dele fica pras outras)
+	if (bPuff)
+	{
+		Dusts.RemoveAll([](const FDust& D) { return !D.E.IsValid(); });
+		if (Dusts.Num() < MaxDustsHigh / 2)
+		{
+			// (3ª volta: a areia na cor do chão sumia vista de cima) a areia revirada, mais escura que a da superfície (o estudo: "tom de areia
+			// mais escuro que o chão"; entre o anel da morte, 0,78/0,62/0,45, e a terra do jato, 0,26/0,20/0,14), e mais densa
+			SpawnDust(AtCm, HitDustScale * 0.43f, HitDustTime * 0.85f, HitDustOpacity * 0.9f, 0, Variant, FVector4f(0.56f, 0.44f, 0.31f, 0.5f));
+		}
+	}
+}
+
+void UBlastFxDirector::ShellBlast(const FVector& PointCm, const FVector& FromCm, AActor* Victim, float GroundZCm, float Kg, uint32 Variant)
+{
+	if (!ShotFxEnabled() || !GetWorld() || Kg <= 0.0f || WarheadKnobs().Scale <= 0.0f || !LoadAssets())
+	{
+		return;
+	}
+	Variant = Variant * 2654435761u ^ (++ShotSerial) * 0x9E3779B9u;
+	// o ponto e o pé da bola como no MissileHit da ogiva v2: a face do alvo virada pro tiro, e a bola meia bola pra fora dela
+	FVector Point = PointCm;
+	FVector Out2 = (FromCm - PointCm).GetSafeNormal2D();
+	if (Victim)
+	{
+		FShotPoint Shot;
+		if (ArmorPoint(Victim, Out2.IsNearlyZero() ? FromCm : PointCm + Out2 * 3000.0, PointCm, GroundZCm, Variant, Shot))
+		{
+			Point = Shot.Point;
+			const FVector Face2(Shot.Normal.X, Shot.Normal.Y, 0.0);
+			if (Face2.SizeSquared() > 0.25)
+			{
+				Out2 = Face2.GetSafeNormal();
+			}
+		}
+	}
+	ShellBall(Point, FVector(Out2.X, Out2.Y, 0.0), Victim, GroundZCm, Kg, Variant);
+}
+
+void UBlastFxDirector::ShellBall(const FVector& PointCm, const FVector& Normal, AActor* Victim, float GroundZCm, float Kg, uint32 Variant)
+{
+	if (!GetWorld() || Kg <= 0.0f || WarheadKnobs().Scale <= 0.0f || !LoadAssets())
+	{
+		return;
+	}
+	FVector Out2(Normal.X, Normal.Y, 0.0);
+	Out2 = Out2.SizeSquared() > 0.04 ? Out2.GetSafeNormal() : FVector::ForwardVector;
+	const float Lambda = WarheadScale(Kg) * WarheadKnobs().Scale;
+	const float BallCm = CpFireballM * Lambda * 100.0f;
+	// o pé da bola meia bola pra fora da face atingida (como a ogiva v2 do míssil)
+	const FVector Foot(PointCm.X + Out2.X * 0.5 * BallCm, PointCm.Y + Out2.Y * 0.5 * BallCm, GroundZCm);
+	if (!ShotNearView(*this, Foot, BallCm + 300.0f))
+	{
+		return;
+	}
+	const int32 Before = Warheads.Num();
+	SpawnWarhead(Foot, Victim, Kg, Variant, false);
+	// (30/10, a 3ª volta: medido no vídeo, a bola na emissão da ogiva do míssil passava de 245 em ~8000 px por 7 quadros, o disco
+	// branco) a carga do tiro de canhão (o HEAT) gasta a energia no jato; a bola dela é curta e laranja (o estudo C: o clarão branco
+	// em 1–2 quadros e a bola laranja que apaga em 0,2–0,3 s). A emissão do corpo × ShellBallEmit; o anel e a fuligem iguais
+	constexpr float ShellBallEmit = 0.4f;   // (medido: 1 = 7 quadros brancos; 0,4 = ~3 e depois laranja-marrom; 0,25 perde o laranja e vira poeira bege)
+	for (int32 K = Before; K < Warheads.Num(); ++K)
+	{
+		if (!Warheads[K].bRing)
+		{
+			if (AExplosionVolume* Body = Warheads[K].E.Get())
+			{
+				Body->RaymarchEmit *= ShellBallEmit;
+				Body->bFlash = false;   // o clarão é o miolo de 1 quadro das faíscas (o mesmo da bola do disparo, 16/10: o da detonação a deixava branca)
+			}
+		}
+	}
+}
+
+bool UBlastFxDirector::BuildingAimPoint(AActor* Building, const FVector& FromCm, float GroundZCm, uint32 Shooter, FShotPoint& OutShot)
+{
+	// (01/11, a avaliação do item 10) cada atirador escolhe um ponto da fachada virada pra ele (o lado de −85% a +85% da meia largura, a
+	// altura de 30–75% do prédio) e fica nele 3–6 tiros, com o espalhar de um canhão (±5% de lado, ±4% de altura); depois sorteia outro. Os
+	// tiros de um tanque se juntam num lugar (a marca cresce ali e o furo abre ali: UpdateStructureHoles), os de outro, noutro
+	if (!Building || !StructureRay)
+	{
+		return false;
+	}
+	if (BuildingAims.Num() > 512)
+	{
+		BuildingAims.Reset();
+	}
+	const uint32 Serial = ++ShotSerial;
+	FBuildingAim& A = BuildingAims.FindOrAdd((uint64(Shooter) << 32) | uint64(Building->GetUniqueID()));
+	if (A.Left <= 0)
+	{
+		A.Side = FMath::Lerp(-0.85f, 0.85f, VariantFraction(Serial, 0xA1D5));
+		A.Height = FMath::Lerp(0.30f, 0.75f, VariantFraction(Serial, 0x4E16));
+		A.Left = 3 + int32(VariantFraction(Serial, 0x7C0F) * 3.99f);
+	}
+	--A.Left;
+	const float Side = A.Side + 0.10f * (VariantFraction(Serial, 0x51D3) - 0.5f);
+	const float Height = A.Height + 0.08f * (VariantFraction(Serial, 0xB11D) - 0.5f);
+	FVector C, E;
+	Building->GetActorBounds(false, C, E);
+	const FVector Dir = (FVector(C.X, C.Y, 0.0) - FVector(FromCm.X, FromCm.Y, 0.0)).GetSafeNormal();
+	const FVector Across = FVector::CrossProduct(Dir, FVector::UpVector);
+	const double AimZ = GroundZCm + 2.0 * E.Z * Height;
+	const FVector AimAt = FVector(C.X, C.Y, AimZ) + Across * (Side * float(FMath::Min(E.X, E.Y)));
+	FVector P, N, L;
+	UStaticMeshComponent* Part = nullptr;
+	for (const double K : { 1.0, 0.6, 0.3, 0.0 })
+	{
+		const FVector Aim(FMath::Lerp(C.X, AimAt.X, K), FMath::Lerp(C.Y, AimAt.Y, K), AimZ);
+		if (StructureRay(Building, FromCm, Aim + (Aim - FromCm).GetSafeNormal() * 4000.0, P, N, Part, L))
+		{
+			OutShot.Point = P;
+			OutShot.Normal = N.IsNearlyZero() ? FVector::UpVector : N;
+			OutShot.Part = Part;
+			OutShot.LocalCm = L;
+			OutShot.GroundZCm = GroundZCm;
+			OutShot.Variant = Serial;
+			return true;
+		}
+	}
+	return false;
+}
+
+void UBlastFxDirector::BuildingHit(const FVector& PointCm, const FVector& FromCm, AActor* Building, float GroundZCm, uint32 Variant)
+{
+	if (!ShotFxEnabled() || !GetWorld())
+	{
+		return;
+	}
+	Variant = Variant * 2654435761u ^ (++ShotSerial) * 0x9E3779B9u;
+	FShotPoint Shot;
+	FVector Point = PointCm;
+	FVector Normal = (FromCm - PointCm).GetSafeNormal2D();
+	// (01/11) o tiro que o traçante levou até a fachada (o ponto da mira do atirador): o acerto no mesmo lugar
+	bool bQueued = false;
+	if (TArray<FShotPoint>* Queue = Building ? BuildingShots.Find(Building) : nullptr)
+	{
+		const double Now = GetWorld()->GetTimeSeconds();
+		while (Queue->Num() > 0 && Now - (*Queue)[0].Born > 3.0)
+		{
+			Queue->RemoveAt(0);
+		}
+		if (Queue->Num() > 0)
+		{
+			Shot = (*Queue)[0];
+			Queue->RemoveAt(0);
+			Point = Shot.Point;
+			Normal = Shot.Normal;
+			bQueued = true;
+		}
+	}
+	// (30/10, o Felipe: "muito mal feito"; o tiro entrava pela porta aberta da War Factory e batia no chão de dentro, e a poeira nascia
+	// lá dentro) a mira na fachada virada pro tanque: na altura da parede (35–70% do prédio, acima da porta) e de lado (25–45% da
+	// largura, pra um lado ou pro outro), não no meio da porta (o ArmorPoint mira na altura do casco de um tanque, 1,5–2,3 m)
+	FVector AimAt = PointCm;
+	float AimGroundZ = GroundZCm;
+	float AimZ = PointCm.Z;
+	if (Building && !bQueued)
+	{
+		FVector C, E;
+		Building->GetActorBounds(false, C, E);
+		const float Want = 2.0f * float(E.Z) * FMath::Lerp(0.35f, 0.7f, VariantFraction(Variant, 0xB11D));
+		AimZ = GroundZCm + Want;
+		AimGroundZ = GroundZCm + FMath::Max(0.0f, Want - 0.5f * (HitHeightMinCm + HitHeightMaxCm));
+		const FVector Dir = (FVector(C.X, C.Y, 0.0) - FVector(FromCm.X, FromCm.Y, 0.0)).GetSafeNormal();
+		const FVector Across = FVector::CrossProduct(Dir, FVector::UpVector);
+		const float Side = VariantFraction(Variant, 0x51D3) < 0.5f ? -1.0f : 1.0f;
+		// (2ª volta, predio_v2: a 25–45% da meia largura o tiro ainda caía no vão do portão, que ocupa quase a fachada da War Factory) as
+		// paredes e as colunas do lado, a 60–90%
+		AimAt = FVector(C.X, C.Y, PointCm.Z) + Across * (Side * float(FMath::Max(E.X, E.Y)) * FMath::Lerp(0.6f, 0.9f, VariantFraction(Variant, 0x7AB1)));
+	}
+	// (30/10, a marca e o pó ficavam no ar: a caixa da malha inteira, com o pátio e a esfera, tem a face metros na frente da parede) o
+	// raio do tiro, da boca do canhão pro ponto mirado na altura sorteada e além, no relevo medido do prédio: o 1º toque na parede
+	// (ou na marquise, no teto) de verdade
+	bool bRay = bQueued;
+	if (Building && StructureRay && !bQueued)
+	{
+		// a mira do lado (60–90% da caixa do ator, que pega a bandeira e o pátio) pode passar fora da lateral: vai pro meio até tocar
+		FVector C, E;
+		Building->GetActorBounds(false, C, E);
+		FVector P = FVector::ZeroVector, N = FVector::UpVector, L = FVector::ZeroVector;
+		UStaticMeshComponent* Part = nullptr;
+		bool bHit = false;
+		for (const double K : { 1.0, 0.6, 0.3, 0.0 })
+		{
+			const FVector Aim(FMath::Lerp(C.X, AimAt.X, K), FMath::Lerp(C.Y, AimAt.Y, K), AimZ);
+			if (StructureRay(Building, FromCm, Aim + (Aim - FromCm).GetSafeNormal() * 4000.0, P, N, Part, L))
+			{
+				bHit = true;
+				break;
+			}
+		}
+		if (bHit)
+		{
+			Point = Shot.Point = P;
+			Normal = Shot.Normal = N;
+			Shot.Part = Part;
+			Shot.LocalCm = L;
+			bRay = true;
+		}
+	}
+	if (!bRay && !bQueued && Building && ArmorPoint(Building, FromCm, AimAt, AimGroundZ, Variant, Shot))
+	{
+		Point = Shot.Point;
+		Normal = Shot.Normal;
+	}
+	if (Normal.IsNearlyZero())
+	{
+		Normal = FVector::UpVector;
+	}
+	if (!ShotNearView(*this, Point, 900.0f))
+	{
+		return;
+	}
+	// o clarão do tiro e poucas faíscas (o estudo: 5–10; a 2ª opinião: 0–8 no concreto, o aço da ogiva), bem menores que no casco
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->GlowScale = ImpactGlow;
+		Fx->ImpactK = 0.25f;        // (30/10: a 0,08 era um ponto de luz) o estalo de ~0,4 m e as poucas faíscas do aço na pedra
+		Fx->bBallFollows = true;    // o estalo de 1 quadro, sem o brilho que fica
+		Fx->StartImpact(Point, Normal, (Point - FromCm).GetSafeNormal(), int32(Variant * 2654435761u >> 1));
+	}
+	// os pedaços de reboco e de bloco (15–40, 0,05–0,5 m) que saltam da fachada pra fora e caem no pé dela, na cor do reboco
+	const FVector Out2 = FVector(Normal.X, Normal.Y, 0.0).GetSafeNormal();
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->DirtK = 0.75f;          // (30/10: a 0,55 eram ~13 pedaços pequenos) ~25 de 9–34 cm (o estudo C: 15–40 de 0,05–0,5 m)
+		Fx->DirtSpeedK = 0.55f;
+		Fx->DirtElevDeg = 25.0f;
+		Fx->bDirtOnly = true;
+		Fx->SparkK = 0.0f;
+		Fx->ClodTint = FLinearColor(0.42f, 0.38f, 0.32f, 1.0f);
+		Fx->TrailTint = FLinearColor(2.4f, 2.2f, 1.95f, 1.0f);   // × o albedo 0,18 do rastro: o pó do reboco, claro
+		Fx->StartGroundImpact(Point + Out2 * 40.0, Out2.IsNearlyZero() ? FVector::ForwardVector : Out2, int32(Variant * 3266489917u >> 1));
+	}
+	// a poeira de concreto: a cortina que desce pela fachada e fica no pé dela (5–8 m, 8–15 s), em volume, cinza-bege (o reboco
+	// moído, não a areia; a 2ª opinião: concreto 0,62/0,60/0,57, cinza-claro); a saia no pé da parede, a 0,8 m dela, no chão
+	const FVector Foot(Point.X + Out2.X * 80.0, Point.Y + Out2.Y * 80.0, GroundZCm);
+	SpawnDust(Foot, HitDustScale * 1.25f, HitDustTime * 2.6f, HitDustOpacity * 0.85f, 1, Variant ^ 0xC0C0u, FVector4f(0.62f, 0.60f, 0.57f, 0.5f));
+	// (30/10) a nuvem de reboco que estoura da parede na altura do acerto (2–3 m, clara) e fica descendo e se desfazendo: diz "onde" de cima
+	SpawnDust(Point + Out2 * 70.0 - FVector(0.0, 0.0, 80.0), HitDustScale * 0.55f, HitDustTime * 2.2f, HitDustOpacity, 1, Variant ^ 0x9B1Du,
+		FVector4f(0.70f, 0.66f, 0.60f, 0.5f));
+	if (Shot.Part.IsValid())
+	{
+		// (30/10) a marca na fachada: o tipo 2 (o concreto: a fuligem de ~1,4 m e a lasca clara; o M_Structure lê, import_provisional.py)
+		MarkHull(Shot.Part.Get(), Shot.LocalCm, 2);
+	}
+}
+
+void UBlastFxDirector::GroundHitTyped(const FVector& AtCm, const FVector& FromCm, uint32 Variant, bool bCrater, const FGroundResponse& R, const FTypedScale* Scale,
+	bool* bOutLinger)
+{
+	// (24/10, o laboratório; docs/TIPOS_DE_CHAO.md) as mesmas peças do tiro na areia aprovado (o anel simulado, a cortina de terra,
+	// o clarão, as faíscas, o jato e os torrões), cada uma pelo que o chão tem pra soltar:
+	//  - duro (o asfalto): não há areia solta pra onda varrer; sobe o pó do agregado moído e a fumaça do explosivo, cinza, baixo e
+	//    curto; a cratera é rasa (o pavimento quebra em placas: as lascas); o estilhaço de aço que bate na pedra solta mais faísca;
+	//  - terra e grama: a terra coesa não rola no anel como a areia (a de perto não "escorre"): sobe a cortina escura de terra
+	//    revirada, o que o tiro na areia já faz onde caiu outro antes (a v8 que o Felipe escolheu pra "onde não tem mais areia");
+	//  - neve: o pó de neve é leve (100–300 kg/m³ contra ~1600 da areia): a onda o joga mais largo e ele paira mais; por baixo a
+	//    terra escura vem na cortina, mais rala;
+	//  - barro: o molhado não vira poeira (a coesão): só a cortina escura e pesada e os torrões.
+	const UBlastRaymarchSubsystem* Rm = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+	const bool bRing = Rm && Rm->SourceDuration(FName(GroundSimSource)) > 0.0f;
+	const bool bCurtain = Rm && Rm->SourceDuration(FName(GroundCurtainSource)) > 0.0f;
+	const float K = FMath::Clamp(R.DustK, 0.0f, 2.0f);
+	const FVector4f Dust = R.Dust.R >= 0.0f ? FVector4f(R.Dust.R, R.Dust.G, R.Dust.B, R.Dust.A > 0.0f ? R.Dust.A : 0.6f) : FVector4f(-1.0f, 0.0f, 0.0f, 0.0f);
+	// a cor da cortina: a terra de hoje (0,22/0,17/0,12) no tom do rastro do tipo; na neve, a terra de baixo misturada com a neve;
+	// no barro, a terra molhada
+	FVector4f Earth(R.Trail.R * 0.22f, R.Trail.G * 0.207f, R.Trail.B * 0.194f, 0.3f);
+	if (R.Kind == 3)
+	{
+		Earth = FVector4f(0.32f, 0.29f, 0.27f, 0.3f);
+	}
+	else if (R.Kind == 4)
+	{
+		Earth = FVector4f(0.12f, 0.10f, 0.08f, 0.3f);
+	}
+	float DirtK = 1.0f, DirtSpeedK = 1.0f, CurtainO = 0.0f, RingScale = 0.0f, RingO = 0.0f;
+	switch (R.Kind)
+	{
+	case 1:   // duro
+		RingScale = 0.55f; RingO = 0.45f; DirtK = 0.5f; break;
+	case 2:   // terra
+		RingScale = 0.7f; RingO = 0.55f; CurtainO = GroundCurtainOpacity; break;
+	case 3:   // neve
+		RingScale = 1.15f; RingO = 0.95f; CurtainO = 0.5f; DirtK = 0.8f; break;
+	case 4:   // barro
+		CurtainO = 0.75f; DirtSpeedK = 0.8f; break;
+	default:
+		break;
+	}
+	if (bRing && RingScale > 0.0f && K > 0.0f)
+	{
+		float S = RingScale * FMath::Sqrt(K) * GroundHitSize;
+		if (Scale)
+		{
+			S *= Scale->SizeK;                      // (25/10) o míssil: o pó que o choque levanta na distância escalada (o tempo ∝ o tamanho)
+		}
+		if (SpawnDust(AtCm, GroundSimScale * S, GroundSimTime * S, FMath::Min(GroundSimOpacity * RingO * K / 0.75f, 1.0f), 1, Variant, Dust, GroundSimSource, GroundSimThickness / S)
+			&& Scale && bOutLinger && (R.Kind == 2 || R.Kind == 3))
+		{
+			// (25/10, a poeira que fica) o míssil na neve e na terra: o pó do tipo que o choque levanta é também a nuvem que fica (o duro fica
+			// como era: no concreto não há nuvem; o barro não solta pó)
+			*bOutLinger = MakeLinger(FName(GroundSimSource), LingerRingHold, R.Kind == 3 ? LingerSettleSnow : LingerSettleSand);
+		}
+	}
+	if (bCurtain && CurtainO > 0.0f)
+	{
+		const float S = GroundHitSize * (R.Kind == 4 ? 0.8f : 1.0f);
+		if (Scale)
+		{
+			// (25/10) o míssil: a cortina na escala da carga (o tamanho ∝ R, o tempo ∝ √R: o regime da gravidade, como a do míssil na areia)
+			const float Sm = S * Scale->SizeK;
+			SpawnDust(AtCm, Sm, S * FMath::Sqrt(Scale->SizeK), CurtainO, 1, Variant ^ 0xC07u, Earth, GroundCurtainSource, GroundCurtainThickness / Sm, Earth);
+		}
+		else
+		{
+			SpawnDust(AtCm, S, S, CurtainO, 1, Variant ^ 0xC07u, Earth, GroundCurtainSource, GroundCurtainThickness / S, Earth);
+		}
+	}
+	const FVector Away = (AtCm - FromCm).GetSafeNormal2D();
+	if (ABlastDebris* Fx = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Fx->GlowScale = GroundImpactGlow;
+		Fx->TrailTint = FLinearColor(R.Trail.R, R.Trail.G, R.Trail.B, 1.0f);
+		// (31/10) na areia, o torrão no tom da areia revirada e chamuscada (o albedo ~0,11, a metade da superfície seca; a terra que o
+		// Dozer revira é 0,23): o quase preto de antes (0,06) lia como cubo de carvão; os outros chãos, os da tabela
+		Fx->ClodTint = R.Kind == 0 ? FLinearColor(0.15f, 0.11f, 0.075f, 1.0f) : R.Clods;
+		Fx->SparkK = R.SparkK;
+		Fx->DirtK = DirtK;
+		Fx->DirtSpeedK = DirtSpeedK;
+		if (Scale)
+		{
+			// (25/10) o míssil: os torrões do chão na escala dele, sem o clarão, as faíscas e a luz do tiro (são do acerto do míssil)
+			Fx->DirtK = DirtK * Scale->DirtK;
+			Fx->DirtSpeedK = DirtSpeedK * Scale->SpeedK;
+			Fx->DirtElevDeg = Scale->ElevDeg;
+			Fx->DirtPuffs = Scale->Puffs;
+			Fx->bDirtOnly = true;
+		}
+		Fx->StartGroundImpact(AtCm, Away, int32(Variant * 3266489917u >> 1));
+	}
+	// (30/10) o foguinho do tiro de tanque (não o do míssil, que tem a bola dele): na terra e no chão duro (a palha, o mato seco e o
+	// resto da carga) mais e maior que na areia; na neve e no barro, nada
+	if (!Scale && GroundFireScale > 0.0f && (R.Kind == 1 || R.Kind == 2) && VariantFraction(Variant, 0xF0C2) < 0.8f)
+	{
+		StartGroundFire(AtCm, FromCm, Variant, GroundFireScale * 1.35f, FMath::Lerp(3.0f, 5.5f, VariantFraction(Variant, 0xF0C3)));
+	}
+	if (R.ChipCount > 0)
+	{
+		// os pedaços do próprio chão: as lascas do pavimento, os tufos de grama com a terra, os blocos de neve, o barro. (25/10) No
+		// míssil, × K² na quantidade (teto 2×, como os torrões), × K no tamanho e as velocidades × √K
+		const float Kc = Scale ? FMath::Min(Scale->DirtK, 2.0f) : 1.0f;
+		const float Kq = Scale ? FMath::Min(Kc * Kc, 2.0f) : 1.0f;
+		const float Kv = Scale ? Scale->SpeedK : 1.0f;
+		if (ABlastDebris* Chips = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+		{
+			Chips->PlateTint = FLinearColor(R.Chips.R, R.Chips.G, R.Chips.B, 1.0f);
+			Chips->PlateRoughNow = R.Kind == 1 ? 0.8f : 0.95f;
+			Chips->StartChips(AtCm + FVector(0.0, 0.0, 20.0), Away * 0.4f + FVector::UpVector,
+				FMath::Clamp(Scale ? FMath::RoundToInt32(float(R.ChipCount) * Kq) : R.ChipCount, 1, 64),
+				(R.Kind == 1 ? 0.03f : 0.05f) * Kc, (R.Kind == 1 ? 0.12f : 0.18f) * Kc, (R.Kind == 4 ? 4.0f : 6.0f) * Kv, (R.Kind == 4 ? 10.0f : 14.0f) * Kv,
+				int32(Variant * 2654435761u >> 1));
+		}
+	}
+	(void)bCrater;
+}
+
+bool UBlastFxDirector::TypedGround(const FVector& AtCm, FGroundResponse& Out) const
+{
+	return GroundResponseOf && GroundResponseOf(AtCm, Out) && Out.Weight >= 0.5f && Out.Kind != 0;
+}
+
+void UBlastFxDirector::SandAround(const FVector& AtCm, float CoreCm, float AreaCm, float& OutCore, float& OutArea) const
+{
+	OutCore = OutArea = 1.0f;
+	if (!SandShareOf)
+	{
+		return;
+	}
+	auto At = [this, &AtCm](double R, double Ang)
+	{
+		return FMath::Clamp(SandShareOf(AtCm + FVector(FMath::Cos(Ang) * R, FMath::Sin(Ang) * R, 0.0)), 0.0f, 1.0f);
+	};
+	// o miolo: o ponto e 6 a 0,6 do raio dele (a cratera e a raiz da cortina); a área: o miolo e dois anéis de 8 (a 0,55 e a 1,0 do raio,
+	// desencontrados). Na areia inteira, 1 exato
+	float Core = At(0.0, 0.0);
+	for (int32 K = 0; K < 6; ++K)
+	{
+		Core += At(0.6 * CoreCm, 2.0 * PI * K / 6.0);
+	}
+	float Area = Core;
+	int32 N = 7;
+	for (int32 Ring = 0; Ring < 2; ++Ring)
+	{
+		for (int32 K = 0; K < 8; ++K)
+		{
+			Area += At((Ring ? 1.0 : 0.55) * AreaCm, 2.0 * PI * (K + 0.5 * Ring) / 8.0);
+			++N;
+		}
+	}
+	OutCore = Core / 7.0f;
+	OutArea = Area / float(N);
+}
+
+bool UBlastFxDirector::GroundDustAt(const FVector& AtCm, float& InOutOpacity, FVector4f& InOutColor) const
+{
+	FGroundResponse T;
+	if (TypedGround(AtCm, T))
+	{
+		// o tipo: a poeira dele (o pó cinza do concreto, o pó da neve, a terra), no tamanho dele; o barro não solta poeira
+		if (T.DustK <= 0.0f)
+		{
+			return false;
+		}
+		if (T.Dust.R >= 0.0f)
+		{
+			InOutColor = FVector4f(T.Dust.R, T.Dust.G, T.Dust.B, T.Dust.A > 0.0f ? T.Dust.A : 0.6f);
+		}
+		InOutOpacity *= FMath::Min(T.DustK, 1.0f);
+		return true;
+	}
+	const float Share = SandShareOf ? FMath::Clamp(SandShareOf(AtCm), 0.0f, 1.0f) : 1.0f;
+	if (Share >= 1.0f)
+	{
+		return true;                                // a areia: a de hoje, exata
+	}
+	if (Share < 0.05f)
+	{
+		return false;
+	}
+	InOutOpacity *= Share;
+	return true;
+}
+
+bool UBlastFxDirector::GroundSkirtAt(const FVector& AtCm, FVector4f& Out, bool& bGas) const
+{
+	// a saia baixa da bola no chão é o que o choque levanta dali. No duro (o concreto, o asfalto) não há o que levantar: o que corre rente
+	// é o jato de parede dos produtos da detonação, como no teto do casco (o gás quente refletido na laje, na fuligem da carga); no barro,
+	// o mesmo (o molhado não vira poeira); na neve e na terra, a poeira do tipo
+	bGas = false;
+	FGroundResponse T;
+	if (TypedGround(AtCm, T))
+	{
+		if (T.Kind == 1 || T.DustK <= 0.0f || T.Dust.R < 0.0f)
+		{
+			bGas = true;
+		}
+		else
+		{
+			Out = FVector4f(T.Dust.R, T.Dust.G, T.Dust.B, T.Dust.A > 0.0f ? T.Dust.A : 0.6f);
+		}
+		return true;
+	}
+	if (SandShareOf && SandShareOf(AtCm) < 0.5f)
+	{
+		bGas = true;
+		return true;
+	}
+	return false;
 }
 
 void UBlastFxDirector::VehicleDamage(AActor* Unit, float Health01)
@@ -1499,19 +3245,141 @@ void UBlastFxDirector::VehicleDamage(AActor* Unit, float Health01)
 			D->Dbg[2] = Fx->StartSmoke(0.4f, 0.5f, 3.5f, 0.2f, 0.45f, 1.2f);
 		}
 	}
-	if (Stage >= 2 && D->Heavy < 0)
+	if (Stage >= 2 && D->Stage < 2)
 	{
-		// a passagem pra "muito danificado": uma vez o jato de chama pelo anel da torre; depois a fumaça escura e grossa
-		D->Heavy = Fx->StartSmoke(0.6f, 0.6f, 4.0f, 0.07f, 0.85f, 1.5f);
+		// a passagem pra "muito danificado": uma vez o jato de chama pelo anel da torre; depois a fumaça escura e grossa. (31/10, a revisão:
+		// "a fumaça do veículo ferido vira uma corda preta rente ao chão", v11_fx_veiculo_ferido 6–8 s) a fumaça escura não é mais a fita
+		// (StartSmoke): virada pra câmera, com todos os pontos subindo juntos a 1,5 m/s e a largura só pela idade, ela deitava atrás do
+		// veículo andando (a 10–12 m/s, 8 m de caminho por metro de subida) num fio na altura do casco, sem abrir, e a ponta presa ao último
+		// ponto ligava a coluna de quando ele estava parado ao veículo (o gancho). Agora é a fuligem em volume do fogo do motor no
+		// RTSMissileSmoke (EngineSmokeAt; o jogo solta em UpdateMissileSmoke): sobe pelo empuxo, abre, vai com o vento, faz sombra e é
+		// acesa pelas luzes perto
 		Fx->StartFlameJet(Unit->GetActorLocation() + FVector(0.0, 0.0, RingUpCm), int32(GetTypeHash(Unit)));
+		// (30/10, item 32) o motor pega fogo e fica queimando (o fogo do telhado do prédio, no tamanho de um compartimento de motor: ~1,5 m
+		// de chama, o fogo em loop a 0,08 da carcaça da aeronave), andando com o veículo; a luz dele acende o casco e o chão
+		const FVector Back = -Unit->GetActorForwardVector().GetSafeNormal2D();
+		if (AExplosionVolume* E = FireLoop(Unit->GetActorLocation() + Back * DeckBackCm + FVector(0.0, 0.0, DeckUpCm - 60.0), 0.08f, GetTypeHash(Unit) ^ 0xDEC4u))
+		{
+			Alive.Remove(E);                       // (quem apaga é o EndDamaged ou a morte: a limpeza do diretor tirava o loop na emenda)
+			E->HoldAge = 1.0e6f;
+			E->Thickness = 1.6f;                   // (a fumaça grossa batia na borda da caixa da gravação encolhida: o bloco quadrado do foguinho)
+			E->RaymarchEmit = 1.1f;
+			D->DeckFire = E;
+		}
+	}
+	if (ABlastDebris* Bits = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		// (30/10, item 32) cada passagem solta pedaços: a chapa da saia, a caixa de ferramenta, o para-lama (5–25 cm, escuros de metal
+		// pintado e queimado), saindo pra cima e pros lados e caindo em volta
+		Bits->PlateTint = FLinearColor(0.16f, 0.15f, 0.13f, 1.0f);
+		Bits->PlateRoughNow = 0.7f;
+		Bits->StartChips(Unit->GetActorLocation() + FVector(0.0, 0.0, DeckUpCm), FVector::UpVector, Stage >= 2 ? 10 : 5, 0.05f, 0.25f, 2.0f, 4.5f,
+			int32(GetTypeHash(Unit) * 2654435761u >> 1) + Stage);
+		Bits->SetLifeSpan(15.0f);
 	}
 	D->Stage = Stage;
+}
+
+void UBlastFxDirector::StructureDamage(const AActor* Building, float Health01, const TArray<FVector>& RoofCm)
+{
+	if (!Building || !GetWorld())
+	{
+		return;
+	}
+	// a passagem dos 70% (o DamagedParticleSystem1 = StructureTransitionMediumSmoke do ZH): uma baforada de fumaça cinza em volume do
+	// telhado, junto com as placas de queimado do material; consertado acima, pode sair de novo
+	if (Health01 > 0.0f && Health01 <= DamagedHealth && !StructDamaged.Contains(Building))
+	{
+		StructDamaged.Add(Building);
+		if (ShotFxEnabled() && RoofCm.Num() && ShotNearView(*this, RoofCm[0], 900.0f))
+		{
+			SpawnDust(RoofCm[0], HitDustScale * 1.2f, HitDustTime * 2.0f, HitDustOpacity, 1, GetTypeHash(Building) ^ 0x70D4u,
+				FVector4f(0.30f, 0.29f, 0.28f, 0.5f));
+		}
+	}
+	else if (Health01 > DamagedHealth)
+	{
+		StructDamaged.Remove(Building);
+	}
+	const bool bBurn = Health01 > 0.0f && Health01 <= ReallyDamagedHealth;
+	TArray<int32>* Lit = StructFires.Find(Building);
+	if (bBurn && !Lit && ShotFxEnabled() && FireVersion() >= 2 && RoofCm.Num())
+	{
+		// o tamanho do fogo da carcaça (1): o fogo do telhado é o de um cômodo ou de uma máquina do teto, a carga de fogo de um
+		// veículo (o ZH também acende fogos pequenos nos ossos, não o prédio inteiro); queima até apagarem (consertou, morreu)
+		// a passagem (o TransitionDamageFX do ZH: ReallyDamagedParticleSystem2 = StructureTransitionMediumExplosion): um estouro
+		// médio no 1º ponto do telhado, a carga de ~1 kg (o tanque de combustível ou a máquina do teto que pega)
+		ShellBall(RoofCm[0], FVector::ZeroVector, nullptr, float(RoofCm[0].Z), 1.0f, GetTypeHash(Building) * 2654435761u);
+		TArray<int32>& New = StructFires.Add(Building);
+		for (int32 K = 0; K < RoofCm.Num(); ++K)
+		{
+			// a gravação (BlastLab/Tools/firesim: o anel da torre em cima do casco simulado, 'hull_h' 1,82 m) põe a chama 1,82 m acima do
+			// chão que recebe: o "chão" é o telhado menos isso, pra chama sair do telhado
+			const int32 Id = StartFire(RoofCm[K] - FVector(0.0, 0.0, FireDeckCm), 1.0f, GetTypeHash(Building) + uint32(K) * 977u, 1800.0f);
+			if (Id >= 0)
+			{
+				New.Add(Id);
+			}
+		}
+	}
+	else if (!bBurn && Lit)
+	{
+		for (const int32 Id : *Lit)
+		{
+			FireOut(Id, Health01 <= 0.0f ? 0.5f : 4.0f);
+		}
+		StructFires.Remove(Building);
+	}
+}
+
+void UBlastFxDirector::StructureBreak(const FVector& AtCm, const FVector& Normal, float RadiusCm, uint32 Variant, float GroundZCm,
+	const FLinearColor& Tint)
+{
+	if (!ShotFxEnabled() || !GetWorld() || !ShotNearView(*this, AtCm, 1200.0f))
+	{
+		return;
+	}
+	Variant ^= (++ShotSerial) * 0x9E3779B9u;
+	const float K = FMath::Clamp(RadiusCm / 150.0f, 0.5f, 2.5f);
+	// o que fez ceder: o estouro de uma carga pequena (a máquina, o tanque de combustível, o depósito; ~0,5 kg × o tamanho do furo)
+	ShellBall(AtCm + Normal * 40.0, Normal, nullptr, GroundZCm, 0.5f * K, Variant);
+	// os pedaços: o concreto e a chapa do furo, de 15 a 60 cm × o tamanho, saindo devagar pela face (1,5–4 m/s; a gravidade faz o resto)
+	// e caindo pelo lado do prédio até o chão, onde ficam
+	if (ABlastDebris* Chips = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		Chips->PlateTint = Tint;
+		Chips->PlateRoughNow = 0.9f;
+		const FVector Out = (Normal.GetSafeNormal() * 0.8f + FVector(0.0, 0.0, Normal.Z > 0.7 ? 0.6 : 0.15)).GetSafeNormal();
+		Chips->StartChips(AtCm, Out, FMath::Clamp(FMath::RoundToInt32(16.0f * K), 8, 40), 0.15f * K, 0.6f * K, 1.5f, 4.0f, int32(Variant * 2654435761u >> 1));
+		Chips->SetLifeSpan(25.0f);
+	}
+	// o pó do reboco e do concreto moído: a nuvem cinza-clara que desce pela fachada e se espalha no pé do prédio
+	SpawnDust(FVector(AtCm.X, AtCm.Y, GroundZCm), HitDustScale * 1.6f * K, HitDustTime * 1.8f, HitDustOpacity, 1, Variant ^ 0xD057u,
+		FVector4f(0.52f, 0.50f, 0.47f, 0.5f));
+}
+
+bool UBlastFxDirector::EngineSmokeAt(AActor* Unit, FVector& OutCm) const
+{
+	// (31/10, a revisão) o topo do fogo do motor (o FireLoop do deck, na escala dele) do veículo vivo: a mesma lei da coluna do fogo da
+	// aeronave (RTSMatchSubsystem::AddAirSmoke: a eg_fogo_ar_64 desfaz a fuligem a 380 cm na escala 0,17), ~1,8 m acima do pé dele na 0,08
+	const FDamaged* D = Unit ? Damaged.Find(Unit) : nullptr;
+	const AExplosionVolume* Deck = D && D->Stage >= 2 && D->WreckStart < 0.0 ? D->DeckFire.Get() : nullptr;
+	if (!Deck)
+	{
+		return false;
+	}
+	OutCm = Deck->GetActorLocation() + FVector(0.0, 0.0, 380.0 * double(Deck->SizeScale) / 0.17);
+	return true;
 }
 
 void UBlastFxDirector::EndDamaged(AActor* Unit)
 {
 	if (FDamaged* D = Unit ? Damaged.Find(Unit) : nullptr)
 	{
+		if (AExplosionVolume* Deck = D->DeckFire.Get())
+		{
+			Deck->Destroy();                      // (30/10) consertou: o fogo do motor apaga
+		}
 		if (ABlastDebris* Fx = D->Fx.Get())
 		{
 			// para de soltar e se desfaz (o rastro vive ~3 s)
@@ -1544,14 +3412,21 @@ void UBlastFxDirector::UpdateDamaged()
 		ABlastDebris* Fx = It.Value().Fx.Get();
 		if (!Unit || !Fx)
 		{
+			// (31/10, a sucata) o fogo que já sai pelo fim simulado (WreckSalvage) segue até o fim sem a carcaça (a fumaça já solta sobe e se
+			// desfaz, nunca corta) e a luz dele (o Fx) vive até lá
+			const bool bLetEnd = It.Value().bFireLetEnd && It.Value().Fire >= 0 && FireAlive(It.Value().Fire);
 			if (Fx)
 			{
-				Fx->SetLifeSpan(5.0f);
+				Fx->SetLifeSpan(bLetEnd ? FMath::Max(5.0f, float(It.Value().FireEndAt - Now) + 0.5f) : 5.0f);
 			}
 			// (22/10) a carcaça que sumiu (afundou) leva a coluna em volume junto (antes ela ficava no mapa sem dono)
 			if (AExplosionVolume* Col = It.Value().Column.Get())
 			{
 				Col->Destroy();
+			}
+			if (It.Value().Fire >= 0 && !bLetEnd)
+			{
+				FireOut(It.Value().Fire, 0.5f);      // (25/10) o fogo simulado também
 			}
 			It.RemoveCurrent();
 			continue;
@@ -1560,6 +3435,10 @@ void UBlastFxDirector::UpdateDamaged()
 		const FVector Back = -Unit->GetActorForwardVector().GetSafeNormal2D();
 		if (It.Value().WreckStart >= 0.0)
 		{
+			if (AExplosionVolume* Deck = It.Value().DeckFire.Get())
+			{
+				Deck->Destroy();                  // (30/10) morreu: o fogo do motor vira o da carcaça (a morte e o fogo simulado)
+			}
 			// a carcaça: espera a explosão se desfazer, queima ~30 s e se apaga
 			const double Now2 = GetWorld()->GetTimeSeconds();
 			const bool bOn = Now2 >= It.Value().WreckStart && Now2 < It.Value().WreckUntil;
@@ -1568,6 +3447,18 @@ void UBlastFxDirector::UpdateDamaged()
 			{
 				It.Value().bWreckLightOn = true;
 				Fx->StartWreckFire(float(It.Value().WreckUntil - Now2), false);
+				// (25/10, o fogo simulado; docs/FOGO.md) com blast.Fire.Version 2 o fogo de verdade nasce aqui, 0,8 s depois da morte, por
+				// baixo da bola dela (a ignição da gravação; um fenômeno só), e queima até o fim da carcaça; a luz desta carcaça segue ele
+				if (FireVersion() >= 2 && It.Value().Fire < 0)
+				{
+					const double Gz = BlastFxGround::HeightAtCached(GetWorld(), At.X, At.Y);
+					It.Value().Fire = StartFire(FVector(At.X, At.Y, Gz), It.Value().FireScale, uint32(Unit->GetUniqueID()) * 0x9E3779B9u,
+						float(It.Value().WreckUntil - Now2), Fx);
+				}
+			}
+			if (bOn && !It.Value().bWreckLit && It.Value().Fire >= 0 && FireAlive(It.Value().Fire))
+			{
+				It.Value().bWreckLit = true;          // (25/10) o fogo simulado já é o fogo, a fuligem e a luz da carcaça
 			}
 			if (bOn && !It.Value().bWreckLit)
 			{
@@ -1614,17 +3505,30 @@ void UBlastFxDirector::UpdateDamaged()
 				const float In = FMath::Clamp(float(Now2 - It.Value().WreckStart) / WreckColumnInS, 0.0f, 1.0f);
 				const float Out = FMath::Clamp(float(It.Value().WreckUntil - Now2) / WreckColumnOutS, 0.0f, 1.0f);
 				Col->Opacity = WreckColumnOpacity * FMath::SmoothStep(0.0f, 1.0f, In) * FMath::SmoothStep(0.0f, 1.0f, Out);
+				// (25/10, o vento ao vivo) a coluna vira pro vento do mapa quando ele muda (WreckColumnTurnTauS)
+				const float Turn = GetWorld() ? 1.0f - FMath::Exp(-GetWorld()->GetDeltaSeconds() / WreckColumnTurnTauS) : 0.0f;
+				Col->RaymarchYawRad += FMath::FindDeltaAngleRadians(Col->RaymarchYawRad, WindYawRad) * Turn;
 			}
 			if (It.Value().Heavy >= 0)
 			{
 				Fx->SetTrailHead(It.Value().Heavy, At + FVector(0.0, 0.0, RingUpCm), bOn);
 			}
-			Fx->SetFirePos(At + FVector(0.0, 0.0, RingUpCm - 20.0));
+			Fx->SetFirePos(At + FVector(0.0, 0.0, RingUpCm - 20.0 - It.Value().SinkCm));   // (31/10) a desmanchada: desce com o casco
+			if (It.Value().Fire >= 0)
+			{
+				// (25/10) a carcaça com física (empurrada, arrastada): o fogo simulado vai junto
+				// (31/10, a sucata) e a desmanchada pelo Dozer: desce com o casco (a chama entra na areia; a fumaça já solta segue no ar)
+				FireFollow(It.Value().Fire, FVector(At.X, At.Y, BlastFxGround::HeightAtCached(GetWorld(), At.X, At.Y) - double(It.Value().SinkCm)));
+			}
 			if (Now2 >= It.Value().WreckUntil + 4.0)
 			{
 				if (AExplosionVolume* Col = It.Value().Column.Get())
 				{
 					Col->Destroy();
+				}
+				if (It.Value().Fire >= 0)
+				{
+					FireOut(It.Value().Fire, 0.5f);
 				}
 				Fx->SetLifeSpan(1.0f);
 				It.RemoveCurrent();
@@ -1633,7 +3537,32 @@ void UBlastFxDirector::UpdateDamaged()
 		}
 		if (It.Value().Light >= 0)
 		{
-			Fx->SetTrailHead(It.Value().Light, At + Back * DeckBackCm + FVector(0.0, 0.0, DeckUpCm), true);
+			// (31/10) no fogo do motor (abaixo de 35%) a fita clara para de soltar: a fuligem em volume assume (com o veículo andando ela
+			// também deitava na corda)
+			Fx->SetTrailHead(It.Value().Light, At + Back * DeckBackCm + FVector(0.0, 0.0, DeckUpCm), It.Value().Stage < 2);
+		}
+		if (AExplosionVolume* Deck = It.Value().DeckFire.Get())
+		{
+			const FVector DeckCm = At + Back * DeckBackCm + FVector(0.0, 0.0, DeckUpCm - 60.0);
+			Deck->SetActorLocation(DeckCm);
+			// (01/11, o Felipe: "a fumaça/fogo ali no tanque danificado [...] é fixa ali, mesmo problema" do Apache caindo) a gravação é a de
+			// um fogo parado: andando, a coluna dela ia presa no deck, rígida. Andando, a fuligem da gravação dilui (a chama fica: a diluição
+			// não toca o fogo) e a fumaça sai pelos puffs soltos do fogo do motor (EngineSmokeAt), que ficam no ar onde nasceram; parado,
+			// volta a coluna da gravação. A velocidade pelo quadro, suavizada em ~0,5 s
+			const double NowD = GetWorld()->GetTimeSeconds();
+			FDamaged& Dg = It.Value();
+			if (Dg.DeckLastS >= 0.0 && NowD > Dg.DeckLastS)
+			{
+				const float Ms = float(FVector::Dist2D(DeckCm, Dg.DeckLastCm) / 100.0 / (NowD - Dg.DeckLastS));
+				// (01/11, a prova v36_fx_veiculo_ferido: com 0,2 a fuligem da gravação, gravada na escala pequena com a espessura 4×, seguia um
+				// bolo opaco preso no deck andando junto) com o ar passando a coluna de ar parado da gravação não existe: a fuligem vai toda pro
+				// rastro do mundo (EngineSmokeAt); da gravação fica a chama
+				const float Want = FMath::Lerp(1.0f, 0.03f, FMath::Clamp(Ms / 1.5f, 0.0f, 1.0f));
+				Dg.DeckDilute = FMath::FInterpTo(Dg.DeckDilute, Want, float(NowD - Dg.DeckLastS), 2.0f);
+			}
+			Dg.DeckLastCm = DeckCm;
+			Dg.DeckLastS = NowD;
+			Deck->RaymarchDilute = Dg.DeckDilute;
 		}
 		for (int32 k = 0; k < 3; ++k)
 		{
@@ -1660,8 +3589,87 @@ void UBlastFxDirector::UpdateDamaged()
 
 void UBlastFxDirector::SetWind(float YawDeg, float SpeedMs)
 {
+	// (25/10) ao vivo: quem deriva lê a cada quadro (a nuvem da ogiva, a poeira que fica, a coluna da carcaça, a fumaça dos destroços)
 	WindYawRad = FMath::DegreesToRadians(YawDeg);
-	WindSpeedMs = SpeedMs;
+	WindSpeedMs = FMath::Max(SpeedMs, 0.0f);
+}
+
+float UBlastFxDirector::WindProfileK(float ZM)
+{
+	const float Z = FMath::Clamp(ZM, 2.0f * LingerZ0M, 100.0f);
+	return FMath::Loge(Z / LingerZ0M) / FMath::Loge(10.0f / LingerZ0M);
+}
+
+int32 UBlastFxDirector::NumLingering() const
+{
+	int32 N = 0;
+	for (const FDust& D : Dusts)
+	{
+		N += D.bLinger && D.E.IsValid() && D.RetireAt < 0.0f ? 1 : 0;
+	}
+	return N;
+}
+
+bool UBlastFxDirector::MakeLinger(FName Source, float HoldFrac, float SettleMs)
+{
+	// -DustLingerV=1: a de antes (a gravação esmaece no último quarto e o jogo põe a camada Linger na poeira em volume); -DustLingerHold=
+	// × a fração da parada (o A/B da parada)
+	static const int32 Ver = FMath::RoundToInt32(CmdFloat(TEXT("DustLingerV="), 2.0f));
+	static const float HoldK = CmdFloat(TEXT("DustLingerHold="), 1.0f);
+	const int32 Pr = FMath::Clamp(BlastFxHitLife::Preset(), 0, 3);
+	if (Ver < 2 || !BlastFxHitLife::On(BlastFxHitLife::Linger) || LingerMaxByPreset[Pr] <= 0 || Dusts.IsEmpty() || !GetWorld())
+	{
+		return false;
+	}
+	FDust& D = Dusts.Last();
+	AExplosionVolume* E = D.E.Get();
+	const UBlastRaymarchSubsystem* Rm = GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>();
+	if (!E || !Rm || D.bLinger)
+	{
+		return false;
+	}
+	const float HoldS = FMath::Clamp(HoldFrac * HoldK, 0.05f, 0.95f) * D.Duration;
+	UBlastRaymarchSubsystem::FDustStats St;
+	if (!Rm->DustStatsAt(Source, HoldS, St) || St.R90M <= 0.0f)
+	{
+		return false;
+	}
+	// o teto: a mais velha das que ficam sai esmaecendo (a que nasceu agora entra)
+	if (NumLingering() >= LingerMaxByPreset[Pr])
+	{
+		int32 Oldest = INDEX_NONE;
+		for (int32 K = 0; K < Dusts.Num() - 1; ++K)
+		{
+			const AExplosionVolume* V = Dusts[K].E.Get();
+			if (Dusts[K].bLinger && Dusts[K].RetireAt < 0.0f && V && (Oldest == INDEX_NONE || V->Age > Dusts[Oldest].E->Age))
+			{
+				Oldest = K;
+			}
+		}
+		if (Oldest != INDEX_NONE)
+		{
+			Dusts[Oldest].RetireAt = Dusts[Oldest].E->Age;
+		}
+	}
+	const float Ts = FMath::Max(E->TimeScale > 0.0f ? E->TimeScale : E->SizeScale, 0.01f);
+	D.bLinger = true;
+	D.HoldBakeS = HoldS;
+	D.HoldAge = HoldS * Ts;
+	D.LingerLifeS = LingerLifeByPreset[Pr];
+	D.Scale0 = E->SizeScale;
+	D.Thick0 = E->Thickness;
+	// as medidas da gravação na escala dela no mundo: o tamanho × a escala, a velocidade × a escala ÷ o relógio
+	D.R0M = FMath::Max(St.R90M * E->SizeScale, 1.0f);
+	D.ZcM = FMath::Max(St.ZMeanM * E->SizeScale, 0.3f);
+	D.VrMs = FMath::Max(St.VRadialMs, 0.0f) * E->SizeScale / Ts;
+	D.SettleMs = SettleMs;
+	D.FootBase = E->GetActorLocation();
+	D.LastAge = E->Age;
+	E->BakeHoldS = HoldS;
+	E->HoldAge = D.HoldAge + D.LingerLifeS + LingerRetireS + 0.5f;
+	UE_LOG(LogTemp, Display, TEXT("BlastFx a poeira que fica: %s para aos %.2f s de idade (%.2f s da gravação), R0 %.1f m, meio a %.2f m, frente a %.2f m/s, vida %.0f s, queda %.2f m/s"),
+		*Source.ToString(), D.HoldAge, HoldS, D.R0M, D.ZcM, D.VrMs, D.LingerLifeS, D.SettleMs);
+	return true;
 }
 
 void UBlastFxDirector::StartWreck(AActor* Unit)
@@ -1691,12 +3699,18 @@ void UBlastFxDirector::StartWreck(AActor* Unit)
 void UBlastFxDirector::WreckGone(AActor* Unit, float FadeS)
 {
 	FDamaged* D = Unit ? Damaged.Find(Unit) : nullptr;
-	if (!D || D->WreckStart < 0.0 || !GetWorld())
+	// (31/10) o fogo que já sai pelo fim simulado (WreckSalvage, a sucata) não ganha um prazo depois (o afundar normal no meio do
+	// desmanche esmaeceria o volume inteiro, com a fumaça no ar); só o 0 (já) ainda vale
+	if (!D || D->WreckStart < 0.0 || !GetWorld() || (D->bFireLetEnd && FadeS > 0.0f))
 	{
 		return;
 	}
 	const double Now = GetWorld()->GetTimeSeconds();
 	const double Until = Now + FMath::Max(FadeS, 0.0f);
+	if (D->Fire >= 0)
+	{
+		FireOut(D->Fire, FMath::Max(FadeS, 0.0f));   // (25/10) o fogo simulado: o fim simulado se couber, senão esmaece
+	}
 	if (Until >= D->WreckUntil)
 	{
 		return;   // já se apaga antes disso
@@ -1712,7 +3726,44 @@ void UBlastFxDirector::WreckGone(AActor* Unit, float FadeS)
 	}
 }
 
-void UBlastFxDirector::MissileLaunch(int32 Id, const FVector& PosCm, const FVector& Dir, uint32 Variant)
+void UBlastFxDirector::WreckSalvage(AActor* Unit, float SinkCm)
+{
+	// (31/10, a revisão de vídeo do fx_sucata: o fogo e a coluna desligavam no quadro em que a carcaça sumia) a carcaça recolhida pelo Dozer
+	// apaga como a que apaga sozinha: o fogo sai do laço na primeira saída que vem e toca o fim simulado (a vazão cai, a chama fica
+	// intermitente e a fumaça já solta sobe e se desfaz; docs/FOGO.md), em vez do esmaecer de 1 s do volume inteiro (que levava junto a
+	// fumaça no ar). Ele desce com o casco (UpdateDamaged) e, se a carcaça some antes do fim, segue sem ela
+	FDamaged* D = Unit ? Damaged.Find(Unit) : nullptr;
+	if (!D || D->WreckStart < 0.0 || !GetWorld())
+	{
+		return;
+	}
+	D->SinkCm = FMath::Max(D->SinkCm, SinkCm);
+	if (D->bFireLetEnd)
+	{
+		return;
+	}
+	const float LeftS = D->Fire >= 0 ? FireEndSoon(D->Fire) : -1.0f;
+	if (LeftS < 0.0f)
+	{
+		// sem o fogo simulado (blast.Fire.Version 1): as chamas de sprite e a fita apagam no tempo do afundar normal (o WreckFireFadeS do jogo)
+		WreckGone(Unit, 3.0f);
+		D->bFireLetEnd = true;
+		return;
+	}
+	D->bFireLetEnd = true;
+	D->FireEndAt = GetWorld()->GetTimeSeconds() + double(LeftS);
+	if (D->FireEndAt < D->WreckUntil)
+	{
+		// a luz da carcaça (e a coluna da -WreckV=2) acabam junto com o fogo; só a luz: o fogo é o simulado (sem as chamas de sprite)
+		D->WreckUntil = D->FireEndAt;
+		if (ABlastDebris* Fx = D->Fx.Get(); Fx && D->bWreckLightOn)
+		{
+			Fx->StartWreckFire(LeftS, false);
+		}
+	}
+}
+
+void UBlastFxDirector::MissileLaunch(int32 Id, const FVector& PosCm, const FVector& Dir, uint32 Variant, float RailTailM)
 {
 	if (!ShotFxEnabled() || !GetWorld())
 	{
@@ -1724,13 +3775,25 @@ void UBlastFxDirector::MissileLaunch(int32 Id, const FVector& PosCm, const FVect
 	if (ABlastDebris* L = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 	{
 		L->GlowScale = MuzzleGlow;
-		L->StartLaunch(PosCm, D, int32(Variant * 2246822519u >> 1));
+		if (RailTailM < 0.0f)
+		{
+			L->Destroy();   // (01/11) o lançamento suave: nada na boca (a ignição é no ar, MissileIgnite)
+		}
+		else if (RailTailM > 0.0f)
+		{
+			L->StartRailLaunch(PosCm - D * (double(RailTailM) * 100.0), D, int32(Variant * 2246822519u >> 1));   // (01/11) do trilho, na tubeira
+		}
+		else
+		{
+			L->StartLaunch(PosCm, D, int32(Variant * 2246822519u >> 1));
+		}
 	}
 	if (ABlastDebris* M = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 	{
 		M->GlowScale = MissileGlow;
 		M->TrailTint = FLinearColor(0.94f, 0.94f, 0.95f, 1.0f);   // a fumaça branca do motor (óxido de alumínio)
 		M->StartMissile(PosCm, D, int32(Variant * 3266489917u >> 1), !bExternalMissileSmoke);
+		M->SetMissileMotor(RailTailM >= 0.0f);   // (01/11) o suave sai do tubo com o motor de voo apagado
 		FMissileFx& F = Missiles.FindOrAdd(Id);
 		if (ABlastDebris* Old = F.Fx.Get())
 		{
@@ -1741,8 +3804,12 @@ void UBlastFxDirector::MissileLaunch(int32 Id, const FVector& PosCm, const FVect
 	}
 	// a poeira do lançamento quente (o motor sai aceso da caixa e sopra o chão: a nuvem cor de terra das fotos da Patriot),
 	// uma por rajada (no máximo uma a cada 0,6 s), ~3 m atrás da caixa, na cor do chão: o golpe em ~0,25 s e o resto
-	// pairando ~1,5 s, abaixo de ~2,5 m
-	if (Now - LastLaunchDust > 0.6)
+	// pairando ~1,5 s, abaixo de ~2,5 m. (25/10) Só do chão: lançado do ar (o Hellfire do Apache a ~13 m, o míssil do Raptor) o
+	// motor não sopra a areia lá embaixo (os lançadores de chão saem de 2–3 m)
+	// (01/11) só a caixa fechada (RailTailM 0) sopra o chão: o suave (RailTailM < 0) tem o motor de ejeção pequeno e o de voo acende
+	// longe; o do trilho e o lançador aberto (RailTailM > 0) acendem na tubeira, sem o jato de ré da caixa
+	const bool bFromGround = RailTailM == 0.0f && PosCm.Z - BlastFxGround::HeightAtCached(GetWorld(), PosCm.X, PosCm.Y) < 600.0;
+	if (bFromGround && Now - LastLaunchDust > 0.6)
 	{
 		LastLaunchDust = Now;
 		const FVector Back = -FVector(D.X, D.Y, 0.0).GetSafeNormal() * 300.0;
@@ -1783,6 +3850,32 @@ void UBlastFxDirector::MissileInFlight(int32 Id, const FVector& PosCm, const FVe
 	}
 }
 
+void UBlastFxDirector::MissileMotor(int32 Id, bool bOn)
+{
+	if (FMissileFx* F = Missiles.Find(Id))
+	{
+		if (ABlastDebris* M = F->Fx.Get())
+		{
+			M->SetMissileMotor(bOn);
+		}
+	}
+}
+
+void UBlastFxDirector::MissileIgnite(int32 Id, const FVector& NozzleCm, const FVector& Dir)
+{
+	if (!ShotFxEnabled() || !GetWorld())
+	{
+		return;
+	}
+	MissileMotor(Id, true);
+	// o clarão pequeno da ignição do motor de voo (o do trilho: 0,16 m, os riscos e a luz curta), na tubeira, já no ar
+	if (ABlastDebris* L = GetWorld()->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		L->GlowScale = MuzzleGlow;
+		L->StartRailLaunch(NozzleCm, Dir.GetSafeNormal(), int32(uint32(Id) * 2246822519u >> 1));
+	}
+}
+
 void UBlastFxDirector::MissileMove(int32 Id, const FVector& PosCm, const FVector& Dir, float SpeedCmPerS)
 {
 	if (FMissileFx* F = Missiles.Find(Id))
@@ -1791,6 +3884,22 @@ void UBlastFxDirector::MissileMove(int32 Id, const FVector& PosCm, const FVector
 		{
 			M->UpdateMissile(PosCm, Dir);
 			F->Seen = GetWorld() ? GetWorld()->GetTimeSeconds() : F->Seen;
+		}
+	}
+}
+
+void UBlastFxDirector::MissileBody(int32 Id, UStaticMesh* Mesh, float LengthCm)
+{
+	static TWeakObjectPtr<UMaterialInterface> Paint;
+	if (!Paint.IsValid())
+	{
+		Paint = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_Soldier.M_Soldier"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	}
+	if (FMissileFx* F = Missiles.Find(Id))
+	{
+		if (ABlastDebris* M = F->Fx.Get())
+		{
+			M->SetMissileBody(Mesh, Paint.Get(), LengthCm);
 		}
 	}
 }
@@ -2321,8 +4430,27 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 	// cima), no chão (a do ataque também: a strike_chao é a areia, à parte). Só quando o arquivo carregou (BlastRaymarchSubsystem); senão a
 	// Carga Pesada em escala
 	const UBlastRaymarchSubsystem* Rm = World->GetSubsystem<UBlastRaymarchSubsystem>();
+	// (25/10, o impacto pelo chão; o Felipe: "o impacto olha o chão em volta") o míssil no chão: o que o chão em volta tem pra soltar. A
+	// areia solta no miolo (a cratera, 3 m) decide se as gravações de areia nascem (a strike_chao, a areia da warhead_chao, o anel, a
+	// cortina, a saia da bola); a da área (o alcance da strike_chao na escala dela, ~20 m; a ogiva sozinha, 8 m) diz quanto dela (o chão
+	// misto: a cratera na areia ao lado da estrada). Fora da areia (o miolo sem ela, ou um tipo que não é areia): a resposta do tipo na
+	// escala da carga (o concreto e o asfalto: as lascas, o pó cinza e a saia de gás; a neve: o pó largo; a terra e a grama: a cortina de
+	// terra e os tufos; o barro: o respingo), e a areia que houver em volta sobe pelo jogo, ponto a ponto, na poeira em volume (o véu, a
+	// onda de base e a poeira que fica, cada puff pela areia do lugar dele: RTSHitLife.cpp): o vento do choque empurra a areia do
+	// acostamento pra fora, e no concreto sem areia não sobe nada. Na areia inteira (o miolo e a área), o de hoje, exato
+	const FVector GroundPt(Point.X, Point.Y, GroundZCm);
+	FGroundResponse Typed;
+	const bool bTyped = !Victim && TypedGround(GroundPt, Typed);
+	float SandCore = 1.0f, SandArea = 1.0f;
+	if (!Victim)
+	{
+		SandAround(GroundPt, 300.0f, In.bStrike ? 2000.0f : 800.0f, SandCore, SandArea);
+	}
+	const bool bSandGround = Victim || (!bTyped && SandCore >= 0.5f);
+	FVector4f VictimSkirt;
+	bool bVictimGas = false;
 	// (a areia do acerto) a strike_chao toca neste míssil (abaixo): ela é a areia do chão do ataque inteira
-	const bool bStrikeSand = !Victim && In.bStrike && On(Strike) && On(BlastFxHitLife::Bake) && Rm && Rm->SourceDuration(FName(StrikeBakeGround)) > 0.0f;
+	const bool bStrikeSand = !Victim && bSandGround && In.bStrike && On(Strike) && On(BlastFxHitLife::Bake) && Rm && Rm->SourceDuration(FName(StrikeBakeGround)) > 0.0f;
 	FName OwnSource = NAME_None;
 	float OwnScale = 1.0f;
 	const TCHAR* OwnWhy = TEXT("sem gravação dedicada");
@@ -2341,6 +4469,19 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 			static const bool bStrikeOwn = CmdFloat(TEXT("StrikeWarhead="), 0.0f) != 0.0f;
 			Name = !bStrikeSand ? WarheadBakeGround : (bStrikeOwn ? WarheadBakeGroundSoot : nullptr);
 			OwnWhy = Name ? TEXT("o chão") : TEXT("a areia é a strike_chao; a ogiva fica a Carga Pesada em escala");
+			if (!bSandGround)
+			{
+				// (25/10, o impacto pelo chão) fora da areia, a mesma bola sem a areia dentro: no ataque a de sempre dele (a Carga Pesada em
+				// escala, ou a warhead_chao_s com -StrikeWarhead=1); fora dele a warhead_chao_s (o fogo e a fuligem da warhead_chao)
+				Name = In.bStrike && On(Strike) && !bStrikeOwn ? nullptr : WarheadBakeGroundSoot;
+				OwnWhy = Name ? TEXT("o chão sem areia (o fogo e a fuligem)") : TEXT("o chão sem areia; a ogiva fica a Carga Pesada em escala");
+			}
+		}
+		else if (bOnHull && GroundSkirtAt(GroundPt, VictimSkirt, bVictimGas))
+		{
+			// (25/10, o impacto pelo chão) as dedicadas do casco têm a areia do chão dentro: no chão sem areia, a Carga Pesada em escala (a
+			// saia dela pelo chão, SpawnWarhead) e o véu do jogo, ponto a ponto
+			OwnWhy = TEXT("o chão em volta sem areia (a dedicada tem a areia dentro)");
 		}
 		else if (bOnHull)
 		{
@@ -2550,16 +4691,19 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 			R.HullMaxCm = Box.Max;
 		}
 	}
-	// a explosão em volume (a bola, a fuligem e o anel de areia), como na ogiva v2, com a vida: a nuvem viva (Cloud: 3·G s no Alta/Ultra,
-	// 1,5·G na Média, nenhuma na Baixa, o plano §6), a bola andando por ℓ e o giro por ℓ (Dir), a gravação dedicada do caso (Bake)
+	// a explosão em volume (a bola, a fuligem e o anel de areia), como na ogiva v2, com a vida: a nuvem viva (Cloud: 6·G s no Alta/Ultra,
+	// 3·G na Média, nenhuma na Baixa; o dobro do plano §6 desde 31/10), a bola andando por ℓ e o giro por ℓ (Dir), a gravação dedicada do caso (Bake)
 	bool bBallLight = false;
 	if (bBlast && !bKill && LoadAssets())
 	{
 		FWarheadLife Life;
 		// (a revisão) uma representação só da areia que o choque levanta: com o véu do jogo ou com a strike_chao, sem o anel da ogiva
-		Life.bNoRing = In.bGameVeil || bStrikeSand;
+		Life.bNoRing = In.bGameVeil || bStrikeSand || !bSandGround;   // (25/10) fora da areia o pó é o da resposta do tipo (abaixo)
 		Life.bCloud = On(Cloud) && Pr >= 1;
-		Life.CloudExtraS = (Pr >= 2 ? 3.0f : 1.5f) * G(WarheadKg);
+		// (31/10, a revisão: "fumaça de ogiva fica muitos segundos, sobe, abre e se dilui com o vento") o dobro: a nuvem agora rareia desde
+		// a parada (UpdateWarheads, a diluição), não só no fim; com o trecho dobrado ela ainda tem ~2/3 da densidade no instante em que a
+		// de antes começava a sumir (3,8 s na Patriot, 4,7 s no Tomahawk) e acaba aos ~7,5 e ~9 s do acerto (antes 4,5 e 5,5 s)
+		Life.CloudExtraS = (Pr >= 2 ? 6.0f : 3.0f) * G(WarheadKg);
 		if (bOwn)
 		{
 			// (a revisão da vida) a dedicada: o +X dela é, de lado, a normal da face pra fora (o casco-obstáculo de comprido em Y); no teto, o
@@ -2620,7 +4764,10 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 		// Patriots por ~3 s; a 0,55 a areia some atrás das bolas. A 0,7 (~50 kg de areia, o relógio × 0,7: a onda de base acaba em ~4 s) as
 		// bolas ficam inteiras com a areia densa em volta e embaixo, e as unidades voltam a ler ~2 s depois do impacto
 		static const float StrikeScale = FMath::Max(CmdFloat(TEXT("StrikeBakeScale="), 0.7f), 0.05f);
-		if (AExplosionVolume* Sand = SpawnDust(FVector(Point.X, Point.Y, GroundZCm), StrikeScale, StrikeScale, 1.0f, 1, Variant ^ 0x5A2Du,
+		// (25/10, o impacto pelo chão) a cratera na areia com menos areia em volta (a estrada, o concreto ao lado): a gravação inteira com
+		// menos areia, pela da área (a partir de 85% de areia na área, a inteira: na areia, 1 exato)
+		const float StrikeO = SandArea >= 1.0f ? 1.0f : FMath::Clamp(SandArea / 0.85f, 0.0f, 1.0f);
+		if (AExplosionVolume* Sand = SpawnDust(FVector(Point.X, Point.Y, GroundZCm), StrikeScale, StrikeScale, StrikeO, 1, Variant ^ 0x5A2Du,
 			FVector4f(-1.0f, 0.0f, 0.0f, 0.0f), StrikeBakeGround, 1.0f, GroundCurtainDirt))
 		{
 			Dusts.Last().FadeInS = StrikeSandFadeInS;
@@ -2631,6 +4778,8 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 			R.bSandBake = true;
 			R.SandFadeS = 0.75f * Dur;
 			R.SandEndS = Dur;
+			// (25/10, a poeira que fica) a areia que cai vira a nuvem que fica, no mesmo volume (o jogo não põe a camada Linger por cima)
+			R.bBakeLinger = MakeLinger(FName(StrikeBakeGround), LingerStrikeHold, LingerSettleSand);
 		}
 	}
 	// o clarão, as faíscas, as lascas, a luz (a receita aprovada da ogiva de 4 kg × K), com a vida: os jatos (Sparks), os pedaços em brasa
@@ -2700,7 +4849,45 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 		const bool bStrikeScale = In.bStrike && On(Strike);
 		const float EjectaKg = bStrikeScale && In.EjectaKg > 0.0f ? In.EjectaKg : (WarheadKg > 0.0f ? WarheadKg : 4.0f);
 		const float Ke = K(EjectaKg);
-		if (ABlastDebris* Dirt = World->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+		static const int32 LandPuffs[4] = { 0, 3, 6, 8 };
+		const FVector2D P2(Point.X, Point.Y);
+		const double HoleCm = 250.0 * Ke;
+		const bool bHole = GroundCraters.ContainsByPredicate([&P2, HoleCm](const FVector2D& C) { return FVector2D::DistSquared(C, P2) < HoleCm * HoleCm; });
+		const float CurtainS = WarheadRingScale(WarheadScale(EjectaKg));
+		if (!bSandGround)
+		{
+			// (25/10, o impacto pelo chão) fora da areia, o chão do tipo na escala da carga (as peças do tiro no tipo, GroundHitTyped: o pó
+			// do tipo na distância escalada, a cortina de terra, os torrões e as lascas), sem a areia; sem o tipo (o miolo sem areia solta
+			// no chão do mapa), o duro: o pó cinza curto e as lascas do asfalto
+			FGroundResponse Rr = Typed;
+			if (!bTyped)
+			{
+				Rr.Kind = 1;
+				Rr.Weight = 1.0f;
+				Rr.Dust = FLinearColor(0.45f, 0.43f, 0.40f, 0.6f);
+				Rr.DustK = 0.5f;
+				Rr.Clods = FLinearColor(0.035f, 0.035f, 0.035f);
+				Rr.Trail = FLinearColor(1.3f, 1.3f, 1.3f);
+				Rr.Chips = FLinearColor(0.05f, 0.05f, 0.05f);
+				Rr.ChipCount = 22;
+				Rr.SparkK = 1.8f;
+			}
+			FTypedScale Sc;
+			Sc.SizeK = CurtainS / GroundHitSize;
+			Sc.DirtK = Ke;
+			Sc.SpeedK = bStrikeScale ? FMath::Sqrt(Ke) : 1.0f;
+			Sc.ElevDeg = 47.5f;
+			Sc.Puffs = LandPuffs[FMath::Clamp(Pr, 0, 3)];
+			bool bTypedLinger = false;
+			GroundHitTyped(GroundPt, FromCm, Variant, bHole, Rr, &Sc, &bTypedLinger);
+			R.bBakeLinger = R.bBakeLinger || bTypedLinger;
+			if (Knobs.bLog)
+			{
+				UE_LOG(LogTemp, Display, TEXT("BlastFx míssil no chão sem areia: tipo %d (peso %.2f), areia no miolo %.2f e na área %.2f, cortina × %.2f, torrões × %.2f"),
+					Rr.Kind, Rr.Weight, SandCore, SandArea, Sc.SizeK, Ke);
+			}
+		}
+		else if (ABlastDebris* Dirt = World->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
 		{
 			Dirt->GlowScale = GroundImpactGlow;
 			Dirt->TrailTint = FLinearColor(1.0f, 0.82f, 0.62f, 1.0f);   // × o albedo 0,18 do rastro: terra marrom-escura (o GroundHit)
@@ -2708,21 +4895,16 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 			Dirt->DirtSpeedK = bStrikeScale ? FMath::Sqrt(Ke) : 1.0f;
 			Dirt->DirtElevDeg = 47.5f;
 			// (a areia do acerto) os torrões maiores que levantam o respingo de areia no 1º toque: 8 no Ultra, 6 na Alta, 3 na Média, 0 na Baixa
-			static const int32 LandPuffs[4] = { 0, 3, 6, 8 };
 			Dirt->DirtPuffs = LandPuffs[FMath::Clamp(Pr, 0, 3)];
 			Dirt->bDirtOnly = true;
 			Dirt->StartGroundImpact(Point, FVector(D.X, D.Y, 0.0), int32(Variant * 3266489917u >> 1));
 		}
-		const FVector2D P2(Point.X, Point.Y);
-		const double HoleCm = 250.0 * Ke;
-		const bool bHole = GroundCraters.ContainsByPredicate([&P2, HoleCm](const FVector2D& C) { return FVector2D::DistSquared(C, P2) < HoleCm * HoleCm; });
 		GroundCraters.Add(P2);
 		if (GroundCraters.Num() > 512)
 		{
 			GroundCraters.RemoveAt(0, GroundCraters.Num() - 512);
 		}
-		const float CurtainS = WarheadRingScale(WarheadScale(EjectaKg));
-		if (bHole && CurtainS > 0.0f && Rm && Rm->SourceDuration(FName(GroundCurtainSource)) > 0.0f)
+		if (bSandGround && bHole && CurtainS > 0.0f && Rm && Rm->SourceDuration(FName(GroundCurtainSource)) > 0.0f)
 		{
 			// a cortina na escala da carga (o tamanho ∝ R, o tempo ∝ √R: Housen e Holsapple, o regime da gravidade) e a mesma τ do tiro
 			SpawnDust(FVector(Point.X, Point.Y, GroundZCm), CurtainS, GroundHitSize * FMath::Sqrt(CurtainS / GroundHitSize), GroundCurtainOpacity, 1,
@@ -2740,6 +4922,31 @@ FVector UBlastFxDirector::MissileHitLife(uint32 Variant, const FVector& PointCm,
 		*Out = R;
 	}
 	return BallCentre;
+}
+
+void UBlastFxDirector::AirBurst(const FVector& AtCm, const FVector& FromCm, AActor* Victim, float Kg, uint32 Variant)
+{
+	// (30/10, item 38) a ogiva no ar: a Patriot de estilhaço (a PAC-2) e o Stinger. A bola nasce pelo pé meia bola abaixo do ponto (a
+	// gravação é a de uma carga no chão: o miolo fica no ponto do acerto); a saia baixa dela vira o gás da carga (bGasSkirt) e não há anel
+	// (não tem areia no ar). Os estilhaços e o clarão pelo K da carga (a de 4 kg = 1, ∝ ∛kg), sem o brilho em sprite
+	UWorld* World = GetWorld();
+	if (!ShotFxEnabled() || !World || Kg <= 0.0f || !LoadAssets())
+	{
+		return;
+	}
+	const uint32 V = Variant * 2654435761u ^ (++ShotSerial) * 0x9E3779B9u;
+	const float BallCm = CpFireballM * WarheadScale(Kg) * WarheadKnobs().Scale * 100.0f;
+	FWarheadLife Life;
+	Life.bGasSkirt = true;
+	Life.bNoRing = true;
+	SpawnWarhead(AtCm - FVector(0.0, 0.0, 0.5 * BallCm), Victim, Kg, V, false, &Life);
+	if (ABlastDebris* Fx = World->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+	{
+		const FVector N = (FromCm - AtCm).GetSafeNormal();
+		Fx->GlowScale = ImpactGlow;
+		Fx->StartMissileHit(AtCm, N.IsNearlyZero() ? FVector::UpVector : N, int32(V >> 1), FMath::Clamp(FMath::Pow(Kg / 4.0f, 1.0f / 3.0f), 0.42f, 1.6f), false);
+	}
+	UE_LOG(LogTemp, Log, TEXT("BlastFx ogiva no ar: %.1f kg em (%.0f, %.0f, %.0f) m, bola %.1f m"), Kg, AtCm.X / 100.0, AtCm.Y / 100.0, AtCm.Z / 100.0, BallCm / 100.0f);
 }
 
 bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float Kg, uint32 Variant, bool bClassicLook, FWarheadLife* LifeOpt)
@@ -2880,6 +5087,17 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 			// levanta areia): a cor e o albedo da fuligem da própria bola
 			Body->RaymarchDust = Body->RaymarchSoot;
 		}
+		else if (!bOwn)
+		{
+			// (25/10, o impacto pelo chão) o pé no chão que não é areia: a saia é a poeira do tipo (a neve, a terra) ou o mesmo jato de gás
+			// do teto (o concreto, o asfalto, o barro)
+			FVector4f Skirt;
+			bool bGas = false;
+			if (GroundSkirtAt(FootCm, Skirt, bGas))
+			{
+				Body->RaymarchDust = bGas ? Body->RaymarchSoot : Skirt;
+			}
+		}
 		Body->RaymarchSunFull = TankSunFull;
 		Body->RaymarchSkyGain = TankSkyGain;
 		Body->RaymarchGround = TankGround;
@@ -2894,6 +5112,16 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 			// (a 2ª revisão da vida) o mesmo gás no teto, na fuligem da clássica (sem a pedida, a global do raymarch: BlastRaymarch.cpp,
 			// SootColor e SootAlbedo)
 			Body->RaymarchDust = Knobs.Soot.X >= 0.0f ? Knobs.Soot : FVector4f(0.55f, 0.545f, 0.535f, 0.30f);
+		}
+		else if (!bOwn)
+		{
+			// (25/10, o impacto pelo chão) o mesmo fora da areia, na família da clássica
+			FVector4f Skirt;
+			bool bGas = false;
+			if (GroundSkirtAt(FootCm, Skirt, bGas))
+			{
+				Body->RaymarchDust = bGas ? (Knobs.Soot.X >= 0.0f ? Knobs.Soot : FVector4f(0.55f, 0.545f, 0.535f, 0.30f)) : Skirt;
+			}
 		}
 	}
 	Body->RaymarchYawRad = 2.0f * PI * VariantFraction(Variant, 0x7A3D);   // o fenômeno é simétrico: o giro é variedade de graça
@@ -2935,7 +5163,9 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 				W.bCloud = true;
 				W.HoldAgeS = ValidS;
 				W.LifeS = ValidS + LifeOpt->CloudExtraS;
-				W.FadeFromS = W.LifeS - (ValidS - FadeS);
+				// (31/10) a diluição desde a parada até o fim (UpdateWarheads: a RaymarchDilute), não nos últimos 37,5%: a nuvem rareia aos poucos
+				// enquanto sobe e abre; a continuação da areia da dedicada (OutOwnFadeS, abaixo) nasce junto
+				W.FadeFromS = ValidS;
 				Body->BakeHoldS = HoldRawS;
 				Body->HoldAge = W.LifeS + 0.5f;
 				LifeOpt->OutCloudEndS = W.LifeS;
@@ -2975,9 +5205,23 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 	{
 		bRing = !(Now - RecentBigBlasts[k].Value < 1.0 && FVector2D::DistSquared(RecentBigBlasts[k].Key, FVector2D(FootCm.X, FootCm.Y)) < FMath::Square(double(RingCm)));
 	}
+	// (25/10, o impacto pelo chão) o anel é a areia que o choque levanta ali: no chão sem ela, o pó do tipo (o cinza do concreto, o da
+	// neve) no tamanho dele, ou nada (o barro, o concreto limpo do mapa); na areia, o de hoje
+	float RingO = GroundSimOpacity;
+	FVector4f RingDust = TankDust;
+	bool bRingNoGround = false;
+	if (bRing && !GroundDustAt(FVector(RingFoot.X, RingFoot.Y, FootCm.Z), RingO, RingDust))
+	{
+		bRing = false;
+		bRingNoGround = true;
+	}
 	if (!bRing)
 	{
-		if (Free >= 2)
+		if (bRingNoGround)
+		{
+			What = TEXT("só o corpo (o chão ali não tem areia pro anel)");
+		}
+		else if (Free >= 2)
 		{
 			What = bClassicLook ? TEXT("só o corpo (o visual da clássica: sem anel)")
 				: bRingOwnedElsewhere ? TEXT("só o corpo (a areia do choque é o véu do jogo ou a strike_chao: sem anel)")
@@ -2999,7 +5243,7 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 		Ring->Opacity = 0.0f;                           // entra pela gravação (UpdateWarheads, como as areias; RaymarchOnScreen já o conta)
 		Ring->bFlash = false;
 		Ring->RaymarchSoot = TankSoot;
-		Ring->RaymarchDust = TankDust;
+		Ring->RaymarchDust = RingDust;
 		Ring->RaymarchSunFull = TankSunFull;
 		Ring->RaymarchSkyGain = TankSkyGain;
 		Ring->RaymarchGround = TankGround;
@@ -3013,7 +5257,7 @@ bool UBlastFxDirector::SpawnWarhead(const FVector& FootCm, AActor* Victim, float
 		W.BallCm = BallCm;
 		W.FireEndS = 0.8f * Ring->TimeScale;            // a janela em que outro anel não nasce perto dele
 		W.Duration = FMath::Min(RingDur, RingSeenEndS);
-		W.Opacity0 = GroundSimOpacity;
+		W.Opacity0 = RingO;
 	}
 	Say(What, Free, OnScreen);
 	return true;
@@ -3045,7 +5289,15 @@ void UBlastFxDirector::UpdateWarheads()
 		else
 		{
 			bDone = Age >= W.LifeS;
-			Op = W.Opacity0 * FMath::Lerp(1.0f, W.SootKeep, FMath::SmoothStep(W.ThinFromS, W.FireEndS, Age)) * (1.0f - FMath::SmoothStep(W.FadeFromS, W.LifeS, Age));
+			// (31/10, a revisão: "a fumaça preta do acerto morre em ~2 s virando uma rosquinha", v10_v4_siege 16–18 s) a nuvem viva acaba pela
+			// diluição, não pela opacidade. A Opacity é a Keep do raymarch, que multiplica a densidade ANTES da erosão da borda (BlastRaymarch.usf,
+			// SampleInst: F.r − Erode/(1 + 9·F.r)): levá-la a 0 em 0,7–0,8 s era um limiar subindo, e o miolo da gravação parada (vista de cima,
+			// o eixo da coluna e o topo dela no teto do domínio, onde o BoxFade já afina: a fuligem mais rala) sumia primeiro, ficando o anel
+			// preto com a areia no meio. Fumaça de verdade não esvazia por dentro: a mesma massa se espalha e τ cai por igual. Na nuvem viva a
+			// opacidade fica no patamar da fuligem afinada (SootKeep, a borda gravada parada onde estava) e o fim vai na RaymarchDilute, × a
+			// densidade depois da erosão (abaixo)
+			const float CloudFade = 1.0f - FMath::SmoothStep(W.FadeFromS, W.LifeS, Age);
+			Op = W.Opacity0 * FMath::Lerp(1.0f, W.SootKeep, FMath::SmoothStep(W.ThinFromS, W.FireEndS, Age)) * (W.bCloud ? 1.0f : CloudFade);
 			if (!bDone && (W.bMove || W.bCloud))
 			{
 				// (23/10, a vida) a nuvem continua viva: do último quadro válido em diante (o quadro parado), ela sobe e alarga como uma
@@ -3059,14 +5311,21 @@ void UBlastFxDirector::UpdateWarheads()
 				{
 					Grow = FMath::Sqrt(FMath::Min(Age, W.LifeS) / W.HoldAgeS);
 					E->SizeScale = W.Scale0 * Grow;
-					E->Thickness = W.Thick0 / (Grow * Grow * Grow);
+				}
+				if (W.bCloud)
+				{
+					// (31/10) a massa da fuligem se conserva (a densidade ÷ o cubo do crescimento) e a mistura com o ar a leva a zero no fim
+					// (CloudFade): os dois na diluição do raymarch, depois da erosão, e por ela também no cache de luz e na sombra no sol (a
+					// Thickness de antes só valia na vista e no mapa de sombra do chão: a nuvem que crescia seguia escura por dentro)
+					E->RaymarchDilute = CloudFade / (Grow * Grow * Grow);
 				}
 				// e vai com o vento do mapa depois da bola acesa, mais forte no alto (o perfil da fumaça do míssil, u·(z/10 m)^0,14), na
 				// altura do meio da nuvem (~12·λ m na gravação da Carga Pesada; (a revisão) o λ da carga, também com a dedicada)
 				if (W.bCloud && Age > W.FireEndS && WindSpeedMs > 0.0f && Dt > 0.0f)
 				{
 					const float Zc = FMath::Max(12.0f * W.CloudLambda * Grow, 2.0f);
-					const float Wind = WindSpeedMs * FMath::Pow(Zc / 10.0f, 0.14f);
+					// (25/10) a mesma lei de todos (o perfil logarítmico, WindProfileK: a 2–20 m difere da potência 0,14 em menos de 4%)
+					const float Wind = WindSpeedMs * WindProfileK(Zc);
 					W.DriftCm += FVector(FMath::Cos(WindYawRad), FMath::Sin(WindYawRad), 0.0f) * (Wind * Dt * 100.0f);
 				}
 				// a bola anda ao longo de ℓ e para (1 − e^(−t/τ)): o que o míssil trazia; a gravação de chão segue de pé
@@ -3081,7 +5340,15 @@ void UBlastFxDirector::UpdateWarheads()
 		if (W.RetireAt >= 0.0f)
 		{
 			bDone = bDone || Age >= W.RetireAt + WarheadRetireS;
-			Op *= 1.0f - FMath::SmoothStep(W.RetireAt, W.RetireAt + WarheadRetireS, Age);
+			const float RetireOut = 1.0f - FMath::SmoothStep(W.RetireAt, W.RetireAt + WarheadRetireS, Age);
+			if (W.bCloud)
+			{
+				E->RaymarchDilute *= RetireOut;      // (31/10) a nuvem viva que cede a vaga também sai pela diluição (sem o anel do limiar)
+			}
+			else
+			{
+				Op *= RetireOut;
+			}
 		}
 		if (bDone)
 		{
@@ -3608,12 +5875,16 @@ void UBlastFxDirector::MarkHull(UStaticMeshComponent* Part, const FVector& Local
 		const float W = At(B + 3);
 		const float K = FMath::FloorToFloat(W / 1.0e5f);
 		const float Born = W - 1.0e5f * K;
+		if (K >= 3.0f)
+		{
+			continue;                                // (30/10, item 31) a vaga de um furo do prédio (ARTSUnitActor::OpenStructureHole): fica
+		}
 		if (W <= 0.0f || Born > Now)
 		{
 			Empty = Empty < 0 ? k : Empty;          // vaga livre (ou de outra partida: o relógio voltou)
 			continue;
 		}
-		if (int32(K) == Kind && FVector::Dist(FVector(At(B), At(B + 1), At(B + 2)), LocalCm) < HullMarkMergeCm)
+		if (int32(K) == Kind && FVector::Dist(FVector(At(B), At(B + 1), At(B + 2)), LocalCm) < (Kind == 2 ? 60.0f : HullMarkMergeCm))
 		{
 			Same = k;
 			break;
@@ -3633,6 +5904,16 @@ void UBlastFxDirector::MarkHull(UStaticMeshComponent* Part, const FVector& Local
 	// o reforço fica no lugar da marca (a mesma cicatriz, de novo quente)
 	const FVector P = Same >= 0 ? FVector(At(B), At(B + 1), At(B + 2)) : LocalCm;
 	Part->SetCustomPrimitiveDataVector4(B, FVector4(P.X, P.Y, P.Z, Now + 1.0e5f * float(Kind)));
+	// (01/11, a prova da fuligem do míssil: nada apareceu no v41_fuligem_missil) quem levou a marca, onde, e o material de base da peça
+	static int32 Logged = 0;
+	if (Logged < 40)
+	{
+		++Logged;
+		const UMaterialInterface* Mi = Part->GetMaterial(0);
+		UE_LOG(LogTemp, Log, TEXT("BlastFx marca: %s / %s tipo %d em (%.0f, %.0f, %.0f) cm, vaga %d, o material %s"),
+			Part->GetOwner() ? *Part->GetOwner()->GetName() : TEXT("?"), *Part->GetName(), Kind, P.X, P.Y, P.Z, Slot,
+			Mi && Mi->GetMaterial() ? *Mi->GetMaterial()->GetName() : TEXT("?"));
+	}
 }
 
 namespace

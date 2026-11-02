@@ -22,6 +22,7 @@ namespace Sim
 		// fábrica, como antes: 2 defesas e 1 Dozer)
 		constexpr int32_t MaxDefensesCap = 4;
 		constexpr int32_t MaxDozers = 3;
+		constexpr Fix SalvageHomeRadius = Fix::FromInt(90);   // (simulação 30) a sucata que o Dozer parado recolhe: a da base
 		constexpr int32_t SecondDefenseMoney = 3000;
 		// (v4) depois de um ataque à casa: por quanto tempo a próxima defesa sai com o preço dela, e quanto a fábrica guarda
 		constexpr int32_t DefenseAfterAlertS = 90;
@@ -119,7 +120,14 @@ namespace Sim
 		{
 			// quem vai pra ofensiva: tem arma e anda (a defesa de base atira, mas fica; 14/10, a Patriot entrava na onda e
 			// puxava o centro do exército pra casa)
-			return State.Rules().Units[V.Def].HasWeapon() && !State.Rules().Units[V.Def].IsStructure();
+			// (v5) nem a aeronave: ela ataca pelo ThinkAir (a onda de chão mandava o jato rearmando decolar sem míssil)
+			return State.Rules().Units[V.Def].HasWeapon() && !State.Rules().Units[V.Def].IsStructure() && !State.Rules().Units[V.Def].IsAir();
+		}
+
+		/** (v5) O antiaéreo móvel sai dos dados: a unidade de chão cuja arma só atira no ar (o Avenger). */
+		bool IsAntiAir(const UnitDef& D)
+		{
+			return !D.IsStructure() && !D.IsAir() && D.HasWeapon() && D.Weapon.HitsAir() && !D.Weapon.HitsGround();
 		}
 
 		/** (v4) A artilharia sai dos dados: a unidade cuja arma tem alcance mínimo (o Tomahawk). */
@@ -840,6 +848,7 @@ namespace Sim
 			if (Now % TickNumber(RethinkTicks) < TickNumber(BaseThinkTicks))
 			{
 				Attack(State, OutCommands, true);
+				ThinkAir(State, OutCommands);   // (v5)
 			}
 			return;
 		}
@@ -880,7 +889,19 @@ namespace Sim
 		};
 		// (14/10) a defesa de base (a Patriot): o prédio que atira; a 1ª logo depois da fábrica, a 2ª quando sobra dinheiro.
 		// (v4) a renda (a zona de lançamento): o prédio com avião de carga; fora da lista fixa (a regra dela vem abaixo)
-		enum Role { Power, Supply, Factory, Defense, Income, RoleCount };
+		enum Role { Power, Supply, Factory, Defense, Income, AirBase, Barracks, Tech, RoleCount };   // (simulação 26) o quartel
+		// (simulação 33) o prédio de tecnologia: o que não treina nem atira, mas é exigido por alguém armado
+		const auto RequiredByArmed = [&](const UnitDef& D)
+		{
+			for (const UnitDef& O : R.Units)
+			{
+				if (O.HasWeapon() && !O.IsStructure() && std::any_of(O.Requires.begin(), O.Requires.end(), [&](uint16_t K) { return &R.Units[K] == &D; }))
+				{
+					return true;
+				}
+			}
+			return false;
+		};
 		const auto RoleOf = [&](const UnitDef& D) -> int32_t
 		{
 			if (!D.IsStructure())
@@ -903,7 +924,20 @@ namespace Sim
 			{
 				return Income;
 			}
-			return ProducesArmed(D) ? Factory : -1;
+			if (D.HasAirfield())
+			{
+				return AirBase;   // (v5) o Airfield: fora da lista fixa (a regra dele vem abaixo)
+			}
+			// (simulação 26) o quartel: o prédio que só treina soldado (fora da lista fixa: a regra dele vem abaixo)
+			if (ProducesArmed(D) && std::all_of(D.Produces.begin(), D.Produces.end(), [&](uint16_t K) { return !R.Units[K].HasWeapon() || R.Units[K].bInfantry; }))
+			{
+				return Barracks;
+			}
+			if (ProducesArmed(D))
+			{
+				return Factory;
+			}
+			return D.Produces.empty() && RequiredByArmed(D) ? Tech : -1;
 		};
 
 		// o que ela tem
@@ -924,6 +958,8 @@ namespace Sim
 		int32_t Hauling = 0;
 		EntityId CommandCenter = NoEntity;
 		std::vector<UnitView> Factories;
+		std::vector<UnitView> BarracksList;   // (simulação 26) os quartéis prontos
+		int32_t InfantryHave = 0;
 		std::vector<UnitView> Centers;    // os centros de suprimentos prontos
 		std::vector<UnitView> IdleTrucks; // os caminhões vazios esperando um depósito ao alcance
 		std::vector<EntityId> Building;   // obras com Dozer trabalhando
@@ -937,12 +973,40 @@ namespace Sim
 		// travava a base pra sempre, com $9 200 e 0 tanques)
 		std::vector<UnitView> Threats;
 		int32_t Completed = 0;   // (4ª revisão) os prédios dela prontos (a base andou?)
+		// (v5) o ar: as aeronaves e o antiaéreo dela (vivos; a fila soma abaixo), os Airfields prontos e o inimigo no ar visto
+		int32_t JetsHave = 0;
+		int32_t HelisHave = 0;
+		int32_t AntiAirHave = 0;
+		int32_t ChinooksHave = 0;
+		int32_t EnemyHelis = 0;
+		int32_t EnemyAir = 0;
+		bool bEnemyArtillery = false;
+		std::vector<UnitView> AirFields;
+		// (simulação 33) quantos de cada tipo ela tem (vivos e na fila): a fábrica e o quartel misturam o exército por aqui
+		std::vector<int32_t> OwnCount(R.Units.size(), 0);
+		int64_t SeenArmor[int(ArmorType::Count)] = {};
+		int64_t SeenArmorTotal = 0;
 		for (int32_t I = 0; I < State.UnitCount(); ++I)
 		{
 			const UnitView V = State.Unit(I);
 			const UnitDef& D = R.Units[V.Def];
+			if (V.Owner == Me)
+			{
+				++OwnCount[V.Def];
+			}
 			if (V.Owner != Me)
 			{
+				if (State.AreEnemies(Me, V.Owner) && !D.IsStructure() && !D.IsAir() && D.HasWeapon() && Knows(State, V))
+				{
+					SeenArmor[int(D.Armor)] += D.Cost;
+					SeenArmorTotal += D.Cost;
+				}
+				if (State.AreEnemies(Me, V.Owner) && D.IsAir() && D.HasWeapon() && Knows(State, V))
+				{
+					++EnemyAir;
+					EnemyHelis += D.IsHeli() ? 1 : 0;
+				}
+				bEnemyArtillery |= State.AreEnemies(Me, V.Owner) && IsArtillery(D) && Knows(State, V);
 				const bool bDefense = State.AreEnemies(Me, V.Owner) && D.IsStructure() && D.HasWeapon() && V.BuildLeft == 0;
 				EnemyDefenses += bDefense && Knows(State, V) ? 1 : 0;
 				if (bDefense)
@@ -951,9 +1015,27 @@ namespace Sim
 				}
 				continue;
 			}
-			if (!D.IsStructure() && D.HasWeapon())
+			if (D.IsAir())
+			{
+				JetsHave += D.IsJet() && D.HasWeapon() ? 1 : 0;
+				HelisHave += D.IsHeli() && D.HasWeapon() ? 1 : 0;
+				ChinooksHave += D.SupplyBoxes > 0 ? 1 : 0;
+			}
+			else if (IsAntiAir(D))
+			{
+				++AntiAirHave;
+			}
+			else if (!D.IsStructure() && D.HasWeapon() && D.bInfantry)
+			{
+				++InfantryHave;   // (simulação 26) o soldado não conta como tanque
+			}
+			else if (!D.IsStructure() && D.HasWeapon())
 			{
 				(IsArtillery(D) ? ArtilleryHave : TanksHave) += 1;
+			}
+			if (D.HasAirfield() && V.BuildLeft == 0)
+			{
+				AirFields.push_back(V);
 			}
 			if (D.CanConstruct())
 			{
@@ -1005,6 +1087,10 @@ namespace Sim
 			{
 				Factories.push_back(V);
 			}
+			if (Role == Barracks && V.BuildLeft == 0)
+			{
+				BarracksList.push_back(V);
+			}
 			Completed += D.IsStructure() && V.BuildLeft == 0 ? 1 : 0;
 		}
 		// (v4) a fila das fábricas conta como já tendo (a escolta e o teto da artilharia)
@@ -1014,11 +1100,25 @@ namespace Sim
 			State.QueueOf(F.Id, Queued);
 			for (const uint16_t K : Queued)
 			{
+				++OwnCount[K];
 				const UnitDef& Q = R.Units[K];
-				if (!Q.IsStructure() && Q.HasWeapon())
+				if (IsAntiAir(Q))
+				{
+					++AntiAirHave;   // (v5)
+				}
+				else if (!Q.IsStructure() && Q.HasWeapon())
 				{
 					(IsArtillery(Q) ? ArtilleryHave : TanksHave) += 1;
 				}
+			}
+		}
+		for (const UnitView& B : BarracksList)
+		{
+			State.QueueOf(B.Id, Queued);
+			InfantryHave += int32_t(Queued.size());   // (simulação 26) a fila do quartel conta como já tendo
+			for (const uint16_t K : Queued)
+			{
+				++OwnCount[K];
 			}
 		}
 		for (EntityId& A : Abandoned)
@@ -1188,6 +1288,35 @@ namespace Sim
 		LostSites.erase(std::remove_if(LostSites.begin(), LostSites.end(), [&](const Site& L) { return L.Tick + LostMemory <= Now; }), LostSites.end());
 		Unreachable.erase(std::remove_if(Unreachable.begin(), Unreachable.end(), [&](const Site& L) { return L.Tick + LostMemory <= Now; }), Unreachable.end());
 
+		// (01/11) o exército de terra inimigo: o último visto fica (some na névoa, a composição não muda tão rápido)
+		if (SeenArmorTotal > 0)
+		{
+			for (int32_t A = 0; A < int32_t(ArmorType::Count); ++A)
+			{
+				EnemyArmorCost[A] = SeenArmor[A];
+			}
+		}
+		// (v5) o inimigo no ar: o maior número visto junto nos últimos 2 min (o helicóptero some na névoa, a ameaça não)
+		if (EnemyAir > 0)
+		{
+			EnemyAirSeenAt = Now;
+		}
+		if (EnemyAir == 0 && Now > EnemyAirSeenAt + TickNumber(120 * TicksPerSecond))
+		{
+			EnemyAirPeak = 0;
+			EnemyHeliPeak = 0;
+		}
+		EnemyAirPeak = std::max(EnemyAirPeak, EnemyAir);
+		EnemyHeliPeak = std::max(EnemyHeliPeak, EnemyHelis);
+		for (const UnitView& F : AirFields)
+		{
+			State.QueueOf(F.Id, Queued);
+			for (const uint16_t K : Queued)
+			{
+				JetsHave += R.Units[K].IsJet() ? 1 : 0;
+				HelisHave += R.Units[K].IsHeli() && R.Units[K].HasWeapon() ? 1 : 0;
+			}
+		}
 		// (v4) quantas fábricas o banco paga: uma fábrica gasta um tanque a cada obra dele; o banco que daria mais de
 		// BankHorizonS segundos disso pede mais uma (o tanque e a fábrica saem dos dados: o Dozer constrói a fábrica, a
 		// fábrica treina o 1º armado)
@@ -1226,7 +1355,9 @@ namespace Sim
 			}
 		}
 		const int32_t DozersWanted = std::min(MaxDozers, FactoriesWanted);
-		const int32_t MaxDefenses = std::min(MaxDefensesCap, DefensesBase + FactoriesWanted);
+		// (v5) uma defesa a mais por aeronave inimiga vista (a Patriot tem a arma de ar), até AirDefenseMax a mais
+		const int32_t AirDefenses = std::min(AirDefenseMax, EnemyAirPeak);
+		const int32_t MaxDefenses = std::min(MaxDefensesCap + AirDefenses, DefensesBase + FactoriesWanted + AirDefenses);
 		// várias obras ao mesmo tempo só com Dozer sobrando (com 1 Dozer, como antes: nada novo com obra andando)
 		const bool bDozerSpare = int32_t(Building.size()) < std::max<int32_t>(1, int32_t(Dozers.size()));
 
@@ -1578,12 +1709,22 @@ namespace Sim
 		bool bCanDefend = false;
 		// (v4) a zona: o prédio de renda que um Dozer sabe fazer
 		int32_t ZoneDef = -1;
+		// (simulação 33, o elenco das 3 facções) os papéis que algum Dozer sabe fazer (a GLA não tem usina: sem isso a lista fixa
+		// pedia a usina pra sempre) e os que ele já pode (a defesa da GLA pede o quartel, que sai depois da fábrica)
+		bool bCanBuild[RoleCount] = {};
+		bool bCanBuildNow[RoleCount] = {};
 		for (const UnitView& Dz : Dozers)
 		{
 			for (const uint16_t K : R.Units[Dz.Def].Constructs)
 			{
 				bCanDefend |= RoleOf(R.Units[K]) == Defense;
 				ZoneDef = ZoneDef < 0 && RoleOf(R.Units[K]) == Income ? int32_t(K) : ZoneDef;
+				const int32_t KRole = RoleOf(R.Units[K]);
+				if (KRole >= 0)
+				{
+					bCanBuild[KRole] = true;
+					bCanBuildNow[KRole] |= State.HasPrerequisites(Me, K);
+				}
 			}
 		}
 		// (v4) a zona de lançamento (usa_drop_zone, ai_rule): a 1ª com a fábrica pronta e depois de IncomeFirstAfterS ou da
@@ -1628,12 +1769,45 @@ namespace Sim
 		int32_t Next = -1;
 		for (int32_t Role = 0; Role < Income && Next < 0; ++Role)
 		{
-			Next = Have[Role] == 0 && (Role != Defense || bCanDefend) ? Role : -1;
+			Next = Have[Role] == 0 && bCanBuild[Role] && (Role != Defense || bCanBuildNow[Defense]) ? Role : -1;
 		}
 		// a base secou, ou (v4) vai secar: o centro novo vai pro depósito da expansão (a escolha abaixo)
 		if (Next < 0 && (bDry || bRunningLow) && ExpandDock >= 0 && Have[Supply] < MaxSupplyCenters && Unfinished[Supply] == 0 && bDozerSpare)
 		{
 			Next = Supply;
+		}
+		// (simulação 26, 30/10) o quartel: um só, logo depois da fábrica pronta, com o preço dele + um tanque sobrando (o ZH faz o quartel
+		// cedo e ele é barato; antes da zona e do ar: com a regra depois deles, no jogo ele nunca saía em 400 s, base_noite4)
+		int32_t BarracksDef = -1;
+		for (const UnitView& Dz : Dozers)
+		{
+			for (const uint16_t K : R.Units[Dz.Def].Constructs)
+			{
+				BarracksDef = BarracksDef < 0 && RoleOf(R.Units[K]) == Barracks ? int32_t(K) : BarracksDef;
+			}
+		}
+		if (Next < 0 && BarracksDef >= 0 && Have[Barracks] == 0 && !Factories.empty() && TankDef >= 0 && bDozerSpare
+			&& State.HasPrerequisites(Me, uint16_t(BarracksDef))
+			&& Self.Money >= R.Units[size_t(BarracksDef)].Cost + R.Units[size_t(TankDef)].Cost)
+		{
+			Next = Barracks;
+			Note("barracks wanted");
+		}
+		// (simulação 33) o prédio de tecnologia (destrava o pesado da facção): um só, depois da fábrica, com a 1ª onda fora ou a
+		// partir de TechFirstAfterS e o preço dele + um tanque sobrando
+		if (Next < 0 && bCanBuildNow[Tech] && Have[Tech] == 0 && !Factories.empty() && TankDef >= 0 && bDozerSpare
+			&& (bWaveSent || Now >= TickNumber(TechFirstAfterS * TicksPerSecond)))
+		{
+			int32_t TechDef = -1;
+			for (const uint16_t K : R.Units[Dozers[0].Def].Constructs)
+			{
+				TechDef = TechDef < 0 && RoleOf(R.Units[K]) == Tech && State.HasPrerequisites(Me, K) ? int32_t(K) : TechDef;
+			}
+			if (TechDef >= 0 && Self.Money >= R.Units[size_t(TechDef)].Cost + R.Units[size_t(TankDef)].Cost)
+			{
+				Next = Tech;
+				Note("tech wanted");
+			}
 		}
 		// (v4) a zona, com o dinheiro dela e de um tanque
 		if (Next < 0 && bZoneWanted && Self.Money >= ZoneMoney && bDozerSpare)
@@ -1648,6 +1822,39 @@ namespace Sim
 			&& Self.Money >= ZoneHeld + R.Units[size_t(FactoryDef)].Cost + 2 * R.Units[size_t(TankDef)].Cost)
 		{
 			Next = Factory;
+		}
+		// (v5) o Airfield: depois da fábrica, com a 1ª onda fora (ou a partir de AirFirstAfterS) e o preço dele + uma aeronave
+		// sobrando, sem mexer no dinheiro guardado pra zona; um só
+		int32_t AirfieldDef = -1;
+		for (const UnitView& Dz : Dozers)
+		{
+			for (const uint16_t K : R.Units[Dz.Def].Constructs)
+			{
+				AirfieldDef = AirfieldDef < 0 && RoleOf(R.Units[K]) == AirBase ? int32_t(K) : AirfieldDef;
+			}
+		}
+		const bool bAirWanted = AirfieldDef >= 0 && Have[AirBase] == 0 && !Factories.empty() && State.HasPrerequisites(Me, uint16_t(AirfieldDef))
+			&& (bWaveSent || Now >= TickNumber(AirFirstAfterS * TicksPerSecond));
+		const int32_t AirMoney = bAirWanted ? ZoneHeld + R.Units[size_t(AirfieldDef)].Cost : 0;
+		bool bSaveForAir = false;
+		if (bAirWanted && Self.Money < AirMoney)
+		{
+			// a janela de economizar, como a da zona: a fábrica para no máximo AirSaveMaxS, depois gasta normal IncomeSaveRetryS
+			if (!bAirSaving || Now >= AirSaveSince + TickNumber((AirSaveMaxS + IncomeSaveRetryS) * TicksPerSecond))
+			{
+				bAirSaving = true;
+				AirSaveSince = Now;
+			}
+			bSaveForAir = Now < AirSaveSince + TickNumber(AirSaveMaxS * TicksPerSecond);
+		}
+		else if (!bAirWanted)
+		{
+			bAirSaving = false;
+		}
+		if (Next < 0 && bAirWanted && Self.Money >= AirMoney && bDozerSpare)
+		{
+			Next = AirBase;
+			Note("airfield wanted");
 		}
 		// o tipo que o Dozer faria pro papel (o primeiro da lista dele que o jogador já pode)
 		const auto DefFor = [&](int32_t Want, const UnitView& Dz)
@@ -1681,7 +1888,7 @@ namespace Sim
 		}
 		// uma usina antes quando a energia não fecha. (v4) Olhando a obra que vem: ela pede o que gasta (a Patriot e a zona
 		// gastam 3; antes a conta supunha 1 e subiam sem energia); sem obra na vez, 1 de folga, como antes
-		if (Next != Power && (Next >= 0 || bDozerSpare) && !Dozers.empty())
+		if (bCanBuild[Power] && Next != Power && (Next >= 0 || bDozerSpare) && !Dozers.empty())
 		{
 			const int32_t NextDef = Next >= 0 ? DefFor(Next, Dozers[0]) : -1;
 			const int32_t Need = NextDef >= 0 ? std::max<int32_t>(1, -R.Units[size_t(NextDef)].Energy) : 1;
@@ -1858,6 +2065,13 @@ namespace Sim
 				// a defesa na frente da base, rumo ao inimigo (a 1ª no meio, a 2ª de lado: o FindSpot acha o livre)
 				Anchor = Home + (EnemyStart - Home).Normalized() * Fix::FromInt(DefenseAheadM);
 				MinRadius = Fix::Zero();
+			}
+			if (Next == AirBase)
+			{
+				// (v5) o Airfield atrás da base, do lado oposto ao inimigo (o lote é grande: a espiral acha o lugar)
+				Anchor = Home - (EnemyStart - Home).Normalized() * Fix::FromInt(IncomeBehindM + 20);
+				MinRadius = Fix::Zero();
+				Start = (Home - EnemyStart).Heading();
 			}
 			if (Next == Income)
 			{
@@ -2435,6 +2649,31 @@ namespace Sim
 				}
 			}
 		}
+		// (v5) o Chinook: um, quando o depósito com caixa mais perto do centro fica a mais de ChinookDockM (o caminhão demoraria) e
+		// sobra o preço dele + um tanque
+		if (!bTrucksShort && Center != NoEntity && CenterQueue == 0 && ChinooksHave == 0 && Money >= AirReserve + 900)
+		{
+			UnitView C;
+			State.FindUnit(Center, C);
+			int64_t Nearest = -1;
+			for (int32_t K = 0; K < State.DockCount(); ++K)
+			{
+				const DockView Dk = State.Dock(K);
+				const int64_t D2 = Dk.Boxes > 0 ? DistSqRaw(Dk.Pos, C.Pos) : -1;
+				Nearest = D2 >= 0 && (Nearest < 0 || D2 < Nearest) ? D2 : Nearest;
+			}
+			if (Nearest > RadiusSqRaw(Fix::FromInt(ChinookDockM)))
+			{
+				for (const uint16_t K : R.Units[C.Def].Produces)
+				{
+					if (R.Units[K].SupplyBoxes > 0 && R.Units[K].IsAir() && Produce(Center, K))
+					{
+						Note("chinook queued");
+						break;
+					}
+				}
+			}
+		}
 		// o caminhão parado sem depósito ao alcance: o com caixa mais perto dele, do lado de casa primeiro (o do lado do
 		// inimigo só quando o de casa acabou). (2ª revisão de 23/10) Nunca o depósito no alcance de uma defesa inimiga (o
 		// centro perto de casa, sem depósito livre, mandava o caminhão grátis morrer no depósito coberto)
@@ -2517,34 +2756,145 @@ namespace Sim
 		// Uma vez só: com o centro querido, o lugar escolhido é o dele (as duas somadas paravam a fábrica com $4 000+)
 		const int32_t PlanHeld = PlanRole >= 0 && PlanRole == Next && PlanDef >= 0 ? R.Units[size_t(PlanDef)].Cost : 0;
 		const int32_t Reserve = (bTrucksShort ? TruckReserve : 0) + std::max(CenterHeld, PlanHeld);
+		// (v5) o Airfield: um por vez na fila, antes das fábricas. O Raptor (o caça) quando o inimigo tem helicóptero ou Tomahawk,
+		// até AirJetMax e com vaga; senão o Comanche, até AirHeliMax. Sem o preço, a fábrica para no máximo AirSaveMaxS (a
+		// janela da zona: o dinheiro vive perto de 0 e a aeronave nunca saía)
+		bool bSaveForCraft = false;
+		for (const UnitView& F : AirFields)
+		{
+			if (F.QueueSize > 0 || bSaveForCenter || bSaveForZone || bSaveForDefense || bSaveForAir)
+			{
+				continue;
+			}
+			int32_t Jet = -1;
+			int32_t Heli = -1;
+			for (const uint16_t K : R.Units[F.Def].Produces)
+			{
+				Jet = Jet < 0 && R.Units[K].IsJet() && R.Units[K].HasWeapon() && State.HasPrerequisites(Me, K) ? int32_t(K) : Jet;
+				Heli = Heli < 0 && R.Units[K].IsHeli() && R.Units[K].HasWeapon() && State.HasPrerequisites(Me, K) ? int32_t(K) : Heli;
+			}
+			const bool bJetWanted = Jet >= 0 && JetsHave < AirJetMax && State.PadsLeftFor(F.Id) > 0 && (EnemyHeliPeak > JetsHave || (bEnemyArtillery && JetsHave == 0));
+			const int32_t Pick = bJetWanted ? Jet : (Heli >= 0 && HelisHave < AirHeliMax ? Heli : -1);
+			if (Pick < 0)
+			{
+				bCraftSaving = false;
+				continue;
+			}
+			if (Money >= R.Units[size_t(Pick)].Cost + Reserve && Produce(F.Id, uint16_t(Pick)))
+			{
+				(R.Units[size_t(Pick)].IsJet() ? JetsHave : HelisHave) += 1;
+				Note("%s queued", R.Units[size_t(Pick)].Key.c_str());
+				bCraftSaving = false;
+				continue;
+			}
+			if (!bCraftSaving || Now >= CraftSaveSince + TickNumber((AirSaveMaxS + IncomeSaveRetryS) * TicksPerSecond))
+			{
+				bCraftSaving = true;
+				CraftSaveSince = Now;
+			}
+			bSaveForCraft |= Now < CraftSaveSince + TickNumber(AirSaveMaxS * TicksPerSecond);
+		}
+		// (01/11, o elenco: nas partidas IA × IA a GLA perdia todas, com metade da fábrica em Technical e Toxin Tractor, 25% contra a
+		// blindagem de tanque) o % de dano da arma contra o exército de terra inimigo visto, pesado pelo custo de cada blindagem (sem nada
+		// visto, contra tanque). Na mistura entra só o armado que faz ao menos metade do % do melhor que ela pode comprar ali
+		int64_t ArmorSeen = 0;
+		for (const int64_t C : EnemyArmorCost)
+		{
+			ArmorSeen += C;
+		}
+		const auto Versus = [&](const UnitDef& Q) -> int64_t
+		{
+			if (ArmorSeen <= 0)
+			{
+				return R.Armor.Get(ArmorType::Tank, Q.Weapon.Type);
+			}
+			int64_t Sum = 0;
+			for (int32_t A = 0; A < int32_t(ArmorType::Count); ++A)
+			{
+				Sum += EnemyArmorCost[A] * R.Armor.Get(ArmorType(A), Q.Weapon.Type);
+			}
+			return Sum / ArmorSeen;
+		};
+		const auto BestVersus = [&](const UnitDef& Building, bool bInfantryOnly) -> int64_t
+		{
+			int64_t Best = 0;
+			for (const uint16_t K : Building.Produces)
+			{
+				const UnitDef& Q = R.Units[K];
+				if (Q.HasWeapon() && Q.bInfantry == bInfantryOnly && !IsAntiAir(Q) && !IsArtillery(Q) && State.HasPrerequisites(Me, K))
+				{
+					Best = std::max(Best, Versus(Q));
+				}
+			}
+			return Best;
+		};
 		for (const UnitView& F : Factories)
 		{
-			if (F.QueueSize >= 2 || bSaveForCenter || bSaveForZone || bSaveForDefense)
+			if (F.QueueSize >= 2 || bSaveForCenter || bSaveForZone || bSaveForDefense || bSaveForAir || bSaveForCraft)
 			{
 				continue;
 			}
 			int32_t Pick = -1;
+			// (v5) o antiaéreo móvel com o exército: um por 2 helicópteros inimigos vistos (até AntiAirMax), com 2 tanques por um
+			const int32_t AntiAirWant = std::min(AntiAirMax, (EnemyHeliPeak + 1) / 2);
 			for (const uint16_t K : R.Units[F.Def].Produces)
 			{
-				if (IsArtillery(R.Units[K]) && State.HasPrerequisites(Me, K) && ArtilleryHave < ArtilleryWant && TanksHave >= 2 * ArtilleryHave + 2)
+				if (IsAntiAir(R.Units[K]) && State.HasPrerequisites(Me, K) && AntiAirHave < AntiAirWant && TanksHave >= 2 * AntiAirHave + 2)
 				{
 					Pick = K;
 					break;
 				}
 			}
-			const bool bArtillery = Pick >= 0;
+			const bool bAntiAir = Pick >= 0;
 			for (const uint16_t K : R.Units[F.Def].Produces)
 			{
-				if (Pick < 0 && R.Units[K].HasWeapon() && State.HasPrerequisites(Me, K))
+				if (Pick < 0 && IsArtillery(R.Units[K]) && State.HasPrerequisites(Me, K) && ArtilleryHave < ArtilleryWant && TanksHave >= 2 * ArtilleryHave + 2)
 				{
 					Pick = K;
+					break;
 				}
+			}
+			const bool bArtillery = Pick >= 0 && !bAntiAir;
+			// (simulação 33, o elenco das 3 facções) o armado de linha pela mistura: o que ela tem menos, o 1º da lista (o tanque)
+			// valendo por 2 (antes, só o 1º: o exército da China seria só Type 99)
+			if (Pick < 0)
+			{
+				int32_t Best = -1;
+				int32_t BestScore = 0;
+				bool bFirst = true;
+				const int64_t Top = BestVersus(R.Units[F.Def], false);
+				for (const uint16_t K : R.Units[F.Def].Produces)
+				{
+					const UnitDef& Q = R.Units[K];
+					if (!Q.HasWeapon() || IsAntiAir(Q) || IsArtillery(Q))
+					{
+						continue;
+					}
+					const int32_t Weight = bFirst ? 2 : 1;
+					bFirst = false;
+					if (!State.HasPrerequisites(Me, K) || Versus(Q) * 2 < Top)
+					{
+						continue;
+					}
+					const int32_t Score = OwnCount[K] * 2 / Weight;
+					if (Best < 0 || Score < BestScore)
+					{
+						Best = K;
+						BestScore = Score;
+					}
+				}
+				Pick = Best;
 			}
 			if (Pick < 0 || Money < R.Units[size_t(Pick)].Cost + Reserve || !Produce(F.Id, uint16_t(Pick)))
 			{
 				continue;
 			}
-			if (bArtillery)
+			if (bAntiAir)
+			{
+				++AntiAirHave;
+				Note("%s queued", R.Units[size_t(Pick)].Key.c_str());
+			}
+			else if (bArtillery)
 			{
 				++ArtilleryHave;
 				Note("%s queued", R.Units[size_t(Pick)].Key.c_str());
@@ -2552,6 +2902,217 @@ namespace Sim
 			else
 			{
 				++TanksHave;
+			}
+		}
+		// (simulação 26, 30/10) o quartel: um soldado por tanque (+ InfantryBase), até InfantryMax, um de cada vez, com as mesmas janelas de
+		// economizar da fábrica
+		for (const UnitView& B : BarracksList)
+		{
+			if (B.QueueSize >= 1 || bSaveForCenter || bSaveForZone || bSaveForDefense || bSaveForAir || bSaveForCraft
+				|| InfantryHave >= std::min(InfantryMax, TanksHave + InfantryBase))
+			{
+				continue;
+			}
+			// (simulação 33) a mistura, como a da fábrica: o soldado que ela tem menos, o 1º da lista (o fuzil) valendo por 2. O soldado
+			// que sai em par (ProduceCount) conta por compra
+			int32_t Pick = -1;
+			int32_t BestScore = 0;
+			bool bFirst = true;
+			const int64_t Top = BestVersus(R.Units[B.Def], true);   // (01/11) o soldado contra o que o inimigo tem, como a fábrica
+			for (const uint16_t K : R.Units[B.Def].Produces)
+			{
+				if (!R.Units[K].bInfantry || !R.Units[K].HasWeapon())
+				{
+					continue;
+				}
+				const int32_t Weight = bFirst ? 2 : 1;
+				bFirst = false;
+				if (!State.HasPrerequisites(Me, K) || Versus(R.Units[K]) * 2 < Top)
+				{
+					continue;
+				}
+				const int32_t Score = OwnCount[K] * 2 / (Weight * std::max<int32_t>(1, R.Units[K].ProduceCount));
+				if (Pick < 0 || Score < BestScore)
+				{
+					Pick = K;
+					BestScore = Score;
+				}
+			}
+			if (Pick >= 0 && Money >= R.Units[size_t(Pick)].Cost + Reserve && Produce(B.Id, uint16_t(Pick)))
+			{
+				InfantryHave += R.Units[size_t(Pick)].ProduceCount;
+			}
+		}
+		// (simulação 30, 30/10, a sucata) o Dozer parado (sem obra nem ordem, e nenhuma obra mandada neste pensar) recolhe a carcaça ou o
+		// entulho mais perto dele a até SalvageHomeRadius da casa: a base limpa e o dinheiro da batalha volta (um Dozer por pensar)
+		bool bWorkOrdered = false;
+		for (const Command& C : OutCommands)
+		{
+			bWorkOrdered |= C.Type == CommandType::Build || C.Type == CommandType::Repair || C.Type == CommandType::Salvage;
+		}
+		for (const UnitView& Dz : Dozers)
+		{
+			if (bWorkOrdered || Dz.Task != UnitTask::None || Dz.Order != OrderType::Idle)
+			{
+				continue;
+			}
+			EntityId Scrap = NoEntity;
+			int64_t BestD2 = 0;
+			// fora do alcance das defesas inimigas (as do SiteIsSafe, + 15 m) e longe do armado inimigo conhecido (40 m)
+			const auto Safe = [&](Vec2 P)
+			{
+				for (const UnitView& T : Threats)
+				{
+					if (DistSqRaw(T.Pos, P) <= RadiusSqRaw(R.Units[T.Def].Weapon.Range + Fix::FromInt(15)))
+					{
+						return false;
+					}
+				}
+				for (int32_t I = 0; I < State.UnitCount(); ++I)
+				{
+					const UnitView V = State.Unit(I);
+					if (State.AreEnemies(Me, V.Owner) && !V.bStructure && R.Units[V.Def].HasWeapon() && Knows(State, V)
+						&& DistSqRaw(V.Pos, P) <= RadiusSqRaw(Fix::FromInt(40)))
+					{
+						return false;
+					}
+				}
+				return true;
+			};
+			const auto Consider = [&](EntityId Id, Vec2 P)
+			{
+				const int64_t D2 = DistSqRaw(P, Dz.Pos);
+				if (DistSqRaw(P, Home) <= RadiusSqRaw(SalvageHomeRadius) && (Scrap == NoEntity || D2 < BestD2) && Safe(P))
+				{
+					Scrap = Id;
+					BestD2 = D2;
+				}
+			};
+			for (int32_t K = 0; K < State.WreckCount(); ++K)
+			{
+				const World::WreckView Wr = State.Wreck(K);
+				Consider(Wr.Id, Wr.Pos);
+			}
+			for (int32_t K = 0; K < State.RuinCount(); ++K)
+			{
+				const World::RuinView Rn = State.Ruin(K);
+				Consider(Rn.Id, Rn.Pos);
+			}
+			if (Scrap != NoEntity)
+			{
+				Command G;
+				G.Player = Me;
+				G.Type = CommandType::SetGroup;
+				G.Units = { Dz.Id };
+				OutCommands.push_back(G);
+				Command X;
+				X.Player = Me;
+				X.Type = CommandType::Salvage;
+				X.Target = Scrap;
+				OutCommands.push_back(X);
+				Note("salvage %u", unsigned(Scrap));
+				break;
+			}
+		}
+	}
+
+	void SkirmishAI::ThinkAir(const World& State, std::vector<Command>& OutCommands)
+	{
+		// (v5, 24/10) as aeronaves dela à toa (no ar sem ordem, ou o jato na vaga com o pente cheio): o alvo que ela conhece, o
+		// mais perto da aeronave, fora do alcance de ar inimigo conhecido (o mapa de ameaça antiaérea: a soma dos alcances de ar
+		// vistos; o helicóptero não entra nele, o jato entra se não houver outro). O Raptor caça o helicóptero inimigo primeiro.
+		// O helicóptero sem alvo volta pra perto de casa
+		const Ruleset& R = State.Rules();
+		const Vec2 Home = State.PlayerStart(Me);
+		std::vector<KeepOut> AntiAir;
+		std::vector<UnitView> Ground;
+		std::vector<UnitView> Air;
+		for (int32_t I = 0; I < State.UnitCount(); ++I)
+		{
+			const UnitView V = State.Unit(I);
+			if (!State.AreEnemies(Me, V.Owner) || V.Hp <= 0 || !Knows(State, V) || (V.bStructure && V.BuildLeft > 0))
+			{
+				continue;
+			}
+			const UnitDef& D = R.Units[V.Def];
+			Fix AirReach = Fix::Zero();
+			for (int32_t S = 0; S < D.WeaponCount(); ++S)
+			{
+				AirReach = D.WeaponAt(S).HitsAir() ? Max(AirReach, D.WeaponAt(S).Range) : AirReach;
+			}
+			if (AirReach.Raw > 0)
+			{
+				AntiAir.push_back({ V.Pos, RadiusSqRaw(AirReach + Fix::FromInt(10)), int32_t(V.Def) });
+			}
+			(V.bAirborne ? Air : Ground).push_back(V);
+		}
+		const auto Covered = [&](Vec2 P)
+		{
+			return std::any_of(AntiAir.begin(), AntiAir.end(), [&](const KeepOut& K) { return DistSqRaw(P, K.Pos) <= K.RadiusSq; });
+		};
+		for (int32_t I = 0; I < State.UnitCount(); ++I)
+		{
+			const UnitView V = State.Unit(I);
+			const UnitDef& D = R.Units[V.Def];
+			if (V.Owner != Me || !D.IsAir() || !D.HasWeapon() || V.bReturning || V.bStarving || V.Order != OrderType::Idle || V.Engage != NoEntity)
+			{
+				continue;
+			}
+			const bool bParkedReady = D.IsJet() && V.Flight == FlightState::Parked && V.Clip >= V.ClipSize;
+			if (!(V.Flight == FlightState::Flying || bParkedReady))
+			{
+				continue;
+			}
+			EntityId Best = NoEntity;
+			int64_t BestScore = 0;
+			const auto Consider = [&](const std::vector<UnitView>& List, int64_t Bonus)
+			{
+				for (const UnitView& T : List)
+				{
+					const UnitDef& TD = R.Units[T.Def];
+					const bool bCov = Covered(T.Pos);
+					if (!State.CanTarget(V.Id, T.Id) || (bCov && D.IsHeli()) || (TD.IsStructure() && TD.HasWeapon()))
+					{
+						continue;   // a defesa de base e o alvo coberto pelo antiaéreo ficam pra onda de chão
+					}
+					// o mais perto, o coberto (só o jato) vale muito menos, e o caminhão e a artilharia valem mais
+					int64_t Score = DistSqRaw(V.Pos, T.Pos) / (int64_t(1) << 32) + (bCov ? 40000 : 0) - Bonus;
+					Score -= TD.SupplyBoxes > 0 || IsArtillery(TD) ? 2500 : 0;
+					if (Best == NoEntity || Score < BestScore || (Score == BestScore && T.Id < Best))
+					{
+						Best = T.Id;
+						BestScore = Score;
+					}
+				}
+			};
+			Consider(Air, 1000000);   // a aeronave inimiga primeiro (quem atira no ar)
+			Consider(Ground, 0);
+			if (Best != NoEntity)
+			{
+				Command G;
+				G.Player = Me;
+				G.Type = CommandType::SetGroup;
+				G.Units = { V.Id };
+				OutCommands.push_back(G);
+				Command A;
+				A.Player = Me;
+				A.Type = CommandType::Attack;
+				A.Target = Best;
+				OutCommands.push_back(A);
+				continue;
+			}
+			if (D.IsHeli() && V.Flight == FlightState::Flying && DistSqRaw(V.Pos, Home) > RadiusSqRaw(Fix::FromInt(80)))
+			{
+				Command G;
+				G.Player = Me;
+				G.Type = CommandType::SetGroup;
+				G.Units = { V.Id };
+				OutCommands.push_back(G);
+				Command M;
+				M.Player = Me;
+				M.Type = CommandType::Move;
+				M.Point = Home;
+				OutCommands.push_back(M);
 			}
 		}
 	}

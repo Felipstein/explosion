@@ -35,6 +35,12 @@ namespace
 		if (Name == TEXT("armor_piercing")) { Out = Sim::DamageType::ArmorPiercing; return true; }
 		if (Name == TEXT("small_arms")) { Out = Sim::DamageType::SmallArms; return true; }
 		if (Name == TEXT("explosive")) { Out = Sim::DamageType::Explosive; return true; }
+		if (Name == TEXT("jet_missile")) { Out = Sim::DamageType::JetMissile; return true; }   // (v5) o JET_MISSILES do ZH
+		if (Name == TEXT("crush")) { Out = Sim::DamageType::Crush; return true; }   // (simulação 26) o CRUSH do ZH
+		// (simulação 33, 31/10, o elenco: docs/ELENCO.md §7.1) o GATTLING, o FLAME e o POISON do Armor.ini do ZH
+		if (Name == TEXT("gattling")) { Out = Sim::DamageType::Gattling; return true; }
+		if (Name == TEXT("flame")) { Out = Sim::DamageType::Flame; return true; }
+		if (Name == TEXT("poison")) { Out = Sim::DamageType::Poison; return true; }
 		return false;
 	}
 
@@ -42,6 +48,11 @@ namespace
 	{
 		if (Name == TEXT("tank")) { Out = Sim::ArmorType::Tank; return true; }
 		if (Name == TEXT("structure")) { Out = Sim::ArmorType::Structure; return true; }
+		// (v5, 24/10) as armaduras do ar (Armor.ini do ZH)
+		if (Name == TEXT("airplane")) { Out = Sim::ArmorType::Airplane; return true; }
+		if (Name == TEXT("helicopter")) { Out = Sim::ArmorType::Helicopter; return true; }
+		if (Name == TEXT("heavy_helicopter")) { Out = Sim::ArmorType::HeavyHelicopter; return true; }
+		if (Name == TEXT("infantry")) { Out = Sim::ArmorType::Infantry; return true; }   // (simulação 26) o HumanArmor
 		return false;
 	}
 
@@ -158,6 +169,19 @@ namespace
 					Part.Mesh = (*O)->GetStringField(TEXT("mesh"));
 					Part.AtCm = FieldM(*O, TEXT("at_m"));
 					Part.Rpm = float(Opt(*O, TEXT("rpm"), 30.0));
+					// (v5) o rotor da aeronave: gira pelo motor da simulação, no eixo dado
+					(*O)->TryGetBoolField(TEXT("rotor"), Part.bRotor);
+					FString Axis;
+					if ((*O)->TryGetStringField(TEXT("axis"), Axis))
+					{
+						Part.Axis = Axis == TEXT("x") ? 0 : (Axis == TEXT("y") ? 1 : 2);
+					}
+					// (24/10, escopo B do ar) o disco borrado: as pás, o raio, a ponta pintada e a corda
+					Part.Blades = int32(Opt(*O, TEXT("blades"), 0.0));
+					Part.RadiusCm = float(Opt(*O, TEXT("radius_m"), 0.0)) * 100.0f;
+					Part.TipCm = float(Opt(*O, TEXT("tip_m"), 0.0)) * 100.0f;
+					Part.ChordCm = float(Opt(*O, TEXT("chord_m"), 0.3)) * 100.0f;
+					(*O)->TryGetBoolField(TEXT("on_turret"), Part.bOnTurret);   // (25/10, v5) o prato do radar no mastro da torre
 					V.SpinParts.Add(Part);
 				}
 			}
@@ -168,6 +192,42 @@ namespace
 		{
 			V.BladeMesh = (*Blade)->GetStringField(TEXT("mesh"));
 			V.BladeAtCm = FieldM(*Blade, TEXT("at_m"));
+		}
+		for (const FVector4& P : ListM(Visual, TEXT("fire_points_m")))
+		{
+			V.FirePointsCm.Add(FVector(P));
+		}
+		// (01/11) o recorte do chão e a saída pelo túnel (o Arms Dealer da GLA)
+		V.GroundCutsCm = ListM(Visual, TEXT("ground_cut_m"));
+		const TSharedPtr<FJsonObject>* Tunnel = nullptr;
+		if (Visual->TryGetObjectField(TEXT("tunnel_exit"), Tunnel))
+		{
+			for (const FVector4& P : ListM(*Tunnel, TEXT("path_m")))
+			{
+				V.TunnelPathCm.Add(FVector2D(P.X, P.Y));
+			}
+			double Mps = 4.0;
+			(*Tunnel)->TryGetNumberField(TEXT("speed_mps"), Mps);
+			V.TunnelSpeedCm = float(Mps) * 100.0f;
+		}
+		// (31/10) os estados de dano do prédio (Tools/model_damage.py): "damage_states": {"damaged", "wrecked", "ruin", "fire_damaged_m",
+		// "fire_wrecked_m"}
+		const TSharedPtr<FJsonObject>* States = nullptr;
+		if (Visual->TryGetObjectField(TEXT("damage_states"), States))
+		{
+			(*States)->TryGetStringField(TEXT("damaged"), V.DamagedMesh);
+			(*States)->TryGetStringField(TEXT("wrecked"), V.WreckedMesh);
+			(*States)->TryGetStringField(TEXT("ruin"), V.RuinMesh);
+			(*States)->TryGetStringField(TEXT("turret_damaged"), V.TurretDamagedMesh);   // (01/11) o veículo
+			(*States)->TryGetStringField(TEXT("turret_wrecked"), V.TurretWreckedMesh);
+			for (const FVector4& P : ListM(*States, TEXT("fire_damaged_m")))
+			{
+				V.FirePointsDamagedCm.Add(FVector(P));
+			}
+			for (const FVector4& P : ListM(*States, TEXT("fire_wrecked_m")))
+			{
+				V.FirePointsWreckedCm.Add(FVector(P));
+			}
 		}
 		const TSharedPtr<FJsonObject>* Cargo = nullptr;
 		if (Visual->TryGetObjectField(TEXT("cargo"), Cargo))
@@ -363,6 +423,40 @@ bool FRTSGameData::Load(FString& OutError)
 		}
 	}
 
+	// (31/10, o elenco das 3 facções: docs/ELENCO.md) as facções jogáveis: a chave, o nome, o prédio e as unidades de largada
+	const TArray<TSharedPtr<FJsonValue>>* FactionList = nullptr;
+	if (UnitsJson->TryGetArrayField(TEXT("factions"), FactionList))
+	{
+		for (const TSharedPtr<FJsonValue>& Fv : *FactionList)
+		{
+			const TSharedPtr<FJsonObject> Fo = Fv->AsObject();
+			if (!Fo.IsValid())
+			{
+				continue;
+			}
+			FRTSFactionInfo F;
+			Fo->TryGetStringField(TEXT("key"), F.Key);
+			Fo->TryGetStringField(TEXT("name"), F.Name);
+			Fo->TryGetStringField(TEXT("base"), F.BaseStructure);
+			const TArray<TSharedPtr<FJsonValue>>* Start = nullptr;
+			if (Fo->TryGetArrayField(TEXT("start"), Start))
+			{
+				for (const TSharedPtr<FJsonValue>& E : *Start)
+				{
+					const TArray<TSharedPtr<FJsonValue>>& Pair = E->AsArray();
+					if (Pair.Num() == 2)
+					{
+						F.StartingUnits.Emplace(Pair[0]->AsString(), int32(Pair[1]->AsNumber()));
+					}
+				}
+			}
+			if (!F.Key.IsEmpty())
+			{
+				Factions.Add(F);
+			}
+		}
+	}
+
 	const TArray<TSharedPtr<FJsonValue>>* Units = nullptr;
 	if (!UnitsJson->TryGetArrayField(TEXT("units"), Units))
 	{
@@ -394,70 +488,118 @@ bool FRTSGameData::Load(FString& OutError)
 		S.TurretTurnMilliDegPerS = RTS::Milli(Num(U, TEXT("turret_turn_dps"), bOk));
 		S.TurretIdleReturnMs = RTS::Milli(Num(U, TEXT("turret_idle_return_s"), bOk));
 		S.SightMm = RTS::Milli(Num(U, TEXT("sight_m"), bOk));
-		if (bArmed)
+		// (v5, 24/10) a arma: "weapon" (a de sempre) ou "weapons" (a lista do ar: a 1ª e a 2ª, o Comanche com o
+		// canhão e os mísseis; a Patriot: "weapon" e "weapon2", a de ar). Os campos novos: "targets" (["ground"], ["air"] ou os dois; sem ele, só o chão), "reload_at"
+		// ("airfield": o pente só enche na vaga) e "no_overkill" (não solta o próximo se o dano no ar já mata)
+		const auto ReadWeapon = [&](const TSharedPtr<FJsonObject>& Wj, Sim::WeaponSpec& W)
 		{
-			S.Weapon.RangeMm = RTS::Milli(Num(*Weapon, TEXT("range_m"), bOk));
-			S.Weapon.Damage = int32(Num(*Weapon, TEXT("damage"), bOk));
-			bOk &= DamageTypeFrom((*Weapon)->GetStringField(TEXT("damage_type")), S.Weapon.Type);
-			S.Weapon.ReloadMs = RTS::Milli(Num(*Weapon, TEXT("reload_s"), bOk));
-			S.Weapon.AimToleranceMilliDeg = RTS::Milli(Num(*Weapon, TEXT("aim_tolerance_deg"), bOk));
-			S.Weapon.ProjectileSpeedMmPerS = RTS::Milli(Num(*Weapon, TEXT("projectile_mps"), bOk));
+			W.RangeMm = RTS::Milli(Num(Wj, TEXT("range_m"), bOk));
+			W.Damage = int32(Num(Wj, TEXT("damage"), bOk));
+			bOk &= DamageTypeFrom(Wj->GetStringField(TEXT("damage_type")), W.Type);
+			W.ReloadMs = RTS::Milli(Num(Wj, TEXT("reload_s"), bOk));
+			W.AimToleranceMilliDeg = RTS::Milli(Num(Wj, TEXT("aim_tolerance_deg"), bOk));
+			W.ProjectileSpeedMmPerS = RTS::Milli(Num(Wj, TEXT("projectile_mps"), bOk));
 			// a rajada (opcional): clip_size tiros a reload_s, e clip_reload_s depois do último
 			double ClipSize = 0.0, ClipReload = 0.0;
-			if ((*Weapon)->TryGetNumberField(TEXT("clip_size"), ClipSize))
+			if (Wj->TryGetNumberField(TEXT("clip_size"), ClipSize))
 			{
-				S.Weapon.ClipSize = int32(ClipSize);
-				(*Weapon)->TryGetNumberField(TEXT("clip_reload_s"), ClipReload);
-				S.Weapon.ClipReloadMs = RTS::Milli(ClipReload);
+				W.ClipSize = int32(ClipSize);
+				Wj->TryGetNumberField(TEXT("clip_reload_s"), ClipReload);
+				W.ClipReloadMs = RTS::Milli(ClipReload);
 			}
 			// (16/10) o míssil (opcional): sai inclinado da caixa, acelera, guia e explode no contato (a Patriot)
 			const TSharedPtr<FJsonObject>* Missile = nullptr;
-			if ((*Weapon)->TryGetObjectField(TEXT("missile"), Missile))
+			if (Wj->TryGetObjectField(TEXT("missile"), Missile))
 			{
-				S.Weapon.MissileLaunchSpeedMmPerS = RTS::Milli(Num(*Missile, TEXT("launch_mps"), bOk));
-				S.Weapon.MissileAccelMmPerS2 = RTS::Milli(Num(*Missile, TEXT("accel_mps2"), bOk));
-				S.Weapon.MissileTurnMilliDegPerS = RTS::Milli(Num(*Missile, TEXT("turn_dps"), bOk));
-				S.Weapon.MissileBoostMs = RTS::Milli(Num(*Missile, TEXT("boost_s"), bOk));
-				S.Weapon.MissileLaunchPitchMilliDeg = RTS::Milli(Num(*Missile, TEXT("launch_pitch_deg"), bOk));
-				S.Weapon.MissileLaunchHeightMm = RTS::Milli(Num(*Missile, TEXT("launch_height_m"), bOk));
-				S.Weapon.MissileSpreadMilliDeg = RTS::Milli(Num(*Missile, TEXT("spread_deg"), bOk));
-				S.Weapon.MissileLifeMs = RTS::Milli(Num(*Missile, TEXT("life_s"), bOk));
+				W.MissileLaunchSpeedMmPerS = RTS::Milli(Num(*Missile, TEXT("launch_mps"), bOk));
+				W.MissileAccelMmPerS2 = RTS::Milli(Num(*Missile, TEXT("accel_mps2"), bOk));
+				W.MissileTurnMilliDegPerS = RTS::Milli(Num(*Missile, TEXT("turn_dps"), bOk));
+				W.MissileBoostMs = RTS::Milli(Num(*Missile, TEXT("boost_s"), bOk));
+				W.MissileLaunchPitchMilliDeg = RTS::Milli(Num(*Missile, TEXT("launch_pitch_deg"), bOk));
+				W.MissileLaunchHeightMm = RTS::Milli(Num(*Missile, TEXT("launch_height_m"), bOk));
+				W.MissileSpreadMilliDeg = RTS::Milli(Num(*Missile, TEXT("spread_deg"), bOk));
+				W.MissileLifeMs = RTS::Milli(Num(*Missile, TEXT("life_s"), bOk));
 			}
 			// (v4, 22/10) o alcance mínimo da artilharia e o dano em área: splash_m = [cheio até, zero além] (m, da borda do casco
 			// ou do lote) e splash_edge_pct = a % que ainda chega na borda de fora (opcionais)
-			S.Weapon.MinRangeMm = RTS::Milli(Opt(*Weapon, TEXT("min_range_m")));
+			W.MinRangeMm = RTS::Milli(Opt(Wj, TEXT("min_range_m")));
 			const TArray<TSharedPtr<FJsonValue>>* Splash = nullptr;
-			if ((*Weapon)->TryGetArrayField(TEXT("splash_m"), Splash))
+			if (Wj->TryGetArrayField(TEXT("splash_m"), Splash))
 			{
 				bOk &= Splash->Num() == 2;
 				if (Splash->Num() == 2)
 				{
-					S.Weapon.SplashFullMm = RTS::Milli((*Splash)[0]->AsNumber());
-					S.Weapon.SplashMm = RTS::Milli((*Splash)[1]->AsNumber());
+					W.SplashFullMm = RTS::Milli((*Splash)[0]->AsNumber());
+					W.SplashMm = RTS::Milli((*Splash)[1]->AsNumber());
 				}
-				S.Weapon.SplashEdgePct = int32(FMath::RoundToInt(Opt(*Weapon, TEXT("splash_edge_pct"))));
+				W.SplashEdgePct = int32(FMath::RoundToInt(Opt(Wj, TEXT("splash_edge_pct"))));
 			}
 			// (v4, 23/10) a mira antes do tiro (o AIM do TurretAI com o PreAttackDelay do ZH) e a boca do tubo: launch_offset_m = [pra
 			// frente, pro lado (os tubos alternam), a altura do chão] a partir do pivô da torre (o turret_pivot_m do visual: a
 			// simulação lê o principal, nunca o de reserva, pra a regra não depender de qual malha existe no PC)
-			S.Weapon.PreAttackMs = RTS::Milli(Opt(*Weapon, TEXT("pre_attack_s")));
+			W.PreAttackMs = RTS::Milli(Opt(Wj, TEXT("pre_attack_s")));
 			const TArray<TSharedPtr<FJsonValue>>* Mouth = nullptr;
-			if ((*Weapon)->TryGetArrayField(TEXT("launch_offset_m"), Mouth))
+			if (Wj->TryGetArrayField(TEXT("launch_offset_m"), Mouth))
 			{
 				bOk &= Mouth->Num() == 3;
 				if (Mouth->Num() == 3)
 				{
-					S.Weapon.LaunchForwardMm = RTS::Milli((*Mouth)[0]->AsNumber());
-					S.Weapon.LaunchSideMm = RTS::Milli((*Mouth)[1]->AsNumber());
-					S.Weapon.LaunchUpMm = RTS::Milli((*Mouth)[2]->AsNumber());
+					W.LaunchForwardMm = RTS::Milli((*Mouth)[0]->AsNumber());
+					W.LaunchSideMm = RTS::Milli((*Mouth)[1]->AsNumber());
+					W.LaunchUpMm = RTS::Milli((*Mouth)[2]->AsNumber());
 				}
 				const TArray<TSharedPtr<FJsonValue>>* MouthPivot = nullptr;
 				if ((*Visual)->TryGetArrayField(TEXT("turret_pivot_m"), MouthPivot) && MouthPivot->Num() >= 2)
 				{
-					S.Weapon.LaunchPivotXMm = RTS::Milli((*MouthPivot)[0]->AsNumber());
-					S.Weapon.LaunchPivotYMm = RTS::Milli((*MouthPivot)[1]->AsNumber());
+					W.LaunchPivotXMm = RTS::Milli((*MouthPivot)[0]->AsNumber());
+					W.LaunchPivotYMm = RTS::Milli((*MouthPivot)[1]->AsNumber());
 				}
 			}
+			const TArray<TSharedPtr<FJsonValue>>* Targets = nullptr;
+			if (Wj->TryGetArrayField(TEXT("targets"), Targets))
+			{
+				W.Targets = 0;
+				for (const TSharedPtr<FJsonValue>& T : *Targets)
+				{
+					const FString Name = T->AsString();
+					W.Targets = uint8(W.Targets | (Name == TEXT("ground") ? Sim::TargetsGround : (Name == TEXT("air") ? Sim::TargetsAir : 0)));
+					bOk &= Name == TEXT("ground") || Name == TEXT("air");
+				}
+			}
+			FString ReloadAt;
+			W.bReloadAtAirfield = Wj->TryGetStringField(TEXT("reload_at"), ReloadAt) && ReloadAt == TEXT("airfield");
+			Wj->TryGetBoolField(TEXT("no_overkill"), W.bNoOverkill);
+		};
+		const TArray<TSharedPtr<FJsonValue>>* WeaponList = nullptr;
+		if (bArmed)
+		{
+			ReadWeapon(*Weapon, S.Weapon);
+			// (v5) a 2ª arma ao lado da de sempre (a de ar da Patriot: "weapon2")
+			const TSharedPtr<FJsonObject>* Weapon2 = nullptr;
+			if (U->TryGetObjectField(TEXT("weapon2"), Weapon2))
+			{
+				ReadWeapon(*Weapon2, S.Weapon2);
+			}
+		}
+		else if (U->TryGetArrayField(TEXT("weapons"), WeaponList) && WeaponList->Num() > 0)
+		{
+			bOk &= WeaponList->Num() <= 2;
+			for (int32 K = 0; K < FMath::Min(WeaponList->Num(), 2); ++K)
+			{
+				const TSharedPtr<FJsonObject> Wj = (*WeaponList)[K]->AsObject();
+				bOk &= Wj.IsValid();
+				if (Wj.IsValid())
+				{
+					ReadWeapon(Wj, K == 0 ? S.Weapon : S.Weapon2);
+				}
+			}
+		}
+		// (simulação 33, 31/10, docs/ELENCO.md §7.2) o dano de morte (o reator nuclear da China que derrete): "death_blast" com os campos
+		// de uma arma (range_m = o raio de fora, reload_s 0, aim_tolerance_deg 0, projectile_mps 0) e o splash_m/splash_edge_pct
+		const TSharedPtr<FJsonObject>* DeathBlast = nullptr;
+		if (U->TryGetObjectField(TEXT("death_blast"), DeathBlast))
+		{
+			ReadWeapon(*DeathBlast, S.DeathBlast);
 		}
 		// (v4, 23/10) o conserto do Dozer (o RepairHealthPercentPerSecond do ZH, em % da vida cheia por segundo) e a massa do veículo
 		// (o "mass_t" do visual principal; a simulação derruba a palmeira e o poste pelo choque, ½·m·v²)
@@ -479,6 +621,9 @@ bool FRTSGameData::Load(FString& OutError)
 		{
 			S.CrusherLevel = int32(Crusher);
 		}
+		// (simulação 25, 30/10) o ricochete: o casco de tanque de verdade ("ricochet": true; a picape e o Stryker não, a flecha atravessa)
+		U->TryGetBoolField(TEXT("ricochet"), S.bRicochetArmor);
+		U->TryGetBoolField(TEXT("infantry"), S.bInfantry);   // (simulação 26) o soldado
 		const TArray<TSharedPtr<FJsonValue>>* Hull = nullptr;
 		if (U->TryGetArrayField(TEXT("hull_m"), Hull) && Hull->Num() >= 2)
 		{
@@ -495,6 +640,156 @@ bool FRTSGameData::Load(FString& OutError)
 		{
 			S.WreckSinkMs = RTS::Milli(WreckSink);
 		}
+		// (v5, 24/10) o ar (docs/AEREO.md §3.14): "layer": "air" com o bloco "air" (o voo), "crash" (a queda), "airfield" (as vagas, as
+		// pistas e a linha de táxi: as tomadas do modelo, no lote virado pra +X), "helipad_m" (o "H" do prédio) e os tempos do coletor
+		FString Layer;
+		const TSharedPtr<FJsonObject>* AirJson = nullptr;
+		if (U->TryGetStringField(TEXT("layer"), Layer) && Layer == TEXT("air") && U->TryGetObjectField(TEXT("air"), AirJson))
+		{
+			const TSharedPtr<FJsonObject>& A = *AirJson;
+			FString AirKind;
+			A->TryGetStringField(TEXT("kind"), AirKind);
+			S.Air.Kind = AirKind == TEXT("jet") ? Sim::AirKind::Jet : Sim::AirKind::Heli;
+			bOk &= AirKind == TEXT("jet") || AirKind == TEXT("heli");
+			S.Air.CruiseAltMm = RTS::Milli(Num(A, TEXT("cruise_alt_m"), bOk));
+			// (01/11, o A/B da leitura do Apache) -RTSApacheAltM=<m>: a altura de cruzeiro dele só no teste (o ZH voa a 26,3 m); com o
+			// "aprovado" o número vai pro Units.json
+			if (float AltM = 0.0f; S.Key == "usa_comanche" && FParse::Value(FCommandLine::Get(), TEXT("RTSApacheAltM="), AltM) && AltM > 1.0f)
+			{
+				S.Air.CruiseAltMm = RTS::Milli(double(AltM));
+			}
+			S.Air.AttackAltMm = RTS::Milli(Opt(A, TEXT("attack_alt_m")));
+			S.Air.MinSpeedMmPerS = RTS::Milli(Opt(A, TEXT("min_speed_mps")));
+			S.Air.ClimbMmPerS = RTS::Milli(Num(A, TEXT("climb_mps"), bOk));
+			S.Air.LookaheadMs = RTS::Milli(Opt(A, TEXT("lookahead_s"), 0.5));
+			S.Air.CircleRadiusMm = RTS::Milli(Opt(A, TEXT("circle_radius_m")));
+			S.Air.TaxiMmPerS = RTS::Milli(Opt(A, TEXT("taxi_mps")));
+			S.Air.TaxiTurnMilliDegPerS = RTS::Milli(Opt(A, TEXT("taxi_turn_dps")));   // (v5, 25/10) o giro no chão (0 = o do ar)
+			S.Air.TaxiTurnRadiusMm = RTS::Milli(Opt(A, TEXT("taxi_turn_radius_m")));  // e o raio da curva no chão (o trem do nariz)
+			S.Air.IdleReturnMs = RTS::Milli(Opt(A, TEXT("idle_return_s")));
+			S.Air.StarveMilliPctPerS = RTS::Milli(Opt(A, TEXT("no_airfield_hp_pct_per_s")));
+			S.Air.SeparationMm = RTS::Milli(Opt(A, TEXT("separation_m")));
+			S.Air.SpeedDamagedMmPerS = RTS::Milli(Opt(A, TEXT("speed_damaged_mps")));
+			A->TryGetBoolField(TEXT("uses_pad"), S.Air.bUsesPad);
+			A->TryGetBoolField(TEXT("repairs_at_helipad"), S.Air.bRepairsAtHelipad);
+			const TSharedPtr<FJsonObject>* Crash = nullptr;
+			if (U->TryGetObjectField(TEXT("crash"), Crash))
+			{
+				const TSharedPtr<FJsonObject>& C = *Crash;
+				S.Air.CrashFallMmPerS2 = RTS::Milli(Opt(C, TEXT("fall_mps2"), 9.8));
+				double SpinMin = 0.0, SpinMax = 0.0;
+				if (C->HasField(TEXT("spin_dps")))
+				{
+					bOk &= NumberOrPair(C, TEXT("spin_dps"), SpinMin, SpinMax);
+				}
+				S.Air.CrashSpinMinMilliDegPerS = RTS::Milli(SpinMin);
+				S.Air.CrashSpinMaxMilliDegPerS = RTS::Milli(SpinMax);
+				S.Air.BladeOffMs = RTS::Milli(Opt(C, TEXT("blade_off_s")));
+				S.Air.BlowUpMs = RTS::Milli(Opt(C, TEXT("blow_up_s")));
+				S.Air.CrashDamage = int32(Opt(C, TEXT("damage")));
+				S.Air.CrashRadiusMm = RTS::Milli(Opt(C, TEXT("radius_m")));
+				FString CrashType;
+				if (C->TryGetStringField(TEXT("damage_type"), CrashType))
+				{
+					bOk &= DamageTypeFrom(CrashType, S.Air.CrashDamageType);
+				}
+				C->TryGetBoolField(TEXT("wreck"), S.Air.bCrashWreck);
+				C->TryGetBoolField(TEXT("drops_cargo"), S.Air.bDropsCargo);
+			}
+		}
+		const TSharedPtr<FJsonObject>* FieldJson = nullptr;
+		if (U->TryGetObjectField(TEXT("airfield"), FieldJson))
+		{
+			const TSharedPtr<FJsonObject>& F = *FieldJson;
+			const TArray<TSharedPtr<FJsonValue>>* Pads = nullptr;
+			if (F->TryGetArrayField(TEXT("pads_m"), Pads))
+			{
+				S.Airfield.Pads = FMath::Min(Pads->Num(), Sim::MaxPads);
+				bOk &= Pads->Num() <= Sim::MaxPads;
+				for (int32 K = 0; K < S.Airfield.Pads; ++K)
+				{
+					const TArray<TSharedPtr<FJsonValue>>& P = (*Pads)[K]->AsArray();
+					bOk &= P.Num() >= 2;
+					if (P.Num() >= 2)
+					{
+						S.Airfield.PadXMm[K] = RTS::Milli(P[0]->AsNumber());
+						S.Airfield.PadYMm[K] = RTS::Milli(P[1]->AsNumber());
+						S.Airfield.PadYawMilliDeg[K] = P.Num() >= 3 ? RTS::Milli(P[2]->AsNumber()) : 0;
+					}
+				}
+			}
+			const TArray<TSharedPtr<FJsonValue>>* Runways = nullptr;
+			if (F->TryGetArrayField(TEXT("runways_m"), Runways))
+			{
+				S.Airfield.Runways = FMath::Min(Runways->Num(), Sim::MaxRunways);
+				bOk &= Runways->Num() <= Sim::MaxRunways;
+				for (int32 K = 0; K < S.Airfield.Runways; ++K)
+				{
+					const TArray<TSharedPtr<FJsonValue>>& R = (*Runways)[K]->AsArray();
+					bOk &= R.Num() == 4;
+					if (R.Num() == 4)
+					{
+						S.Airfield.RunwayX0Mm[K] = RTS::Milli(R[0]->AsNumber());
+						S.Airfield.RunwayY0Mm[K] = RTS::Milli(R[1]->AsNumber());
+						S.Airfield.RunwayX1Mm[K] = RTS::Milli(R[2]->AsNumber());
+						S.Airfield.RunwayY1Mm[K] = RTS::Milli(R[3]->AsNumber());
+					}
+				}
+			}
+			double TaxiLine = 0.0;
+			if (F->TryGetNumberField(TEXT("taxi_line_m"), TaxiLine))
+			{
+				S.Airfield.bTaxiLine = true;
+				S.Airfield.TaxiLineYMm = RTS::Milli(TaxiLine);
+			}
+			S.Airfield.HealHpPerS = int32(Opt(F, TEXT("heal_hp_per_s")));
+			S.Airfield.ApproachHeightMm = RTS::Milli(Opt(F, TEXT("approach_height_m"), 13.2));
+			S.Airfield.TakeoffPauseMs = RTS::Milli(Opt(F, TEXT("takeoff_pause_s"), 0.5));
+			S.Airfield.RunwayHoldMs = RTS::Milli(Opt(F, TEXT("runway_hold_s"), 3.0));
+			F->TryGetBoolField(TEXT("parked_die_with_airfield"), S.Airfield.bParkedDieWithAirfield);
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Helipad = nullptr;
+		if (U->TryGetArrayField(TEXT("helipad_m"), Helipad) && Helipad->Num() >= 2)
+		{
+			S.bHelipad = true;
+			S.HelipadXMm = RTS::Milli((*Helipad)[0]->AsNumber());
+			S.HelipadYMm = RTS::Milli((*Helipad)[1]->AsNumber());
+			S.HelipadZMm = Helipad->Num() >= 3 ? RTS::Milli((*Helipad)[2]->AsNumber()) : 0;   // a altura do "H" (o teto do Supply Center)
+		}
+		// (simulação 35, 01/11) o transporte (docs/ESTUDO_TRANSPORTE_E_FILA.md §3.1): as vagas, a tropa que atira de dentro, a saída, o dano
+		// nos passageiros quando ele morre, a porta e as escotilhas (m no casco virado pra +X) e a altura do tiro
+		const TSharedPtr<FJsonObject>* Transport = nullptr;
+		if (U->TryGetObjectField(TEXT("transport"), Transport))
+		{
+			S.TransportSlots = int32(Opt(*Transport, TEXT("slots")));
+			(*Transport)->TryGetBoolField(TEXT("passengers_fire"), S.bPassengersFire);
+			S.TransportExitMs = RTS::Milli(Opt(*Transport, TEXT("exit_delay_s"), 0.25));
+			S.TransportDeathPct = int32(Opt(*Transport, TEXT("death_damage_pct"), 100.0));
+			S.TransportFireHeightMm = RTS::Milli(Opt(*Transport, TEXT("fire_height_m")));
+			const TArray<TSharedPtr<FJsonValue>>* Exit = nullptr;
+			if ((*Transport)->TryGetArrayField(TEXT("exit_point_m"), Exit) && Exit->Num() >= 2)
+			{
+				S.TransportExitXMm = RTS::Milli((*Exit)[0]->AsNumber());
+				S.TransportExitYMm = RTS::Milli((*Exit)[1]->AsNumber());
+			}
+			const TArray<TSharedPtr<FJsonValue>>* Hatches = nullptr;
+			if ((*Transport)->TryGetArrayField(TEXT("hatches_m"), Hatches))
+			{
+				for (const TSharedPtr<FJsonValue>& H : *Hatches)
+				{
+					const TArray<TSharedPtr<FJsonValue>>* XY = nullptr;
+					if (S.TransportHatches < Sim::MaxTransportSlots && H->TryGetArray(XY) && XY->Num() >= 2)
+					{
+						S.TransportHatchXMm[S.TransportHatches] = RTS::Milli((*XY)[0]->AsNumber());
+						S.TransportHatchYMm[S.TransportHatches] = RTS::Milli((*XY)[1]->AsNumber());
+						++S.TransportHatches;
+					}
+				}
+			}
+		}
+		S.BoxLoadMs = RTS::Milli(Opt(U, TEXT("box_load_s")));
+		S.UnloadMs = RTS::Milli(Opt(U, TEXT("unload_s")));
+		S.DockScanMm = RTS::Milli(Opt(U, TEXT("dock_scan_m")));
 		// economia e construção (todos opcionais)
 		FString Kind;
 		if (U->TryGetStringField(TEXT("kind"), Kind) && Kind == TEXT("structure"))
@@ -502,6 +797,7 @@ bool FRTSGameData::Load(FString& OutError)
 			S.Kind = Sim::ObjectKind::Structure;
 		}
 		S.Cost = int32(Opt(U, TEXT("cost")));
+		S.ProduceCount = int32(Opt(U, TEXT("produce_count"), 1.0));   // (simulação 32) o QuantityModifier do ZH
 		S.BuildTimeMs = RTS::Milli(Opt(U, TEXT("build_time_s")));
 		S.Energy = int32(Opt(U, TEXT("energy")));
 		const TArray<TSharedPtr<FJsonValue>>* SizeJson = nullptr;
@@ -611,11 +907,140 @@ bool FRTSGameData::Load(FString& OutError)
 				V.TurretBoxM = FBox(FVector(Lo[0]->AsNumber(), Lo[1]->AsNumber(), Lo[2]->AsNumber()), FVector(Hi[0]->AsNumber(), Hi[1]->AsNumber(), Hi[2]->AsNumber()));
 			}
 		}
+		V.HatchZCm = float(Opt(Vis, TEXT("hatch_z_m"), 0.0)) * 100.0f;   // (simulação 35) o teto nas escotilhas
+		const TArray<TSharedPtr<FJsonValue>>* PaintTint = nullptr;
+		if (Vis->TryGetArrayField(TEXT("paint_tint"), PaintTint) && PaintTint->Num() >= 3)
+		{
+			V.PaintTint = FLinearColor(float((*PaintTint)[0]->AsNumber()), float((*PaintTint)[1]->AsNumber()), float((*PaintTint)[2]->AsNumber()), 1.0f);
+		}
 		const TArray<TSharedPtr<FJsonValue>>* Tracks = nullptr;
 		if (Vis->TryGetArrayField(TEXT("tracks_m"), Tracks) && Tracks->Num() >= 2)
 		{
 			V.TracksM = FVector2D((*Tracks)[0]->AsNumber(), (*Tracks)[1]->AsNumber());
 		}
+		Vis->TryGetNumberField(TEXT("track_step_m"), V.TrackStepM);   // (01/11) a esteira que anda
+		// (25/10, v5) onde a lagarta toca o chão, as células dos mísseis e a arma leve (o Linebacker e o Stryker; só desenho)
+		const TArray<TSharedPtr<FJsonValue>>* Contact = nullptr;
+		if (Vis->TryGetArrayField(TEXT("track_contact_m"), Contact) && Contact->Num() >= 2)
+		{
+			V.TrackContactM = FVector2D((*Contact)[0]->AsNumber(), (*Contact)[1]->AsNumber());
+		}
+		for (const FVector4& Cell : ListM(Vis, TEXT("vls_m")))
+		{
+			V.VlsCm.Add(FVector(Cell));
+		}
+		Vis->TryGetBoolField(TEXT("light_gun"), V.bLightGun);
+		Vis->TryGetBoolField(TEXT("launch_canister"), V.bLaunchCanister);   // (01/11)
+		Vis->TryGetNumberField(TEXT("muzzle_forward_m"), V.MuzzleForwardM);
+		// (30/10, simulação 26) o soldado: as pernas no quadril
+		V.bInfantry = S.bInfantry;
+		const TSharedPtr<FJsonObject>* Flag = nullptr;
+		if (Vis->TryGetObjectField(TEXT("flag"), Flag) && Flag && Flag->IsValid())
+		{
+			V.bFlag = true;
+			V.FlagMastCm = FieldM(*Flag, TEXT("mast_m"));
+			const TArray<TSharedPtr<FJsonValue>>* Sz = nullptr;
+			if ((*Flag)->TryGetArrayField(TEXT("size_m"), Sz) && Sz && Sz->Num() >= 2)
+			{
+				V.FlagSizeM = FVector2D((*Sz)[0]->AsNumber(), (*Sz)[1]->AsNumber());
+			}
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Flags = nullptr;
+		if (Vis->TryGetArrayField(TEXT("flags"), Flags))
+		{
+			for (const TSharedPtr<FJsonValue>& F : *Flags)
+			{
+				const TSharedPtr<FJsonObject>* FO = nullptr;
+				if (!F.IsValid() || !F->TryGetObject(FO) || !FO || !FO->IsValid())
+				{
+					continue;
+				}
+				V.ExtraFlagMastCm.Add(FieldM(*FO, TEXT("mast_m")));
+				FVector2D Size(1.0, 0.65);
+				const TArray<TSharedPtr<FJsonValue>>* Sz = nullptr;
+				if ((*FO)->TryGetArrayField(TEXT("size_m"), Sz) && Sz && Sz->Num() >= 2)
+				{
+					Size = FVector2D((*Sz)[0]->AsNumber(), (*Sz)[1]->AsNumber());
+				}
+				V.ExtraFlagSizeM.Add(Size);
+				bool bTurret = false;
+				(*FO)->TryGetBoolField(TEXT("turret"), bTurret);
+				V.ExtraFlagTurret.Add(bTurret);
+				int32 Emblem = 0;
+				(*FO)->TryGetNumberField(TEXT("emblem"), Emblem);
+				V.ExtraFlagEmblem.Add(Emblem);
+			}
+		}
+		const TSharedPtr<FJsonObject>* Soldier = nullptr;
+		if (Vis->TryGetObjectField(TEXT("soldier"), Soldier) && Soldier && Soldier->IsValid())
+		{
+			(*Soldier)->TryGetStringField(TEXT("mesh"), V.SoldierMesh);
+			(*Soldier)->TryGetStringField(TEXT("rifle"), V.SoldierRifle);
+			(*Soldier)->TryGetNumberField(TEXT("scale"), V.SoldierScale);
+			const auto Col = [&Soldier](const TCHAR* Key, FLinearColor& Out)
+			{
+				const TArray<TSharedPtr<FJsonValue>>* A = nullptr;
+				if ((*Soldier)->TryGetArrayField(Key, A) && A && A->Num() >= 3)
+				{
+					Out = FLinearColor(float((*A)[0]->AsNumber()), float((*A)[1]->AsNumber()), float((*A)[2]->AsNumber()));
+				}
+			};
+			Col(TEXT("cloth"), V.SoldierCloth);
+			Col(TEXT("team"), V.SoldierTeam);
+			const TArray<TSharedPtr<FJsonValue>>* Paint = nullptr;
+			if ((*Soldier)->TryGetArrayField(TEXT("paint"), Paint) && Paint)
+			{
+				for (const TSharedPtr<FJsonValue>& T : *Paint)
+				{
+					V.SoldierPaint.Add(T->AsString());
+				}
+			}
+			const TArray<TSharedPtr<FJsonValue>>* Pieces = nullptr;
+			if ((*Soldier)->TryGetArrayField(TEXT("pieces"), Pieces) && Pieces)
+			{
+				for (const TSharedPtr<FJsonValue>& Pv : *Pieces)
+				{
+					const TSharedPtr<FJsonObject> Po = Pv->AsObject();
+					const TArray<TSharedPtr<FJsonValue>>* O = nullptr;
+					FRTSUnitVisual::FSoldierPiece Piece;
+					FString Bone;
+					if (!Po.IsValid() || !Po->TryGetStringField(TEXT("mesh"), Piece.Mesh) || !Po->TryGetStringField(TEXT("bone"), Bone))
+					{
+						continue;
+					}
+					Piece.Bone = FName(*Bone);
+					if (Po->TryGetArrayField(TEXT("origin_cm"), O) && O && O->Num() >= 3)
+					{
+						Piece.OriginCm = FVector((*O)[0]->AsNumber(), (*O)[1]->AsNumber(), (*O)[2]->AsNumber());
+					}
+					V.SoldierPieces.Add(Piece);
+				}
+			}
+		}
+		const TSharedPtr<FJsonObject>* MissileModel = nullptr;
+		if (Vis->TryGetObjectField(TEXT("missile_model"), MissileModel) && MissileModel && MissileModel->IsValid())
+		{
+			(*MissileModel)->TryGetStringField(TEXT("mesh"), V.MissileMesh);
+			(*MissileModel)->TryGetNumberField(TEXT("length_m"), V.MissileLengthM);
+			(*MissileModel)->TryGetNumberField(TEXT("trail_width"), V.MissileTrailWidthK);
+			(*MissileModel)->TryGetNumberField(TEXT("trail_density"), V.MissileTrailDensityK);
+			(*MissileModel)->TryGetNumberField(TEXT("trail_s"), V.MissileTrailS);
+		}
+		const TSharedPtr<FJsonObject>* Legs = nullptr;
+		if (Vis->TryGetObjectField(TEXT("legs"), Legs))
+		{
+			(*Legs)->TryGetStringField(TEXT("left"), V.LegMeshes[0]);
+			(*Legs)->TryGetStringField(TEXT("right"), V.LegMeshes[1]);
+			V.LegHipCm = FieldM(*Legs, TEXT("hip_m"));
+			double Stride = 0.0;
+			if ((*Legs)->TryGetNumberField(TEXT("stride_m"), Stride) && Stride > 0.1)
+			{
+				V.StrideCm = float(Stride * 100.0);
+			}
+		}
+		V.LightGunFlashCm = float(Opt(Vis, TEXT("light_gun_flash_m"), 0.0)) * 100.0f;
+		V.LightGunTracerCm = float(Opt(Vis, TEXT("light_gun_tracer_m"), 0.0)) * 100.0f;
+		V.LightGunSpreadCm = float(Opt(Vis, TEXT("light_gun_spread_m"), 0.0)) * 100.0f;
 		FString Crater;
 		if (Vis->TryGetStringField(TEXT("impact_crater"), Crater) && Crater.Len() == 1)
 		{
@@ -625,6 +1050,7 @@ bool FRTSGameData::Load(FString& OutError)
 		FString Blast;
 		V.bHeavyImpact = Vis->TryGetStringField(TEXT("impact_blast"), Blast) && Blast == TEXT("classic");
 		Vis->TryGetNumberField(TEXT("warhead_kg"), V.WarheadKg);   // (23/10) a ogiva do míssil (só desenho)
+		Vis->TryGetNumberField(TEXT("air_warhead_kg"), V.AirWarheadKg);   // (30/10, item 38) a mesma no ar
 		FString WarheadLook;
 		V.bWarheadClassicLook = Vis->TryGetStringField(TEXT("warhead_look"), WarheadLook) && WarheadLook == TEXT("classic");
 		// (23/10, a explosão com vida) a munição e o alvo (só desenho; BlastFxHitLife.h)
@@ -644,6 +1070,68 @@ bool FRTSGameData::Load(FString& OutError)
 			(*HitLife)->TryGetNumberField(TEXT("crater_depth"), V.LifeCraterDepth);
 		}
 		Vis->TryGetNumberField(TEXT("mass_t"), V.MassT);
+		Vis->TryGetNumberField(TEXT("death_scale"), V.DeathScale);   // (30/10) o tamanho da morte
+		{
+			// (30/10) a assinatura da morte: o que queima e o que estoura
+			FString DeathKindName;
+			if (Vis->TryGetStringField(TEXT("death_kind"), DeathKindName))
+			{
+				V.DeathKind = DeathKindName == TEXT("gasoline") ? 1 : (DeathKindName == TEXT("diesel") ? 2 : (DeathKindName == TEXT("ammo") ? 3
+					: (DeathKindName == TEXT("infantry") ? 4 : 0)));
+			}
+			// (30/10) o jato de fogo pelo anel da torre (a gravação do EmberGen)
+			const TSharedPtr<FJsonObject>* Jet = nullptr;
+			if (Vis->TryGetObjectField(TEXT("death_jet"), Jet) && Jet && Jet->IsValid())
+			{
+				FString BakeName;
+				if ((*Jet)->TryGetStringField(TEXT("bake"), BakeName))
+				{
+					V.DeathJetBake = FName(*BakeName);
+				}
+				(*Jet)->TryGetNumberField(TEXT("scale"), V.DeathJetScale);
+				(*Jet)->TryGetNumberField(TEXT("base_m"), V.DeathJetBaseM);
+			}
+		}
+		// (v5, 24/10) a aeronave: o trem que some no voo e os mísseis à vista (o desenho; a regra é da simulação)
+		V.bAir = S.Air.Kind != Sim::AirKind::None;
+		V.bJet = S.Air.Kind == Sim::AirKind::Jet;
+		V.AirCruiseAltM = float(S.Air.CruiseAltMm) / 1000.0f;
+		Vis->TryGetStringField(TEXT("gear"), V.GearMesh);
+		V.AmmoMeshes = Strings(Vis, TEXT("ammo"));
+		// (24/10, escopo B do ar) o pente à vista de qual arma, a rampa e o pós-combustor (só desenho)
+		V.AmmoWeapon = FMath::Clamp(int32(Opt(Vis, TEXT("ammo_weapon"), 1.0)), 1, 2);
+		const TSharedPtr<FJsonObject>* Ramp = nullptr;
+		if (Vis->TryGetObjectField(TEXT("ramp"), Ramp))
+		{
+			V.RampMesh = (*Ramp)->GetStringField(TEXT("mesh"));
+			V.RampHingeCm = FieldM(*Ramp, TEXT("hinge_m"));
+			V.RampOpenDeg = float(Opt(*Ramp, TEXT("open_deg"), 39.3));
+			V.RampOpenS = float(Opt(*Ramp, TEXT("open_s"), 2.0));
+		}
+		const TSharedPtr<FJsonObject>* Ab = nullptr;
+		if (Vis->TryGetObjectField(TEXT("afterburner"), Ab))
+		{
+			for (const FVector4& N : ListM(*Ab, TEXT("nozzles_m")))
+			{
+				V.AfterburnerCm.Add(FVector(N));
+			}
+			V.AfterburnerRadiusCm = float(Opt(*Ab, TEXT("radius_m"), 0.3)) * 100.0f;
+			V.AfterburnerLengthCm = float(Opt(*Ab, TEXT("length_m"), 3.2)) * 100.0f;
+			V.AfterburnerRadiance = float(Opt(*Ab, TEXT("radiance"), 1.0));
+			V.AfterburnerLightCd = float(Opt(*Ab, TEXT("light_cd"), 60000.0));
+		}
+		for (const Sim::WeaponSpec* W : { &S.Weapon, &S.Weapon2 })
+		{
+			if (W->Damage > 0 && W->RangeMm > 0)
+			{
+				float& Range = (W->Targets & Sim::TargetsAir) ? V.AirRangeM : V.GroundRangeM;
+				Range = FMath::Max(Range, float(W->RangeMm) / 1000.0f);
+				if ((W->Targets & Sim::TargetsAir) && (W->Targets & Sim::TargetsGround))
+				{
+					V.GroundRangeM = FMath::Max(V.GroundRangeM, float(W->RangeMm) / 1000.0f);
+				}
+			}
+		}
 		// (23/10, v4) as rodas e o lançador que levanta (só desenho; RTSUnitActor)
 		const TSharedPtr<FJsonObject>* Wheels = nullptr;
 		if (Vis->TryGetObjectField(TEXT("wheels"), Wheels))
@@ -676,6 +1164,20 @@ bool FRTSGameData::Load(FString& OutError)
 				V.LauncherTubesCm.Add(FVector(Tube));
 			}
 			(*Launcher)->TryGetStringArrayField(TEXT("noses"), V.LauncherNoseMeshes);
+			// (25/10, v5) o berço de canhões do antiaéreo: os tubos são as bocas, a elevação segue a aeronave
+			(*Launcher)->TryGetBoolField(TEXT("guns"), V.bLauncherGuns);
+			(*Launcher)->TryGetBoolField(TEXT("aim_air"), V.bLauncherAimAir);
+			(*Launcher)->TryGetNumberField(TEXT("rest_pitch_deg"), V.LauncherRestPitchDeg);
+			(*Launcher)->TryGetNumberField(TEXT("max_pitch_deg"), V.LauncherMaxPitchDeg);
+			const TSharedPtr<FJsonObject>* Ram = nullptr;
+			if ((*Launcher)->TryGetObjectField(TEXT("ram"), Ram) && Ram && Ram->IsValid())
+			{
+				(*Ram)->TryGetStringField(TEXT("cyl"), V.LauncherRamCyl);
+				(*Ram)->TryGetStringField(TEXT("mid"), V.LauncherRamMid);
+				(*Ram)->TryGetStringField(TEXT("rod"), V.LauncherRamRod);
+				V.LauncherRamBaseCm = FieldM(*Ram, TEXT("base_m"));
+				V.LauncherRamTipCm = FieldM(*Ram, TEXT("tip_m"));
+			}
 		}
 		V.RadiusM = float(U->GetNumberField(TEXT("radius_m")));
 		ReadStructureVisual(Vis, V);
@@ -784,6 +1286,8 @@ bool FRTSGameData::Load(FString& OutError)
 		M->TryGetNumberField(TEXT("dock_boxes"), Info.DockBoxes);
 		M->TryGetNumberField(TEXT("skirmish_gap_m"), Info.SkirmishGapM);
 		M->TryGetStringField(TEXT("look_recipe"), Info.LookRecipe);
+		M->TryGetNumberField(TEXT("ground_version"), Info.GroundVersion);
+		M->TryGetBoolField(TEXT("lab"), Info.bLabOnly);   // (v5) o mapa só do laboratório e dos testes (o Lab_Flat)
 		const TSharedPtr<FJsonObject>* Skirmish = nullptr;
 		const TArray<TSharedPtr<FJsonValue>>* PerPlayer = nullptr;
 		if (M->TryGetObjectField(TEXT("skirmish"), Skirmish))
@@ -812,6 +1316,33 @@ bool FRTSGameData::LoadScenario(const FString& Name, FRTSScenario& Out, FString&
 	if (!ReadJson(TEXT("Scenarios.json"), Root, OutError))
 	{
 		return false;
+	}
+	{
+		// (v5, 24/10) o nome que não está no Scenarios.json: as cenas do laboratório (LabScenes.json, as que o painel grava)
+		const auto Has = [&Name](const TSharedPtr<FJsonObject>& R)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* L = nullptr;
+			if (R.IsValid() && R->TryGetArrayField(TEXT("scenarios"), L))
+			{
+				for (const TSharedPtr<FJsonValue>& V : *L)
+				{
+					const TSharedPtr<FJsonObject> O = V.IsValid() ? V->AsObject() : nullptr;
+					FString Each;
+					if (O.IsValid() && O->TryGetStringField(TEXT("name"), Each) && Each == Name)
+					{
+						return true;
+					}
+				}
+			}
+			return false;
+		};
+		TSharedPtr<FJsonObject> LabRoot;
+		FString LabError;
+		if (!Has(Root) && FPaths::FileExists(FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), TEXT("LabScenes.json")))
+			&& ReadJson(TEXT("LabScenes.json"), LabRoot, LabError) && Has(LabRoot))
+		{
+			Root = LabRoot;
+		}
 	}
 	const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
 	if (!Root->TryGetArrayField(TEXT("scenarios"), List))
@@ -875,6 +1406,7 @@ bool FRTSGameData::LoadScenario(const FString& Name, FRTSScenario& Out, FString&
 				O->TryGetNumberField(TEXT("t_s"), Order.AtS);
 				O->TryGetNumberField(TEXT("player"), Order.Player);
 				O->TryGetStringField(TEXT("type"), Order.Type);
+				O->TryGetStringField(TEXT("structure"), Order.Key);
 				O->TryGetNumberField(TEXT("facing_deg"), Order.FacingDeg);
 				O->TryGetNumberField(TEXT("width_m"), Order.WidthM);
 				FString Size;
@@ -980,9 +1512,16 @@ bool FRTSGameData::LoadScenario(const FString& Name, FRTSScenario& Out, FString&
 		{
 			for (const TSharedPtr<FJsonValue>& V : *Arr) { Out.ShotsS.Add(float(V->AsNumber())); }
 		}
+		// (v5) a cena do laboratório: o bloco "lab" (o FRTSLab lê a receita, o sol, o relógio e as ops)
+		const TSharedPtr<FJsonObject>* Lab = nullptr;
+		if (S->TryGetObjectField(TEXT("lab"), Lab) && Lab && Lab->IsValid())
+		{
+			Out.bLab = true;
+			Out.LabBlock = *Lab;
+		}
 		return true;
 	}
-	OutError = FString::Printf(TEXT("o cenário %s não está no Scenarios.json"), *Name);
+	OutError = FString::Printf(TEXT("o cenário %s não está no Scenarios.json nem no LabScenes.json"), *Name);
 	return false;
 }
 

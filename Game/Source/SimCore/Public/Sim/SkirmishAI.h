@@ -128,6 +128,29 @@ namespace Sim
 		 *  partida na 2ª onda) */
 		int32_t WavePerRank = 1;
 
+		/** (v5, 24/10) O ar (docs/AEREO.md §3.12, a IA básica; a de verdade é o treino do fim da v5): o Airfield depois da War
+		 *  Factory, com a 1ª onda fora ou a partir de AirFirstAfterS e o preço dele + AirReserve; até AirHeliMax Comanches e
+		 *  AirJetMax Raptors (o Raptor quando o inimigo tem helicóptero ou Tomahawk); uma Patriot a mais por aeronave inimiga vista
+		 *  (até AirDefenseMax); um Avenger por 2 helicópteros inimigos vistos (até AntiAirMax); o Chinook quando o depósito mais
+		 *  perto do centro fica a mais de ChinookDockM. As aeronaves à toa atacam o que ela conhece fora do alcance de ar inimigo. */
+		int32_t AirFirstAfterS = 240;
+		int32_t AirReserve = 1500;
+		int32_t AirHeliMax = 3;
+		int32_t AirJetMax = 2;
+		int32_t AirDefenseMax = 2;
+		int32_t AntiAirMax = 3;
+		/** (simulação 26, 30/10) A infantaria (docs/ESTUDO_INFANTARIA.md §5): um quartel depois da War Factory, com o preço dele + um tanque
+		 *  sobrando; no quartel, um soldado por tanque (+ InfantryBase), até InfantryMax, um de cada vez. O ZH mistura o soldado barato
+		 *  com os blindados; a proporção é a da IA de regras (o treino de verdade fica pro fim da v5). */
+		int32_t InfantryBase = 2;
+		int32_t InfantryMax = 10;
+		int32_t ChinookDockM = 120;
+		int32_t AirSaveMaxS = 40;
+		/** (simulação 33, 31/10, o elenco das 3 facções: docs/ELENCO.md) O prédio de tecnologia (o Strategy Center, o Propaganda Center,
+		 *  o Palace: o que destrava as unidades pesadas): um só, depois da fábrica, com a 1ª onda fora ou a partir de TechFirstAfterS e
+		 *  o preço dele + um tanque sobrando. */
+		int32_t TechFirstAfterS = 300;
+
 		/** (v4) Leva as linhas de log das decisões dela desde a última chamada ("RTS AI p1: strike at x,y score s"). */
 		void TakeLog(std::vector<std::string>& Out);
 
@@ -198,6 +221,21 @@ namespace Sim
 		void EndSiege(const World& State);
 		/** (v4) Uma linha de log ("RTS AI p<Me>: " + o texto). */
 		void Note(const char* Format, ...);
+		/** (v5) As aeronaves dela à toa: o alvo conhecido fora do alcance de ar inimigo (o Raptor caça o helicóptero primeiro). */
+		void ThinkAir(const World& State, std::vector<Command>& OutCommands);
+		/** (v5) O maior número de aeronaves inimigas armadas vistas juntas (helicópteros e todas) nos últimos 2 min. */
+		int32_t EnemyHeliPeak = 0;
+		int32_t EnemyAirPeak = 0;
+		/** (01/11, o elenco: a GLA perdia todas as partidas da IA) o exército de terra inimigo visto por último, o custo por blindagem. A
+		 *  fábrica e o quartel deixam de comprar o armado que faz menos da metade do % de dano do melhor contra ele (o ZH escolhe o contra
+		 *  pelo que vê); sem nada visto, contra tanque. */
+		int64_t EnemyArmorCost[int(ArmorType::Count)] = {};
+		TickNumber EnemyAirSeenAt = 0;
+		/** (v5) As janelas de economizar pro Airfield e pra aeronave (a fábrica para no máximo AirSaveMaxS de cada uma). */
+		bool bAirSaving = false;
+		TickNumber AirSaveSince = 0;
+		bool bCraftSaving = false;
+		TickNumber CraftSaveSince = 0;
 
 		PlayerIndex Me = 0;
 		TickNumber NextThink = 0;

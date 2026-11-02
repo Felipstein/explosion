@@ -5,13 +5,20 @@
 #include <algorithm>
 #include <vector>
 
+#include "BlastRaymarchSubsystem.h"
+#include "BlastFxGround.h"
 #include "BlastFxDirector.h"
+#include "BlastDebris.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/DecalComponent.h"
+#include "ExplosionVolume.h"
 #include "Components/LightComponent.h"
 #include "ContentStreaming.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/PlatformTime.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/DateTime.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
@@ -52,6 +59,7 @@
 #include "RTSSunShadow.h"
 #include "RTSNetSession.h"
 #include "RTSUnitActor.h"
+#include "RTSLab.h"
 #include "ShaderCompiler.h"
 #include "Sim/Lockstep.h"
 #include "Sim/Pathfinder.h"
@@ -85,6 +93,9 @@ struct FRTSMatchState
 	/** As carcaças da simulação (13/10, com física) no passo anterior e no atual, pro desenho interpolar. */
 	TMap<uint32, Sim::World::WreckView> PrevWrecks;
 	TMap<uint32, Sim::World::WreckView> CurrWrecks;
+	/** (v5, 24/10) As aeronaves caindo no passo anterior e no atual (o corpo da simulação até o chão), pro desenho interpolar. */
+	TMap<uint32, Sim::World::CrashView> PrevCrashes;
+	TMap<uint32, Sim::World::CrashView> CurrCrashes;
 	/** (16/10) Os tiros em voo no passo anterior e no atual (o míssil da Patriot anda em 3D), pelo Id. */
 	TMap<uint32, Sim::World::ProjectileView> PrevShots;
 	TMap<uint32, Sim::World::ProjectileView> CurrShots;
@@ -146,7 +157,72 @@ URTSMatchSubsystem::~URTSMatchSubsystem()
 	MissileSmoke = nullptr;
 	delete HitLife;
 	HitLife = nullptr;
+	delete Lab;   // (v5) o laboratório (o painel sai da tela junto)
+	Lab = nullptr;
 }
+
+void URTSMatchSubsystem::SetWind(float YawDeg, float SpeedMs)
+{
+	// (25/10, o vento ao vivo) a fonte única: cada um lê dele a cada quadro (a deriva, o espalhamento e a vida ficam com quem desenha)
+	WindYawDeg = FMath::UnwindDegrees(YawDeg);
+	WindSpeedMs = FMath::Clamp(SpeedMs, 0.0f, 30.0f);
+	const float R = FMath::DegreesToRadians(WindYawDeg);
+	if (UMaterialParameterCollection* Wind = LoadObject<UMaterialParameterCollection>(nullptr, TEXT("/Game/Materials/MPC_Wind.MPC_Wind"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+	{
+		UKismetMaterialLibrary::SetVectorParameterValue(GetWorld(), Wind, TEXT("Wind"), FLinearColor(FMath::Cos(R), FMath::Sin(R), WindSpeedMs, 0.3f));
+	}
+	if (UBlastFxDirector* D = UBlastFxDirector::Get(this))
+	{
+		D->SetWind(WindYawDeg, WindSpeedMs);
+	}
+	if (MissileSmoke)
+	{
+		MissileSmoke->WindDir = FVector2D(FMath::Cos(R), FMath::Sin(R));
+		MissileSmoke->WindMs = WindSpeedMs;
+	}
+	if (ARTSTreadDust* D = TreadDust.Get())
+	{
+		D->SetWind(WindYawDeg, WindSpeedMs);
+	}
+	UE_LOG(LogTemp, Display, TEXT("RTS vento: pra %.0f° a %.1f m/s (o do mapa: %.0f° a %.1f m/s)"), WindYawDeg, WindSpeedMs, MapWindYawDeg, MapWindSpeedMs);
+}
+
+// (30/10, o Felipe: o tiro de tanque no veículo "tem que ter um efeito de mini explosão") a carga do tiro de canhão no casco (kg): a bola
+// em volume do UBlastFxDirector::ShellBlast por cima do acerto de sempre (docs/ESTUDO_IMPACTOS.md C: o HEAT de ~1,5 kg, bola de ~2,3 m);
+// 0 = o acerto de antes, exato (o A/B: o "cvar" das cenas do laboratório). (30/10, o Felipe: "não quero bolinha de fogo assim mal feita";
+// docs/ESTUDO_ACERTO_TANQUE.md: a flecha não tem explosivo) 1,5 -> 0,15: a língua de chama de 0,5–1 m saindo do furo, mais a fumaça escura
+static TAutoConsoleVariable<int32> CVarBulletLog(TEXT("rts.BulletLog"), 0, TEXT("(30/10) O registro da rajada desenhada da arma leve (1 = a cada 1 s)"));
+// (01/11, a leitura da batalha; docs/ESTUDO_LEITURA_E_DANO.md A3) a velocidade desenhada da bala da arma leve, pro A/B (o ZH desenha o
+// fuzil a 158 m/s e a metralhadora da picape a 79: o olho liga o atirador ao alvo); 0 = a de hoje (a da simulação, ou 900 m/s)
+static TAutoConsoleVariable<float> CVarBulletDrawMps(TEXT("rts.Bullet.DrawMps"), 0.0f, TEXT("(01/11) A velocidade desenhada da bala leve (m/s; 0 = a de hoje)"));
+// (01/11, A4) o pulso de luz no atirador (1 = ligado; 0 = o A/B sem)
+static TAutoConsoleVariable<int32> CVarShooterPulse(TEXT("rts.Bullet.ShooterPulse"), 1, TEXT("(01/11) O pulso de luz quente no chão de quem atira (0 = sem)"));
+static TAutoConsoleVariable<float> CVarShellBlastKg(TEXT("rts.ShellBlastKg"), 0.15f,
+	TEXT("A carga do tiro de tanque no casco (kg): a mini explosão em volume por cima do acerto; 0 = o acerto de antes"));
+
+// (25/10) rts.Wind <graus> <m/s> (pra onde sopra, 0 = +X; a velocidade a 10 m), ou rts.Wind map (o do mapa): o teste e as cenas do laboratório
+static FAutoConsoleCommandWithWorldAndArgs GRTSWindCommand(TEXT("rts.Wind"),
+	TEXT("O vento do mapa ao vivo: rts.Wind <graus pra onde sopra> <m/s a 10 m>, ou rts.Wind map (volta pro do Maps.json)"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+	{
+		URTSMatchSubsystem* M = World ? World->GetSubsystem<URTSMatchSubsystem>() : nullptr;
+		if (!M)
+		{
+			return;
+		}
+		if (Args.Num() >= 1 && Args[0].Equals(TEXT("map"), ESearchCase::IgnoreCase))
+		{
+			M->SetWind(M->GetMapWindYawDeg(), M->GetMapWindSpeedMs());
+		}
+		else if (Args.Num() >= 2)
+		{
+			M->SetWind(FCString::Atof(*Args[0]), FCString::Atof(*Args[1]));
+		}
+		else if (Args.Num() == 1)
+		{
+			M->SetWind(M->GetWindYawDeg(), FCString::Atof(*Args[0]));
+		}
+	}));
 
 void URTSMatchSubsystem::FillHitLifeCtx(FRTSHitLifeCtx& Out)
 {
@@ -155,7 +231,7 @@ void URTSMatchSubsystem::FillHitLifeCtx(FRTSHitLifeCtx& Out)
 	Out.Dust = TreadDust.Get();
 	Out.Fx = UBlastFxDirector::ShotFxEnabled() ? UBlastFxDirector::Get(this) : nullptr;
 	Out.Now = Out.World ? Out.World->GetTimeSeconds() : 0.0;
-	Out.GroundZCm = [this](const FVector2D& P) { return State ? float(State->Baked.GroundZCm(P)) : 0.0f; };
+	Out.GroundZCm = [this](const FVector2D& P) { return State ? VisualGroundZCm(P) : 0.0f; };   // (31/10) no fundo do buraco desenhado
 	// (a areia do acerto; a revisão) o quanto o chão solta poeira: a tabela única, a mesma da poeira das lagartas (o asfalto e o molhado não
 	// soltam; o resto, com a areia solta por cima, solta como a areia)
 	Out.DustYield = [this](const FVector2D& P) { return State ? float(FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(P))) : 1.0f; };
@@ -376,11 +452,18 @@ bool URTSMatchSubsystem::IsWaitingForPlayers() const
 	return bNet && (bNetAwaitSetup || (bReady && Net() && !Net()->CanStartTicking()));
 }
 
-void URTSMatchSubsystem::Issue(const Sim::Command& C)
+void URTSMatchSubsystem::Issue(const Sim::Command& InC)
 {
 	if (State == nullptr)
 	{
 		return;
+	}
+	// (simulação 35) o Alt segurado: a ordem que entra na fila sai com a marca (a simulação põe no fim da fila de quem está ocupado)
+	Sim::Command C = InC;
+	if (bQueueOrders && Sim::IsQueueable(C.Type))
+	{
+		C.Flags |= Sim::CommandFlagQueued;
+		LastQueuedOrderS = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	}
 	if (bNet)
 	{
@@ -393,7 +476,7 @@ void URTSMatchSubsystem::Issue(const Sim::Command& C)
 	State->Queue.Issue(C, State->World.Tick());
 }
 
-bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError, const Sim::MatchSetup* GivenSetup)
+bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutError, const Sim::MatchSetup* GivenSetup)
 {
 	URTSNetSession* NetSession = Net();
 	bNet = NetSession != nullptr;
@@ -401,11 +484,22 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 	bNetAwaitSetup = false;
 	bNetBot = bNet && FParse::Param(FCommandLine::Get(), TEXT("RTSNetBot"));
 	TUniquePtr<FRTSMatchState> S = MakeUnique<FRTSMatchState>();
-	S->MapName = MapName;
 	if (!S->Data.Load(OutError))
 	{
 		return false;
 	}
+	// (v5, 24/10) o laboratório (RTSLab.h): pedido pela URL do OpenLevel (o LAB do menu, o painel) ou por uma cena com "lab";
+	// nunca na LAN. O mapa é o que o nível abriu (a escolha do painel), se ele está no Maps.json
+	int32 LabPlayers = 2;
+	bool bLabEmpty = false;
+	FString LabScene;
+	const bool bLabAsked = !bNet && !GivenSetup && FRTSLab::ReadRequest(GetWorld(), LabPlayers, bLabEmpty, LabScene);
+	FString MapName = InMapName;
+	if (bLabAsked && GetWorld() && S->Data.FindMap(UWorld::RemovePIEPrefix(GetWorld()->GetMapName())))
+	{
+		MapName = UWorld::RemovePIEPrefix(GetWorld()->GetMapName());
+	}
+	S->MapName = MapName;
 	const FRTSMapInfo* Info = S->Data.FindMap(MapName);
 	if (!Info)
 	{
@@ -415,6 +509,13 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 	// o teste rápido: a partida já pronta (as largadas e as unidades do cenário, sem base, sem IA)
 	FString ScenarioName;
 	bScenario = !bNet && FParse::Value(FCommandLine::Get(), TEXT("-RTSScenario="), ScenarioName);
+	if (bLabAsked)
+	{
+		// (v5) o laboratório aberto pelo menu ou pelo painel: a cena dele (a gravada que o painel abriu), nunca a da linha de
+		// comando (o teste que reabre o laboratório não volta pra própria cena)
+		bScenario = !LabScene.IsEmpty();
+		ScenarioName = LabScene;
+	}
 	NextScenarioOrder = 0;
 	FRTSMapInfo ScenarioInfo;
 	if (bScenario)
@@ -431,8 +532,25 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 		Info = &ScenarioInfo;
 		UE_LOG(LogTemp, Log, TEXT("RTS cenário %s: semente %d, névoa %s, %d ordens, fim em %.0f s"), *Scenario.Name, Scenario.Seed, *Scenario.Fog, Scenario.Orders.Num(), Scenario.EndS);
 	}
-	// quantos jogam: na LAN, todos da sala (um por base do mapa); no skirmish, você e a IA
-	const int32 PlayerCount = bNet ? NetSession->PlayerCount() : 2;
+	// (v5) o laboratório: o pedido, ou a cena com "lab". Sem cena, as bases do mapa (o Command Center e o Dozer da largada, ou
+	// vazias), sem o começo no caminho do skirmish de só tanques
+	const bool bLab = !bNet && !GivenSetup && (bLabAsked || (bScenario && Scenario.bLab));
+	FRTSMapInfo LabInfo;
+	if (bLab && !bScenario)
+	{
+		LabInfo = *Info;
+		LabInfo.SkirmishGapM = 0.0f;
+		if (bLabEmpty)
+		{
+			LabInfo.BaseStructure.Reset();
+			LabInfo.StartingUnits.Reset();
+		}
+		Info = &LabInfo;
+	}
+	// quantos jogam: na LAN, todos da sala (um por base do mapa); no skirmish, você e a IA; (v5) no laboratório, os pedidos (a
+	// cena: um por largada dela), até as bases do mapa
+	const int32 PlayerCount = bNet ? NetSession->PlayerCount()
+		: (bLab ? FMath::Clamp(bScenario ? Info->StartsM.Num() : LabPlayers, 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num()))) : 2);
 	if (Info->StartsM.Num() < FMath::Max(2, PlayerCount))
 	{
 		OutError = FString::Printf(TEXT("o mapa tem %d posições iniciais; a partida precisa de %d"), Info->StartsM.Num(), FMath::Max(2, PlayerCount));
@@ -616,9 +734,14 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 			Setup.Seed = uint64(Scenario.Seed);   // a mesma história a cada rodada
 			StartMoney = Scenario.Money > 0 ? Scenario.Money : StartMoney;
 		}
+		if (bLab && !bScenario)
+		{
+			FogMode = ERTSFogMode::Off;   // (v5) o laboratório começa sem névoa (o painel liga)
+		}
 		Setup.bFogOfWar = FogMode != ERTSFogMode::Off;
 		bFogExplored = FogMode == ERTSFogMode::Explored;
 		Setup.bAllowDebugCommands = !bNet;   // skirmish local: o F9 vale; na rede, não (seria o mapa todo à vista)
+		Setup.bLab = bLab;                   // (v5) a família Lab de comandos e sem vitória nem derrota; nunca na LAN
 	}
 	if (GivenSetup)
 	{
@@ -764,7 +887,33 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 					SlotTeam.Add(NextTeam++);
 				}
 				SlotAI.Add(bNet ? NetSession->IsAISlot(uint8(P)) : bScenario ? Scenario.AIPlayers.IsValidIndex(P) && Scenario.AIPlayers[P]
-					: P != 0);
+					: (bLab ? false : P != 0));   // (v5) no laboratório a IA começa desligada (o painel liga por jogador)
+			}
+		}
+		// (31/10, o elenco das 3 facções: docs/ELENCO.md) a facção de cada lugar: sozinho, a sua (o menu) e a da IA; na LAN, os humanos
+		// de USA (a sala ainda não escolhe) e a IA com a do anfitrião; "random" sorteia pela semente (o mesmo em todo PC: vai pronta
+		// na montagem). A cena de teste fica com a do mapa
+		PlayerFactionKeys.Reset();
+		{
+			const URTSSessionSubsystem* FacSession = GetWorld()->GetGameInstance() ? GetWorld()->GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+			for (int32 P = 0; P < PlayerCount; ++P)
+			{
+				FString F = TEXT("usa");
+				if (FacSession && !bScenario)
+				{
+					F = SlotAI[P] ? FacSession->AIFaction : (bNet ? FString(TEXT("usa")) : FacSession->PlayerFaction);
+				}
+				if (F == TEXT("random") && S->Data.Factions.Num() > 0)
+				{
+					const uint64 Mix = (Setup.Seed ^ (0x9E3779B97F4A7C15ull * uint64(P + 1))) >> 17;
+					F = S->Data.Factions[int32(Mix % uint64(S->Data.Factions.Num()))].Key;
+				}
+				if (!S->Data.FindFaction(F))
+				{
+					F = TEXT("usa");
+				}
+				PlayerFactionKeys.Add(F);
+				UE_LOG(LogTemp, Display, TEXT("RTS facção do jogador %d: %s%s"), P, *F, SlotAI[P] ? TEXT(" (IA)") : TEXT(""));
 			}
 		}
 		// as largadas: com aliados, a distribuição em que os aliados ficam mais perto (força bruta;
@@ -844,14 +993,17 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 				// com base (ZH): o CC pronto na largada, de frente pra quem joga como todo prédio novo
 				// (a câmera padrão; pedido do Felipe, 10/10: "virado pra mim igual o default"), e as
 				// unidades nascem na frente da porta
-				const int32 BaseDef = Setup.Rules.FindUnit(TCHAR_TO_UTF8(*Info->BaseStructure));
+				// (31/10) a facção que não é a do mapa (a USA) começa com o Command Center e as unidades dela (o PlayerTemplate do ZH)
+				const FRTSFactionInfo* Fac = PlayerFactionKeys.IsValidIndex(P) ? S->Data.FindFaction(PlayerFactionKeys[P]) : nullptr;
+				const FString BaseKey = Fac && Fac->Key != TEXT("usa") && !Fac->BaseStructure.IsEmpty() ? Fac->BaseStructure : Info->BaseStructure;
+				const int32 BaseDef = Setup.Rules.FindUnit(TCHAR_TO_UTF8(*BaseKey));
 				if (BaseDef < 0 || !Setup.Rules.Units[BaseDef].IsStructure())
 				{
-					OutError = FString::Printf(TEXT("o prédio de largada não é prédio: %s"), *Info->BaseStructure);
+					OutError = FString::Printf(TEXT("o prédio de largada não é prédio: %s"), *BaseKey);
 					return false;
 				}
 				Sim::StartingUnit CC;
-				CC.Key = TCHAR_TO_UTF8(*Info->BaseStructure);
+				CC.Key = TCHAR_TO_UTF8(*BaseKey);
 				CC.Pos = RTS::ToSim(Base * 100.0);
 				const int32 Dir = RTS::DirFacingViewer(GetDefault<ARTSCameraPawn>()->DefaultYawDeg);
 				CC.Facing = RTS::DirAngle(Dir);
@@ -864,7 +1016,11 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 				StartRowsDir = -Door;
 			}
 			int32 Placed = 0;
-			for (const TPair<FString, int32>& Entry : Info->StartingUnits)
+			// (31/10) as unidades de largada da facção (a do mapa é a da USA)
+			const FRTSFactionInfo* StartFac = bBases && PlayerFactionKeys.IsValidIndex(P) ? S->Data.FindFaction(PlayerFactionKeys[P]) : nullptr;
+			const TArray<TPair<FString, int32>>& StartList = StartFac && StartFac->Key != TEXT("usa") && StartFac->StartingUnits.Num() > 0
+				? StartFac->StartingUnits : Info->StartingUnits;
+			for (const TPair<FString, int32>& Entry : StartList)
 			{
 				const int32 DefIndex = Setup.Rules.FindUnit(TCHAR_TO_UTF8(*Entry.Key));
 				if (DefIndex < 0)
@@ -938,6 +1094,45 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 		OutError = TEXT("a simulação recusou a montagem");
 		return false;
 	}
+	// (30/10, item 40, docs/ORCAMENTO_GRAVACOES.md) as gravações de unidade (o jato da morte da GLA, visual.death_jet) só se a partida pode
+	// ter quem usa: as unidades da largada e o que elas e os prédios delas treinam e constroem, em cascata; no laboratório, todas (ele põe
+	// qualquer uma). Aqui, na montagem: o arquivo grande lê antes do jogo começar
+	if (UBlastRaymarchSubsystem* Rm = GetWorld() ? GetWorld()->GetSubsystem<UBlastRaymarchSubsystem>() : nullptr)
+	{
+		const Sim::Ruleset& Rules = S->World.Rules();
+		TArray<bool> Reach;
+		Reach.Init(Setup.bLab, int32(Rules.Units.size()));
+		TArray<int32> Open;
+		for (int32 I = 0; I < S->World.UnitCount(); ++I)
+		{
+			const int32 D = int32(S->World.Unit(I).Def);
+			if (!Reach[D])
+			{
+				Reach[D] = true;
+				Open.Add(D);
+			}
+		}
+		while (Open.Num())
+		{
+			const Sim::UnitDef& Def = Rules.Units[size_t(Open.Pop())];
+			for (const uint16_t K : Def.Produces)
+			{
+				if (!Reach[K]) { Reach[K] = true; Open.Add(K); }
+			}
+			for (const uint16_t K : Def.Constructs)
+			{
+				if (!Reach[K]) { Reach[K] = true; Open.Add(K); }
+			}
+		}
+		for (int32 D = 0; D < Reach.Num(); ++D)
+		{
+			const FRTSUnitVisual* V = Reach[D] ? S->Data.FindVisual(D) : nullptr;
+			if (V && !V->DeathJetBake.IsNone())
+			{
+				Rm->EnsureSource(V->DeathJetBake);
+			}
+		}
+	}
 	for (size_t P = 0; P < Setup.Players.size(); ++P)
 	{
 		if (Setup.Players[P].bIsAI && (!bNet || NetSession->IsHost()))
@@ -988,6 +1183,7 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 		const FVector2D MaxCm = RTS::ToWorld(M.MaxCorner());
 		Fog = NewObject<URTSFogOfWar>(this);
 		Fog->Init(M.Width, M.Height, MinCm, MaxCm - MinCm);
+		BlastFxGround::SetSurfaceOffset(nullptr);
 		if (GroundMemory)
 		{
 			GroundMemory->Shutdown();
@@ -1015,6 +1211,13 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 			{
 				// (16/10) o sulco de cada chão (a areia, a terra, o barro, a pedra e o asfalto) pelo surface.png do mapa
 				GroundMemory->SetSurface(S->Baked.Surface, S->Baked.SurfaceRes, S->Baked.SurfaceMinM, S->Baked.SurfaceCellM);
+				// (31/10) os destroços do BlastFx (os torrões do tiro, os pedaços em brasa) pousam no chão desenhado: a cratera do afundar
+				TWeakObjectPtr<URTSGroundMemory> WeakGround = GroundMemory;
+				BlastFxGround::SetSurfaceOffset([WeakGround](double X, double Y)
+				{
+					const URTSGroundMemory* G = WeakGround.Get();
+					return G ? double(G->CraterHeightCmAt(FVector2D(X, Y))) : 0.0;
+				});
 			}
 		}
 		// o vento único do mapa: quem desenha (fumaça, poeira, bandeira, palmeira) lê o MPC_Wind
@@ -1073,6 +1276,16 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 			}
 			UE_LOG(LogTemp, Log, TEXT("RTS poeira das lagartas: ligada, nível %d"), DustQuality);
 		}
+		// (25/10, o vento ao vivo) o vento de agora começa no do mapa (-WindYaw= e -WindSpeed= por cima: o teste do vento) e passa por SetWind,
+		// a fonte única (o painel do laboratório e o rts.Wind mudam no meio)
+		MapWindYawDeg = Info->WindYawDeg;
+		MapWindSpeedMs = Info->WindSpeedMs;
+		{
+			float Wy = MapWindYawDeg, Ws = MapWindSpeedMs;
+			FParse::Value(FCommandLine::Get(), TEXT("WindYaw="), Wy);
+			FParse::Value(FCommandLine::Get(), TEXT("WindSpeed="), Ws);
+			SetWind(Wy, Ws);
+		}
 		if (GroundMemory && GetWorld() && !FParse::Param(FCommandLine::Get(), TEXT("RTSNoDebris")))   // (-RTSNoDebris: o A/B das pedras e destroços)
 		{
 			FActorSpawnParameters P;
@@ -1084,7 +1297,7 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 			{
 				if (ARTSDebrisField* D = WeakDebris.Get())
 				{
-					D->AddStones(Large, Small, Seed, [this](const FVector2D& Pt) { return State ? State->Baked.GroundZCm(Pt) : 0.0f; });
+					D->AddStones(Large, Small, Seed, [this](const FVector2D& Pt) { return State ? VisualGroundZCm(Pt) : 0.0f; });   // (31/10) no fundo do buraco
 				}
 			};
 		}
@@ -1114,6 +1327,35 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 	S->Prev = S->Curr;
 	delete State;
 	State = S.Release();
+	if (FParse::Param(FCommandLine::Get(), TEXT("RTSTerrainStones")))
+	{
+		PlaceTerrainStones();   // (30/10) o B do chão: as pedras soltas da beira da estrada e da rocha (com o estado da partida pronto)
+	}
+	// (v5) o laboratório desta partida (o painel, o cursor, o relógio); as IAs que a montagem já pôs começam ligadas
+	delete Lab;
+	Lab = nullptr;
+	LabAIOn.Reset();
+	LabAILines.Reset();
+	bLabHold = false;
+	LabPendingSteps = 0;
+	if (Setup.bLab)
+	{
+		LabAIOn.Init(false, int32(Setup.Players.size()));
+		for (const Sim::SkirmishAI& Brain : State->Brains)
+		{
+			if (LabAIOn.IsValidIndex(Brain.Player()))
+			{
+				LabAIOn[Brain.Player()] = true;
+			}
+		}
+		Lab = new FRTSLab(*this);
+		if (bScenario && Scenario.bLab)
+		{
+			Lab->SetScene(Scenario.Name, Scenario.LabBlock);
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS laboratório em %s: %d jogadores%s%s"), *MapName, int32(Setup.Players.size()), bLabEmpty ? TEXT(", sem as bases") : TEXT(""),
+			bScenario ? *FString::Printf(TEXT(", cena %s"), *Scenario.Name) : TEXT(""));
+	}
 	Accumulator = 0.0;
 	bPaused = false;
 	bReplaySaved = false;
@@ -1157,6 +1399,20 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 		// as gravações compilam o shader agora (atrás do fade de entrada), não na 1ª morte
 		const FVector2D Start = State->LocalStartCm;
 		Director->Prewarm(FVector(Start.X, Start.Y, State->Baked.GroundZCm(Start) + 300.0f));
+		// (30/10) o tiro no prédio bate na geometria medida (ARTSUnitActor::RayStructure)
+		Director->StructureRay = [](AActor* Building, const FVector& From, const FVector& To, FVector& OutCm, FVector& OutN, UStaticMeshComponent*& OutPart,
+			FVector& OutLocal)
+		{
+			const ARTSUnitActor* A = Cast<ARTSUnitActor>(Building);
+			return A && A->RayStructure(From, To, OutCm, OutN, OutPart, OutLocal);
+		};
+	}
+	for (const TObjectPtr<UObject>& OldObj : KeepLoaded)
+	{
+		if (AActor* OldWarm = Cast<AActor>(OldObj.Get()))
+		{
+			OldWarm->Destroy();   // (31/10) a peça de aquecer as obras da partida anterior (abaixo)
+		}
 	}
 	KeepLoaded.Reset();
 	for (const TCHAR* Path : { TEXT("/Game/Materials/M_Glow.M_Glow"), TEXT("/Game/Materials/M_Emissive.M_Emissive"),
@@ -1176,6 +1432,35 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& MapName, FString& OutError
 		if (UObject* Obj = LoadObject<UObject>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet))
 		{
 			KeepLoaded.Add(Obj);
+		}
+	}
+	// (31/10, a revisão de vídeo do fx_obra_em_cima: "a torre meio pronta de uma vez, antes do Dozer chegar") carregar os gêmeos (acima) não
+	// basta: no v14 a usina apareceu inteira e cinza na ordem (8,0 s; a obra em 0 até o Dozer chegar, aos 10,3 s), colorida e ainda sem o
+	// corte aos 13,5 s (a linha de solda já no pé da torre) e só cortada aos 15,5 s. O código mandava o corte certo (0,3 m, a laje): é a Unreal
+	// desenhando a peça com o material de reserva, sem o recorte, até a placa ter o material mascarado do Nanite, o que só começa quando uma
+	// peça desenha com ele. Uma peça de cada prédio com os gêmeos, a 1 % e toda cortada (ninguém vê), no centro da vista desde o carregar
+	if (UWorld* WarmWorld = GetWorld())
+	{
+		FActorSpawnParameters WarmParams;
+		WarmParams.ObjectFlags |= RF_Transient;
+		const FVector2D WarmCm = State->LocalStartCm;
+		const FVector WarmAt(WarmCm.X, WarmCm.Y, State->Baked.GroundZCm(WarmCm) + 100.0f);
+		if (AActor* WarmActor = WarmWorld->SpawnActor<AActor>(AActor::StaticClass(), FTransform(WarmAt), WarmParams))
+		{
+			USceneComponent* WarmRoot = NewObject<USceneComponent>(WarmActor);
+			WarmActor->SetRootComponent(WarmRoot);
+			WarmRoot->RegisterComponent();
+			WarmActor->SetActorLocation(WarmAt);
+			int32 WarmParts = 0;
+			for (const FRTSUnitVisual& Vis : State->Data.Visuals)
+			{
+				if (!Vis.ScaffoldMesh.IsEmpty())
+				{
+					WarmParts += ARTSUnitActor::WarmBuildLook(WarmRoot, Vis.HullMeshes);
+				}
+			}
+			KeepLoaded.Add(WarmActor);
+			UE_LOG(LogTemp, Log, TEXT("RTS obra: %d peças com o material da obra no centro da vista (o aquecer da placa)"), WarmParts);
 		}
 	}
 	// o traçante e o clarão também: um de cada, invisível, no centro da vista
@@ -1263,23 +1548,42 @@ void URTSMatchSubsystem::Tick(float DeltaTime)
 			}
 		}
 	}
+	else if (!bPaused && Lab && bLabHold)
+	{
+		// (v5) o laboratório parado: só os passos pedidos (o desenho mostra o passo novo inteiro)
+		for (; LabPendingSteps > 0; --LabPendingSteps)
+		{
+			StepOnce();
+		}
+		Accumulator = StepSeconds * 0.999;
+	}
 	else if (!bPaused)
 	{
-		Accumulator += FMath::Min(double(DeltaTime), 0.25);
+		// (v5) no laboratório a 8× o quadro leva mais passos (o teto de sempre seguraria em ~4× a 30 qps)
+		const double MaxFrame = Lab ? 1.0 : 0.25;
+		const int32 MaxSteps = Lab ? 64 : MaxStepsPerFrame;
+		Accumulator += FMath::Min(double(DeltaTime), MaxFrame);
 		int32 Steps = 0;
-		while (Accumulator >= StepSeconds && Steps < MaxStepsPerFrame)
+		while (Accumulator >= StepSeconds && Steps < MaxSteps && !(Lab && bLabHold))   // (v5: o laboratório parou no meio do quadro)
 		{
 			StepOnce();
 			Accumulator -= StepSeconds;
 			++Steps;
 		}
-		if (Steps == MaxStepsPerFrame)
+		if (Steps == MaxSteps)
 		{
 			Accumulator = 0.0;   // não tenta recuperar o atraso de uma vez
 		}
 	}
+	if (Lab)
+	{
+		Lab->Tick();   // (v5) o painel, os atalhos, as ops da cena
+	}
 	UpdateFog(DeltaTime);
 	UpdateViews(DeltaTime);
+	UpdateBulletRounds();
+	UpdateBlood();
+	UpdateConstructionFx();
 }
 
 void URTSMatchSubsystem::UpdateFog(float DeltaTime)
@@ -1543,13 +1847,22 @@ void URTSMatchSubsystem::UpdateNetTests(URTSNetSession* N)
 }
 
 // (v4, 23/10) as decisões da IA ("RTS AI p1: strike at x,y score s", a zona, o cerco, a expansão) no log da partida
-static void LogBrain(Sim::SkirmishAI& Brain)
+static void LogBrain(Sim::SkirmishAI& Brain, TArray<FString>* Sink = nullptr)
 {
 	std::vector<std::string> Lines;
 	Brain.TakeLog(Lines);
 	for (const std::string& L : Lines)
 	{
 		UE_LOG(LogTemp, Log, TEXT("%s"), UTF8_TO_TCHAR(L.c_str()));
+		if (Sink)
+		{
+			// (v5) a aba Players do laboratório mostra as decisões (as 400 mais novas)
+			Sink->Add(UTF8_TO_TCHAR(L.c_str()));
+			if (Sink->Num() > 400)
+			{
+				Sink->RemoveAt(0, Sink->Num() - 400);
+			}
+		}
 	}
 }
 
@@ -1598,10 +1911,21 @@ void URTSMatchSubsystem::StepNet()
 		const Sim::World::WreckView W = S.World.Wreck(I);
 		S.CurrWrecks.Add(W.Id, W);
 	}
+	S.PrevCrashes = MoveTemp(S.CurrCrashes);   // (v5) as aeronaves caindo
+	S.CurrCrashes.Reset();
+	for (int32 I = 0; I < S.World.CrashCount(); ++I)
+	{
+		const Sim::World::CrashView C = S.World.CrashAt(I);
+		S.CurrCrashes.Add(C.Id, C);
+	}
 	SnapshotShots();
 	LastStepMs = (FPlatformTime::Seconds() - T0) * 1000.0;
 	HandleEvents();
 	HandleHudEvents();   // (v4) os avisos do HUD: a patente, o ataque chegando, o avião (o bloco da frente do HUD)
+	if (Lab)
+	{
+		Lab->OnStep(S.World.Tick());   // (v5) o laboratório: os mortos pedidos, o dinheiro infinito, as ops da cena
+	}
 }
 
 void URTSMatchSubsystem::SpawnVillage(const FRTSMapInfo& Info)
@@ -1971,15 +2295,20 @@ void URTSMatchSubsystem::UpdateTreadDust(float DeltaTime)
 		Mo.YawDeg = U.HullYawDeg;
 		Mo.bInit = true;
 		S.Id = int32(It.Key);
-		S.PosM = FVector(U.PosCm.X, U.PosCm.Y, State->Baked.GroundZCm(U.PosCm)) / 100.0;
+		// (01/11) a altura do veículo desenhado: no buraco ele assenta no chão desenhado (SeatOnCraters), e a poeira tem de sair dali
+		S.PosM = FVector(U.PosCm.X, U.PosCm.Y, FMath::Min(double(State->Baked.GroundZCm(U.PosCm)), It.Value->GetActorLocation().Z)) / 100.0;
 		S.FwdM = FVector(Fwd.X, Fwd.Y, 0.0);
 		S.Speed = Mo.Speed;
 		S.YawRate = Mo.YawRate;
 		const FVector2D R(Fwd.Y, -Fwd.X);
 		// (a revisão) a tabela única do chão, a mesma do acerto de míssil (FRTSHitLife::DustYieldOf: 1 − max(asfalto, molhado), igual bit a bit)
+		// (01/11) a terra revolvida da cratera solta mais: até 1,6× no fundo de um buraco de 60 cm ou mais (a areia que a explosão afofou;
+		// o asfalto e o molhado continuam sem soltar nada, o 0 do DustYieldOf)
 		const auto Sand = [this](const FVector2D& P)
 		{
-			return FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(P));
+			const float Yield = FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(P));
+			const float DepthCm = float(State->Baked.GroundZCm(P)) - VisualGroundZCm(P);
+			return Yield * (1.0f + 0.6f * FMath::Clamp(DepthCm / 60.0f, 0.0f, 1.0f));
 		};
 		S.Sand[0] = Sand(U.PosCm + (SandRear.X * Fwd - SandRear.Y * R));
 		S.Sand[1] = Sand(U.PosCm + (SandRear.X * Fwd + SandRear.Y * R));
@@ -2019,7 +2348,7 @@ void URTSMatchSubsystem::UpdateSunShadow()
 	// os veículos perto do foco (o mapa dos veículos é uma janela em volta dele), na pose desenhada; a caixa pelas malhas.
 	// Sob a névoa não fazem sombra (a sombra entregaria a posição); a carcaça só depois de vista
 	TArray<FRTSShadowVehicle> Out;
-	const auto Add = [&Out, &Focus](const ARTSUnitActor* A, bool bVisible)
+	const auto Add = [this, &Out, &Focus](const ARTSUnitActor* A, bool bVisible)
 	{
 		if (!A || A->IsStructure())
 		{
@@ -2049,6 +2378,19 @@ void URTSMatchSubsystem::UpdateSunShadow()
 		V.HullTopM = HullTop / 100.0;
 		V.HeightM = Height / 100.0;
 		V.bVisible = bVisible;
+		// (24/10, escopo B do ar) a aeronave no ar: o mapa do sol guarda colunas do chão pra cima, então a caixa dela vai pro ponto do
+		// chão onde a sombra cai (descendo pelo raio do sol), com a altura dela: a poeira e a fumaça rente ao chão ficam na sombra
+		// certa (a do rotor embaixo dela não, como de verdade com o sol baixo)
+		FVector ToSun;
+		if (A->IsAircraft() && !A->IsDead() && State && AirToSun(ToSun) && ToSun.Z > 0.05)
+		{
+			const double AltCm = L.Z - State->Baked.GroundZCm(FVector2D(L.X, L.Y));
+			if (AltCm > 30.0)
+			{
+				const FVector2D Shadow = FVector2D(V.PosM.X, V.PosM.Y) * 100.0 - FVector2D(ToSun.X, ToSun.Y) * (AltCm / ToSun.Z);
+				V.PosM = FVector(Shadow.X, Shadow.Y, State->Baked.GroundZCm(Shadow)) / 100.0;
+			}
+		}
 		Out.Add(V);
 	};
 	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Views)
@@ -2062,6 +2404,10 @@ void URTSMatchSubsystem::UpdateSunShadow()
 	for (const TObjectPtr<ARTSUnitActor>& A : DyingViews)
 	{
 		Add(A, A && !A->IsFogHidden());
+	}
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Falling)
+	{
+		Add(It.Value, It.Value && !It.Value->IsFogHidden());   // (24/10) a aeronave caindo também faz sombra
 	}
 	for (const TObjectPtr<ARTSUnitActor>& A : Wrecks)
 	{
@@ -2130,7 +2476,7 @@ void URTSMatchSubsystem::IssueScenarioOrders(uint32 Now)
 				GroundMemory->AddWreck(At, O.FacingDeg, At);   // (cenário)
 				if (ARTSDebrisField* D = Debris.Get())
 				{
-					D->AddWreck(At, O.FacingDeg, At, [this](const FVector2D& P) { return State ? State->Baked.GroundZCm(P) : 0.0f; });
+					D->AddWreck(At, O.FacingDeg, At, [this](const FVector2D& P) { return State ? VisualGroundZCm(P) : 0.0f; });
 				}
 			}
 			continue;
@@ -2243,6 +2589,40 @@ void URTSMatchSubsystem::IssueScenarioOrders(uint32 Now)
 		C.Tick = Now;
 		C.Player = G.Player;
 		C.Type = O.Type == TEXT("attack_move") ? Sim::CommandType::AttackMove : Sim::CommandType::Move;
+		if (O.Type == TEXT("build"))
+		{
+			// (v12) a obra pelo cenário (a obra em cima da carcaça e do entulho, simulação 28): o Dozer do grupo começa o prédio
+			const int32 Def = S.World.Rules().FindUnit(TCHAR_TO_UTF8(*O.Key));
+			if (Def < 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("RTS cenário: o prédio %s da ordem build não existe"), *O.Key);
+				continue;
+			}
+			const int32 Dir = FMath::RoundToInt(O.FacingDeg / 90.0f) & 3;
+			C.Type = Sim::CommandType::Build;
+			C.Point = RTS::ToSim(O.ToM * 100.0);
+			C.Value = Sim::BuildValue(uint16_t(Def), Dir);
+			S.Queue.Insert(G);
+			S.Queue.Insert(C);
+			UE_LOG(LogTemp, Log, TEXT("RTS cenário: passo %u, jogador %d constrói %s em (%.0f, %.0f) m, lado %d"), Now, O.Player, *O.Key, O.ToM.X, O.ToM.Y, Dir);
+			continue;
+		}
+		if (O.Type == TEXT("salvage"))
+		{
+			// (simulação 30) a sucata pelo cenário: o Dozer do grupo recolhe a carcaça ou o entulho em to_m
+			const Sim::EntityId Scrap = S.World.SalvageAt(RTS::ToSim(O.ToM * 100.0));
+			if (Scrap == Sim::NoEntity)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("RTS cenário: nenhuma sucata em (%.0f, %.0f) m"), O.ToM.X, O.ToM.Y);
+				continue;
+			}
+			C.Type = Sim::CommandType::Salvage;
+			C.Target = Scrap;
+			S.Queue.Insert(G);
+			S.Queue.Insert(C);
+			UE_LOG(LogTemp, Log, TEXT("RTS cenário: passo %u, jogador %d recolhe a sucata %u"), Now, O.Player, unsigned(Scrap));
+			continue;
+		}
 		if (O.Type == TEXT("force_attack"))
 		{
 			// o tiro forçado (Ctrl) no próprio tanque mais perto de to_m, pelos outros (13/10: a carcaça pro teste da física)
@@ -2296,9 +2676,13 @@ void URTSMatchSubsystem::StepOnce()
 	IssueScenarioOrders(Now);
 	for (Sim::SkirmishAI& Brain : S.Brains)
 	{
+		if (Lab && !LabIsAI(Brain.Player()))
+		{
+			continue;   // (v5) o laboratório desligou esta IA
+		}
 		std::vector<Sim::Command> Orders;
 		Brain.Think(S.World, Orders);
-		LogBrain(Brain);
+		LogBrain(Brain, Lab ? &LabAILines : nullptr);
 		for (const Sim::Command& C : Orders)
 		{
 			S.Queue.Issue(C, Now);
@@ -2322,10 +2706,21 @@ void URTSMatchSubsystem::StepOnce()
 		const Sim::World::WreckView W = S.World.Wreck(I);
 		S.CurrWrecks.Add(W.Id, W);
 	}
+	S.PrevCrashes = MoveTemp(S.CurrCrashes);   // (v5) as aeronaves caindo
+	S.CurrCrashes.Reset();
+	for (int32 I = 0; I < S.World.CrashCount(); ++I)
+	{
+		const Sim::World::CrashView C = S.World.CrashAt(I);
+		S.CurrCrashes.Add(C.Id, C);
+	}
 	SnapshotShots();
 	LastStepMs = (FPlatformTime::Seconds() - T0) * 1000.0;
 	HandleEvents();
 	HandleHudEvents();   // (v4) os avisos do HUD: a patente, o ataque chegando, o avião (o bloco da frente do HUD)
+	if (Lab)
+	{
+		Lab->OnStep(S.World.Tick());   // (v5) o laboratório: os mortos pedidos, o dinheiro infinito, as ops da cena
+	}
 }
 
 namespace
@@ -2377,6 +2772,12 @@ void URTSMatchSubsystem::HandleEvents()
 		case Sim::EventType::PropCrushed:
 			OnPropCrushed(E);
 			break;
+		case Sim::EventType::UnitCrushed:
+			CrushedIds.Add(uint32(E.Target));   // (simulação 26) a morte do soldado vem logo depois, no mesmo passo
+			break;
+		case Sim::EventType::LabPropPlaced:
+			OnLabPropPlaced(E);   // (v5) a peça civil do laboratório
+			break;
 		case Sim::EventType::PropToppled:
 			OnPropToppled(E);
 			// (16/10) a copa caída não tapa mais (o raio-X)
@@ -2420,6 +2821,17 @@ void URTSMatchSubsystem::HandleEvents()
 					ARTSEffect::SpawnStreak(World, Top(*From), Top(*Helper), float(FVector::Dist(Top(*From), Top(*Helper)) / 0.25f), 900.0f, 2.0f, Red);
 				}
 			}
+			break;
+		}
+		case Sim::EventType::ShotRicochet:
+		{
+			// (simulação 25, 30/10) o tiro Value ricocheteou: o traçante (no WeaponFired, logo a seguir) e o acerto mostram o ricochete
+			if (RicochetShots.Num() > 512)
+			{
+				RicochetShots.Reset();   // os que nunca chegaram (o alvo sumiu): não crescem pra sempre
+			}
+			RicochetShots.Add(uint32(E.Value));
+			UE_LOG(LogTemp, Display, TEXT("RTS ricochete: o tiro %d de %u em %u"), E.Value, uint32(E.Source), uint32(E.Target));
 			break;
 		}
 		case Sim::EventType::WeaponFired:
@@ -2479,22 +2891,101 @@ void URTSMatchSubsystem::HandleEvents()
 				break;
 			}
 			// quem atira de dentro da névoa: nem clarão nem luz (entregariam a posição)
-			const bool bShooterShown = IsUnitShown(E.Source);
+			bool bShooterShown = IsUnitShown(E.Source);
+			// (01/11) quem atira de dentro do transporte: aparece quando o transporte aparece; a escotilha da vaga dele abre
+			if (const uint32 Carrier = Shooter->GetPassengerTransport())
+			{
+				bShooterShown = IsUnitShown(Carrier);
+				FRTSUnitState Ps, Ts;
+				const TObjectPtr<ARTSUnitActor>* CarrierView = Views.Find(Carrier);
+				if (bShooterShown && CarrierView && *CarrierView && GetUnit(E.Source, Ps) && GetUnit(Carrier, Ts))
+				{
+					const Sim::UnitDef& TD = S.World.Rules().Units[Ts.Def];
+					const FRTSUnitVisual* TVis = S.Data.FindVisual(Ts.Def);
+					if (TD.TransportHatches > 0 && Ps.InsideSlot >= 0)
+					{
+						const Sim::Vec2 H = TD.TransportHatch[Ps.InsideSlot % TD.TransportHatches];
+						const float RoofCm = TVis && TVis->HatchZCm > 0.0f ? TVis->HatchZCm : 200.0f;
+						(*CarrierView)->OpenHatch(Ps.InsideSlot, FVector(H.X.ToDouble() * 100.0, H.Y.ToDouble() * 100.0, RoofCm), FVector2D(68.0, 56.0));
+					}
+				}
+			}
 			// (16/10) o míssil (a Patriot): o voo é da simulação (GetMissiles), sem o sopro de boca do tanque e sem traçante
 			const Sim::UnitView* FiredBy = S.Curr.Find(E.Source);
-			const bool bMissileShot = FiredBy && S.World.Rules().Units[FiredBy->Def].Weapon.IsMissile();
+			// (25/10, v5) quem tem duas armas (o Linebacker: o canhão e os mísseis; o Apache: o canhão e os Hellfires) pelo próprio tiro;
+			// o tiro que já acertou no passo dele (o canhão sem voo), pela 1ª arma (o de sempre). (25/10) A aeronave entrou: antes o
+			// Hellfire saía como o traçante do canhão (a 1ª arma do Apache)
+			const Sim::World::ProjectileView* ThisShot = S.CurrShots.Find(uint32(E.Value));
+			const bool bShotKnown = ThisShot && FiredBy;
+			const bool bMissileShot = bShotKnown ? ThisShot->bMissile : (FiredBy && S.World.Rules().Units[FiredBy->Def].Weapon.IsMissile());
+			// (25/10, v5) a arma leve de tiro rápido (o canhão antiaéreo, a metralhadora): o clarão e o traçante pequenos, nada no chão
+			const bool bLightShot = !bMissileShot && Shooter->IsLightGun();
+			// (30/10) a rajada desenhada da arma leve (QueueBulletRounds): no alvo no chão e no tiro no chão; no ar, o estouro de sempre
+			ARTSUnitActor* RoundVictim = bLightShot && E.Target != Sim::NoEntity ? ViewOf(E.Target) : nullptr;
+			const bool bRounds = bLightShot && BulletRoundsOn() && !(RoundVictim && RoundVictim->IsAircraft());
 			// (23/10, v4) o lançador que levanta (o Tomahawk), em todo tiro dele, também na névoa: o tubo pelo lado de onde a simulação
 			// soltou o míssil (a ponta dele some do tubo até a recarga, o ProjectileBoneFeedback do ZH) e a boca desenhada, de onde saem o
 			// clarão e a nuvem e onde o voo novo começa (no chão inclinado o casco desenhado inclina; o ponto da simulação é plano)
 			const Sim::World::ProjectileView* Launched = bMissileShot ? S.CurrShots.Find(uint32(E.Value)) : nullptr;
 			FVector LaunchCm = Launched ? MissileCm(S, *Launched) : FVector::ZeroVector;
 			FVector LaunchDir = Launched ? MissileDir(*Launched) : FVector::ForwardVector;
-			if (Launched && Shooter->HasLauncher())
+			float RailTailM = 0.0f;   // (01/11) o míssil do trilho da aeronave: o comprimento dele (a ignição e o sopro saem da tubeira, atrás)
+			if (Launched && Shooter->GetPassengerTransport() != 0)
+			{
+				// (01/11) o Javelin de dentro do Stryker: o lançamento suave de verdade (o motor de ejeção joga o míssil pra fora do tubo e o
+				// de voo acende a alguns metros, já no ar): sai da escotilha aberta empinado 55° pro lado do alvo e o voo emenda no da
+				// simulação; a ignição pequena (a do trilho), não a bola da caixa da Patriot
+				FVector Mouth = Shooter->MuzzleLocation();
+				const FVector Flat = FVector(LaunchDir.X, LaunchDir.Y, 0.0).GetSafeNormal();
+				const FVector Up = (Flat * FMath::Cos(FMath::DegreesToRadians(55.0)) + FVector::UpVector * FMath::Sin(FMath::DegreesToRadians(55.0))).GetSafeNormal();
+				Shooter->NotePassengerShot(uint32(E.Value), LaunchCm, Mouth, Up);
+				LaunchCm = Mouth;
+				LaunchDir = Up;
+				RailTailM = -1.0f;   // (01/11) o suave: sem clarão nem nuvem na escotilha; a ignição é no ar (UpdateMissileFx)
+			}
+			else if (Launched && Shooter->HasVls())
+			{
+				// (25/10, v5) as células de lançamento vertical no casco (o Linebacker): o míssil sai da célula da vez, pra cima
+				FVector MouthCm, MouthDir;
+				Shooter->NoteVlsShot(uint32(E.Value), LaunchCm, MouthCm, MouthDir);
+				LaunchCm = MouthCm;
+				LaunchDir = MouthDir;
+			}
+			else if (Launched && Shooter->HasLauncher() && !Shooter->LauncherIsGuns())
 			{
 				FVector MouthCm, MouthDir;
 				Shooter->NoteLauncherShot(uint32(E.Value), LaunchCm, LaunchDir, MouthCm, MouthDir);
 				LaunchCm = MouthCm;
 				LaunchDir = MouthDir;
+			}
+			else if (Launched && Shooter->IsAircraft())
+			{
+				// (25/10) a aeronave: o míssil sai do trilho desenhado, a peça do pente que some neste tiro (o Hellfire do casulo de fora do
+				// Apache). O pente depois do tiro: as à vista são as de índice < Clip (SetAirPose); a que saiu é a de índice Clip (a última da
+				// rajada volta pro 0: o pente recarregado ou vazio)
+				FRTSUnitState Us;
+				const FRTSUnitVisual* AirVis = GetUnit(E.Source, Us) ? State->Data.FindVisual(Us.Def) : nullptr;
+				const bool bSecond = AirVis && AirVis->AmmoWeapon == 2;
+				const int32 Size = bSecond ? Us.ClipSize2 : Us.ClipSize;
+				FVector MouthCm, MouthDir;
+				if (Size > 0 && Shooter->NoteAmmoShot(uint32(E.Value), FMath::Clamp(bSecond ? Us.Clip2 : Us.Clip, 0, Size) % Size, LaunchCm, MouthCm, MouthDir))
+				{
+					LaunchCm = MouthCm;
+					LaunchDir = MouthDir;
+				}
+				RailTailM = AirVis && AirVis->MissileLengthM > 0.0f ? AirVis->MissileLengthM : 1.5f;
+			}
+			// (01/11, a prova v36_lanca_chao: o casulo do Rocket Buggy soltava as tampas e a nuvem da caixa da Patriot a cada salva) o lançador
+			// aberto de chão (o casulo, o tubo do Stinger, do Avenger e do soldado; nem caixa fechada, nem o berço que levanta, nem a célula):
+			// a ignição pequena na tubeira (a do trilho, o comprimento do míssil atrás da ponta), sem a nuvem da caixa e sem a poeira do chão
+			bool bOpenRack = false;
+			if (Launched && RailTailM == 0.0f && !Shooter->IsAircraft() && !Shooter->HasVls() && !(Shooter->HasLauncher() && !Shooter->LauncherIsGuns())
+				&& !Shooter->IsLaunchCanister())
+			{
+				FRTSUnitState Rs;
+				const FRTSUnitVisual* RackVis = GetUnit(E.Source, Rs) ? State->Data.FindVisual(Rs.Def) : nullptr;
+				RailTailM = RackVis && RackVis->MissileLengthM > 0.0f ? RackVis->MissileLengthM : 1.0f;
+				bOpenRack = true;
 			}
 			// (14/10) o tiro e o acerto do BlastFx (o Fluxo, a arte 4.2): o sopro, o traçante com luz, o acerto e o chão;
 			// -ShotFx=0 volta pro provisório do ARTSEffect
@@ -2502,16 +2993,24 @@ void URTSMatchSubsystem::HandleEvents()
 			if (bShooterShown)
 			{
 				Shooter->PlayFire(!bMissileShot);   // (v4) o lançador de mísseis sem o recuo e o tranco do canhão
-				if (ShotFx && !bMissileShot)
+				if (bLightShot && !bRounds)
+				{
+					// (25/10, v5) o clarão pequeno da arma leve (a bola e a luz curta: a luz acende a fumaça perto), na boca do cano da vez
+					const FVector Mz = Shooter->MuzzleLocation();
+					const float R = Shooter->GetLightGunFlashCm();
+					ARTSEffect::SpawnFlash(World, Mz + Shooter->MuzzleDirection() * (0.8f * R), R, 1.5e6f * FMath::Square(R / 60.0f), 0.05f,
+						FLinearColor(0.35f, 0.16f, 0.04f));
+				}
+				if (ShotFx && !bMissileShot && !bLightShot)
 				{
 					const FVector Muzzle = Shooter->MuzzleLocation();
 					ShotFx->MuzzleBlast(Muzzle, Shooter->MuzzleDirection(), S.Baked.GroundZCm(FVector2D(Muzzle.X, Muzzle.Y)), uint32(E.Source));
 				}
-				if (MissileSmoke && !bMissileShot)
+				if (MissileSmoke && !bMissileShot && !bLightShot)
 				{
 					MissileSmoke->Muzzle(Shooter->MuzzleLocation(), Shooter->MuzzleDirection());   // (16/10) o sopro abre a fumaça na frente
 				}
-				if (!bMissileShot)
+				if (!bMissileShot && !bLightShot)
 				{
 					// (17/10, a Arte) o sopro da boca empurra a poeira na frente do cano, num cone de 60°
 					const FVector Mz = Shooter->MuzzleLocation();
@@ -2530,16 +3029,39 @@ void URTSMatchSubsystem::HandleEvents()
 				// na boca da caixa pela simulação (o lançador que levanta: na boca desenhada, LaunchCm acima)
 				if (ShotFx && bShooterShown && Launched)
 				{
-					ShotFx->MissileLaunch(E.Value, LaunchCm, LaunchDir, uint32(E.Value));
+					ShotFx->MissileLaunch(E.Value, LaunchCm, LaunchDir, uint32(E.Value), RailTailM);
 				}
-				if (MissileSmoke && bShooterShown && Launched)
+				if (MissileSmoke && bShooterShown && Launched && RailTailM >= 0.0f && !bOpenRack)   // (01/11) nem o suave nem o lançador aberto sopram a nuvem da caixa
 				{
-					MissileSmoke->Launch(LaunchCm, LaunchDir, uint32(E.Value));   // (16/10) a nuvem da ré da caixa
+					// (16/10) a nuvem da ré da caixa; (01/11) a do trilho sai da tubeira do míssil, atrás da ponta
+					MissileSmoke->Launch(RailTailM > 0.0f ? LaunchCm - LaunchDir * (RailTailM * 100.0f) : LaunchCm, LaunchDir, uint32(E.Value));
 				}
 				break;
 			}
 			const Sim::UnitView* V = S.Curr.Find(E.Source);
 			const double SpeedCmPerS = V ? S.World.Rules().Units[V->Def].Weapon.ProjectileStep.ToDouble() * Sim::TicksPerSecond * 100.0 : 10000.0;
+			if (bRounds && E.Target != Sim::NoEntity)
+			{
+				if (RoundVictim && (bShooterShown || IsPointShown(FVector2D(RoundVictim->GetActorLocation().X, RoundVictim->GetActorLocation().Y))))
+				{
+					QueueBulletRounds(Shooter, uint32(E.Source), uint32(E.Target), RoundVictim, RoundVictim->GetActorLocation(), float(SpeedCmPerS), uint32(E.Value));
+				}
+				break;
+			}
+			if (bLightShot && E.Target != Sim::NoEntity)
+			{
+				// (25/10, v5) a arma leve no alvo: o traçante até onde a vítima está desenhada (a aeronave no ar, com o leque do estouro em
+				// volta dela; o veículo no meio do casco), pelo hash do tiro (o acerto usa o mesmo ponto)
+				if (ARTSUnitActor* Victim = ViewOf(E.Target))
+				{
+					const FVector To = LightGunAim(Victim, Shooter->MuzzleLocation(), uint32(E.Value));
+					if (bShooterShown || IsPointShown(FVector2D(To.X, To.Y)))
+					{
+						LightGunTracer(Shooter->MuzzleLocation(), To, float(SpeedCmPerS), uint32(E.Value), Shooter->GetLightGunTracerCm());
+					}
+				}
+				break;
+			}
 			FVector2D TargetCm = RTS::ToWorld(E.Point);
 			if (E.Target == Sim::NoEntity)
 			{
@@ -2554,10 +3076,29 @@ void URTSMatchSubsystem::HandleEvents()
 			}
 			// (o tiro no chão, Ctrl, 13/10: termina no chão; no tanque, na altura do casco)
 			const FVector Target(TargetCm.X, TargetCm.Y, S.Baked.GroundZCm(TargetCm) + (E.Target == Sim::NoEntity ? 10.0f : 120.0f));
+			if (bLightShot)
+			{
+				// (30/10) a metralhadora no chão: o traçante dela, não o projétil aceso do tiro de tanque (que ainda procurava um tanque
+				// perto do ponto e punha nele o acerto de canhão)
+				if (bRounds)
+				{
+					if (bShooterShown || IsPointShown(TargetCm))
+					{
+						QueueBulletRounds(Shooter, uint32(E.Source), 0u, nullptr, Target, float(SpeedCmPerS), uint32(E.Value));
+					}
+				}
+				else if (bShooterShown || IsPointShown(TargetCm))
+				{
+					LightGunTracer(Shooter->MuzzleLocation(), Target, float(SpeedCmPerS), uint32(E.Value), Shooter->GetLightGunTracerCm());
+				}
+				break;
+			}
 			const auto Trace = [&](const FVector& From)
 			{
 				if (ShotFx)
 				{
+					ShotFx->ShellBallKg = CVarShellBlastKg.GetValueOnGameThread();   // (30/10) a mini explosão também no acerto que o traçante leva
+					ShotFx->bNextShotRicochet = RicochetShots.Contains(uint32(E.Value));   // (simulação 25) o acerto que o traçante leva é o do ricochete
 					ShotFx->Tracer(From, Target, float(SpeedCmPerS), uint32(E.Source));
 				}
 				else
@@ -2603,6 +3144,119 @@ void URTSMatchSubsystem::HandleEvents()
 			// (v4, 23/10) a munição (o tipo do atirador, ou a do poder, que não tem atirador): a ogiva grande do Cruise Missile
 			// Strike ganha a explosão clássica em volume e a cratera dela
 			const FRTSUnitVisual* MunVis = Ms ? State->Data.FindVisual(int32(Ms->Def)) : nullptr;
+			// (30/10, o Felipe: a Technical e o Stryker "atirando no chão de areia mas o impacto do projétil tem a força de um tanque") a bala
+			// da arma leve pelo tipo de quem atirou, não pelo ator: com o alvo ou o atirador já mortos ela ainda é bala (antes caía no acerto
+			// do tiro de tanque: as faíscas grandes, a areia, o chamuscado e a cratera A)
+			const FRTSUnitVisual* ShotVis = MunVis ? MunVis : (Shooter ? State->Data.FindVisual(Shooter->Def) : nullptr);
+			const bool bBulletHit = !bMissileHit && ShotVis && ShotVis->bLightGun;
+			// (25/10, v5) o acerto na aeronave voando (o canhão e os mísseis do Linebacker, a arma de ar da Patriot) e o da arma leve (o canhão
+			// antiaéreo, a metralhadora do Stryker): onde a vítima está desenhada, sem cratera, chamuscado nem areia no chão (antes, o acerto
+			// no ar caía no chão embaixo da aeronave, a 1,3 m). O míssil: o clarão, as faíscas e a luz da ogiva na fuselagem e a fuligem em
+			// volume no ponto; o canhão antiaéreo: o estouro no ar (o clarão pequeno, as faíscas e a baforada escura em volume); a
+			// metralhadora no casco: as faíscas do ricochete e o clarão pequeno
+			{
+				ARTSUnitActor* HitVictim = E.Target != Sim::NoEntity ? ViewOf(E.Target) : nullptr;
+				const Sim::UnitView* HitView = E.Target != Sim::NoEntity ? S.Curr.Find(E.Target) : nullptr;
+				HitView = HitView ? HitView : (E.Target != Sim::NoEntity ? S.Prev.Find(E.Target) : nullptr);
+				const bool bAirVictim = HitVictim && HitVictim->IsAircraft() && HitView && HitView->bAirborne;
+				ARTSUnitActor* LightShooter = !bMissileHit && E.Source != Sim::NoEntity ? ViewOf(E.Source) : nullptr;
+				const bool bLightHit = HitVictim && (bBulletHit || (LightShooter && LightShooter->IsLightGun()));
+				if (bAirVictim || bLightHit)
+				{
+					const FVector ShooterCm = LightShooter ? LightShooter->MuzzleLocation()
+						: (Shooter ? FVector(RTS::ToWorld(Shooter->Pos), S.Baked.GroundZCm(RTS::ToWorld(Shooter->Pos)) + 200.0f) : From3);
+					const FVector Point = LightShooter || bBulletHit ? LightGunAim(HitVictim, ShooterCm, uint32(E.Value)) : HitVictim->GetActorLocation();
+					LastHitFrom.Add(E.Target, FVector2D(ShooterCm.X, ShooterCm.Y));
+					LastHitCm = FVector2D(Point.X, Point.Y);
+					if (!IsPointShown(FVector2D(Point.X, Point.Y)) || HitVictim->IsFogHidden())
+					{
+						break;
+					}
+					if (bMissileHit)
+					{
+						const FVector MissileAt = Ms ? MissileCm(S, *Ms) : ShooterCm;
+						// (30/10, item 38: "quando chega a explosão nem aparece") a ogiva estoura no ar na escala da carga dela: a Patriot de
+						// estilhaço (8 kg) e o Stinger (1 kg); a baforada escura em volume cresce junto (σ ∝ ∛kg, a área ∝ kg^⅔; a de 1 kg = a
+						// de antes)
+						static const bool bNoAirBurst = FParse::Param(FCommandLine::Get(), TEXT("NoAirBurst"));   // (-NoAirBurst: a de antes, pro A/B)
+						const float AirKg = bNoAirBurst ? 0.0f : (MunVis ? (MunVis->AirWarheadKg > 0.0f ? MunVis->AirWarheadKg : MunVis->WarheadKg) : 0.0f);
+						const float Kc = FMath::Clamp(FMath::Pow(FMath::Max(AirKg, 1.0f), 1.0f / 3.0f), 1.0f, 2.5f);
+						if (HitFx)
+						{
+							// a altura de referência do ponto no casco = a da aeronave (o ArmorPoint sorteia de 0,8 a 2 m acima dela); a carcaça
+							// não (a queda é do escopo B do ar)
+							HitFx->MissileHit(E.Value, Point, MissileAt, HitVictim, float(Point.Z), false, 0.0f);
+							HitFx->AirBurst(Point, MissileAt, HitVictim, AirKg, uint32(E.Value));
+						}
+						AirBurstSmoke(Point + (MissileAt - Point).GetSafeNormal() * 60.0, 0.55f * Kc, 0.32f * Kc * Kc, uint32(E.Value));
+						if (MissileSmoke)
+						{
+							MissileSmoke->Blast(Point, 1.2f, 2.0f);   // o empurrão da bola no rastro do míssil e na fumaça perto
+						}
+					}
+					else if (bAirVictim)
+					{
+						FlakBurst(Point, ShooterCm, uint32(E.Value));
+					}
+					else if (BulletRoundsOn())
+					{
+						// (30/10, a rajada desenhada) o acerto no casco é das balas desenhadas (UpdateBulletRounds), não do tiro da simulação
+					}
+					else
+					{
+						// (30/10, o Felipe: "o technique e o stryker tem que ter esse impacto assim [o do tanque] pq é tiro na lataria") a
+						// metralhadora no casco: o acerto do tiro de tanque em miniatura (docs/ESTUDO_IMPACTOS.md B) e, em 1 de cada 4, o
+						// ricochete: o traçante que bate e sobe 10–30° acima da chapa por 20–60 m
+						FVector HullAt = Point, HullN = (ShooterCm - Point).GetSafeNormal();
+						if (HitFx && HitFx->BulletHit(Point, ShooterCm, HitVictim, S.Baked.GroundZCm(FVector2D(Point.X, Point.Y)), uint32(E.Value), HullAt, HullN))
+						{
+							const uint32 Hr = HashCombine(GetTypeHash(uint32(E.Value)), 0x41C0u);
+							if ((Hr & 3u) == 0u)
+							{
+								const FVector In = (HullAt - ShooterCm).GetSafeNormal();
+								FVector Out = (In - 2.0 * FVector::DotProduct(In, HullN) * HullN).GetSafeNormal();
+								const float Up = FMath::DegreesToRadians(10.0f + 20.0f * float((Hr >> 8) & 0xFFu) / 255.0f);
+								Out = (FVector(Out.X, Out.Y, 0.0).GetSafeNormal() * FMath::Cos(Up) + FVector(0.0, 0.0, FMath::Sin(Up))).GetSafeNormal();
+								const float Reach = 2000.0f + 4000.0f * float((Hr >> 16) & 0xFFu) / 255.0f;
+								LightGunTracer(HullAt, HullAt + Out * Reach, 30000.0f, Hr, 180.0f);
+							}
+						}
+						else if (!HitFx)
+						{
+							ARTSEffect::SpawnFlash(World, Point, 14.0f, 6.0e4f, 0.04f, FLinearColor(0.5f, 0.32f, 0.12f));
+						}
+					}
+					break;
+				}
+			}
+			if (bBulletHit)
+			{
+				// (30/10) a bala sem casco pra acertar (o alvo já morreu com ela no ar, ou o tiro forçado no chão): a metralhadora na areia
+				// (docs/ESTUDO_IMPACTOS.md A: o esguicho e, 1 tiro em 2, a baforada baixa), nunca o tiro de tanque (sem cratera, chamuscado,
+				// empurrão no rastro do míssil nem o anel de areia). Perto do alvo que morreu ela cai 1–3 m antes dele, do lado de quem atirou
+				FVector2D Hit = At;
+				if (E.Target == Sim::NoEntity)
+				{
+					if (TArray<FVector2D>* Spread = GroundShotSpread.Find(E.Source); Spread && !Spread->IsEmpty())
+					{
+						Hit += (*Spread)[0];
+						Spread->RemoveAt(0);
+					}
+				}
+				else if (At != From)
+				{
+					const uint32 Hb = HashCombine(GetTypeHash(uint32(E.Value)), 0xB017u);
+					const FVector2D Dir = (From - At).GetSafeNormal();
+					Hit = At + Dir * (250.0 + 200.0 * double(Hb & 0xFFu) / 255.0) + FVector2D(-Dir.Y, Dir.X) * (200.0 * double((Hb >> 8) & 0xFFu) / 255.0 - 100.0);
+				}
+				if (HitFx && IsPointShown(Hit) && !BulletRoundsOn())   // (30/10) com a rajada desenhada, a areia é das balas dela
+				{
+					const float Gz = S.Baked.GroundZCm(Hit);
+					HitFx->BulletGroundHit(FVector(Hit.X, Hit.Y, Gz), From3, uint32(E.Value), uint32(E.Value) % 2u == 0u);
+					PushDust(TreadDust.Get(), FVector(Hit.X, Hit.Y, 0.0), Gz, 0.03);
+				}
+				break;
+			}
 			// a explosão grande em 1 de cada 2 mísseis do mesmo ataque (o 1º, o 3º, o 5º..., pela ordem do míssil no ataque, igual
 			// em todo PC; o Id do tiro não servia: com outros tiros no meio, 5 de 6 grandes): com as 6 juntas a fuligem fechava ~35 m
 			// por 3 s e cobria o alvo (a regra do jogo: efeito que cobre unidade é defeito); as outras ficam com o clarão e a
@@ -2785,7 +3439,25 @@ void URTSMatchSubsystem::HandleEvents()
 					}
 					else
 					{
-						HitFx->ArmorHit(FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 130.0f), From3, Victim, S.Baked.GroundZCm(At), uint32(E.Source), S.Curr.Find(E.Target) == nullptr);
+						const bool bKillShot = S.Curr.Find(E.Target) == nullptr;
+						if (Victim && Victim->IsStructure() && !bKillShot)
+						{
+							// (30/10) o tiro de canhão no prédio: o pó do reboco que desce pela fachada e os pedaços, sem faísca de metal nem a bola
+							HitFx->BuildingHit(FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 300.0f), From3, Victim, S.Baked.GroundZCm(At), uint32(E.Value));
+						}
+						else if (Victim && Victim->IsInfantry())
+						{
+							// (30/10, simulação 26) o canhão no soldado: a granada estoura no chão do pé dele (o tiro na areia aprovado), não o acerto
+							// de casco (a bola e a fumaça do furo são do blindado); o dano é o de 10% do HumanArmor
+							HitFx->GroundHit(FVector(At.X, At.Y, S.Baked.GroundZCm(At)), From3, uint32(E.Source));
+						}
+						else
+						{
+							// (30/10) a mini explosão: a bola da carga nasce no acerto (o SpawnArmorImpact), no quadro das faíscas
+							HitFx->ShellBallKg = CVarShellBlastKg.GetValueOnGameThread();
+							HitFx->bNextShotRicochet = RicochetShots.Remove(uint32(E.Value)) > 0;   // (simulação 25) o ricochete
+							HitFx->ArmorHit(FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 130.0f), From3, Victim, S.Baked.GroundZCm(At), uint32(E.Source), bKillShot);
+						}
 						PushDust(TreadDust.Get(), FVector(At.X, At.Y, 0.0), S.Baked.GroundZCm(At), 0.28);   // (17/10) o acerto no casco
 					}
 				}
@@ -2863,17 +3535,49 @@ void URTSMatchSubsystem::HandleEvents()
 			const FVector2D At = RTS::ToWorld(E.Point);
 			TObjectPtr<ARTSUnitActor>* View = Views.Find(E.Target);
 			ARTSUnitActor* Actor = View ? View->Get() : nullptr;
+			Sim::World::CrashView Crash;
+			if (Actor && Actor->IsAircraft() && S.World.FindCrash(E.Target, Crash))
+			{
+				// (v5, 24/10) a aeronave começa a cair: o ator segue o corpo da simulação (UpdateFalling) e explode no AirCrash; aqui só o
+				// clarão no ar, onde ela foi atingida (o rastro de fuligem e a pá que voa são do escopo B)
+				if (MissileSmoke && IsPointShown(At))
+				{
+					MissileSmoke->Blast(Actor->GetActorLocation(), 2.5f, 3.0f);
+				}
+				Views.Remove(E.Target);
+				Falling.Add(E.Target, Actor);
+				FallingOwner.Add(E.Target, Owner);
+				break;
+			}
+			if (Actor && Actor->IsInfantry())
+			{
+				// (30/10, simulação 26) o soldado: sem bola, sem poeira empurrada, sem tremor nem carcaça (o ZH: cai, fica 3 s deitado,
+				// afunda e some aos 8 s, sem sangue); o esmagado (o UnitCrushed deste passo) fica achatado
+				Views.Remove(E.Target);
+				const bool bCrushed = CrushedIds.Remove(uint32(E.Target)) > 0;
+				Actor->DieInfantry(bCrushed);
+				if (IsPointShown(At))
+				{
+					// (30/10, "sangue SIM") a poça que cresce embaixo do corpo (~0,9–1,2 m em ~6 s; o esmagado: achatada e larga de uma vez)
+					const uint32 Seed = HashCombine(uint32(E.Target), 0xB100Du);
+					const FVector L = Actor->GetActorLocation();
+					AddBlood(FVector(L.X, L.Y, S.Baked.GroundZCm(At)), FVector2D(1.0, 0.0), bCrushed ? 150.0f : 95.0f + 30.0f * float(Seed & 0xFFu) / 255.0f,
+						0.0f, bCrushed ? 0.5f : 2.5f, Seed, bCrushed ? nullptr : Actor);
+				}
+				break;
+			}
 			if (MissileSmoke && IsPointShown(At))
 			{
 				// (16/10) a morte: a bola de fogo do combustível e da munição (~3,5 m de raio; o prédio ~6 m) [E], subindo
 				const bool bBig = Actor && Actor->IsStructure();
-				MissileSmoke->Blast(FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 150.0f), bBig ? 6.0f : 3.5f, bBig ? 6.0f : 5.0f);
+				const float Dk = Actor && !bBig ? Actor->GetDeathScale() : 1.0f;   // (30/10) o veículo leve: a bola menor
+				MissileSmoke->Blast(FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 150.0f), bBig ? 6.0f : 3.5f * Dk, bBig ? 6.0f : 5.0f * FMath::Sqrt(Dk));
 			}
 			if (IsPointShown(At) && !(Actor && Actor->IsStructure()))
 			{
 				// (17/10, a Arte) a morte do tanque empurra a poeira (0,55, a escala desenhada); a do prédio sai de cada explosão
 				// dela (o StructureDeath e as PendingBlasts)
-				PushDust(TreadDust.Get(), FVector(At.X, At.Y, 0.0), S.Baked.GroundZCm(At), 0.55);
+				PushDust(TreadDust.Get(), FVector(At.X, At.Y, 0.0), S.Baked.GroundZCm(At), 0.55 * (Actor ? Actor->GetDeathScale() : 1.0f));
 			}
 			if (Actor && Actor->IsStructure())
 			{
@@ -2996,12 +3700,92 @@ void URTSMatchSubsystem::HandleEvents()
 			SaveReplay();
 			break;
 		}
+		case Sim::EventType::AirBladeOff:
+		{
+			// (v5) a pá do helicóptero voou: o rotor some (o destroço voando é do escopo B)
+			if (TObjectPtr<ARTSUnitActor>* F = Falling.Find(E.Target); F && *F)
+			{
+				(*F)->SetBladeOff();
+			}
+			break;
+		}
+		case Sim::EventType::AirCrash:
+		{
+			// (v5) a aeronave bateu no chão: a morte de sempre no ponto do choque (a explosão do BlastFx, o chão queimado). O helicóptero
+			// vira a carcaça que a simulação criou com o mesmo Id; o jato não deixa casco (afunda logo depois da bola)
+			TObjectPtr<ARTSUnitActor> Actor;
+			uint8 Owner = 0;
+			FallingOwner.RemoveAndCopyValue(E.Target, Owner);
+			if (Falling.RemoveAndCopyValue(E.Target, Actor) && Actor)
+			{
+				const FVector2D At = RTS::ToWorld(E.Point);
+				const bool bWreck = (E.Value & (1 << 15)) != 0;
+				if (!bWreck)
+				{
+					WreckGoneEarly.Add(E.Target);
+				}
+				Actor->SetActorLocation(FVector(At.X, At.Y, S.Baked.GroundZCm(At)));
+				const FVector AirVel = Actor->GetAirVelocityCm();
+				Die(*Actor, At, E.Target, Owner);
+				// (24/10, escopo B) o fogo da queda sai na bola (0,3 s) e o da carcaça nasce dentro da fumaça da morte, 1,5 s depois (o estudo
+				// da carcaça: pra não virar "2 efeitos"), queima 24 s (o jato, que não fica casco: os destroços, 12 s) e sai em 4 s. O fogo
+				// de sprite da carcaça (BlastFx StartWreck) não acende na aeronave: o dela é este, em volume
+				if (FAirFire* Old = FindAirFire(E.Target, true))
+				{
+					Old->End = FMath::Min(Old->End, GetWorld()->GetTimeSeconds() + 0.3);
+				}
+				if (UBlastFxDirector* Fx = UBlastFxDirector::Get(this))
+				{
+					Fx->WreckGone(Actor.Get(), 0.0f);
+				}
+				if (IsPointShown(At) && GetWorld())
+				{
+					FAirFire& W = AirFires.AddDefaulted_GetRef();
+					W.Id = E.Target;
+					W.Start = GetWorld()->GetTimeSeconds() + 1.5;
+					W.End = W.Start + (bWreck ? 24.0 : 12.0);
+					W.FootCm = FVector(At.X, At.Y, S.Baked.GroundZCm(At) + 30.0);
+					W.Scale = bWreck ? 0.17f : 0.13f;
+					W.Variant = E.Target * 0x9E3779B9u;
+				}
+				// o jato cheio de combustível a ~45 m/s: a 2ª bola nasce ~7 m à frente 0,2 s depois (o combustível espirrando na direção
+				// do voo; duas bolas no mesmo lugar é o defeito nº 1 das explosões)
+				const FVector2D Fwd = FVector2D(AirVel.X, AirVel.Y).GetSafeNormal();
+				if (!bWreck && !Fwd.IsNearlyZero() && IsPointShown(At) && GetWorld())
+				{
+					const FVector2D Ahead = At + Fwd * 700.0;
+					JetBlasts.Add({ GetWorld()->GetTimeSeconds() + 0.2, FVector(Ahead.X, Ahead.Y, S.Baked.GroundZCm(Ahead)), E.Target * 2654435761u });
+				}
+				UE_LOG(LogTemp, Log, TEXT("RTS ar: a aeronave %u bateu em (%.0f, %.0f) m, dano %d, casco %d"), E.Target, At.X / 100.0, At.Y / 100.0, E.Value & 0x7FFF, int32(bWreck));
+			}
+			break;
+		}
 		case Sim::EventType::WreckSinking:
 			OnWreckSinking(E);
 			break;
 		case Sim::EventType::WreckRemoved:
 			OnWreckRemoved(E);
 			break;
+		case Sim::EventType::StructureGroundClaimed:
+			OnGroundClaimed(E);
+			break;
+		case Sim::EventType::RuinCleared:
+			OnRuinCleared(E);
+			break;
+		case Sim::EventType::Salvaged:
+		{
+			// (simulação 30) a sucata recolhida: o "+$" de sempre pro dono do Dozer
+			const Sim::UnitView* Dz = S.Curr.Find(E.Source);
+			if (Dz && Dz->Owner == LocalPlayer() && E.Value > 0)
+			{
+				FRTSMoneyPopup Pop;
+				Pop.PosCm = RTS::ToWorld(E.Point);
+				Pop.Amount = E.Value;
+				MoneyPopups.Add(Pop);
+			}
+			UE_LOG(LogTemp, Log, TEXT("RTS sucata: o Dozer %u recolheu %u por $%d"), E.Source, E.Target, E.Value);
+			break;
+		}
 		case Sim::EventType::PowerUsed:
 		{
 			// (v4, 23/10) o anel de aviso do Cruise Missile Strike (4 s no chão, só desenho): azul pra quem lançou e os aliados
@@ -3106,6 +3890,14 @@ void URTSMatchSubsystem::Die(ARTSUnitActor& View, const FVector2D& Cm, uint32 Id
 			Sun->RemoveShadowCaster(&View);
 		}
 	}
+	if (View.IsStructure())
+	{
+		// (30/10) o fogo do telhado (abaixo de 35%) apaga: a morte assume, vista ou não
+		if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
+		{
+			Director->StructureDamage(&View, 0.0f, TArray<FVector>());
+		}
+	}
 	// a explosão só se o jogador vê (a de dentro da névoa não acontece pra ele)
 	const bool bSeen = Owner == LocalPlayer() || IsPointShown(Cm);
 	if (bSeen)
@@ -3117,7 +3909,7 @@ void URTSMatchSubsystem::Die(ARTSUnitActor& View, const FVector2D& Cm, uint32 Id
 		{
 			if (ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(PC->GetPawn()))
 			{
-				Cam->AddShake(Cm, View.IsStructure() ? 35.0f : 18.0f);
+				Cam->AddShake(Cm, View.IsStructure() ? 35.0f : 18.0f * View.GetDeathScale());
 			}
 		}
 		if (View.IsStructure())
@@ -3132,7 +3924,9 @@ void URTSMatchSubsystem::Die(ARTSUnitActor& View, const FVector2D& Cm, uint32 Id
 			if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
 			{
 				// (17/10, o Fluxo) o ator da carcaça vai junto: o fogo dela acende pela morte, qualquer que seja o caminho
-				Director->TankDeath(FVector(Cm.X, Cm.Y, State ? State->Baked.GroundZCm(Cm) : 0.0f), Id, /*bClassic=*/false, &View);
+				// (30/10) o jato de fogo pelo anel da torre (visual.death_jet): a gravação do EmberGen, no pé da torre que acabou de voar
+				Director->TankDeath(FVector(Cm.X, Cm.Y, State ? State->Baked.GroundZCm(Cm) : 0.0f), Id, /*bClassic=*/false, &View, View.GetDeathScale(), View.GetDeathKind(),
+					View.GetDeathJetBake(), View.GetTurretRingCm(), View.GetDeathJetScale(), View.GetDeathJetBaseM() * 100.0f);
 			}
 			if (GroundMemory)
 			{
@@ -3142,7 +3936,7 @@ void URTSMatchSubsystem::Die(ARTSUnitActor& View, const FVector2D& Cm, uint32 Id
 				GroundMemory->AddWreck(Cm, float(View.GetActorRotation().Yaw), From ? *From : Cm);
 				if (ARTSDebrisField* D = Debris.Get())
 				{
-					D->AddWreck(Cm, float(View.GetActorRotation().Yaw), From ? *From : Cm, [this](const FVector2D& P) { return State ? State->Baked.GroundZCm(P) : 0.0f; }, Id);
+					D->AddWreck(Cm, float(View.GetActorRotation().Yaw), From ? *From : Cm, [this](const FVector2D& P) { return State ? VisualGroundZCm(P) : 0.0f; }, Id);
 				}
 			}
 		}
@@ -4112,7 +4906,12 @@ void URTSMatchSubsystem::UpdateMissileSmoke(float DeltaSeconds)
 	{
 		FRTSSmokeMissile& O = Frame.Missiles.AddDefaulted_GetRef();
 		O.Id = M.Id;
-		O.PosCm = M.PosCm;
+		// (30/10) a fumaça sai da tubeira do corpo desenhado (o rastro põe o bocal 1,7 m atrás do ponto: o meio do míssil sem corpo) e o
+		// motor de cada míssil
+		const FMissileLook& Look = MissileLookOf(M);
+		O.PosCm = M.PosCm - M.Dir * double(Look.LengthCm > 0.0f ? Look.LengthCm - 170.0f : 0.0f);
+		O.WidthK = Look.TrailWidthK;
+		O.DensityK = M.bCoast || (Look.TrailS > 0.0f && M.AgeS > Look.TrailS) ? 0.0f : Look.TrailDensityK;   // (01/11) sem fumaça saindo do tubo
 		O.Dir = M.Dir;
 		O.SpeedCmS = M.SpeedCmS;
 		O.AgeS = M.AgeS;
@@ -4127,6 +4926,8 @@ void URTSMatchSubsystem::UpdateMissileSmoke(float DeltaSeconds)
 			SmokeFocus = FVector2D(Fp.X, Fp.Y);
 		}
 	}
+	// (31/10) o fogo do motor dos veículos feridos (abaixo de 35%): a fuligem em volume sai daqui (UBlastFxDirector::EngineSmokeAt)
+	UBlastFxDirector* EngineFx = UBlastFxDirector::ShotFxEnabled() ? UBlastFxDirector::Get(this) : nullptr;
 	// os veículos à vista: o empurrão de quem anda e a leitura de todos (a fumaça na frente deles rareia); os prédios só
 	// na leitura (a nuvem da largada não tapa a própria bateria)
 	for (const TPair<uint32, Sim::UnitView>& It : S.Curr)
@@ -4160,7 +4961,8 @@ void URTSMatchSubsystem::UpdateMissileSmoke(float DeltaSeconds)
 			{
 				X.YawRateDps = FMath::FindDeltaAngleDegrees(RTS::YawDegrees(Was->Hull), RTS::YawDegrees(U.Hull)) * float(Sim::TicksPerSecond);
 			}
-			X.bWorking = (U.Task == Sim::UnitTask::Construct || U.Task == Sim::UnitTask::Repair) && X.SpeedMs < 0.3f;   // (v4) o conserto também força o motor
+			X.bWorking = (U.Task == Sim::UnitTask::Construct || U.Task == Sim::UnitTask::Repair || U.Task == Sim::UnitTask::Salvage)
+				&& X.SpeedMs < 0.3f;   // (v4) o conserto também força o motor; (31/10) e o desmanche da sucata
 			const FTransform Bt = A->GetBodyTransform();
 			for (int32 K = 0; K < Vis->ExhaustAtM.Num() && K < Vis->ExhaustDir.Num(); ++K)
 			{
@@ -4175,6 +4977,41 @@ void URTSMatchSubsystem::UpdateMissileSmoke(float DeltaSeconds)
 			X.Gears = Vis->ExhaustGears;
 			X.JetSigmaM = Vis->ExhaustJetSigmaM;
 			X.ExitMs = Vis->ExhaustExitMs;
+		}
+		FVector EngineCm;
+		if (EngineFx && !A->IsDead() && !A->IsFogHidden() && EngineFx->EngineSmokeAt(A, EngineCm))
+		{
+			// (31/10, a revisão: "a fumaça do veículo ferido vira uma corda preta rente ao chão") o fogo do motor solta a fuligem no sistema
+			// de toda fumaça (o vento, a sombra do mapa, a sombra no chão, as luzes perto), no lugar da fita. Uma fonte que anda:
+			//  - a massa sai pelo fogo, não pelo caminho: a chama de ~1,5 m num compartimento de ~1,2 m é ~0,46 MW (Heskestad: L = 0,235·Q^⅖
+			//    − 1,02·D), ~11 g/s de combustível (Q ÷ 42 MJ/kg), ~4% de fuligem (o querosene e o diesel, Tewarson) × 8,7 m²/g (a extinção
+			//    específica da fuligem, Mulholland e Croarkin 2000): ~3,8 m²/s. A massa por metro da pluma é a vazão ÷ o ar que passa (o
+			//    andar ou o vento): atrás do veículo andando ela sai rala e comprida, parado no vento mais grossa;
+			//  - um puff a cada σ do ar que passou (a fila de gaussianas a ≤ 1,3 σ é um tubo liso): andando, pelo caminho (o passo por tempo
+			//    virava contas); parado, no ritmo do vento. Puffs soltos, sem fita: a coluna de quando ele estava parado fica no ar onde
+			//    nasceu e se desfaz (sem o gancho);
+			//  - o empuxo: a térmica em linha de Briggs com B = F/u, F = g·Q/(π·cp·ρ·T) ≈ 4 m⁴/s³ e u o ar que passa; a subida pedida é a
+			//    w(1 s) = ⅔·1,6·B^⅓ (TickSmolders volta ao B), e ela abre enquanto sobe (EntrainK: dσ/dt = 0,25·w)
+			constexpr float EngSootM2s = 3.8f, EngSigmaM = 0.4f, EngBuoyF = 4.0f, EngEntrainK = 0.25f;
+			const float Ms = FMath::Abs(float(U.Speed.ToDouble() * Sim::TicksPerSecond));
+			const float AirMs = FMath::Max3(Ms, MissileSmoke->WindMs, 1.0f);
+			FRTSSmokeSmolder& Sm = Frame.Smolders.AddDefaulted_GetRef();
+			Sm.Id = 0x2D000000u | (It.Key & 0x00FFFFFFu);
+			Sm.PosCm = EngineCm;
+			Sm.SigmaM = EngSigmaM;
+			Sm.ExtM2 = EngSootM2s * EngSigmaM / AirMs;
+			Sm.RiseMs = (2.0f / 3.0f) * 1.6f * FMath::Pow(EngBuoyF / AirMs, 1.0f / 3.0f);
+			Sm.EntrainK = EngEntrainK;
+			Sm.Kind = 1;
+			if (Ms > 0.5f)
+			{
+				Sm.RatePerS = 0.0f;
+				Sm.StepM = EngSigmaM * Ms / AirMs;
+			}
+			else
+			{
+				Sm.RatePerS = AirMs / EngSigmaM;
+			}
 		}
 		if (const Sim::UnitView* Before = S.Prev.Find(It.Key))
 		{
@@ -4217,6 +5054,7 @@ void URTSMatchSubsystem::UpdateMissileSmoke(float DeltaSeconds)
 	{
 		HitLife->GetSmolders(GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0, Frame.Smolders);   // (23/10) a fumaça do furo do acerto
 	}
+	AddAirSmoke(Frame);   // (24/10, escopo B) os rotores perto do chão e a fuligem das aeronaves caindo
 	MissileSmoke->Tick(DeltaSeconds, Frame);
 }
 
@@ -4231,14 +5069,66 @@ void URTSMatchSubsystem::UpdateMissileFx()
 	// do Fluxo apaga sozinho em 1 s)
 	TArray<FRTSMissile> Flying;
 	GetMissiles(Flying);
+	TSet<uint32> Live;
 	for (const FRTSMissile& M : Flying)
 	{
 		// (v4, 23/10) o míssil que entra na vista sem chama (o do ataque que nasceu na névoa ou fora da tela; o do Tomahawk
 		// atirado de longe, de dentro da névoa): acende aqui, sem o clarão da caixa. O que já tem a chama (o lançamento à vista)
 		// não muda
 		Fx->MissileInFlight(int32(M.Id), M.PosCm, M.Dir, M.Id);
+		// (30/10, item 37) o corpo do míssil do atirador (o Hellfire, o Patriot, o Stinger, o Tomahawk)
+		const FMissileLook& Look = MissileLookOf(M);
+		// (01/11) o lançamento suave: o motor de voo apagado saindo do tubo; acende no ar, com o clarão pequeno na tubeira
+		if (M.bCoast)
+		{
+			CoastingMissiles.Add(M.Id);
+			Fx->MissileMotor(int32(M.Id), false);
+		}
+		else if (CoastingMissiles.Remove(M.Id) > 0)
+		{
+			Fx->MissileIgnite(int32(M.Id), M.PosCm - M.Dir * double(Look.LengthCm > 0.0f ? Look.LengthCm : 100.0f), M.Dir);
+		}
+		if (UStaticMesh* Body = Look.Mesh.Get())
+		{
+			Fx->MissileBody(int32(M.Id), Body, Look.LengthCm);
+		}
 		Fx->MissileMove(int32(M.Id), M.PosCm, M.Dir, M.SpeedCmS);
+		Live.Add(M.Id);
 	}
+	for (auto It = MissileLooks.CreateIterator(); It; ++It)
+	{
+		if (!Live.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+	for (auto It = CoastingMissiles.CreateIterator(); It; ++It)
+	{
+		if (!Live.Contains(*It))
+		{
+			It.RemoveCurrent();
+		}
+	}
+}
+
+const URTSMatchSubsystem::FMissileLook& URTSMatchSubsystem::MissileLookOf(const FRTSMissile& M)
+{
+	if (const FMissileLook* Have = MissileLooks.Find(M.Id))
+	{
+		return *Have;
+	}
+	FMissileLook& L = MissileLooks.Add(M.Id);
+	FRTSUnitState Us;
+	const FRTSUnitVisual* V = State && GetUnit(M.Shooter, Us) ? State->Data.FindVisual(Us.Def) : nullptr;
+	if (V && !V->MissileMesh.IsEmpty())
+	{
+		L.Mesh = LoadObject<UStaticMesh>(nullptr, *V->MissileMesh, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		L.LengthCm = V->MissileLengthM * 100.0f;
+		L.TrailWidthK = V->MissileTrailWidthK;
+		L.TrailDensityK = V->MissileTrailDensityK;
+		L.TrailS = V->MissileTrailS;
+	}
+	return L;
 }
 
 UTextureRenderTarget2D* URTSMatchSubsystem::GetBattleOverlay() const
@@ -4275,8 +5165,24 @@ void URTSMatchSubsystem::GetMissiles(TArray<FRTSMissile>& Out) const
 		if (M.AgeS < ARTSUnitActor::LaunchBlendSeconds)
 		{
 			const TObjectPtr<ARTSUnitActor>* Shooter = Views.Find(C.Shooter);
-			FVector OffsetCm, TubeDir;
-			if (Shooter && *Shooter && (*Shooter)->GetLaunchBlend(C.Id, OffsetCm, TubeDir))
+			FVector OffsetCm, TubeDir, MouthCm;
+			bool bSoft = false;
+			if (Shooter && *Shooter && (*Shooter)->GetLaunchBlend(C.Id, OffsetCm, TubeDir, &bSoft, &MouthCm) && bSoft)
+			{
+				// (01/11, a prova v35: o Javelin de dentro do Stryker nascia ~4 m à frente da escotilha, no voo da simulação, só empinado)
+				// o lançamento suave: sai da escotilha pelo tubo a SoftEjectMps, sem chama, e o motor de voo acende a ~2,6 m (a ignição,
+				// UpdateMissileFx); dali vai pro voo da simulação até LaunchBlendSeconds (o motor aceso o leva: ~40 m/s a mais no pico)
+				const float T = FMath::Max(M.AgeS, 0.0f);
+				const float Te = ARTSUnitActor::SoftEjectSeconds;
+				const double Ve = ARTSUnitActor::SoftEjectMps * 100.0;
+				const FVector Eject = MouthCm + TubeDir * (Ve * double(T));
+				const float K = FMath::SmoothStep(Te, ARTSUnitActor::LaunchBlendSeconds, T);
+				M.PosCm = FMath::Lerp(Eject, M.PosCm, double(K));
+				M.Dir = FMath::Lerp(TubeDir, M.Dir, double(K)).GetSafeNormal();
+				M.SpeedCmS = FMath::Lerp(float(Ve), M.SpeedCmS, K);
+				M.bCoast = T < Te;
+			}
+			else if (Shooter && *Shooter && (*Shooter)->GetLaunchBlend(C.Id, OffsetCm, TubeDir))
 			{
 				const float K = FMath::SmoothStep(0.0f, ARTSUnitActor::LaunchBlendSeconds, FMath::Max(M.AgeS, 0.0f));
 				M.PosCm += OffsetCm * double(1.0f - K);
@@ -4302,6 +5208,16 @@ void URTSMatchSubsystem::UpdateWreckPoses()
 	const int64 SimNow = int64(State->World.Tick());
 	ARTSDebrisField* Field = Debris.Get();
 	TArray<uint32> Gone;
+	// (31/10, a sucata) os Dozers com a tarefa de desmanchar (quase sempre nenhum), uma vez por quadro
+	const Sim::Ruleset& SimRules = State->World.Rules();
+	TArray<const Sim::UnitView*, TInlineAllocator<4>> Salvagers;
+	for (const TPair<uint32, Sim::UnitView>& Su : State->Curr)
+	{
+		if (Su.Value.Task == Sim::UnitTask::Salvage)
+		{
+			Salvagers.Add(&Su.Value);
+		}
+	}
 	for (TPair<uint32, FWreckPose>& It : WreckPoses)
 	{
 		FWreckPose& P = It.Value;
@@ -4351,6 +5267,13 @@ void URTSMatchSubsystem::UpdateWreckPoses()
 				continue;
 			}
 			Sink(FMath::Min(P.RemovedFromP + float(FMath::Max(Now - P.RemovedAt, 0.0) / WreckFinishSinkS), 1.0f));
+			if (P.bSalvaged)
+			{
+				if (UBlastFxDirector* SalvageFx = UBlastFxDirector::Get(this))
+				{
+					SalvageFx->WreckSalvage(A, A->GetWreckSinkCm());   // (31/10, a sucata) o fogo desce com o casco até o fim
+				}
+			}
 			if (P.SinkP >= 1.0f)
 			{
 				Gone.Add(It.Key);
@@ -4361,6 +5284,44 @@ void URTSMatchSubsystem::UpdateWreckPoses()
 		if (!C)
 		{
 			continue;
+		}
+		// (31/10, a revisão de vídeo do fx_sucata: "a torre some num quadro, o fogo e a coluna de fumaça desligam no mesmo quadro e o casco
+		// fica translúcido") o Dozer desmanchando: a carcaça desce no ritmo do desmanche, com a torre solta e as peças grandes dos destroços
+		// (o Sink), e o fogo sai pelo fim simulado e desce com o casco (UBlastFxDirector::WreckSalvage). O ritmo é o da simulação: o
+		// World::UpdateSalvage conta um passo por passo com o Dozer no alcance da obra (o raio dele + 2 células, do círculo da carcaça) até
+		// o SalvageTicksOf; o desenho conta do passo em que viu o Dozer chegar, no relógio do afundar. Antes ela ficava inteira os ~9 s de
+		// trabalho e descia em 2 s depois do WreckRemoved (a torre em ~0,4 s), com o fogo esmaecendo em 1 s (o volume inteiro, a fumaça no ar junto)
+		if (!bFrozen)
+		{
+			const FVector2D WreckCm = RTS::ToWorld(C->Pos);
+			bool bAtWork = false;
+			for (const Sim::UnitView* Dz : Salvagers)
+			{
+				if (Dz->TaskTarget == C->Id && Dz->Def < SimRules.Units.size() && C->Def < SimRules.Units.size())
+				{
+					const double ReachCm = State->World.SalvageReachOf(Dz->Def, false).ToDouble() * 100.0;   // (simulação 34) encostado
+					const double GapCm = FVector2D::Distance(RTS::ToWorld(Dz->Pos), WreckCm) - SimRules.Units[C->Def].Radius.ToDouble() * 100.0;
+					bAtWork = bAtWork || GapCm <= ReachCm;
+				}
+			}
+			if (!bAtWork)
+			{
+				P.SalvageFrom = -1;
+			}
+			else
+			{
+				if (P.SalvageFrom < 0)
+				{
+					P.SalvageFrom = SimNow - 1;   // o passo deste estado (o World.Tick() já é o seguinte)
+				}
+				const float Done = float(SimNow - 2 - P.SalvageFrom) + Alpha;
+				Sink(FMath::Clamp(Done / float(FMath::Max(State->World.SalvageTicksOf(C->Def, false), 1)), 0.0f, 1.0f));
+				P.bSalvaged = true;
+				if (UBlastFxDirector* SalvageFx = UBlastFxDirector::Get(this))
+				{
+					SalvageFx->WreckSalvage(A, A->GetWreckSinkCm());
+				}
+			}
 		}
 		if (C->SinkStart > 0 && !bFrozen)
 		{
@@ -4414,6 +5375,58 @@ void URTSMatchSubsystem::UpdateWreckPoses()
 	for (const uint32 Id : Gone)
 	{
 		FinishWreck(Id);
+	}
+	// (31/10, a revisão de vídeo do fx_sucata: o entulho sumia num quadro no fim, com o Dozer parado longe) o entulho do prédio que o
+	// Dozer desmancha: o monte (ARTSDebrisField::SinkArea) e o prédio caído (SetRuinSink) descem no ritmo da simulação, como a
+	// carcaça acima: o World::UpdateSalvage conta um passo por passo com ele encostado (SalvageReachOf, da planta) até o
+	// SalvageTicksOf; o desenho conta do passo em que viu o Dozer chegar (a planta do desenho, com 1 m de folga pra não atrasar).
+	// O fogo do prédio caído sai pelo fim simulado; o RuinCleared tira o que sobrou
+	for (TPair<uint32, TTuple<FTransform, FBox2D, float, TWeakObjectPtr<ARTSUnitActor>>>& R : RuinAreas)
+	{
+		const FTransform& Building = R.Value.Get<0>();
+		const FBox2D& Footprint = R.Value.Get<1>();
+		bool bAtWork = false;
+		for (const Sim::UnitView* Dz : Salvagers)
+		{
+			if (Dz->TaskTarget == R.Key && Dz->Def < SimRules.Units.size() && Footprint.bIsValid)
+			{
+				const FVector2D DzCm = RTS::ToWorld(Dz->Pos);
+				const FVector L = Building.InverseTransformPosition(FVector(DzCm.X, DzCm.Y, Building.GetLocation().Z));
+				const double GapCm = FMath::Sqrt(Footprint.ComputeSquaredDistanceToPoint(FVector2D(L.X, L.Y)));
+				bAtWork = bAtWork || GapCm <= State->World.SalvageReachOf(Dz->Def, true).ToDouble() * 100.0 + 100.0;
+			}
+		}
+		if (!bAtWork)
+		{
+			RuinSalvageFrom.Remove(R.Key);
+			continue;
+		}
+		uint16 Def = 0;
+		bool bFound = false;
+		for (int32 K = 0; K < State->World.RuinCount() && !bFound; ++K)
+		{
+			const Sim::World::RuinView Rv = State->World.Ruin(K);
+			bFound = Rv.Id == R.Key;
+			Def = bFound ? Rv.Def : Def;
+		}
+		if (!bFound)
+		{
+			continue;
+		}
+		const int64 From = RuinSalvageFrom.FindOrAdd(R.Key, SimNow - 1);   // o passo deste estado (o World.Tick() já é o seguinte)
+		const float P01 = FMath::Clamp((float(SimNow - 2 - From) + Alpha) / float(FMath::Max(State->World.SalvageTicksOf(Def, true), 1)), 0.0f, 1.0f);
+		if (Field)
+		{
+			Field->SinkArea(R.Key, Building, Footprint, FMath::Max(150.0f, R.Value.Get<2>() * 0.55f), P01);   // a margem do RuinCleared
+		}
+		if (ARTSUnitActor* Shell = R.Value.Get<3>().Get())
+		{
+			Shell->SetRuinSink(P01);
+			if (UBlastFxDirector* SalvageFx = UBlastFxDirector::Get(this))
+			{
+				SalvageFx->WreckSalvage(Shell, 0.0f);   // o fogo segue o ator, que já desce
+			}
+		}
 	}
 	// os fantasmas da névoa: no máximo 32 (o mais velho some sem aviso)
 	while (WreckGhosts.Num() > MaxWreckGhosts)
@@ -4552,9 +5565,24 @@ void URTSMatchSubsystem::OnWreckRemoved(const Sim::SimEvent& E)
 		P->RemovedAt = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 		P->RemovedFromP = P->SinkP;
 	}
-	if (E.Value == 1)
+	if (E.Value == 3)
 	{
-		// a do teto saiu ainda inteira: o fogo apaga antes de ela terminar de descer
+		// (31/10, a revisão de vídeo do fx_sucata) a recolhida como sucata: o desmanche já desceu a carcaça e mandou o fogo pro fim simulado
+		// (UpdateWreckPoses); aqui ela termina de descer e o fogo segue até o fim dele, descendo com o casco, sem o esmaecer de 1 s dos
+		// motivos 1 e 2 (que levava a fumaça no ar junto). A que o desenho não viu desmanchar (na névoa) cai aqui também
+		P->bSalvaged = true;
+		if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
+		{
+			if (ARTSUnitActor* A = P->Actor.Get())
+			{
+				Director->WreckSalvage(A, A->GetWreckSinkCm());
+			}
+		}
+	}
+	else if (E.Value == 1 || E.Value == 2)
+	{
+		// a do teto (e a do lote da obra, simulação 28) saiu ainda inteira: o fogo apaga antes de
+		// ela terminar de descer
 		if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
 		{
 			if (ARTSUnitActor* A = P->Actor.Get())
@@ -4563,7 +5591,66 @@ void URTSMatchSubsystem::OnWreckRemoved(const Sim::SimEvent& E)
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("RTS carcaça %u saiu da simulação (%s)"), E.Target, E.Value == 1 ? TEXT("o teto de 64") : TEXT("afundou"));
+	UE_LOG(LogTemp, Log, TEXT("RTS carcaça %u saiu da simulação (%s)"), E.Target,
+		E.Value == 1 ? TEXT("o teto de 64") : (E.Value == 2 ? TEXT("construído em cima") : (E.Value == 3 ? TEXT("recolhida como sucata") : TEXT("afundou"))));
+}
+
+void URTSMatchSubsystem::OnRuinCleared(const Sim::SimEvent& E)
+{
+	// (simulação 30) o entulho do prédio saiu da simulação (a obra em cima, a sucata, o teto): o monte e o espirrado em volta somem
+	const TTuple<FTransform, FBox2D, float, TWeakObjectPtr<ARTSUnitActor>>* Area = RuinAreas.Find(E.Target);
+	int32 Pieces = 0;
+	if (Area)
+	{
+		if (ARTSDebrisField* D = Debris.Get())
+		{
+			Pieces = D->ClearArea(Area->Get<0>(), Area->Get<1>(), FMath::Max(150.0f, Area->Get<2>() * 0.55f));
+		}
+		// a casca queimada do prédio (o ator morto) sai junto; o fogo do telhado que ainda queimar apaga com ela
+		if (ARTSUnitActor* A = Area->Get<3>().Get())
+		{
+			if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
+			{
+				Director->WreckGone(A, 0.3f);
+			}
+			Wrecks.Remove(A);
+			A->Destroy();
+		}
+		RuinAreas.Remove(E.Target);
+	}
+	RuinSalvageFrom.Remove(E.Target);
+	if (ARTSDebrisField* D = Debris.Get())
+	{
+		D->ForgetSink(E.Target);
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS entulho do prédio %u saiu (%s): %d pedaços"), E.Target,
+		E.Value == 2 ? TEXT("construído em cima") : (E.Value == 3 ? TEXT("recolhido como sucata") : TEXT("o teto")), Pieces);
+}
+
+void URTSMatchSubsystem::OnGroundClaimed(const Sim::SimEvent& E)
+{
+	// (simulação 28, 30/10, o C&C, a decisão do Felipe: "desaparecer com a carcaça tanto de unidades quanto de construção se alguém
+	// botar pra construir em cima, chãos machucados também meio que voltariam pro padrão") a obra tomou o chão: o entulho e os
+	// destroços do lote somem e as marcas dele (o queimado, a cratera, o avental, a esteira) saem do chão. As carcaças de veículo
+	// saíram pela simulação (o WreckRemoved com o motivo 2, logo antes)
+	const TObjectPtr<ARTSUnitActor>* Found = Views.Find(E.Target);
+	const ARTSUnitActor* View = Found ? Found->Get() : nullptr;
+	if (!View || !View->GetFootprintCm().bIsValid)
+	{
+		return;
+	}
+	constexpr float HealMarginCm = 100.0f;   // a calçada da obra: o que encosta na parede também sai
+	int32 Pieces = 0;
+	if (ARTSDebrisField* D = Debris.Get())
+	{
+		Pieces = D->ClearArea(View->GetActorTransform(), View->GetFootprintCm(), HealMarginCm);
+	}
+	int32 Marks = 0;
+	if (GroundMemory)
+	{
+		Marks = GroundMemory->HealArea(View->GetActorTransform(), View->GetFootprintCm(), HealMarginCm);
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS obra %u tomou o chão: %d pedaços de entulho e %d marcas do chão saíram do lote"), E.Target, Pieces, Marks);
 }
 
 void URTSMatchSubsystem::RevealHiddenMarks()
@@ -4608,7 +5695,7 @@ void URTSMatchSubsystem::RevealHiddenMarks()
 		GroundMemory->AddWreck(H.Cm, H.YawDeg, H.From);
 		if (ARTSDebrisField* D = Debris.Get())
 		{
-			D->AddWreck(H.Cm, H.YawDeg, H.From, [this](const FVector2D& P) { return State ? State->Baked.GroundZCm(P) : 0.0f; }, H.Id);
+			D->AddWreck(H.Cm, H.YawDeg, H.From, [this](const FVector2D& P) { return State ? VisualGroundZCm(P) : 0.0f; }, H.Id);
 			if (!WreckPoses.Contains(H.Id))
 			{
 				D->RemoveWreck(H.Id);   // (22/10) a carcaça já foi embora antes de alguém ver: só as lascas ficam
@@ -4670,6 +5757,123 @@ bool URTSMatchSubsystem::IsSpectatingAll() const
 	return true;
 }
 
+void URTSMatchSubsystem::PlaceTerrainStones()
+{
+	// (30/10, o B do chão; docs/COMPARACAO_GAMESHOTS.md item 1: "pedra, cascalho [...] espalhadas pelo relevo, onde ele inclina e na borda
+	// das estradas, nunca por ruído solto") as pedras escaneadas que já temos (a cratera) pela regra física, no grid do tipo de chão do
+	// WorldForge (1 m):
+	// - a beira do asfalto: a motoniveladora joga pro lado o material graúdo da base da estrada (a leira do acostamento); a 0,5–3,5 m da
+	//   borda, mais perto mais denso: ~0,7 pedra miúda (10–25 cm) e ~0,17 média (25–50 cm) por metro de borda, de cada lado;
+	// - o canal de rocha (o barranco e a margem que o WorldForge pinta): o bloco que caiu da rocha, 0,4–1,2 m, ~1 por 12 m², e as
+	//   miúdas em volta, ~1 por 3 m²;
+	// - a duna e a areia aberta, nada (a duna é areia pura: pedra ali seria ruído).
+	// Só desenho, sem colisão, o mesmo sorteio em todo PC (o hash da célula).
+	ARTSDebrisField* D = Debris.Get();
+	if (!D || !State || State->Baked.SurfaceRes <= 2 || State->Baked.Surface.Num() != State->Baked.SurfaceRes * State->Baked.SurfaceRes)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS chão: sem as pedras do terreno (campo %d, partida %d, grade do tipo de chão %d)"), D ? 1 : 0, State ? 1 : 0, State ? State->Baked.SurfaceRes : -1);
+		return;
+	}
+	const FRTSBakedMap& B = State->Baked;
+	const int32 N = B.SurfaceRes;
+	const auto At = [&B, N](int32 I, int32 J) -> const FColor& { return B.Surface[FMath::Clamp(J, 0, N - 1) * N + FMath::Clamp(I, 0, N - 1)]; };
+	const auto CellCm = [&B](float I, float J) { return FVector2D((B.SurfaceMinM.X + (I + 0.5) * B.SurfaceCellM) * 100.0, (B.SurfaceMinM.Y + (J + 0.5) * B.SurfaceCellM) * 100.0); };
+	const auto U = [](uint32 H, uint32 Salt) { return float(HashCombine(H, Salt) & 0xFFFFu) / 65535.0f; };
+	TArray<FVector> Large, Small;
+	int32 EdgeCells = 0, RockCells = 0;
+	// 1ª passada: a beira do asfalto (sempre entra) e a contagem da rocha
+	for (int32 J = 1; J < N - 1; ++J)
+	{
+		for (int32 I = 1; I < N - 1; ++I)
+		{
+			const FColor& C = At(I, J);
+			if (C.B > 127 && C.R < 60)
+			{
+				++RockCells;
+			}
+			if (C.R <= 127)
+			{
+				continue;
+			}
+			// a borda do asfalto: esta célula é asfalto e a vizinha não; a pedra vai pro lado de fora (o gradiente do asfalto)
+			const float GX = float(At(I + 1, J).R) - float(At(I - 1, J).R);
+			const float GY = float(At(I, J + 1).R) - float(At(I, J - 1).R);
+			const float G = FMath::Sqrt(GX * GX + GY * GY);
+			if (G <= 60.0f || (At(I + 1, J).R >= 128 && At(I - 1, J).R >= 128 && At(I, J + 1).R >= 128 && At(I, J - 1).R >= 128))
+			{
+				continue;
+			}
+			++EdgeCells;
+			const uint32 H = HashCombine(uint32(I) * 73856093u, uint32(J) * 19349663u);
+			const FVector2D Out(-GX / G, -GY / G);
+			const FVector2D Side(Out.Y, -Out.X);
+			const FVector2D Edge = CellCm(float(I), float(J));
+			// a leira: ~0,5 pedra de 20–45 cm por metro (a que lê no zoom do jogo; a miúda some a mais de 70 m), ~0,08 de 45–70 cm e
+			// ~0,7 miúda de 10–20 cm (o zoom perto), mais perto da borda mais densa (a distância ao quadrado)
+			const auto Put = [&](TArray<FVector>& To, uint32 Hk, float MinCm, float MaxCm)
+			{
+				const FVector2D P = Edge + Out * (50.0f + 300.0f * FMath::Square(U(Hk, 2))) + Side * (U(Hk, 3) - 0.5f) * 100.0f;
+				if (B.MapSurfaceAt(P).X < 0.2f)
+				{
+					To.Add(FVector(P.X, P.Y, FMath::Lerp(MinCm, MaxCm, U(Hk, 4))));
+				}
+			};
+			if (U(H, 1) < 0.5f)
+			{
+				Put(Large, HashCombine(H, 11u), 20.0f, 45.0f);
+			}
+			if (U(H, 5) < 0.08f)
+			{
+				Put(Large, HashCombine(H, 12u), 45.0f, 70.0f);
+			}
+			for (int32 K = 0; K < 2; ++K)
+			{
+				if (U(H, 20u + uint32(K)) < 0.35f)
+				{
+					Put(Small, HashCombine(H, 30u + uint32(K)), 10.0f, 20.0f);
+				}
+			}
+		}
+	}
+	// 2ª passada: a rocha, repartida por igual no que sobra do teto (o campo de pedras: 8000 graúdas e 60 000 miúdas com as das
+	// crateras; o terreno fica com no máximo 4000 e 30 000): o bloco 1 por 12 m² e a miúda 1 por 3 m², ou menos se não couber
+	const int32 MaxLarge = 4000, MaxSmall = 30000;
+	const float PLarge = RockCells > 0 ? FMath::Min(1.0f / 12.0f, float(FMath::Max(MaxLarge - Large.Num(), 0)) / float(RockCells)) : 0.0f;
+	const float PSmall = RockCells > 0 ? FMath::Min(1.0f / 3.0f, float(FMath::Max(MaxSmall - Small.Num(), 0)) / float(RockCells)) : 0.0f;
+	for (int32 J = 1; J < N - 1 && RockCells > 0; ++J)
+	{
+		for (int32 I = 1; I < N - 1; ++I)
+		{
+			const FColor& C = At(I, J);
+			if (!(C.B > 127 && C.R < 60))
+			{
+				continue;
+			}
+			const uint32 H = HashCombine(uint32(I) * 83492791u, uint32(J) * 2654435761u);
+			const FVector2D P = CellCm(float(I) + U(H, 8) - 0.5f, float(J) + U(H, 9) - 0.5f);
+			if (U(H, 10) < PLarge)
+			{
+				Large.Add(FVector(P.X, P.Y, FMath::Lerp(40.0f, 120.0f, FMath::Square(U(H, 11)))));
+			}
+			else if (U(H, 12) < PSmall)
+			{
+				Small.Add(FVector(P.X, P.Y, FMath::Lerp(10.0f, 24.0f, U(H, 13))));
+			}
+		}
+	}
+	if (Large.Num() > MaxLarge)
+	{
+		Large.SetNum(MaxLarge);
+	}
+	if (Small.Num() > MaxSmall)
+	{
+		Small.SetNum(MaxSmall);
+	}
+	D->AddStones(Large, Small, 0x5EEDu, [this](const FVector2D& Pt) { return State ? VisualGroundZCm(Pt) : 0.0f; });
+	UE_LOG(LogTemp, Display, TEXT("RTS chão: as pedras do terreno (-RTSTerrainStones): %d células de borda do asfalto, %d de rocha; %d graúdas e %d miúdas"),
+		EdgeCells, RockCells, Large.Num(), Small.Num());
+}
+
 void URTSMatchSubsystem::StructureDeath(const ARTSUnitActor& View, const FVector2D& CenterCm, uint32 Id)
 {
 	// o prédio não some numa explosão só (o ZH solta uma série pela área: CommandCenter
@@ -4689,6 +5893,14 @@ void URTSMatchSubsystem::StructureDeath(const ARTSUnitActor& View, const FVector
 		// o prédio deixa o chão queimado na pegada dele (sem cratera: a base de concreto segura)
 		GroundMemory->AddScar(CenterCm, CenterCm, float(FMath::Max(Extent.X, Extent.Y)) * 0.95f, 0.85f, 0.0f);
 	}
+	// (30/10) o entulho: o monte de concreto na planta e o que espirra em volta (ARTSDebrisField::AddRubble)
+	if (ARTSDebrisField* D = Debris.Get())
+	{
+		// (31/10; 01/11 ×0,15: as pedras grandes e claras liam como rio no jogo) com a ruína do modelo (os estados de dano), as pedras são só o miúdo em volta
+		D->AddRubble(View.GetActorTransform(), View.GetFootprintCm(), View.GetHeightCm() * (View.HasRuinMesh() ? 0.15f : 1.0f), Id * 2246822519u + 17u,
+			[this](const FVector2D& P) { return VisualGroundZCm(P); });
+	}
+	RuinAreas.Add(Id, MakeTuple(View.GetActorTransform(), View.GetFootprintCm(), View.GetHeightCm(), TWeakObjectPtr<ARTSUnitActor>(const_cast<ARTSUnitActor*>(&View))));   // (simulação 30)
 	uint32 Seed = Id * 2654435761u | 1u;
 	const auto Next = [&Seed]()
 	{
@@ -4700,7 +5912,9 @@ void URTSMatchSubsystem::StructureDeath(const ARTSUnitActor& View, const FVector
 	{
 		const FVector2D P = CenterCm + FVector2D((Next() * 1.4f - 0.7f) * Extent.X, (Next() * 1.4f - 0.7f) * Extent.Y);
 		FPendingBlast B;
-		B.At = Now + 0.35 + 0.4 * K + 0.2 * Next();
+		// (01/11, a prova v35_predio_tiros: a 0,35–1,35 s as bolas tapavam o desabamento) as detonações secundárias no entulho (o combustível
+		// e a munição guardados), depois que o último andar começa a ceder (CollapseDelayS + 0,6 × CollapseSeconds = 3,3 s)
+		B.At = Now + 3.4 + 0.5 * K + 0.3 * Next();
 		B.Ground = FVector(P.X, P.Y, State->Baked.GroundZCm(P));
 		B.Variant = Id + 101u * uint32(K + 1);
 		PendingBlasts.Add(B);
@@ -4780,7 +5994,128 @@ void URTSMatchSubsystem::SpawnView(uint32 Id)
 	// a máscara da poeira em toda unidade viva (14/10, a Arte); -RTSNoUnitMask = o A/B do custo do custom depth
 	static const bool bNoMask = FParse::Param(FCommandLine::Get(), TEXT("RTSNoUnitMask"));
 	Actor->SetUnitMask(!bNoMask);
+	// (01/11, o Felipe: "o tanque sai de túnel") o veículo que nasce de uma fábrica com túnel (visual.tunnel_exit) sobe dele: a fábrica é
+	// o prédio do mesmo dono com a saída onde ele nasceu (só desenho; a simulação já nasceu na saída)
+	if (!V->bStructure)
+	{
+		for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Views)
+		{
+			const Sim::UnitView* FV = State->Curr.Find(It.Key);
+			if (It.Value && FV && FV->bStructure && FV->Owner == V->Owner && It.Value->TryStartTunnelExit(*Actor, Cm))
+			{
+				break;
+			}
+		}
+	}
 	Views.Add(Id, Actor);
+	if (V->bStructure)
+	{
+		ClearScatterUnder(Id);
+	}
+}
+
+void URTSMatchSubsystem::ClearScatterUnder(uint32 Id)
+{
+	// (01/11, o tour da Rússia: as pedras no pátio do quartel) a obra, o prédio de largada e o da cena tiram do lote as pedras, as moitas
+	// e os tufos do mapa, como o C&C limpa o chão da construção: as instâncias de ISM de até 3 m de roda (as casas, os carros e as
+	// palmeiras são maiores e ficam), fora das unidades e dos destroços. O índice numa grade de 10 m é feito uma vez
+	const Sim::UnitView* V = State ? State->Curr.Find(Id) : nullptr;
+	UWorld* World = GetWorld();
+	if (!V || !V->bStructure || !World)
+	{
+		return;
+	}
+	constexpr double GridCm = 1000.0;
+	if (!bScatterIndexed)
+	{
+		int32 Indexed = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			// a grama da paisagem (o Landscape refaz as instâncias dele sozinho e os índices mudam) fica de fora
+			if (Cast<ARTSUnitActor>(*It) || Cast<ARTSDebrisField>(*It) || It->GetClass()->GetName().Contains(TEXT("Landscape")))
+			{
+				continue;
+			}
+			TInlineComponentArray<UInstancedStaticMeshComponent*> Isms(*It);
+			for (UInstancedStaticMeshComponent* Ism : Isms)
+			{
+				const UStaticMesh* Mesh = Ism ? Ism->GetStaticMesh().Get() : nullptr;
+				if (!Mesh || Ism->GetClass()->GetName().Contains(TEXT("Grass")))
+				{
+					continue;
+				}
+				const FVector Ext = Mesh->GetBounds().BoxExtent;
+				for (int32 K = 0; K < Ism->GetInstanceCount(); ++K)
+				{
+					FTransform T;
+					if (!Ism->GetInstanceTransform(K, T, /*bWorldSpace=*/true))
+					{
+						continue;
+					}
+					const FVector S = T.GetScale3D().GetAbs();
+					if (FMath::Max(Ext.X * S.X, Ext.Y * S.Y) > 150.0)
+					{
+						continue;
+					}
+					const FVector L = T.GetLocation();
+					ScatterGrid.FindOrAdd(FIntPoint(FMath::FloorToInt32(float(L.X / GridCm)), FMath::FloorToInt32(float(L.Y / GridCm)))).Emplace(Ism, K);
+					++Indexed;
+				}
+			}
+		}
+		// o mapa ainda sem as instâncias (o nível carregando) tenta de novo no próximo prédio
+		bScatterIndexed = Indexed > 0;
+		UE_LOG(LogTemp, Log, TEXT("RTS lote limpo: %d instâncias pequenas do mapa no índice"), Indexed);
+	}
+	const Sim::SimMap& M = State->World.Map();
+	const FVector2D MinCm = RTS::ToWorld(M.MinCorner());
+	const double CellCm = M.CellSize.ToDouble() * 100.0;
+	int32 X0, Y0, X1, Y1;
+	State->World.FootprintCells(V->Def, V->Dir, V->Pos, X0, Y0, X1, Y1);
+	constexpr double MarginCm = 50.0;
+	const FBox2D Lot(MinCm + FVector2D(X0, Y0) * CellCm - FVector2D(MarginCm), MinCm + FVector2D(X1, Y1) * CellCm + FVector2D(MarginCm));
+	TSet<UInstancedStaticMeshComponent*> Touched;
+	int32 Hidden = 0;
+	for (int32 GY = FMath::FloorToInt32(float(Lot.Min.Y / GridCm)); GY <= FMath::FloorToInt32(float(Lot.Max.Y / GridCm)); ++GY)
+	{
+		for (int32 GX = FMath::FloorToInt32(float(Lot.Min.X / GridCm)); GX <= FMath::FloorToInt32(float(Lot.Max.X / GridCm)); ++GX)
+		{
+			TArray<TPair<TWeakObjectPtr<UInstancedStaticMeshComponent>, int32>>* Cell = ScatterGrid.Find(FIntPoint(GX, GY));
+			if (!Cell)
+			{
+				continue;
+			}
+			for (int32 K = Cell->Num() - 1; K >= 0; --K)
+			{
+				UInstancedStaticMeshComponent* Ism = (*Cell)[K].Key.Get();
+				FTransform T;
+				if (!Ism || !Ism->GetInstanceTransform((*Cell)[K].Value, T, /*bWorldSpace=*/true))
+				{
+					continue;
+				}
+				if (!Lot.IsInside(FVector2D(T.GetLocation().X, T.GetLocation().Y)))
+				{
+					continue;
+				}
+				// escondida como a pedra partida (escala quase zero); sai do índice
+				T.SetScale3D(FVector(0.001));
+				Ism->UpdateInstanceTransform((*Cell)[K].Value, T, /*bWorldSpace=*/true, /*bMarkRenderStateDirty=*/false, /*bTeleport=*/true);
+				Touched.Add(Ism);
+				Cell->RemoveAtSwap(K);
+				++Hidden;
+			}
+		}
+	}
+	for (UInstancedStaticMeshComponent* Ism : Touched)
+	{
+		Ism->MarkRenderStateDirty();
+	}
+	if (Hidden > 0)
+	{
+		const FVector2D C = Lot.GetCenter();
+		RefreshSunArea(World, FVector(C.X, C.Y, 0.0), Lot.GetExtent().Size() / 100.0 + 2.0);
+		UE_LOG(LogTemp, Log, TEXT("RTS lote limpo: o prédio %u tirou %d pedras, moitas e tufos do mapa"), Id, Hidden);
+	}
 }
 
 void URTSMatchSubsystem::BuildXRayGrid()
@@ -4872,12 +6207,23 @@ void URTSMatchSubsystem::UpdateXRay(float DeltaSeconds)
 		return;
 	}
 	const FVector Eye = PC->PlayerCameraManager->GetCameraLocation();
-	// os prédios da partida tapam como bloco de ~8 m (o pé deles na grade)
+	// os prédios da partida tapam como bloco de ~8 m (o pé deles na grade). (31/10, o Felipe: "a terra fica AZUL porque tá escondendo
+	// o trator atrás") a obra tapa só na altura que já subiu (a laje e o andaime no começo não tapam nada): o bloco de 8 m inteiro numa
+	// obra de 10% ligava a silhueta do Dozer trabalhando do lado, e ela pintava de azul a terra que cai na frente dele
 	TMap<int32, float> Buildings;
 	for (const TPair<uint32, Sim::UnitView>& It : State->Curr)
 	{
 		const Sim::UnitView& V = It.Value;
 		if (!V.bStructure)
+		{
+			continue;
+		}
+		float BlockCm = 800.0f;
+		if (const TObjectPtr<ARTSUnitActor>* Sv = Views.Find(It.Key); Sv && *Sv && (*Sv)->GetBuildFraction() < 1.0f)
+		{
+			BlockCm = FMath::Min(800.0f, (*Sv)->GetHeightCm() * (*Sv)->GetBuildFraction());
+		}
+		if (BlockCm < 150.0f)
 		{
 			continue;
 		}
@@ -4887,7 +6233,7 @@ void URTSMatchSubsystem::UpdateXRay(float DeltaSeconds)
 		{
 			for (int32 X = FMath::Max(X0, 0); X < FMath::Min(X1, XRayW); ++X)
 			{
-				Buildings.Add(Y * XRayW + X, XRaySolidTop[Y * XRayW + X] + 800.0f);
+				Buildings.Add(Y * XRayW + X, XRaySolidTop[Y * XRayW + X] + BlockCm);
 			}
 		}
 	}
@@ -4946,9 +6292,105 @@ void URTSMatchSubsystem::UpdateXRay(float DeltaSeconds)
 			Hidden += Blocked(P) ? 1 : 0;
 		}
 		const float Frac = float(Hidden) / 9.0f;
-		// liga com ≥ 70% escondido, desliga abaixo de 45% (a borda não pisca)
-		A->SetXRay(A->IsXRayOn() ? Frac >= 0.45f : Frac >= 0.7f);
+		// (31/10, a regra do Felipe: "os veículos só vão ser destacados atrás de uma coisa se ele estiver 90% tapado por algo, aí sim tem
+		// que exibir ele; se não, não tem motivo") liga com 8 dos 9 pontos escondidos (89%), desliga abaixo de 6 (a borda não pisca).
+		// Antes ligava com 70%
+		A->SetXRay(A->IsXRayOn() ? Frac >= 0.66f : Frac >= 0.88f);
 	}
+}
+
+float URTSMatchSubsystem::VisualGroundZCm(const FVector2D& P) const
+{
+	const float Base = State ? float(State->Baked.GroundZCm(P)) : 0.0f;
+	return Base + (GroundMemory ? GroundMemory->CraterHeightCmAt(P) : 0.0f);
+}
+
+void URTSMatchSubsystem::SeatOnCraters(const FRTSUnitState& U, bool bInfantry, FVector& InOutGround, FVector& InOutNormal) const
+{
+	// (31/10, o Felipe: "os tanques passando por cima e voando") o afundar é só desenho (a simulação anda no terreno assado): sem isto
+	// o veículo passava na altura do chão de antes, por cima do buraco. O soldado pisa no fundo. O veículo pelas rodas: 5 pontos ao longo
+	// de cada lagarta (ou de cada lado da picape); cada roda desce no buraco até o curso da mola (25 cm abaixo da mais alta do lado: a
+	// barra de torção do M1 tem ~38 cm de curso), e o casco assenta na média (as molas iguais dividem o peso), inclinado pela reta das
+	// rodas. Na cratera pequena o tanque passa quase reto (a lagarta é maior que o buraco, como na vida); na grande, mergulha e sobe
+	if (!GroundMemory || !State)
+	{
+		return;
+	}
+	const FRTSUnitVisual* Vis = State->Data.FindVisual(U.Def);
+	const bool bTracks = Vis && Vis->TracksM.X > 0.0;
+	const bool bContact = Vis && Vis->TrackContactM.Y > Vis->TrackContactM.X;
+	// sem o contato medido: o do tanque aprovado (−2,40 a 2,55 m) na lagarta, o entre-eixos de uma picape (±1,5 m) nas rodas
+	const double Back = bContact ? Vis->TrackContactM.X * 100.0 : (bTracks ? -240.0 : -150.0);
+	const double Front = bContact ? Vis->TrackContactM.Y * 100.0 : (bTracks ? 255.0 : 150.0);
+	const double HalfGauge = bTracks ? Vis->TracksM.X * 50.0 : 85.0;
+	// (01/11, o Felipe: "olha as rodas dele" na Technical) a roda afundava até o cubo na areia fora da cratera: o chão assado da simulação é
+	// uma grade de 2 m (a do WorldForge) em bilinear, e a crista de uma duna entre dois nós fica mais alta que ele. O chão de cada roda é o
+	// desenhado: o Landscape (a grade de 1 m guardada do BlastFxGround, cada nó traçado uma vez) + a cratera, em relação ao centro assado
+	const bool bCrater = GroundMemory->HasCraterNear(U.PosCm, FMath::Max(FMath::Abs(Back), Front) + HalfGauge);
+	const UWorld* W = GetWorld();
+	const double BaseZ = InOutGround.Z;
+	// (01/11, a prova v34_tanque_cratera_lado: o tanque e a picape sumiam embaixo do chão) a altura da paisagem por traçado volta 0 onde o
+	// traçado falha; a diferença real entre ela e o chão assado (a grade de 2 m) é de dezenas de cm: só vale a menos de 1,5 m dele
+	const auto VisH = [&](const FVector2D& P)
+	{
+		const double Baked = State->Baked.GroundZCm(P);
+		const double Traced = W ? BlastFxGround::HeightAtCached(W, P.X, P.Y) : Baked;
+		const double Land = FMath::Abs(Traced - Baked) < 150.0 ? Traced : Baked;
+		static int32 Logged = 0;
+		if (Land == Baked && W && Logged < 6)
+		{
+			++Logged;   // (o diagnóstico: onde e quanto o traçado discorda do chão assado)
+			UE_LOG(LogTemp, Warning, TEXT("RTS assentar: o traçado da paisagem em (%.0f, %.0f) deu %.0f cm, o chão assado %.0f cm: fica o assado"), P.X, P.Y, Traced, Baked);
+		}
+		return Land - BaseZ + (bCrater ? double(GroundMemory->CraterHeightCmAt(P)) : 0.0);
+	};
+	if (bInfantry)
+	{
+		InOutGround.Z += VisH(U.PosCm);
+		return;
+	}
+	const double Yaw = FMath::DegreesToRadians(double(U.HullYawDeg));
+	const FVector2D Fwd(FMath::Cos(Yaw), FMath::Sin(Yaw));
+	const FVector2D Right(-Fwd.Y, Fwd.X);
+	constexpr int32 N = 5;
+	constexpr double TravelCm = 25.0;
+	double Sum = 0.0, SumX = 0.0, SumXX = 0.0, SumXH = 0.0, SideMean[2] = { 0.0, 0.0 };
+	bool bAny = false;
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		double H[N];
+		double Top = -1.0e9;
+		for (int32 I = 0; I < N; ++I)
+		{
+			const double X = Back + (Front - Back) * I / (N - 1);
+			H[I] = VisH(U.PosCm + Fwd * X + Right * (Side == 0 ? -HalfGauge : HalfGauge));
+			Top = FMath::Max(Top, H[I]);
+			bAny |= FMath::Abs(H[I]) > 0.5;
+		}
+		for (int32 I = 0; I < N; ++I)
+		{
+			const double X = Back + (Front - Back) * I / (N - 1);
+			const double Hw = FMath::Max(H[I], Top - TravelCm);   // a roda no fim do curso fica pendurada
+			Sum += Hw;
+			SumX += X;
+			SumXX += X * X;
+			SumXH += X * Hw;
+			SideMean[Side] += Hw / N;
+		}
+	}
+	if (!bAny)
+	{
+		return;
+	}
+	const double Cnt = 2.0 * N;
+	const double MeanH = Sum / Cnt, MeanX = SumX / Cnt;
+	const double Pitch = (SumXH / Cnt - MeanX * MeanH) / FMath::Max(SumXX / Cnt - MeanX * MeanX, 1.0);   // dz/dx pra frente
+	const double Roll = (SideMean[1] - SideMean[0]) / (2.0 * HalfGauge);                                 // dz/dy pra direita
+	InOutGround.Z += MeanH - Pitch * MeanX;   // a reta das rodas no centro do casco
+	// o plano das rodas por cima da inclinação do terreno (ângulos pequenos: a normal (−a, −b, 1) no quadro do casco)
+	const FVector Fwd3(Fwd.X, Fwd.Y, 0.0), Right3(Right.X, Right.Y, 0.0);
+	// (01/11) as alturas das rodas já trazem o relevo inteiro (não só a cratera): o plano delas é a inclinação toda, a partir da vertical
+	InOutNormal = (FVector::UpVector - Fwd3 * Pitch - Right3 * Roll).GetSafeNormal(1e-6, FVector::UpVector);
 }
 
 void URTSMatchSubsystem::UpdateViews(float DeltaTime)
@@ -4962,9 +6404,63 @@ void URTSMatchSubsystem::UpdateViews(float DeltaTime)
 		FRTSUnitState U;
 		if (It.Value && GetUnit(It.Key, U))
 		{
-			const FVector Ground(U.PosCm.X, U.PosCm.Y, State->Baked.GroundZCm(U.PosCm));
-			It.Value->SetPose(Ground, U.HullYawDeg, U.TurretYawDeg, State->Baked.GroundNormal(U.PosCm), DeltaTime);
-			It.Value->SetDamage(U.MaxHp > 0 ? 1.0f - float(U.Hp) / float(U.MaxHp) : 0.0f);
+			FVector Ground(U.PosCm.X, U.PosCm.Y, State->Baked.GroundZCm(U.PosCm));
+			if (U.bAir)
+			{
+				// (v5, 24/10) a aeronave: a altura da simulação sobre o chão de verdade, a inclinação, o rotor, o trem (baixado perto do
+				// chão) e os mísseis à vista do pente da 1ª arma (o Raptor)
+				// (24/10, escopo B) os mísseis à vista são do pente da arma do "ammo_weapon" (o Apache mostra os Hellfires da 2ª)
+				const FRTSUnitVisual* AirVis = State->Data.FindVisual(U.Def);
+				const int32 AmmoShown = AirVis && AirVis->AmmoWeapon == 2 ? (U.ClipSize2 > 0 ? U.Clip2 : -1) : (U.ClipSize > 0 ? U.Clip : -1);
+				It.Value->SetAirPose(Ground + FVector(0.0, 0.0, U.AltCm), U.HullYawDeg, U.AirPitchDeg, U.AirRollDeg, U.Rotor01, U.AltCm < 250.0f,
+					AmmoShown, DeltaTime);
+				UpdateAirLook(It.Key, *It.Value, U);
+				It.Value->SetDamage(U.MaxHp > 0 ? 1.0f - float(U.Hp) / float(U.MaxHp) : 0.0f);
+				if (!bFog || !IsEnemyOfLocal(U.Owner) || (Fog && Fog->IsVisibleNow(U.PosCm)))
+				{
+					It.Value->LastSeenSeconds = Now;
+				}
+				It.Value->SetFogHidden(bFog && Now - It.Value->LastSeenSeconds > FogGraceSeconds);
+				continue;
+			}
+			if (U.Inside != 0)
+			{
+				PlacePassenger(*It.Value, U, DeltaTime);   // (simulação 35) dentro do transporte
+				continue;
+			}
+			It.Value->SetPassenger(false, 0.0f);
+			FVector GroundN = State->Baked.GroundNormal(U.PosCm);
+			if (!U.bStructure)
+			{
+				SeatOnCraters(U, It.Value->IsInfantry(), Ground, GroundN);   // (31/10) no buraco que o afundar desenha
+			}
+			It.Value->SetPose(Ground, U.HullYawDeg, U.TurretYawDeg, GroundN, DeltaTime);
+			// (30/10, o Felipe: "a construção quando começa a construir está com efeito de destruída") a obra nasce com 1 de vida e ganha a
+			// vida junto com a construção (WorldEconomy): o dano dela é contra a vida que a parte erguida já tem, não contra a do prédio
+			// pronto (antes a fundação lia ~100% de dano: as placas de tinta queimada e a fuligem do M_Structure até ~80% da obra)
+			const float HpRef = U.bStructure && U.BuildFraction < 1.0f ? FMath::Max(1.0f, float(U.MaxHp) * U.BuildFraction) : float(U.MaxHp);
+			It.Value->SetDamage(HpRef > 0.0f ? FMath::Clamp(1.0f - float(U.Hp) / HpRef, 0.0f, 1.0f) : 0.0f);
+			if (It.Value->IsInfantry())
+			{
+				// (simulação 29) a postura do soldado: a da simulação (suprimido ajoelha, preso pelo fogo encolhe); de pé e parado com uma
+				// carcaça sólida a até 3,5 m (a cobertura da simulação 27), ajoelha atrás dela também
+				uint8 Posture = U.Posture;
+				if (Posture == 0 && !U.bMoving)
+				{
+					const Sim::World& SW = State->World;
+					Posture = SW.NearRuin(RTS::ToSim(U.PosCm), Sim::Fix::FromInt(3)) ? 1 : 0;   // (simulação 31) o entulho do prédio
+					for (int32 K = 0; K < SW.WreckCount() && Posture == 0; ++K)
+					{
+						const Sim::World::WreckView Wr = SW.Wreck(K);
+						if (Wr.SinkStart == 0 && FVector2D::DistSquared(RTS::ToWorld(Wr.Pos), U.PosCm) < FMath::Square(350.0))
+						{
+							Posture = 1;
+							break;
+						}
+					}
+				}
+				It.Value->SetSoldierPosture(Posture);
+			}
 			if (U.bStructure)
 			{
 				// as luzes e o que gira apagam no apagão (consumo maior que a produção; o CC
@@ -4982,7 +6478,8 @@ void URTSMatchSubsystem::UpdateViews(float DeltaTime)
 			{
 				It.Value->SetCargo(U.Cargo);
 				// (v4) o conserto usa a lida da obra (o ZH empresta o ACTIVELY_CONSTRUCTING): a lâmina e a sirene
-				It.Value->SetWorking((U.Task == uint8(Sim::UnitTask::Construct) || U.Task == uint8(Sim::UnitTask::Repair)) && !U.bMoving);
+				It.Value->SetWorking((U.Task == uint8(Sim::UnitTask::Construct) || U.Task == uint8(Sim::UnitTask::Repair)
+					|| U.Task == uint8(Sim::UnitTask::Salvage)) && !U.bMoving);   // (31/10) e o desmanche da sucata
 			}
 			if (!bFog || !IsEnemyOfLocal(U.Owner) || (Fog && Fog->IsVisibleNow(U.PosCm)))
 			{
@@ -4999,12 +6496,37 @@ void URTSMatchSubsystem::UpdateViews(float DeltaTime)
 			{
 				Tracks = It.Value->GetTyreMarksCm(MarkStyle.Dark, MarkStyle.Depth, MarkStyle.WidthK, MarkStyle.LugK, MarkStyle.SegmentK);
 			}
-			if (GroundMemory && !U.bStructure && Tracks.X > 0.0)
+			float TrackYaw = U.HullYawDeg;
+			bool bFootStill = false;
+			// (31/10, o Felipe: "o rastro no chão dele tá horrível, parece um simples carrinho de 1 pneu [...] se não der pra fazer footstep
+			// então já era, não tem que fazer gambiarra") a fita contínua do soldado desligada; -RTSFootTrail=1 volta pro A/B
+			static const bool bFootTrail = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("RTSFootTrail="), V); return V != 0; }();
+			if (Tracks.X <= 0.0 && It.Value->IsInfantry() && !It.Value->IsDead() && bFootTrail)
+			{
+				// (v23: o corpo do soldado gira pra mirar, e cada 6° de giro parado virava uma fita, o pivô do tanque: a cena de 13 s levou 4 min)
+				// as pegadas seguem o rumo do passo da simulação, e o soldado parado não risca (a fita continua de onde ficou)
+				const Sim::UnitView* Pv = State->Prev.Find(It.Key);
+				const Sim::UnitView* Cv = State->Curr.Find(It.Key);
+				const FVector2D Step = Pv && Cv ? RTS::ToWorld(Cv->Pos) - RTS::ToWorld(Pv->Pos) : FVector2D::ZeroVector;
+				bFootStill = Step.SizeSquared() < 1.0;
+				TrackYaw = bFootStill ? TrackYaw : float(FMath::RadiansToDegrees(FMath::Atan2(Step.Y, Step.X)));
+				// (31/10, o Felipe: "inclusive as lagartas, os pneus dos carros, tudo, e o passo da infantaria se der") as pegadas na areia
+				// pelo mesmo caderno da esteira: os dois pés a ~22 cm, 12 cm cada, rasas e claras (a bota afunda ~1–2 cm na areia seca, a
+				// lagarta ~4: o fundo a 0,3 do dela), a passada de ~1,4 m de cada pé (a garra a 0,28 da do M1, de 19,4 cm) e os trechos
+				// de 2 m (metade das fitas guardadas)
+				Tracks = FVector2D(22.0, 12.0);
+				MarkStyle.Dark = 0.3f;
+				MarkStyle.Depth = 0.3f;
+				MarkStyle.WidthK = 12.0f / 64.0f;
+				MarkStyle.LugK = 0.28f;
+				MarkStyle.SegmentK = 2.0f;
+			}
+			if (GroundMemory && !U.bStructure && Tracks.X > 0.0 && !bFootStill)
 			{
 				// a lagarta risca o chão onde o jogador vê (a de dentro da névoa não); o giro de nascimento (a ordem "line" antes
 				// da partida) não risca: não aconteceu na história do jogador (o retângulo de borracha do raiox_atras_alta1)
 				const bool bSpawnTurn = MatchSeconds() < 1.0f;
-				GroundMemory->TrackUnit(It.Key, U.PosCm, U.HullYawDeg, float(Tracks.X), float(Tracks.Y), !It.Value->IsFogHidden() && IsPointShown(U.PosCm) && !bSpawnTurn,
+				GroundMemory->TrackUnit(It.Key, U.PosCm, TrackYaw, float(Tracks.X), float(Tracks.Y), !It.Value->IsFogHidden() && IsPointShown(U.PosCm) && !bSpawnTurn,
 					MarkStyle);
 			}
 			// (c) (23/10, v4) o lançador que levanta (o Tomahawk): o relógio da mira da simulação em segundos (AimFraction × o pre-attack: o
@@ -5026,11 +6548,28 @@ void URTSMatchSubsystem::UpdateViews(float DeltaTime)
 					bWeaponReady = Sv->Cooldown <= 0;
 				}
 				It.Value->SetLauncherAim(bAim, AimS, PreAttackS, bWeaponReady);
+				// (25/10, v5) o antiaéreo: os canos sobem até a aeronave mirada (o ângulo do horizonte da dobradiça até o meio dela, desenhada)
+				if (It.Value->LauncherAimsAir())
+				{
+					float Pitch = -1000.0f;
+					const Sim::UnitView* Sv = State->Curr.Find(It.Key);
+					const TObjectPtr<ARTSUnitActor>* Tv = Sv && Sv->FireTarget != Sim::NoEntity ? Views.Find(Sv->FireTarget) : nullptr;
+					if (Tv && *Tv && (*Tv)->IsAircraft())
+					{
+						FVector AirC, AirE;
+						(*Tv)->GetActorBounds(false, AirC, AirE);
+						const FVector D = FVector(AirC.X, AirC.Y, (*Tv)->GetActorLocation().Z + 120.0) - It.Value->GunHingeWorld();
+						Pitch = FMath::RadiansToDegrees(FMath::Atan2(D.Z, FMath::Max(D.Size2D(), 1.0)));
+					}
+					It.Value->SetGunAimPitch(Pitch);
+				}
 			}
 		}
 	}
+	UpdateFalling(DeltaTime);   // (v5) as aeronaves caindo
 	UpdateDocks();
 	UpdateTreadDust(DeltaTime);
+	UpdateAirFx(DeltaTime);   // (24/10, escopo B) o vento do rotor na poeira e a 2ª bola do jato
 	UpdateSunShadow();
 	UpdateDying();
 	if (PendingBlasts.Num())
@@ -5136,9 +6675,50 @@ bool URTSMatchSubsystem::IsUnitShown(uint32 Id) const
 {
 	if (const TObjectPtr<ARTSUnitActor>* View = Views.Find(Id))
 	{
-		return *View && !(*View)->IsFogHidden();
+		return *View && !(*View)->IsFogHidden() && !(*View)->IsInsideTransport();   // (simulação 35) dentro do transporte: nem clique nem barra
 	}
 	return false;
+}
+
+void URTSMatchSubsystem::PlacePassenger(ARTSUnitActor& A, const FRTSUnitState& U, float DeltaTime)
+{
+	// (simulação 35) a escotilha da vaga (o mesmo quadro da simulação: x pra frente, y pro lado, no casco virado), no teto do desenho
+	// ("hatch_z_m" do visual); o soldado sobe da cintura pra cima quando mira ou atirou há menos de 2 s e desce 2 s depois do último tiro
+	FRTSUnitState T;
+	const TObjectPtr<ARTSUnitActor>* TView = Views.Find(U.Inside);
+	if (!GetUnit(U.Inside, T) || !TView || !*TView || (*TView)->IsFogHidden())
+	{
+		A.SetPassenger(true, 0.0f);
+		return;
+	}
+	const Sim::UnitDef& TD = State->World.Rules().Units[T.Def];
+	const FRTSUnitVisual* TVis = State->Data.FindVisual(T.Def);
+	const float Yaw = FMath::DegreesToRadians(T.HullYawDeg);
+	const FVector2D Fwd(FMath::Cos(Yaw), FMath::Sin(Yaw));
+	const FVector2D Side(-Fwd.Y, Fwd.X);
+	FVector2D Hatch = T.PosCm;
+	if (TD.TransportHatches > 0 && U.InsideSlot >= 0)
+	{
+		const Sim::Vec2 H = TD.TransportHatch[U.InsideSlot % TD.TransportHatches];
+		Hatch += Fwd * (H.X.ToDouble() * 100.0) + Side * (H.Y.ToDouble() * 100.0);
+	}
+	const double Now = GetWorld()->GetTimeSeconds();
+	// (01/11, ele: "não gostei dos hominhos aparecendo e saindo pra fora quando vão atirar, pode mantê-los dentro escondido") ficam dentro;
+	// a boca do tiro é a escotilha da vaga, no teto, virada pra mira (o clarão, o traçante e o míssil saem dali: a escotilha abre no tiro)
+	const float Up01 = 0.0f;
+	// a cintura no teto: o pé fica HipCm abaixo dele (o quadril do corpo de 1,8 m × a escala do soldado, menos uma mão pro cinto), e o
+	// corpo inteiro desce mais 1,1 m pra dentro quando se esconde
+	const float RoofCm = TVis && TVis->HatchZCm > 0.0f ? TVis->HatchZCm : 200.0f;
+	const float HipCm = 84.0f * A.SoldierScale();
+	const float GroundZ = State->Baked.GroundZCm(T.PosCm);
+	const FVector At(Hatch.X, Hatch.Y, GroundZ + RoofCm - HipCm - (1.0f - Up01) * 110.0f);
+	A.SetPassenger(true, Up01);
+	const float AimRad = FMath::DegreesToRadians(U.TurretYawDeg);
+	const FVector AimDir = FVector(FMath::Cos(AimRad), FMath::Sin(AimRad), 0.18f).GetSafeNormal();
+	A.SetPassengerMuzzle(U.Inside, FVector(Hatch.X, Hatch.Y, GroundZ + RoofCm + 30.0f), AimDir);
+	A.SetPose(At, U.TurretYawDeg, U.TurretYawDeg, FVector::UpVector, DeltaTime);
+	A.SetDamage(U.MaxHp > 0 ? 1.0f - float(U.Hp) / float(U.MaxHp) : 0.0f);
+	A.LastSeenSeconds = Now;
 }
 
 bool URTSMatchSubsystem::IsPointShown(const FVector2D& Cm) const
@@ -5186,6 +6766,7 @@ bool URTSMatchSubsystem::GetUnit(uint32 Id, FRTSUnitState& Out) const
 	Out.Hp = C->Hp;
 	Out.MaxHp = FMath::Max(1, C->MaxHp);
 	Out.bMoving = C->Speed.Raw > 0;
+	Out.Posture = C->Posture;
 	Out.bStructure = C->bStructure;
 	Out.BuildFraction = C->BuildLeft > 0 && C->BuildTicks > 0 ? 1.0f - float(C->BuildLeft) / float(C->BuildTicks) : 1.0f;
 	Out.Dir = C->Dir;
@@ -5214,7 +6795,126 @@ bool URTSMatchSubsystem::GetUnit(uint32 Id, FRTSUnitState& Out) const
 	}
 	Out.bHasRally = C->bHasRally;
 	Out.RallyCm = RTS::ToWorld(C->Rally);
+	// (simulação 35) o transporte
+	Out.Inside = C->Inside;
+	Out.InsideSlot = C->InsideSlot;
+	Out.Boarding = C->Boarding;
+	Out.Passengers = C->Passengers;
+	Out.TransportSlots = C->TransportSlots;
+	Out.bUnloading = C->bUnloading;
+	Out.bAiming = C->FireTarget != Sim::NoEntity;
+	// (v5, 24/10) o ar: a altura entre os passos e a inclinação que a física pede (só desenho; o escopo B refina). O jato inclina na
+	// curva pela aceleração centrípeta, atan(v·ω/g) (até ~70°), e levanta o nariz subindo; o helicóptero baixa o nariz acelerando,
+	// atan(a/g), e inclina pro lado da curva
+	if (C->bAir)
+	{
+		const Sim::UnitDef& D = State->World.Rules().Units[C->Def];
+		Out.bAir = true;
+		Out.bAirborne = C->bAirborne;
+		Out.AltCm = float(FMath::Lerp(P->Alt.ToDouble(), C->Alt.ToDouble(), double(Alpha)) * 100.0);
+		Out.Flight = uint8(C->Flight);
+		Out.Rotor01 = FMath::Lerp(float(P->Rotor), float(C->Rotor), Alpha) / 1000.0f;
+		Out.Clip = C->Clip;
+		Out.ClipSize = C->ClipSize;
+		Out.Clip2 = C->Clip2;
+		Out.ClipSize2 = C->ClipSize2;
+		Out.RearmFraction = float(C->RearmPermille) / 1000.0f;
+		Out.bPatrol = C->bPatrol;
+		Out.bReturning = C->bReturning;
+		Out.bStarving = C->bStarving;
+		Out.AirBase = C->AirBase;
+		Out.AirPad = C->AirPad;
+		const float Tps = float(Sim::TicksPerSecond);
+		const float SpeedMs = float(C->Speed.ToDouble()) * Tps;
+		const float YawRateRad = float(C->YawRate) * 2.0f * UE_PI / 65536.0f * Tps;
+		// (v5, 25/10, o Felipe: "taxiando ele se inclina como se estivesse voando") no chão, as rodas no chão: sem rolagem nem nariz
+		// (o táxi, a vaga, a pista, a corrida antes de sair do chão, o helicóptero pousado); no ar, a rolagem cresce com a altura
+		// (nada a 1 m, cheia a 8 m) e com a velocidade (a centrípeta)
+		const Sim::FlightState Fl = C->Flight;
+		const bool bWheels = !C->bAirborne && (Fl == Sim::FlightState::Parked || Fl == Sim::FlightState::TaxiOut || Fl == Sim::FlightState::RunwayHold
+			|| Fl == Sim::FlightState::Landing || Fl == Sim::FlightState::TaxiIn || Fl == Sim::FlightState::Takeoff || Out.AltCm < 50.0f);
+		const float AltRamp = FMath::Clamp((Out.AltCm / 100.0f - 1.0f) / 7.0f, 0.0f, 1.0f);
+		if (bWheels)
+		{
+			Out.AirRollDeg = 0.0f;
+			Out.AirPitchDeg = 0.0f;
+		}
+		else if (D.IsJet())
+		{
+			Out.AirRollDeg = AltRamp * FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan(SpeedMs * YawRateRad / 9.81f)), -70.0f, 70.0f);
+			Out.AirPitchDeg = SpeedMs > 1.0f ? FMath::RadiansToDegrees(FMath::Atan2(float(C->VSpeed.ToDouble()) * Tps, SpeedMs)) : 0.0f;
+		}
+		else
+		{
+			const FVector2D Dv = FVector2D(C->Vel.X.ToDouble() - P->Vel.X.ToDouble(), C->Vel.Y.ToDouble() - P->Vel.Y.ToDouble()) * double(Tps * Tps);
+			const float Yaw = FMath::DegreesToRadians(Out.HullYawDeg);
+			const FVector2D Fwd(FMath::Cos(Yaw), FMath::Sin(Yaw));
+			const FVector2D Side(-Fwd.Y, Fwd.X);
+			const float AFwd = float(FVector2D::DotProduct(Dv, Fwd));
+			const float ASide = float(FVector2D::DotProduct(Dv, Side));
+			// o nariz baixa acelerando pra frente; a curva (a velocidade × o giro) e a aceleração de lado inclinam
+			Out.AirPitchDeg = FMath::Clamp(-FMath::RadiansToDegrees(FMath::Atan(AFwd / 9.81f)), -25.0f, 25.0f);
+			Out.AirRollDeg = FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan((ASide + SpeedMs * YawRateRad) / 9.81f)), -30.0f, 30.0f);
+		}
+	}
 	return true;
+}
+
+void URTSMatchSubsystem::UpdateFalling(float DeltaTime)
+{
+	// (v5, 24/10) a aeronave caindo: o corpo da simulação (o jato na parábola, o helicóptero na espiral), entre o passo anterior e o
+	// atual; o rumo gira com a espiral e o jato rola. O AirCrash tira daqui e põe a carcaça (HandleEvents)
+	if (!State)
+	{
+		return;
+	}
+	const float Alpha = float(FMath::Clamp(Accumulator / StepSeconds, 0.0, 1.0));
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Falling)
+	{
+		const Sim::World::CrashView* C = State->CurrCrashes.Find(It.Key);
+		ARTSUnitActor* A = It.Value.Get();
+		if (!C || !A)
+		{
+			continue;
+		}
+		const Sim::World::CrashView* P = State->PrevCrashes.Find(It.Key);
+		P = P ? P : C;
+		const FVector2D Cm = FMath::Lerp(RTS::ToWorld(P->Pos), RTS::ToWorld(C->Pos), double(Alpha));
+		const double AboveSim = FMath::Lerp((P->Z - State->World.GroundHeightAt(P->Pos)).ToDouble(), (C->Z - State->World.GroundHeightAt(C->Pos)).ToDouble(), double(Alpha));
+		const float YawP = RTS::YawDegrees(P->Yaw);
+		const float Yaw = YawP + FMath::FindDeltaAngleDegrees(YawP, RTS::YawDegrees(C->Yaw)) * Alpha;
+		const Sim::UnitDef& D = State->World.Rules().Units[C->Def];
+		const float Roll = float(C->Roll & 0xFFFF) * 360.0f / 65536.0f;
+		const float Speed = float(C->Vel.Length().ToDouble()) * float(Sim::TicksPerSecond);
+		const float Dive = Speed > 1.0f ? FMath::RadiansToDegrees(FMath::Atan2(float(C->VSpeed.ToDouble()) * float(Sim::TicksPerSecond), Speed)) : -10.0f;
+		A->SetAirPose(FVector(Cm.X, Cm.Y, State->Baked.GroundZCm(Cm) + FMath::Max(0.0, AboveSim) * 100.0), Yaw, D.IsJet() ? Dive : -12.0f,
+			D.IsJet() ? Roll : 18.0f, C->bBladeOff ? 0.0f : 1.0f, false, -1, DeltaTime);
+		// (24/10, escopo B) o fogo da queda: a gravação do EmberGen em loop no raymarch (a chama de verdade, com a luz dela, a sombra do mapa
+		// e a sombra no chão), o pé no motor, andando com ele; a fuligem que fica pra trás é do AddAirSmoke (RTSMissileSmoke). Só à vista
+		if (!FindAirFire(It.Key, true) && UBlastFxDirector::ShotFxEnabled() && !A->IsFogHidden() && IsPointShown(Cm) && GetWorld())
+		{
+			FAirFire& F = AirFires.AddDefaulted_GetRef();
+			F.Id = It.Key;
+			F.bFalling = true;
+			F.Start = GetWorld()->GetTimeSeconds();
+			F.End = F.Start + 30.0;
+			F.Scale = D.IsJet() ? 0.13f : 0.11f;
+			F.Variant = It.Key * 2654435761u;
+		}
+		if (FAirFire* F = FindAirFire(It.Key, true))
+		{
+			// o pé da gravação ~0,6 m abaixo do motor (a chama sobe dele)
+			F->FootCm = A->GetEngineWorldCm() - FVector(0.0, 0.0, 60.0);
+			if (AExplosionVolume* V = F->V.Get())
+			{
+				V->SetActorLocation(F->FootCm);
+				// (01/11, o Felipe: "a fumaça segue o avião como se ele tivesse no chão [...] não se deforma") a gravação é a de um fogo
+				// parado: a coluna dela andava presa no motor, rígida. A chama fica (a diluição não toca o fogo); a fuligem sai no rastro
+				// em volume deixado no ar (AddAirSmoke, a aeronave caindo), que espirala com o giro e fica onde nasceu
+				V->RaymarchDilute = 0.03f;   // (01/11, v36: com 0,2 a fuligem da gravação, espessa, ainda lia como um bolo preso na aeronave)
+			}
+		}
+	}
 }
 
 // ---------------------------------------------------------------- economia e construção
@@ -5280,6 +6980,13 @@ bool URTSMatchSubsystem::GetDef(uint16 Def, FRTSDefInfo& Out) const
 	Out.RequiresRank = D.RequiresRank;
 	Out.MaxPerPlayer = D.MaxPerPlayer;
 	Out.AirliftPeriodS = float(D.AirliftPeriodTicks) / float(Sim::TicksPerSecond);
+	// (v5) o ar
+	Out.bAir = D.IsAir();
+	Out.bJet = D.IsJet();
+	Out.AirRangeM = Visual ? Visual->AirRangeM : 0.0f;
+	Out.GroundRangeM = Visual ? Visual->GroundRangeM : 0.0f;
+	Out.Pads = D.Airfield.Pads;
+	Out.bHelipad = D.bHelipad;
 	return true;
 }
 
@@ -5515,6 +7222,225 @@ void URTSMatchSubsystem::OrderRepair(const TArray<uint32>& Dozers, uint32 Struct
 	C.Target = Structure;
 	Issue(C);
 	UE_LOG(LogTemp, Log, TEXT("RTS consertar: o jogador %d manda %d Dozer(s) consertar o prédio %u no passo %u"), int32(LocalPlayer()), Dozers.Num(), Structure, unsigned(State->World.Tick()));
+}
+
+void URTSMatchSubsystem::OrderEnter(const TArray<uint32>& Units, uint32 Transport)
+{
+	if (!CanOrder(State, bReady, MatchResult) || !CanEnter(Units, Transport))
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	Sim::Command C;
+	C.Player = LocalPlayer();
+	C.Type = Sim::CommandType::Enter;
+	C.Target = Transport;
+	Issue(C);
+}
+
+void URTSMatchSubsystem::OrderUnload(const TArray<uint32>& Units)
+{
+	if (!CanOrder(State, bReady, MatchResult) || Units.IsEmpty())
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	Sim::Command C;
+	C.Player = LocalPlayer();
+	C.Type = Sim::CommandType::Unload;
+	C.Target = Sim::NoEntity;   // os transportes do grupo, todos pra fora
+	Issue(C);
+}
+
+void URTSMatchSubsystem::OrderUnloadOne(uint32 Transport, uint32 Passenger)
+{
+	if (!CanOrder(State, bReady, MatchResult) || Transport == 0 || Passenger == 0)
+	{
+		return;
+	}
+	Sim::Command C;
+	C.Player = LocalPlayer();
+	C.Type = Sim::CommandType::Unload;
+	C.Target = Transport;
+	C.Value = int32(Passenger);
+	Issue(C);
+}
+
+void URTSMatchSubsystem::GetPassengers(uint32 Transport, TArray<uint32>& Out) const
+{
+	Out.Reset();
+	if (State)
+	{
+		std::vector<Sim::EntityId> Ids;
+		State->World.PassengersOf(Transport, Ids);
+		for (const Sim::EntityId Id : Ids)
+		{
+			Out.Add(Id);
+		}
+	}
+}
+
+bool URTSMatchSubsystem::CanEnter(const TArray<uint32>& Units, uint32 Transport) const
+{
+	FRTSUnitState T;
+	if (!State || !GetUnit(Transport, T) || T.Owner != LocalPlayer() || T.TransportSlots <= 0 || T.Passengers >= T.TransportSlots || T.bStructure)
+	{
+		return false;
+	}
+	for (const uint32 Id : Units)
+	{
+		FRTSUnitState U;
+		if (Id != Transport && GetUnit(Id, U) && U.Owner == LocalPlayer() && U.Inside == 0 && State->World.Rules().Units[U.Def].bInfantry)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void URTSMatchSubsystem::OrderTrimQueue(const TArray<uint32>& Units)
+{
+	if (!CanOrder(State, bReady, MatchResult) || Units.IsEmpty())
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	Sim::Command C;
+	C.Player = LocalPlayer();
+	C.Type = Sim::CommandType::TrimQueue;
+	Issue(C);
+}
+
+void URTSMatchSubsystem::GetIdleBuilders(uint8 Player, TArray<uint32>& Out) const
+{
+	// (01/11, ele: "botão de trabalhador, pra clicar pra ir pra próxima unidade de construção liberada") o construtor parado: o tipo
+	// constrói, sem a tarefa (a obra, o conserto, a sucata), sem ordem e sem nada na fila (o "idle worker" do StarCraft II e do Age of
+	// Empires). A ordem do Id: o clique anda por eles sempre na mesma ordem
+	Out.Reset();
+	if (!State)
+	{
+		return;
+	}
+	const Sim::Ruleset& R = State->World.Rules();
+	TArray<FRTSOrderStep> Steps;
+	for (const TPair<uint32, Sim::UnitView>& It : State->Curr)
+	{
+		const Sim::UnitView& V = It.Value;
+		if (V.Owner != Player || V.Def >= R.Units.size() || !R.Units[V.Def].CanConstruct() || V.Task != Sim::UnitTask::None
+			|| V.Order != Sim::OrderType::Idle)
+		{
+			continue;
+		}
+		if (GetOrderPath(It.Key, Steps) && Steps.Num() > 0)
+		{
+			continue;
+		}
+		Out.Add(It.Key);
+	}
+	Out.Sort();
+}
+
+bool URTSMatchSubsystem::GetOrderPath(uint32 Id, TArray<FRTSOrderStep>& Out) const
+{
+	// (simulação 35) a ordem de agora e a fila, em pontos no chão: andar (o ponto), atacar (onde o alvo está agora), o trabalho do Dozer
+	// (a obra, o prédio do conserto, a sucata)
+	Out.Reset();
+	const Sim::UnitView* V = State ? State->Curr.Find(Id) : nullptr;
+	if (!V)
+	{
+		return false;
+	}
+	const auto EntityCm = [this](uint32 E, FVector2D& OutCm)
+	{
+		if (const Sim::UnitView* T = State->Curr.Find(E))
+		{
+			OutCm = RTS::ToWorld(T->Pos);
+			return true;
+		}
+		if (const Sim::World::WreckView* Wr = State->CurrWrecks.Find(E))
+		{
+			OutCm = RTS::ToWorld(Wr->Pos);
+			return true;
+		}
+		for (int32 K = 0; K < State->World.RuinCount(); ++K)
+		{
+			const Sim::World::RuinView R = State->World.Ruin(K);
+			if (R.Id == E)
+			{
+				OutCm = RTS::ToWorld(R.Pos);
+				return true;
+			}
+		}
+		return false;
+	};
+	const auto Add = [this, &Out](const FVector2D& Cm, uint8 Kind)
+	{
+		Out.Add(FRTSOrderStep{ FVector(Cm.X, Cm.Y, State->Baked.GroundZCm(Cm) + 30.0), Kind });
+	};
+	FVector2D At;
+	if (V->Task == Sim::UnitTask::Construct || V->Task == Sim::UnitTask::Repair || V->Task == Sim::UnitTask::Salvage)
+	{
+		if (EntityCm(V->TaskTarget, At))
+		{
+			Add(At, 2);
+		}
+	}
+	else if (V->Order == Sim::OrderType::Attack && V->Engage != Sim::NoEntity && EntityCm(V->Engage, At))
+	{
+		Add(At, 1);
+	}
+	else if (V->Order == Sim::OrderType::Move || V->Order == Sim::OrderType::AttackMove)
+	{
+		Add(RTS::ToWorld(V->OrderPoint), V->Order == Sim::OrderType::Move ? 0 : 1);
+	}
+	std::vector<Sim::QueuedOrder> Q;
+	State->World.OrderQueueOf(Id, Q);
+	for (const Sim::QueuedOrder& O : Q)
+	{
+		switch (O.Type)
+		{
+		case Sim::CommandType::Move:
+			Add(RTS::ToWorld(O.Point), 0);
+			break;
+		case Sim::CommandType::AttackMove:
+			Add(RTS::ToWorld(O.Point), 1);
+			break;
+		case Sim::CommandType::Attack:
+		case Sim::CommandType::ForceAttack:
+			if (EntityCm(O.Target, At))
+			{
+				Add(At, 1);
+			}
+			break;
+		default:
+			if (EntityCm(O.Target, At))
+			{
+				Add(At, 2);
+			}
+			break;
+		}
+	}
+	return Out.Num() > 0;
+}
+
+void URTSMatchSubsystem::OrderSalvage(const TArray<uint32>& Dozers, uint32 Scrap)
+{
+	if (!CanOrder(State, bReady, MatchResult) || Dozers.IsEmpty() || Scrap == 0)
+	{
+		return;
+	}
+	IssueGroupIfChanged(Dozers);
+	Sim::Command C;
+	C.Player = LocalPlayer();
+	C.Type = Sim::CommandType::Salvage;
+	C.Target = Scrap;
+	Issue(C);
+	UE_LOG(LogTemp, Log, TEXT("RTS sucata: o jogador %d manda %d Dozer(s) recolher %u no passo %u"), int32(LocalPlayer()), Dozers.Num(), Scrap, unsigned(State->World.Tick()));
+}
+
+uint32 URTSMatchSubsystem::SalvageAt(const FVector2D& Cm) const
+{
+	return State != nullptr ? uint32(State->World.SalvageAt(RTS::ToSim(Cm))) : 0u;
 }
 
 bool URTSMatchSubsystem::CanSell(uint32 Structure) const
@@ -5813,6 +7739,18 @@ void URTSMatchSubsystem::HandleHudEvents()
 				HudNoticeList.Add(N);
 			}
 		}
+		else if (E.Type == Sim::EventType::AirNoAirfield)
+		{
+			if (uint8(E.Value) == Me)
+			{
+				FHudNotice N;
+				N.Kind = FHudNotice::EKind::AirNoRunway;
+				N.At = Now;
+				N.Cm = RTS::ToWorld(E.Point);
+				N.Player = Me;
+				HudNoticeList.Add(N);
+			}
+		}
 		else if (E.Type == Sim::EventType::AirliftInbound)
 		{
 			const Sim::UnitView* Zone = S.Curr.Find(E.Source);
@@ -6048,6 +7986,127 @@ void URTSMatchSubsystem::OrderAttackGround(const TArray<uint32>& Units, const FV
 	Issue(C);
 }
 
+void URTSMatchSubsystem::OrderPatrol(const TArray<uint32>& Units, const FVector2D& PointCm)
+{
+	if (!(State != nullptr) || !bReady || Units.IsEmpty() || MatchResult != ERTSMatchResult::Playing)
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	Issue(Sim::MakePatrol(LocalPlayer(), RTS::ToSim(PointCm)));
+}
+
+void URTSMatchSubsystem::OrderReturnToBase(const TArray<uint32>& Units)
+{
+	if (!(State != nullptr) || !bReady || Units.IsEmpty() || MatchResult != ERTSMatchResult::Playing)
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	Issue(Sim::MakeReturnToBase(LocalPlayer()));
+}
+
+void URTSMatchSubsystem::OrderGuard(const TArray<uint32>& Units, const FVector2D& PointCm, uint32 Target, float RadiusCm)
+{
+	if (!(State != nullptr) || !bReady || Units.IsEmpty() || MatchResult != ERTSMatchResult::Playing)
+	{
+		return;
+	}
+	IssueGroupIfChanged(Units);
+	const int32 Radius = Target != 0 ? 0 : FMath::Clamp(FMath::RoundToInt(RadiusCm), 0, Sim::GuardRadiusMaxM * 100);
+	Issue(Sim::MakeGuard(LocalPlayer(), RTS::ToSim(PointCm), Target, Radius));
+}
+
+float URTSMatchSubsystem::GuardRadiusM(const TArray<uint32>& Units) const
+{
+	float R = float(Sim::GuardRadiusMinM);
+	if (!State)
+	{
+		return R;
+	}
+	for (const uint32 Id : Units)
+	{
+		Sim::UnitView V;
+		if (State->World.FindUnit(Id, V) && !V.bStructure)
+		{
+			R = FMath::Max(R, float(State->World.GuardRadiusOf(V.Def).ToDouble()));
+		}
+	}
+	return R;
+}
+
+bool URTSMatchSubsystem::GetGuard(uint32 Id, FVector2D& OutCenterCm, float& OutRadiusCm, uint32& OutTarget) const
+{
+	Sim::UnitView V;
+	if (!State || !State->World.FindUnit(Id, V) || V.Guard == Sim::GuardMode::None)
+	{
+		return false;
+	}
+	OutCenterCm = RTS::ToWorld(V.GuardPoint);
+	OutRadiusCm = float(V.GuardRadius.ToDouble()) * 100.0f;
+	OutTarget = V.GuardTarget;
+	return true;
+}
+
+int32 URTSMatchSubsystem::AirfieldPadsLeft(uint32 Structure) const
+{
+	return State ? State->World.PadsLeftFor(Structure) : -1;
+}
+
+bool URTSMatchSubsystem::CanAnyTarget(const TArray<uint32>& Units, uint32 Target) const
+{
+	if (!State)
+	{
+		return false;
+	}
+	for (const uint32 Id : Units)
+	{
+		if (State->World.CanTarget(Id, Target))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool URTSMatchSubsystem::GetAirfield(uint32 Id, FAirfieldInfo& Out) const
+{
+	Out = FAirfieldInfo();
+	const Sim::UnitView* F = State ? State->Curr.Find(Id) : nullptr;
+	if (!F || F->Pads <= 0)
+	{
+		return false;
+	}
+	const Sim::Ruleset& R = State->World.Rules();
+	const auto Fill = [&](Sim::EntityId User, FAirPadInfo& P)
+	{
+		const Sim::UnitView* A = User != Sim::NoEntity ? State->Curr.Find(User) : nullptr;
+		if (!A)
+		{
+			return;
+		}
+		P.Def = A->Def;
+		P.Health = float(A->Hp) / float(FMath::Max(1, A->MaxHp));
+		P.Clip = A->Clip;
+		P.ClipSize = A->ClipSize;
+		P.Rearm = float(A->RearmPermille) / 1000.0f;
+		const bool bParked = A->Flight == Sim::FlightState::Parked;
+		const bool bWorking = (A->ClipSize > 0 && A->Clip < A->ClipSize && R.Units[A->Def].Weapon.bReloadAtAirfield) || A->Hp < A->MaxHp;
+		P.State = !bParked ? 1 : (bWorking ? 2 : 3);
+	};
+	for (int32 K = 0; K < F->Pads; ++K)
+	{
+		FAirPadInfo& P = Out.Pads.AddDefaulted_GetRef();
+		Fill(F->PadUser[K], P);
+	}
+	Out.bHelipad = R.Units[F->Def].bHelipad;
+	Fill(F->PadUser[Sim::HelipadSlot], Out.Helipad);
+	// a fila de jatos parada: o 1º da fila é jato, a fila já encheu e não há vaga livre
+	const bool bJetHead = F->QueueHead >= 0 && size_t(F->QueueHead) < R.Units.size() && R.Units[size_t(F->QueueHead)].IsJet();
+	Out.bRunwaysFull = bJetHead && !State->World.HasFreePad(Id);
+	return true;
+}
+
 void URTSMatchSubsystem::OrderStop(const TArray<uint32>& Units)
 {
 	if (!(State != nullptr) || !bReady || Units.IsEmpty() || MatchResult != ERTSMatchResult::Playing)
@@ -6070,7 +8129,7 @@ void URTSMatchSubsystem::SaveReplay()
 	bReplaySaved = true;
 	const std::vector<uint8_t> Bytes = State->Replay.Finish();
 	const FString Dir = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Replays"));
-	const FString File = FPaths::Combine(Dir, FString::Printf(TEXT("skirmish_%s.rtsreplay"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+	const FString File = FPaths::Combine(Dir, FString::Printf(TEXT("%s_%s.rtsreplay"), State->Setup.bLab ? TEXT("lab") : TEXT("skirmish"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
 	TArray<uint8> Data(Bytes.data(), int32(Bytes.size()));
 	if (FFileHelper::SaveArrayToFile(Data, *File))
 	{
@@ -6089,6 +8148,7 @@ void URTSMatchSubsystem::Deinitialize()
 		D->Destroy();
 	}
 	Debris = nullptr;
+	BlastFxGround::SetSurfaceOffset(nullptr);
 	if (GroundMemory)
 	{
 		GroundMemory->Shutdown();
@@ -6102,6 +8162,8 @@ void URTSMatchSubsystem::Deinitialize()
 		UBlastFxDirector::SetExternalMissileSmoke(false);
 	}
 	SaveReplay();
+	delete Lab;   // (v5) antes do estado: o painel e a dilatação do mundo saem
+	Lab = nullptr;
 	delete State;
 	State = nullptr;
 	Views.Reset();
@@ -6114,4 +8176,1778 @@ void URTSMatchSubsystem::Deinitialize()
 	DyingViews.Reset();
 	DyingInfo.Reset();
 	Super::Deinitialize();
+}
+
+// ---- (v5, 24/10) o laboratório (RTSLab.h): a família Lab, o relógio, as IAs e os efeitos no cursor ----------------------
+
+bool URTSMatchSubsystem::IsLab() const
+{
+	return State != nullptr && State->Setup.bLab && !bNet;
+}
+
+void URTSMatchSubsystem::LabSpawn(uint16 Def, uint8 Player, const FVector2D& Cm, float YawDeg, bool bComplete)
+{
+	if (!IsLab())
+	{
+		return;
+	}
+	const float Yaw = FMath::Fmod(FMath::Fmod(YawDeg, 360.0f) + 360.0f, 360.0f);
+	Issue(Sim::MakeLabSpawn(LocalPlayer(), Def, Sim::PlayerIndex(Player), RTS::ToSim(Cm), Sim::Angle::FromMilliDeg(RTS::Milli(Yaw)), bComplete));
+}
+
+void URTSMatchSubsystem::LabRemove(uint32 Id)
+{
+	if (IsLab() && Id != 0)
+	{
+		Issue(Sim::MakeLabRemove(LocalPlayer(), Id));
+	}
+}
+
+void URTSMatchSubsystem::LabSetHealth(uint32 Id, float Fraction)
+{
+	if (IsLab() && Id != 0)
+	{
+		Issue(Sim::MakeLabSetHealth(LocalPlayer(), Id, Sim::Fix::FromMilli(RTS::Milli(FMath::Clamp(Fraction, 0.0f, 1.0f)))));
+	}
+}
+
+void URTSMatchSubsystem::LabAddMoney(uint8 Player, int32 Amount)
+{
+	if (IsLab() && Amount != 0)
+	{
+		Issue(Sim::MakeLabAddMoney(LocalPlayer(), Sim::PlayerIndex(Player), Amount));
+	}
+}
+
+void URTSMatchSubsystem::LabSetRank(uint8 Player, int32 Rank)
+{
+	if (IsLab())
+	{
+		Issue(Sim::MakeLabSetRank(LocalPlayer(), Sim::PlayerIndex(Player), FMath::Clamp(Rank, 1, int32(Sim::MaxRank))));
+	}
+}
+
+void URTSMatchSubsystem::LabOrderAs(uint8 Player, const TArray<uint32>& Units, uint8 Type, const FVector2D& Cm, uint32 Target, int32 Value)
+{
+	if (!IsLab() || Units.IsEmpty())
+	{
+		return;
+	}
+	// o grupo e a ordem com o Player do dono (a simulação confere o dono de cada unidade, como sempre)
+	Sim::Command G;
+	G.Player = Sim::PlayerIndex(Player);
+	G.Type = Sim::CommandType::SetGroup;
+	for (const uint32 Id : Units)
+	{
+		G.Units.push_back(Id);
+	}
+	std::sort(G.Units.begin(), G.Units.end());
+	Issue(G);
+	Sim::Command C;
+	C.Player = Sim::PlayerIndex(Player);
+	C.Type = Sim::CommandType(Type);
+	C.Point = RTS::ToSim(Cm);
+	C.Target = Target;
+	if (C.Type == Sim::CommandType::Move || C.Type == Sim::CommandType::AttackMove)
+	{
+		C.Value = Sim::MoveValue(false, false, 0, 0);
+	}
+	else if (C.Type == Sim::CommandType::Guard)
+	{
+		C.Value = FMath::Clamp(Value, 0, Sim::GuardRadiusMaxM * 100);   // (v5, 25/10) o raio da área, cm
+	}
+	else if (C.Type == Sim::CommandType::Build)
+	{
+		C.Value = Value;   // (simulação 35) o tipo e o lado da obra (Sim::BuildValue)
+		C.Target = Sim::NoEntity;
+	}
+	Issue(C);
+	if (Player == LocalPlayer())
+	{
+		LastSentGroup.Reset();   // o grupo local mudou por fora do IssueGroupIfChanged: a próxima ordem manda o grupo de novo
+	}
+}
+
+bool URTSMatchSubsystem::LabCanSpawn(uint16 Def) const
+{
+	// a mesma conta do LabSpawn da simulação (WorldLab.cpp): sem vida, ou a munição de um poder, não nasce
+	if (!IsLab() || Def >= State->World.Rules().Units.size() || State->World.Rules().Units[Def].MaxHp <= 0)
+	{
+		return false;
+	}
+	for (const Sim::PowerDef& P : State->World.Rules().Powers)
+	{
+		if (P.Munition == Def)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+ERTSPlace URTSMatchSubsystem::LabCanPlace(uint16 Def, int32 Dir, const FVector2D& Cm, bool bComplete, FVector2D& OutCenterCm, FVector2D& OutHalfCm) const
+{
+	if (!IsLab() || Def >= State->World.Rules().Units.size() || !State->World.Rules().Units[Def].IsStructure())
+	{
+		return ERTSPlace::NotAStructure;
+	}
+	const Sim::UnitDef& D = State->World.Rules().Units[Def];
+	const Sim::Vec2 Center = State->World.SnapStructure(Def, Dir, RTS::ToSim(Cm));
+	OutCenterCm = RTS::ToWorld(Center);
+	OutHalfCm = FVector2D(((Dir & 1) ? D.HalfY : D.HalfX).ToDouble() * 100.0, ((Dir & 1) ? D.HalfX : D.HalfY).ToDouble() * 100.0);
+	return ERTSPlace(uint8(State->World.CanLabPlace(Def, Dir, Center, bComplete)));
+}
+
+void URTSMatchSubsystem::LabSetHold(bool bHold)
+{
+	if (!IsLab())
+	{
+		return;
+	}
+	bLabHold = bHold;
+	LabPendingSteps = 0;
+}
+
+void URTSMatchSubsystem::LabStep(int32 Ticks)
+{
+	if (IsLab() && bLabHold)
+	{
+		LabPendingSteps += FMath::Clamp(Ticks, 1, 300);
+	}
+}
+
+void URTSMatchSubsystem::LabSetAI(uint8 Player, bool bOn)
+{
+	if (!IsLab() || Player >= State->World.PlayerCount())
+	{
+		return;
+	}
+	if (LabAIOn.Num() < State->World.PlayerCount())
+	{
+		LabAIOn.SetNumZeroed(State->World.PlayerCount());
+	}
+	LabAIOn[Player] = bOn;
+	bool bHas = false;
+	for (const Sim::SkirmishAI& Brain : State->Brains)
+	{
+		bHas |= Brain.Player() == Player;
+	}
+	if (bOn && !bHas)
+	{
+		// o jogador sem cérebro ganha um (o mesmo da partida; a 1ª onda espera 8 s, como no skirmish)
+		State->Brains.emplace_back(Sim::PlayerIndex(Player));
+		State->Brains.back().FirstWaveDelayTicks = int32(State->World.Tick()) + 8 * Sim::TicksPerSecond;
+	}
+	LabAILines.Add(FString::Printf(TEXT("RTS lab: AI p%d %s at tick %u"), int32(Player) + 1, bOn ? TEXT("on") : TEXT("off"), unsigned(State->World.Tick())));
+	UE_LOG(LogTemp, Log, TEXT("RTS laboratório: a IA do jogador %d %s"), int32(Player), bOn ? TEXT("ligada") : TEXT("desligada"));
+}
+
+bool URTSMatchSubsystem::LabIsAI(uint8 Player) const
+{
+	return LabAIOn.IsValidIndex(Player) && LabAIOn[Player];
+}
+
+void URTSMatchSubsystem::LabPlayAs(uint8 Player)
+{
+	if (!IsLab() || Player >= State->World.PlayerCount() || Player == LocalSlot)
+	{
+		return;
+	}
+	LocalSlot = Player;
+	LastSentGroup.Reset();
+	LastVisionVersion = MAX_uint32;   // a névoa do time novo (o UpdateFog copia de novo)
+	State->LocalStartCm = PlayerStartCm(Player);
+	UE_LOG(LogTemp, Log, TEXT("RTS laboratório: jogando como o jogador %d"), int32(Player));
+}
+
+uint64 URTSMatchSubsystem::LabSeed() const
+{
+	return State != nullptr ? State->Setup.Seed : 0;
+}
+
+FString URTSMatchSubsystem::LabMapName() const
+{
+	return State != nullptr ? State->MapName : FString();
+}
+
+bool URTSMatchSubsystem::LabPropSize(int32 Style, FVector2D& OutHalfCm, float& OutHeightCm)
+{
+	const TArray<FRTSLabPropDef>& Defs = FRTSLab::PropDefs();
+	if (!Defs.IsValidIndex(Style))
+	{
+		return false;
+	}
+	const FRTSLabPropDef& D = Defs[Style];
+	OutHalfCm = D.SizeM * 50.0;
+	OutHeightCm = D.HeightM * 100.0f;
+	if (D.SizeM.IsNearlyZero() || D.HeightM <= 0.0f)
+	{
+		// a palmeira: a altura pela malha (a copa é larga; o que conta na simulação é o tronco, de 0,8 m como o do mapa)
+		const UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *D.Mesh, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		const FBox Box = Mesh ? Mesh->GetBoundingBox() : FBox(FVector(-40.0), FVector(40.0, 40.0, 900.0));
+		OutHalfCm = D.SizeM.IsNearlyZero() ? FVector2D(40.0, 40.0) : OutHalfCm;
+		OutHeightCm = D.HeightM > 0.0f ? OutHeightCm : float(FMath::Clamp(Box.Max.Z, 200.0, 3000.0));
+	}
+	return true;
+}
+
+bool URTSMatchSubsystem::LabSpawnProp(int32 Style, const FVector2D& Cm, float YawDeg, bool bChain)
+{
+	FVector2D HalfCm;
+	float HeightCm = 0.0f;
+	if (!IsLab() || !LabPropSize(Style, HalfCm, HeightCm))
+	{
+		return false;
+	}
+	const FRTSLabPropDef& D = FRTSLab::PropDefs()[Style];
+	const Sim::LabPropKind Kind = Sim::LabPropKind(D.Kind);
+	// o rumo da simulação: o carro pelo comprimento (o +Y da malha, como o assador da vila), a casa e o muro no quarto de volta
+	float Yaw = FMath::Fmod(FMath::Fmod(YawDeg, 360.0f) + 360.0f, 360.0f);
+	FVector2D Extent = HalfCm / 100.0;
+	if (Kind == Sim::LabPropKind::Car)
+	{
+		Yaw = FMath::Fmod(Yaw + 90.0f, 360.0f);
+		Extent = FVector2D(FMath::Max(HalfCm.X, HalfCm.Y), FMath::Min(HalfCm.X, HalfCm.Y)) / 100.0;
+	}
+	else if (Kind == Sim::LabPropKind::Block)
+	{
+		Yaw = float(FMath::RoundToInt(Yaw / 90.0f) & 3) * 90.0f;
+	}
+	else if (Kind == Sim::LabPropKind::Decor)
+	{
+		Extent = FVector2D::ZeroVector;
+	}
+	const int32 Value = Sim::LabPropValue(Kind, D.bPole && bChain ? Sim::LabPropChainFlag : 0, Style);
+	const double MaxHalf = double(Sim::LabPropMaxHalfM);
+	Issue(Sim::MakeLabSpawnProp(LocalPlayer(), Value, RTS::ToSim(Cm), Sim::Angle::FromMilliDeg(RTS::Milli(Yaw)),
+		Sim::Vec2::Make(Sim::Fix::FromMilli(RTS::Milli(FMath::Min(Extent.X, MaxHalf))), Sim::Fix::FromMilli(RTS::Milli(FMath::Min(Extent.Y, MaxHalf)))),
+		Sim::Fix::FromMilli(RTS::Milli(FMath::Clamp(HeightCm / 100.0f, 0.0f, float(Sim::LabPropMaxHeightM))))));
+	return true;
+}
+
+bool URTSMatchSubsystem::LabLastPoleCm(FVector2D& OutCm) const
+{
+	if (!Poles.IsValidIndex(LabLastPole))
+	{
+		return false;
+	}
+	OutCm = Poles[LabLastPole].PosCm;
+	return true;
+}
+
+void URTSMatchSubsystem::OnLabPropPlaced(const Sim::SimEvent& E)
+{
+	UWorld* World = GetWorld();
+	const TArray<FRTSLabPropDef>& Defs = FRTSLab::PropDefs();
+	const int32 Style = Sim::LabPropStyleOf(E.Value);
+	if (!State || !World || !Defs.IsValidIndex(Style))
+	{
+		return;
+	}
+	const FRTSLabPropDef& D = Defs[Style];
+	const Sim::LabPropKind Kind = Sim::LabPropKindOf(E.Value);
+	UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *D.Mesh, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Mesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS laboratório: a peça %s não tem a malha %s (game.ps1 village)"), *D.Key, *D.Mesh);
+		return;
+	}
+	// a camada do laboratório (um ator só, uma camada por malha, como a da vila: estática, sem colisão, sem o decal do chão)
+	AActor* Actor = LabPropActor.Get();
+	if (!Actor)
+	{
+		FActorSpawnParameters P;
+		P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Actor = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, P);
+		if (!Actor)
+		{
+			return;
+		}
+		USceneComponent* Root = NewObject<USceneComponent>(Actor, TEXT("LabProps"));
+		Actor->SetRootComponent(Root);
+		Root->RegisterComponent();
+		LabPropActor = Actor;
+	}
+	const auto Layer = [&](const FString& Key, UStaticMesh* M, UMaterialInterface* Mat) -> UInstancedStaticMeshComponent*
+	{
+		if (UInstancedStaticMeshComponent* Found = LabPropLayers.FindRef(Key).Get())
+		{
+			return Found;
+		}
+		UInstancedStaticMeshComponent* C = NewObject<UInstancedStaticMeshComponent>(Actor, *FString::Printf(TEXT("Lab_%s"), *Key));
+		C->SetupAttachment(Actor->GetRootComponent());
+		C->SetStaticMesh(M);
+		if (Mat)
+		{
+			for (int32 K = 0; K < M->GetStaticMaterials().Num(); ++K)
+			{
+				C->SetMaterial(K, Mat);
+			}
+		}
+		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		C->SetCanEverAffectNavigation(false);
+		C->SetMobility(EComponentMobility::Static);
+		C->bReceivesDecals = false;
+		C->SetNumCustomDataFloats(1);
+		C->RegisterComponent();
+		LabPropLayers.Add(Key, C);
+		return C;
+	};
+	const FVector2D Cm = RTS::ToWorld(E.Point);
+	const float SimYaw = RTS::YawDegrees(Sim::Angle::FromBam(int32(uint32(E.Value) >> 16)));
+	const float MeshYaw = Kind == Sim::LabPropKind::Car ? SimYaw - 90.0f : SimYaw;
+	const int32 Piece = LabNextPiece++;
+	// a palmeira com a escala variada (pelo número da peça: igual no replay) e o tom do lote da casa
+	FRandomStream Rng(7919 + Piece);
+	const double Scale = Kind == Sim::LabPropKind::Tree ? double(Rng.FRandRange(0.9f, 1.12f)) : 1.0;
+	UInstancedStaticMeshComponent* L = Layer(D.Key, Mesh, nullptr);
+	const FTransform T(FRotator(0.0, MeshYaw, 0.0), FVector(Cm.X, Cm.Y, State->Baked.GroundZCm(Cm)), FVector(Scale));
+	const int32 Index = L->AddInstance(T, true);
+	L->SetCustomDataValue(Index, 0, 0.001f + 0.998f * Rng.GetFraction(), true);
+	VillagePieceInstance.Add(Piece, TPair<TWeakObjectPtr<UInstancedStaticMeshComponent>, int32>(L, Index));
+	const bool bObject = Kind == Sim::LabPropKind::Car || Kind == Sim::LabPropKind::Tree;   // (o índice 0 é um objeto: o Source dele vale mesmo 0)
+	if (bObject)
+	{
+		// o objeto da simulação: o esmagar e o tombar acham a instância pelo índice (o mesmo lugar dos do mapa)
+		FRTSBakedMap& B = State->Baked;
+		const int32 Prop = int32(E.Source);
+		while (B.Props.Num() <= Prop)
+		{
+			B.Props.AddDefaulted();
+			B.PropPiece.Add(-1);
+			B.PropIsm.Add(nullptr);
+			B.PropIsmIndex.Add(-1);
+		}
+		if (Prop < State->World.PropCount())
+		{
+			const Sim::World::PropView V = State->World.PropAt(Prop);
+			Sim::PropSetup& Ps = B.Props[Prop];
+			Ps.Kind = V.Kind;
+			Ps.Pos = V.Pos;
+			Ps.Facing = V.Facing;
+			Ps.HalfLength = V.HalfLength;
+			Ps.HalfWidth = V.HalfWidth;
+			Ps.Height = V.Height;
+		}
+		B.PropPiece[Prop] = Piece;
+	}
+	if (D.SquashTo > 0.0f)
+	{
+		FRTSSmallProp& Sp = SmallProps.AddDefaulted_GetRef();
+		Sp.Piece = Piece;
+		Sp.PosCm = Cm;
+		Sp.SquashTo = D.SquashTo;
+		Sp.RadiusCm = float(FMath::Max(D.SizeM.X, D.SizeM.Y) * 50.0);
+	}
+	if (D.bPole)
+	{
+		// o poste da vila: as 4 tomadas da cruzeta (o X da malha), os fios no Y; ligado ao anterior do laboratório, o par de
+		// tomadas sem cruzar (a cruzeta de lá virada pro mesmo lado)
+		static const FVector SocketsLocal[4] = { FVector(-95.0, 0.0, 757.2), FVector(-35.0, 0.0, 757.2), FVector(35.0, 0.0, 757.2), FVector(95.0, 0.0, 757.2) };
+		FRTSPole& Pl = Poles.AddDefaulted_GetRef();
+		Pl.Piece = Piece;
+		Pl.PosCm = Cm;
+		Pl.HeightM = D.HeightM > 0.0f ? D.HeightM : 8.0f;
+		for (const FVector& Sl : SocketsLocal)
+		{
+			Pl.Sockets.Add(T.TransformPosition(Sl));
+		}
+		const int32 NewPole = Poles.Num() - 1;
+		const int32 Prev = LabLastPole;
+		LabLastPole = NewPole;
+		if ((Sim::LabPropFlagsOf(E.Value) & Sim::LabPropChainFlag) && Poles.IsValidIndex(Prev) && Prev != NewPole
+			&& FVector2D::Distance(Poles[Prev].PosCm, Cm) <= double(FRTSLab::PoleReachM) * 100.0 && !Poles[Prev].bDown && Poles[Prev].Sockets.Num() == 4)
+		{
+			UInstancedStaticMeshComponent* Wires = WireLayer.Get();
+			if (!Wires)
+			{
+				// sem a vila no mapa: a camada dos fios do laboratório (o mesmo cilindro escuro, sem sombra)
+				UStaticMesh* Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+				UMaterialInterface* BoxBase = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Structures/Materials/MI_Body.MI_Body"));
+				UMaterialInstanceDynamic* WireMat = BoxBase ? UMaterialInstanceDynamic::Create(BoxBase, Actor) : nullptr;
+				if (WireMat)
+				{
+					WireMat->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor(0.02f, 0.02f, 0.02f));
+				}
+				Wires = Cylinder ? Layer(TEXT("wires"), Cylinder, WireMat) : nullptr;
+				if (Wires)
+				{
+					Wires->SetCastShadow(false);
+					WireLayer = Wires;
+				}
+			}
+			const double Span = FVector2D::Distance(Poles[Prev].PosCm, Cm);
+			const bool bFlip = FVector::DotProduct(Poles[Prev].Sockets[3] - Poles[Prev].Sockets[0], Poles[NewPole].Sockets[3] - Poles[NewPole].Sockets[0]) < 0.0;
+			for (int32 K = 0; K < 4 && Wires; ++K)
+			{
+				const int32 Kb = bFlip ? 3 - K : K;
+				FRTSWire Wf;
+				Wf.PoleA = Prev;
+				Wf.SocketA = K;
+				Wf.PoleB = NewPole;
+				Wf.SocketB = Kb;
+				Wf.EndA = Poles[Prev].Sockets[K];
+				Wf.EndB = Poles[NewPole].Sockets[Kb];
+				Wf.SagCm = float(Span * 0.033);   // (a vila: ~1,2 m num vão de 35 m)
+				const int32 N = FMath::Clamp(FMath::CeilToInt(FVector::Dist(Wf.EndA, Wf.EndB) / 150.0), 6, 24);
+				FVector PrevPt = Wf.EndA;
+				for (int32 Sg = 1; Sg <= N; ++Sg)
+				{
+					const double Tt = double(Sg) / N;
+					const FVector Cur = FMath::Lerp(Wf.EndA, Wf.EndB, Tt) - FVector(0.0, 0.0, 4.0 * Wf.SagCm * Tt * (1.0 - Tt));
+					const FVector Dd = Cur - PrevPt;
+					Wf.Segments.Add(Wires->AddInstance(FTransform(FRotationMatrix::MakeFromZ(Dd.GetSafeNormal()).Rotator(), (PrevPt + Cur) * 0.5, FVector(0.045, 0.045, Dd.Size() / 100.0)), true));
+					PrevPt = Cur;
+				}
+				WireFx.Add(Wf);
+				Poles[Prev].Wires.Add(WireFx.Num() - 1);
+				Poles[NewPole].Wires.Add(WireFx.Num() - 1);
+			}
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("RTS laboratório: peça civil %s em (%.1f, %.1f) m, giro %.0f%s"), *D.Key, Cm.X / 100.0, Cm.Y / 100.0, MeshYaw,
+		bObject ? *FString::Printf(TEXT(", objeto %u da simulação"), E.Source) : TEXT(""));
+}
+
+void URTSMatchSubsystem::LabEffect(const FRTSLabFxRequest& R)
+{
+	if (!IsLab() || !GetWorld())
+	{
+		return;
+	}
+	// o que os eventos da simulação já fazem (o ProjectileHit, o UnitDied, o StructureDeath, o TurretImpact), chamado direto no
+	// ponto: o mesmo BlastFx, a mesma poeira, a mesma marca no chão; o laboratório só não espera a simulação mandar
+	FRTSMatchState& S = *State;
+	UWorld* World = GetWorld();
+	UBlastFxDirector* Fx = UBlastFxDirector::Get(this);
+	UBlastFxDirector* ShotFx = UBlastFxDirector::ShotFxEnabled() ? Fx : nullptr;
+	const FVector2D At = R.Cm;
+	const float Gz = S.Baked.GroundZCm(At);
+	const FVector Ground(At.X, At.Y, Gz);
+	const FVector2D From2(R.FromCm.X, R.FromCm.Y);
+	const FVector2D Away = (At - From2).GetSafeNormal();
+	ARTSUnitActor* Victim = R.Target ? ViewOf(R.Target) : nullptr;
+	float ShakeCm = 0.0f;
+	switch (R.Kind)
+	{
+	case ERTSLabFx::ShellGround:
+		if (ShotFx)
+		{
+			ShotFx->GroundHit(Ground, R.FromCm, R.Seed);
+		}
+		else
+		{
+			ARTSEffect::SpawnFlash(World, Ground + FVector(0.0, 0.0, 40.0), 100.0f, 4.0e6f, 0.16f, FLinearColor(0.4f, 0.2f, 0.05f));
+		}
+		PushDust(TreadDust.Get(), Ground, Gz, 0.25);
+		if (MissileSmoke)
+		{
+			MissileSmoke->Blast(FVector(At.X, At.Y, Gz + 30.0f), 0.8f, 1.5f);
+		}
+		if (GroundMemory)
+		{
+			GroundMemory->AddScar(At, From2, 420.0f, 0.9f, 0.7f, 0);
+		}
+		break;
+	case ERTSLabFx::ShellArmor:
+	{
+		if (!Victim)
+		{
+			FRTSLabFxRequest OnGround = R;
+			OnGround.Kind = ERTSLabFx::ShellGround;
+			LabEffect(OnGround);
+			return;
+		}
+		const FVector2D V2(Victim->GetActorLocation().X, Victim->GetActorLocation().Y);
+		const float Vz = S.Baked.GroundZCm(V2);
+		Victim->PlayHit(From2);
+		if (ShotFx)
+		{
+			ShotFx->ArmorHit(FVector(V2.X, V2.Y, Vz + 130.0f), R.FromCm, Victim, Vz, R.Seed, false);
+		}
+		PushDust(TreadDust.Get(), FVector(V2.X, V2.Y, 0.0), Vz, 0.28);
+		if (MissileSmoke)
+		{
+			MissileSmoke->Blast(FVector(V2.X, V2.Y, Vz + 130.0f), 0.8f, 1.5f);
+		}
+		if (GroundMemory)
+		{
+			GroundMemory->AddScar(V2, From2, 130.0f, 0.35f, 0.0f);
+		}
+		break;
+	}
+	case ERTSLabFx::TankDeath:
+		if (Fx)
+		{
+			Fx->TankDeath(Ground, R.Seed, /*bClassic=*/false);
+		}
+		PushDust(TreadDust.Get(), Ground, Gz, 0.55);
+		if (MissileSmoke)
+		{
+			MissileSmoke->Blast(FVector(At.X, At.Y, Gz + 150.0f), 3.5f, 5.0f);
+		}
+		ShakeCm = 18.0f;
+		break;
+	case ERTSLabFx::BuildingDeath:
+	{
+		// a morte do prédio (o StructureDeath): a clássica no meio, o chão queimado na pegada e as 3 secundárias em 1,5 s,
+		// na pegada do Command Center (o maior prédio dos dados)
+		if (Fx)
+		{
+			Fx->TankDeath(Ground, R.Seed, /*bClassic=*/true);
+		}
+		PushDust(TreadDust.Get(), Ground, Gz, 0.55);
+		if (MissileSmoke)
+		{
+			MissileSmoke->Blast(FVector(At.X, At.Y, Gz + 150.0f), 6.0f, 6.0f);
+		}
+		FVector2D Extent(400.0, 400.0);
+		double BestArea = 0.0;
+		for (const Sim::UnitDef& D : S.World.Rules().Units)
+		{
+			const double Area = D.HalfX.ToDouble() * D.HalfY.ToDouble();
+			if (D.IsStructure() && Area > BestArea)
+			{
+				BestArea = Area;
+				Extent = FVector2D(D.HalfX.ToDouble() * 100.0, D.HalfY.ToDouble() * 100.0);
+			}
+		}
+		if (GroundMemory)
+		{
+			GroundMemory->AddScar(At, At, float(FMath::Max(Extent.X, Extent.Y)) * 0.95f, 0.85f, 0.0f);
+		}
+		uint32 Seed = R.Seed * 2654435761u | 1u;
+		const auto Next = [&Seed]()
+		{
+			Seed ^= Seed << 13; Seed ^= Seed >> 17; Seed ^= Seed << 5;
+			return float(Seed & 0xFFFF) / 65535.0f;
+		};
+		const double Now = World->GetTimeSeconds();
+		for (int32 K = 0; K < 3; ++K)
+		{
+			const FVector2D P = At + FVector2D((Next() * 1.4f - 0.7f) * Extent.X, (Next() * 1.4f - 0.7f) * Extent.Y);
+			FPendingBlast B;
+			B.At = Now + 0.35 + 0.4 * K + 0.2 * Next();
+			B.Ground = FVector(P.X, P.Y, S.Baked.GroundZCm(P));
+			B.Variant = R.Seed + 101u * uint32(K + 1);
+			PendingBlasts.Add(B);
+		}
+		ShakeCm = 35.0f;
+		break;
+	}
+	case ERTSLabFx::MissileHit:
+	case ERTSLabFx::CustomWarhead:
+	case ERTSLabFx::StrikeLight:
+		LabMissileHit(R, false);
+		ShakeCm = 18.0f;
+		break;
+	case ERTSLabFx::StrikeHeavy:
+		LabMissileHit(R, true);
+		ShakeCm = 30.0f;
+		break;
+	case ERTSLabFx::Muzzle:
+	{
+		const FVector Mz = Ground + FVector(0.0, 0.0, 220.0);
+		const FVector Dir(Away.X, Away.Y, 0.0);
+		if (ShotFx)
+		{
+			ShotFx->MuzzleBlast(Mz, Dir, Gz, R.Seed);
+		}
+		if (MissileSmoke)
+		{
+			MissileSmoke->Muzzle(Mz, Dir);
+		}
+		PushDust(TreadDust.Get(), Mz, Gz, 0.15, Dir, 60.0);
+		break;
+	}
+	case ERTSLabFx::SandSplash:
+		// a torre solta de 15 t batendo na areia a 13 m/s (o voo da morte de tanque), pelo caminho dela (TurretImpact)
+		TurretImpact(Ground, Away, 1300.0f, 150.0f, /*bWreckShown=*/true, 300.0f);
+		break;
+	case ERTSLabFx::Crater:
+		if (GroundMemory)
+		{
+			GroundMemory->AddScar(At, From2, 420.0f, 0.9f, 0.7f, FMath::Clamp(R.Size, 0, 2));
+		}
+		break;
+	case ERTSLabFx::WreckApron:
+	{
+		const float Yaw = float(FMath::RadiansToDegrees(FMath::Atan2(Away.Y, Away.X)));
+		if (GroundMemory)
+		{
+			GroundMemory->AddWreck(At, Yaw, From2);
+		}
+		if (ARTSDebrisField* D = Debris.Get())
+		{
+			D->AddWreck(At, Yaw, From2, [this](const FVector2D& P) { return State ? VisualGroundZCm(P) : 0.0f; });
+		}
+		break;
+	}
+	case ERTSLabFx::WireArc:
+		if (Fx)
+		{
+			Fx->WireArc(Ground + FVector(0.0, 0.0, 20.0), 2, R.Seed);
+		}
+		break;
+	case ERTSLabFx::BurningWreck:
+		break;   // vai pela simulação (o FRTSLab: nasce e morre)
+	}
+	if (ShakeCm > 0.0f)
+	{
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			if (ARTSCameraPawn* Cam = Cast<ARTSCameraPawn>(PC->GetPawn()))
+			{
+				Cam->AddShake(At, ShakeCm);
+			}
+		}
+	}
+	LastAction = At;
+	bHasLastAction = true;
+}
+
+void URTSMatchSubsystem::LabMissileHit(const FRTSLabFxRequest& R, bool bHeavy)
+{
+	// o ramo do ProjectileHit do míssil (no chão, ou no casco da unidade sob o cursor) com a munição escolhida (Units.json: a
+	// carga da ogiva, o visual, a vida do acerto e a cratera); a carga do controle troca só a carga, e a cratera com vida
+	// acompanha pela raiz cúbica (o raio da cratera ∝ W^⅓)
+	FRTSMatchState& S = *State;
+	UBlastFxDirector* HitFx = UBlastFxDirector::ShotFxEnabled() ? UBlastFxDirector::Get(this) : nullptr;
+	const FRTSUnitVisual* MunVis = S.Data.FindVisual(R.Def);
+	ARTSUnitActor* Victim = R.Target ? ViewOf(R.Target) : nullptr;
+	const FVector2D Hit = Victim ? FVector2D(Victim->GetActorLocation().X, Victim->GetActorLocation().Y) : R.Cm;
+	const float Gz = S.Baked.GroundZCm(Hit);
+	const FVector From3 = R.FromCm;
+	const FVector2D From(From3.X, From3.Y);
+	const bool bWarheadV2 = UBlastFxDirector::MissileBlastVer() >= 2;
+	const float DataKg = MunVis ? MunVis->WarheadKg : 0.0f;
+	const float WarheadKg = bWarheadV2 ? (R.Kg > 0.0f ? R.Kg : DataKg) : 0.0f;
+	const float BlastKg = bHeavy ? 0.0f : WarheadKg;
+	const bool bClassicLook = MunVis && MunVis->bWarheadClassicLook;
+	const double WarheadK = WarheadKg > 0.0f ? FMath::Pow(double(WarheadKg) / 4.0, 1.0 / 3.0) : 1.0;
+	float BlastR = 1.6f, BlastRise = 4.0f;
+	if (WarheadKg > 0.0f || (bWarheadV2 && bHeavy))
+	{
+		BlastR = UBlastFxDirector::WarheadFireballM(bHeavy ? 20.0f : WarheadKg);
+		BlastRise = 4.0f * FMath::Sqrt(BlastR / 1.6f);
+	}
+	const FVector TrailAt(Hit.X, Hit.Y, Gz + (Victim ? 130.0f : 30.0f));
+	bool bTrailPending = MissileSmoke != nullptr;
+	if (bTrailPending && !(BlastKg > 0.0f && HitFx))
+	{
+		MissileSmoke->Blast(TrailAt, BlastR, BlastRise);
+		bTrailPending = false;
+	}
+	const bool bLife = HitFx && bWarheadV2 && BlastFxHitLife::Version() >= 2;
+	BlastFxHitLife::FHitIn LifeIn;
+	BlastFxHitLife::FHitOut LifeOut;
+	if (bLife && MunVis)
+	{
+		LifeIn.TiltDeg = MunVis->FragmentTiltDeg;
+		LifeIn.Carry = MunVis->HitCarry;
+		LifeIn.EjectaKg = MunVis->EjectaKg;
+		LifeIn.bStrike = MunVis->bHeavyImpact;
+	}
+	LifeIn.bGameVeil = bLife && FRTSHitLife::DrawsShockVeil(TreadDust.Get());
+	if (HitFx)
+	{
+		// o Id fora da faixa dos tiros da simulação (o BlastFx não acha chama nenhuma com ele)
+		const int32 Id = int32(0x7F000000u | (R.Seed & 0x00FFFFFFu));
+		const FVector Point(Hit.X, Hit.Y, Gz + (Victim ? 130.0f : 0.0f));
+		const FVector Ball = HitFx->MissileHit(Id, Point, From3, Victim, Gz, false, BlastKg, bClassicLook, bLife ? &LifeIn : nullptr, &LifeOut);
+		if (bTrailPending)
+		{
+			const float RiseTau = LifeOut.bValid && LifeOut.CloudEndS > 0.0f && BlastFxHitLife::On(BlastFxHitLife::TrailRise) ? 0.5f * LifeOut.CloudEndS : 1.5f;
+			MissileSmoke->Blast(Ball, BlastR, BlastRise, RiseTau);
+			bTrailPending = false;
+		}
+		if (bHeavy)
+		{
+			HitFx->TankDeath(FVector(Hit.X, Hit.Y, Gz), R.Seed, /*bClassic=*/true);
+		}
+		if (LifeOut.bValid)
+		{
+			// o pulso do acerto (RTSHitLife.h): o tranco, a areia, a fumaça do furo, o tremor, os vizinhos
+			if (!HitLife)
+			{
+				HitLife = new FRTSHitLife();
+			}
+			FRTSBlastPulse Pulse;
+			Pulse.Tick = int64(S.World.Tick());
+			Pulse.Victim = Victim ? R.Target : 0;
+			Pulse.Shooter = 0;
+			Pulse.Kg = bHeavy ? 20.0f : FMath::Max(WarheadKg, 4.0f);
+			Pulse.SandKg = MunVis && MunVis->SandKg > 0.0f ? MunVis->SandKg : 0.0f;
+			Pulse.RefDamage = R.Def >= 0 && R.Def < int32(S.World.Rules().Units.size()) ? float(S.World.Rules().Units[R.Def].Weapon.Damage) : 0.0f;
+			const Sim::UnitView* TargetView = Victim ? S.Curr.Find(R.Target) : nullptr;
+			const FRTSUnitVisual* TargetVis = TargetView ? S.Data.FindVisual(TargetView->Def) : nullptr;
+			Pulse.MassT = TargetVis && TargetVis->MassT > 0.0f ? TargetVis->MassT : 60.0f;
+			Pulse.bStrike = LifeIn.bStrike;
+			Pulse.bVehicle = Victim && !Victim->IsStructure();
+			Pulse.bKill = false;
+			Pulse.FromCm = From;
+			Pulse.VictimActor = Victim;
+			Pulse.Hit = LifeOut;
+			FRTSHitLifeCtx Ctx;
+			FillHitLifeCtx(Ctx);
+			HitLife->OnPulse(Pulse, Ctx);
+		}
+	}
+	if (bTrailPending)
+	{
+		MissileSmoke->Blast(TrailAt, BlastR, BlastRise);
+	}
+	PushDust(TreadDust.Get(), FVector(Hit.X, Hit.Y, 0.0), Gz, bHeavy ? 0.7 : 0.4 * WarheadK);
+	if (!GroundMemory)
+	{
+		return;
+	}
+	if (Victim)
+	{
+		// o chamuscado sob a bola, fora do casco (o ramo do acerto no alvo)
+		if (LifeOut.bValid && !LifeOut.bTop && BlastFxHitLife::On(BlastFxHitLife::Ground))
+		{
+			const float Wkg = bHeavy ? 20.0f : FMath::Max(WarheadKg, 4.0f);
+			GroundMemory->AddScar(FVector2D(LifeOut.BallCentreCm.X, LifeOut.BallCentreCm.Y), From, 100.0f * FMath::Pow(Wkg, 1.0f / 3.0f), 0.35f, 0.0f);
+		}
+		else
+		{
+			GroundMemory->AddScar(Hit, From, 130.0f, 0.35f, 0.0f);
+		}
+	}
+	else if (bLife && MunVis && MunVis->LifeCrater >= 0 && BlastFxHitLife::On(BlastFxHitLife::Strike))
+	{
+		const float K = R.Kg > 0.0f && DataKg > 0.0f ? FMath::Pow(R.Kg / DataKg, 1.0f / 3.0f) : 1.0f;
+		GroundMemory->AddScar(Hit, From, MunVis->LifeMarkM * 100.0f * K, 0.9f, MunVis->LifeCraterDepth, MunVis->LifeCrater);
+	}
+	else
+	{
+		GroundMemory->AddScar(Hit, From, 420.0f, 0.9f, 0.7f, MunVis && MunVis->ImpactCrater >= 0 ? MunVis->ImpactCrater : 0);
+	}
+}
+
+// ---------------------------------------------------------------- o ar: o desenho (24/10, o escopo B; docs/AEREO.md §3.10 e §4.5)
+//
+// Só desenho (nada volta pra simulação). O vento do rotor (a assinatura do helicóptero): o empuxo pairando é o peso, T = m·g; a
+// velocidade induzida no disco é v_i = √(T ÷ 2ρA) (a teoria do disco atuador, × o giro); perto do chão o ar da esteira abre num
+// jato de parede radial que sai do pé dela e decai ~R/r (Preston et al. 2008, "Rotorwash operational footprint modeling"; o
+// pico ~1,2 v_i logo fora do disco). A areia levanta onde o vento rente ao chão passa do limiar do grão (~5 m/s a 1 m de altura,
+// o u* ≈ 0,25 m/s de Bagnold pra areia fina): o raio da nuvem é r = 1,2 v_i R ÷ 5 m/s (até 5 R, ~2,5 diâmetros: o tamanho das nuvens
+// de brownout nos relatos). A areia sobe ao longo do anel na taxa do vento acima do limiar, (u(r) − u_t)·r ∝ r_nuvem − r: o puff nasce
+// num r sorteado nessa rampa (mais perto do disco, mais), com a cor e o tipo do chão de onde nasce. A força cai com a altura do
+// rotor sobre o chão (a nuvem some acima de ~2 diâmetros: a brownout começa abaixo de 1–2 D nos relatos de voo). O tipo de chão
+// manda (a tabela única, FRTSHitLife::DustYieldOf: areia 1, asfalto 0); em cima de um prédio (a laje do Airfield, o teto do centro)
+// só a areia que o vento jogou na laje (0,35). Os puffs são os de impacto do RTSTreadDust (a camada "impact_surge", que rola rente
+// ao chão e abre, e a "impact_linger", a nuvem rala que paira): em volume na Alta e na Ultra, com a sombra do mapa, a cor do chão
+// onde nascem e as luzes da cena (as quatro regras da fumaça). Os mesmos rotores empurram a fumaça (FRTSSmokeRotor).
+
+namespace
+{
+	constexpr float WashAirDensity = 1.225f;          // kg/m³, o ar ao nível do mar
+	constexpr float WashLiftMs = 5.0f;                // m/s: o vento a ~1 m que levanta a areia fina (o limiar de Bagnold)
+	constexpr float WashOnStructure = 0.35f;          // a areia que o vento jogou numa laje (o Airfield, o teto do centro)
+	constexpr int32 WashCap[4] = { 0, 48, 160, 260 }; // os cartões vivos do vento do rotor por preset (baixa sem: como os de impacto)
+	constexpr float WashRateK[4] = { 0.0f, 0.35f, 0.7f, 1.0f };
+	// a massa de cada puff (o A do cartão): a do anel que rola é a da onda de base do acerto aprovada (SurgeMass 8 do RTSHitLife) um
+	// pouco abaixo (o vento do rotor solta puffs sem parar e eles se sobrepõem); a que paira, a da poeira que fica (LingerMass 6) abaixo
+	constexpr float WashMass = 5.0f, WashLingerMass = 4.0f;
+
+	/** Os rotores de sustentação de um helicóptero como um disco só: o centro (cm), o raio equivalente √(ΣA/π) (m) e a área (m²). */
+	bool WashDisc(const ARTSUnitActor& A, FVector& OutCenterCm, float& OutReqM, float& OutAreaM2)
+	{
+		TArray<FVector> Hubs;
+		TArray<float> Radii;
+		if (!A.GetLiftRotors(Hubs, Radii))
+		{
+			return false;
+		}
+		OutAreaM2 = 0.0f;
+		OutCenterCm = FVector::ZeroVector;
+		for (int32 K = 0; K < Hubs.Num(); ++K)
+		{
+			const float Ak = UE_PI * FMath::Square(Radii[K] / 100.0f);
+			OutAreaM2 += Ak;
+			OutCenterCm += Hubs[K] * Ak;
+		}
+		OutCenterCm /= FMath::Max(OutAreaM2, 1.0e-3f);
+		OutReqM = FMath::Sqrt(OutAreaM2 / UE_PI);
+		return OutAreaM2 > 1.0f;
+	}
+}
+
+bool URTSMatchSubsystem::AirToSun(FVector& OutToSun)
+{
+	// o sol do mapa (a luz direcional mais forte), relido a cada 1 s (o laboratório troca o sol)
+	UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (World && (AirSunAt < 0.0 || Now - AirSunAt > 1.0))
+	{
+		AirSunAt = Now;
+		float Best = -1.0f;
+		for (TActorIterator<ADirectionalLight> It(World); It; ++It)
+		{
+			const ULightComponent* L = It->GetLightComponent();
+			if (L && L->IsVisible() && L->Intensity > Best)
+			{
+				Best = L->Intensity;
+				AirSunCached = -L->GetDirection();
+			}
+		}
+	}
+	OutToSun = AirSunCached;
+	return AirSunCached.Z > 0.01;
+}
+
+void URTSMatchSubsystem::UpdateAirLook(uint32 Id, ARTSUnitActor& A, const FRTSUnitState& U)
+{
+	// o pós-combustor (o jato na corrida e na subida: o ZH acende no TakeoffState; nós também subindo forte) e a rampa (o Chinook
+	// pousado carregando ou descarregando, a rampa da ficha aprovada)
+	if (!State || U.Def >= State->World.Rules().Units.size())
+	{
+		return;
+	}
+	const Sim::UnitDef& D = State->World.Rules().Units[U.Def];
+	if (D.IsJet())
+	{
+		float Ab = 0.0f;
+		if (U.Flight == uint8(Sim::FlightState::Takeoff))
+		{
+			Ab = 1.0f;
+		}
+		else if (U.Flight == uint8(Sim::FlightState::Flying))
+		{
+			const Sim::UnitView* Sv = State->Curr.Find(Id);
+			const float Vs = Sv ? float(Sv->VSpeed.ToDouble()) * float(Sim::TicksPerSecond) : 0.0f;
+			Ab = 0.75f * FMath::SmoothStep(3.0f, 8.0f, Vs);
+		}
+		A.SetAfterburner(Ab);
+	}
+	const Sim::UnitTask Task = Sim::UnitTask(U.Task);
+	A.SetRampOpen(U.Flight == uint8(Sim::FlightState::Parked) && (Task == Sim::UnitTask::Loading || Task == Sim::UnitTask::Unloading));
+}
+
+void URTSMatchSubsystem::UpdateAirFx(float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	if (!State || !World || DeltaTime <= 0.0f)
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	// a 2ª bola do jato que caiu (a morte aprovada, um pouco à frente e depois)
+	for (int32 K = JetBlasts.Num() - 1; K >= 0; --K)
+	{
+		if (JetBlasts[K].At <= Now)
+		{
+			if (UBlastFxDirector* Director = UBlastFxDirector::Get(this))
+			{
+				Director->TankDeath(JetBlasts[K].Ground, JetBlasts[K].Variant);
+			}
+			PushDust(TreadDust.Get(), JetBlasts[K].Ground, JetBlasts[K].Ground.Z, 0.55);
+			if (MissileSmoke)
+			{
+				MissileSmoke->Blast(JetBlasts[K].Ground + FVector(0.0, 0.0, 150.0), 3.5f, 5.0f);
+			}
+			JetBlasts.RemoveAtSwap(K);
+		}
+	}
+	// o fogo de verdade (a gravação em loop): nasce na hora, entra em 0,6 s (a carcaça em 1,5 s), sai nos últimos 4 s (a queda, na bola)
+	for (int32 K = AirFires.Num() - 1; K >= 0; --K)
+	{
+		FAirFire& F = AirFires[K];
+		if (Now >= F.End)
+		{
+			if (AExplosionVolume* V = F.V.Get())
+			{
+				V->Destroy();
+			}
+			if (F.FireId >= 0)
+			{
+				if (UBlastFxDirector* Fx = UBlastFxDirector::Get(this))
+				{
+					Fx->FireOut(F.FireId, 0.5f);
+				}
+			}
+			AirFires.RemoveAtSwap(K);
+			continue;
+		}
+		if (Now < F.Start)
+		{
+			continue;
+		}
+		// (25/10, o fogo simulado; docs/FOGO.md) com blast.Fire.Version 2 a carcaça da aeronave queima com o fogo simulado (o mesmo do
+		// tanque, na escala dela: a vida inteira, o vento, a luz pela potência); a queda segue com a gravação em loop
+		if (!F.bFalling && UBlastFxDirector::FireVersion() >= 2)
+		{
+			if (F.FireId < 0)
+			{
+				UBlastFxDirector* Fx = UBlastFxDirector::Get(this);
+				F.FireId = Fx ? Fx->StartFire(F.FootCm - FVector(0.0, 0.0, 30.0), F.Scale >= 0.15f ? 0.85f : 0.7f, F.Variant, float(F.End - Now)) : -1;
+				if (F.FireId < 0)
+				{
+					F.End = Now;
+				}
+			}
+			continue;
+		}
+		AExplosionVolume* V = F.V.Get();
+		if (!V)
+		{
+			UBlastFxDirector* Fx = UBlastFxDirector::Get(this);
+			V = Fx ? Fx->FireLoop(F.FootCm, F.Scale, F.Variant) : nullptr;
+			if (!V)
+			{
+				F.End = Now;   // sem a gravação (a Baixa, ou o arquivo): nada (nunca o fogo de sprite)
+				continue;
+			}
+			F.V = V;
+		}
+		const float In = FMath::Clamp(float(Now - F.Start) / (F.bFalling ? 0.6f : 1.5f), 0.0f, 1.0f);
+		const float Out = FMath::Clamp(float(F.End - Now) / (F.bFalling ? 0.3f : 4.0f), 0.0f, 1.0f);
+		V->Opacity = FMath::SmoothStep(0.0f, 1.0f, In) * FMath::SmoothStep(0.0f, 1.0f, Out);
+	}
+	// o vento do rotor na poeira
+	ARTSTreadDust* Dust = TreadDust.Get();
+	const int32 Preset = FMath::Clamp(BlastFxHitLife::Preset(), 0, 3);
+	WashUntil.RemoveAllSwap([Now](double Until) { return Until <= Now; });
+	TSet<uint32> Seen;
+	TArray<ARTSTreadDust::FImpactPuff> Out;
+	const Sim::Ruleset& Rules = State->World.Rules();
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Views)
+	{
+		ARTSUnitActor* A = It.Value.Get();
+		FRTSUnitState U;
+		if (!A || !A->IsAircraft() || A->IsDead() || !GetUnit(It.Key, U) || !U.bAir || U.Def >= Rules.Units.size() || Rules.Units[U.Def].IsJet())
+		{
+			continue;
+		}
+		FVector Center;
+		float Req = 0.0f, Area = 0.0f;
+		if (!WashDisc(*A, Center, Req, Area))
+		{
+			continue;
+		}
+		Seen.Add(It.Key);
+		const FVector2D C2(Center.X, Center.Y);
+		const float H = float(Center.Z - State->Baked.GroundZCm(C2)) / 100.0f;
+		const float S = FMath::Square(U.Rotor01) * (1.0f - FMath::SmoothStep(0.3f, 2.0f, H / (2.0f * Req)));
+		if (S < 0.02f || !Dust || WashCap[Preset] <= 0 || A->IsFogHidden() || !IsPointShown(C2)
+			|| (Dust->IsVolumePath() && Dust->BricksInUse() > 3000))
+		{
+			static const bool bSkipLog = FParse::Param(FCommandLine::Get(), TEXT("RTSAirLog"));
+			if (bSkipLog && FMath::FloorToInt32(Now) != FMath::FloorToInt32(Now - DeltaTime))
+			{
+				UE_LOG(LogTemp, Log, TEXT("RTS ar vento: %u fora (H %.1f m, S %.2f, rotor %.2f, poeira %d, preset %d, névoa %d)"), It.Key, H, S, U.Rotor01,
+					Dust ? 1 : 0, Preset, A->IsFogHidden() ? 1 : 0);
+			}
+			continue;
+		}
+		const float Vi = FMath::Sqrt(FMath::Max(A->GetAirMassT(), 1.0f) * 1000.0f * 9.81f / (2.0f * WashAirDensity * Area)) * U.Rotor01;
+		const float SqS = FMath::Sqrt(S);
+		const float RDust = FMath::Min(1.2f * Vi * SqS * Req / WashLiftMs, 5.0f * Req);
+		if (RDust < 1.1f * Req)
+		{
+			continue;
+		}
+		// os prédios perto (a laje e o teto levantam pouco): a caixa do casco de cada um, no quadro dele
+		TArray<const ARTSUnitActor*, TInlineAllocator<8>> Slabs;
+		for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& Jt : Views)
+		{
+			if (Jt.Value && Jt.Value->IsStructure() && FVector::DistSquared2D(Jt.Value->GetActorLocation(), Center) < FMath::Square(RDust * 100.0 + 4000.0))
+			{
+				Slabs.Add(Jt.Value.Get());
+			}
+		}
+		const auto YieldAt = [this, &Slabs](const FVector2D& P)
+		{
+			double Y = FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(P));
+			for (const ARTSUnitActor* B : Slabs)
+			{
+				FVector2D Bc;
+				float HalfLen, HalfWidth, HullTop, Height;
+				B->GetShadowBoxCm(Bc, HalfLen, HalfWidth, HullTop, Height);
+				const FVector L = B->GetActorTransform().InverseTransformPosition(FVector(P.X, P.Y, B->GetActorLocation().Z));
+				if (FMath::Abs(L.X - Bc.X) < HalfLen && FMath::Abs(L.Y - Bc.Y) < HalfWidth)
+				{
+					Y *= WashOnStructure;
+					break;
+				}
+			}
+			return float(Y);
+		};
+		FRotorWash& W = RotorWash.FindOrAdd(It.Key);
+		static const bool bWashLog = FParse::Param(FCommandLine::Get(), TEXT("RTSAirLog"));
+		if (bWashLog && FMath::FloorToInt32(Now) != FMath::FloorToInt32(Now - DeltaTime))
+		{
+			UE_LOG(LogTemp, Log, TEXT("RTS ar vento: %u H %.1f m, S %.2f, v_i %.1f m/s, nuvem %.1f m, areia no centro %.2f, cartões %d/%d, tijolos %d"),
+				It.Key, H, S, Vi, RDust, YieldAt(C2), WashUntil.Num(), WashCap[Preset], Dust->BricksInUse());
+		}
+		// o ritmo: ∝ a área do anel que levanta (a nuvem maior, mais puffs: o Chinook levanta ~2× o Apache), ~22/s numa nuvem de 15 m
+		W.Acc += double(22.0f * FMath::Square(RDust / 15.0f) * SqS * WashRateK[Preset] * DeltaTime);
+		W.LingerAcc += DeltaTime;
+		int32 N = FMath::Min(FMath::FloorToInt32(float(W.Acc)), 12);
+		W.Acc -= double(N);
+		FRandomStream Rng(int32((It.Key * 2654435761u) ^ (W.Seed++ * 0x9E3779B9u)) & 0x7fffffff);
+		const FVector2D Drift = FVector2D(A->GetAirVelocityCm().X, A->GetAirVelocityCm().Y) / 100.0 * 0.4;
+		for (int32 K = 0; K < N && WashUntil.Num() < WashCap[Preset]; ++K)
+		{
+			const float Th = Rng.FRand() * 2.0f * UE_PI;
+			const FVector2D Dir(FMath::Cos(Th), FMath::Sin(Th));
+			const float RMin = 0.85f * Req;
+			const float R0 = RDust - (RDust - RMin) * FMath::Sqrt(Rng.FRand());   // a rampa (u − u_t)·r: mais perto do disco, mais areia
+			const FVector2D P = C2 + Dir * (R0 * 100.0);
+			const float Y = YieldAt(P);
+			if (Y < 0.03f)
+			{
+				continue;
+			}
+			// sai a uma fração do vento rente ao chão (o grão atrasa: Stokes) e rola até ~a borda da nuvem (a camada freia a 0,8/s)
+			const float Uw = 1.2f * Vi * SqS * FMath::Min(Req / R0, 1.6f);
+			const float V0 = FMath::Min(0.8f * (RDust - R0) * Rng.FRandRange(0.7f, 1.0f), 0.6f * Uw);
+			const FVector2D Tan(-Dir.Y, Dir.X);   // o giro da esteira (~10% do jato)
+			ARTSTreadDust::FImpactPuff& O = Out.AddDefaulted_GetRef();
+			O.PosM = FVector(P.X, P.Y, State->Baked.GroundZCm(P)) / 100.0;
+			O.VelM = FVector(Dir * V0 + Tan * (0.12f * V0) + Drift, 0.0);
+			O.SizeM = FMath::Clamp(0.32f * RDust * Rng.FRandRange(0.75f, 1.0f), 2.2f, 7.5f);
+			O.LifeS = Rng.FRandRange(2.6f, 3.8f);
+			O.Mass = WashMass * Rng.FRandRange(0.7f, 1.3f) * Y * (0.4f + 0.6f * S);   // patchy: a areia solta não é igual em todo lugar
+			O.Layer = 1;
+			WashUntil.Add(Now + double(O.LifeS));
+		}
+		// a nuvem rala que paira (o brownout): um puff grande e lento a cada ~0,6 s com o vento forte
+		if (S > 0.35f && W.LingerAcc > 0.6 && WashUntil.Num() < WashCap[Preset])
+		{
+			W.LingerAcc = 0.0;
+			const float Th = Rng.FRand() * 2.0f * UE_PI;
+			const FVector2D Dir(FMath::Cos(Th), FMath::Sin(Th));
+			const FVector2D P = C2 + Dir * (RDust * Rng.FRandRange(0.45f, 0.85f) * 100.0);
+			const float Y = YieldAt(P);
+			if (Y >= 0.03f)
+			{
+				ARTSTreadDust::FImpactPuff& O = Out.AddDefaulted_GetRef();
+				O.PosM = FVector(P.X, P.Y, State->Baked.GroundZCm(P)) / 100.0;
+				O.VelM = FVector(Dir * 0.8f + Drift, 0.0);
+				O.SizeM = FMath::Clamp(0.42f * RDust, 3.0f, 9.0f);
+				O.LifeS = 7.0f;
+				O.Mass = WashLingerMass * Y * S;
+				O.Layer = 2;
+				WashUntil.Add(Now + 7.0);
+			}
+		}
+	}
+	for (auto It = RotorWash.CreateIterator(); It; ++It)
+	{
+		if (!Seen.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+	if (Dust && Out.Num())
+	{
+		Dust->AddImpactPuffs(Out, uint32(Now * 977.0) | 1u);
+	}
+}
+
+void URTSMatchSubsystem::AddAirSmoke(FRTSSmokeFrame& Frame)
+{
+	if (!State)
+	{
+		return;
+	}
+	const Sim::Ruleset& Rules = State->World.Rules();
+	// os rotores perto do chão empurram a fumaça (a esteira e o jato de parede)
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Views)
+	{
+		ARTSUnitActor* A = It.Value.Get();
+		FRTSUnitState U;
+		if (!A || !A->IsAircraft() || A->IsDead() || A->IsFogHidden() || !GetUnit(It.Key, U) || U.Def >= Rules.Units.size() || Rules.Units[U.Def].IsJet())
+		{
+			continue;
+		}
+		FVector Center;
+		float Req = 0.0f, Area = 0.0f;
+		if (!WashDisc(*A, Center, Req, Area) || U.Rotor01 < 0.2f)
+		{
+			continue;
+		}
+		const float Gz = State->Baked.GroundZCm(FVector2D(Center.X, Center.Y));
+		if ((Center.Z - Gz) / 100.0 > 5.0 * Req)
+		{
+			continue;
+		}
+		FRTSSmokeRotor& R = Frame.Rotors.AddDefaulted_GetRef();
+		R.HubCm = Center;
+		R.RadiusM = Req;
+		R.InducedMs = FMath::Sqrt(FMath::Max(A->GetAirMassT(), 1.0f) * 1000.0f * 9.81f / (2.0f * WashAirDensity * Area)) * U.Rotor01;
+		R.GroundZCm = Gz;
+	}
+	// a coluna do fogo da carcaça: a gravação desfaz a fuligem a ~4 m; por cima, a coluna sobe em puffs de fuligem (a mesma fumaça em
+	// volume: o vento, a sombra do mapa, a sombra no chão, as luzes perto), mais rala no fim
+	const double NowS = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	for (const FAirFire& F : AirFires)
+	{
+		if (F.bFalling || NowS < F.Start + 1.0 || NowS > F.End - 2.0 || !IsPointShown(FVector2D(F.FootCm)))
+		{
+			continue;
+		}
+		FRTSSmokeSmolder& Sm = Frame.Smolders.AddDefaulted_GetRef();
+		Sm.Id = 0x2B000000u | (F.Id & 0x00FFFFFFu);
+		Sm.PosCm = F.FootCm + FVector(0.0, 0.0, 380.0 * F.Scale / 0.17f);
+		Sm.RatePerS = 3.0f;
+		Sm.ExtM2 = 0.35f * F.Scale / 0.17f * FMath::Clamp(float(F.End - NowS) / 6.0f, 0.3f, 1.0f);
+		Sm.SigmaM = 0.6f;
+		Sm.RiseMs = 2.0f;
+		Sm.Kind = 1;
+	}
+	// (25/10, v5) o estouro do antiaéreo e do míssil no ar: a baforada escura em volume no ponto (~0,22 s soltando, ~3 puffs), que fica e
+	// se desfaz no vento como o resto da fumaça (a sombra do mapa, a sombra no chão, as luzes perto)
+	FlakPuffs.RemoveAll([NowS](const FFlakPuff& P) { return NowS > P.Start + 0.3; });
+	for (const FFlakPuff& P : FlakPuffs)
+	{
+		if (NowS > P.Start + 0.22 || !IsPointShown(FVector2D(P.Cm.X, P.Cm.Y)))
+		{
+			continue;
+		}
+		FRTSSmokeSmolder& Sm = Frame.Smolders.AddDefaulted_GetRef();
+		Sm.Id = P.Id;
+		Sm.PosCm = P.Cm;
+		Sm.RatePerS = 14.0f;
+		Sm.ExtM2 = P.ExtM2;
+		Sm.SigmaM = P.SigmaM;
+		Sm.RiseMs = 0.4f;
+		Sm.Kind = 1;
+		Sm.FadeTauS = 2.5f;
+	}
+	// a aeronave caindo: a fuligem do motor e do combustível queimando, um puff a cada passo do caminho (o rastro que espirala com o
+	// helicóptero e risca o mergulho do jato), escura (a do diesel), que se dilui na esteira em ~3 s e sai aos ~10 s
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Falling)
+	{
+		ARTSUnitActor* A = It.Value.Get();
+		if (!A || A->IsFogHidden() || !IsPointShown(FVector2D(A->GetActorLocation())))
+		{
+			continue;
+		}
+		TArray<FVector> Hubs;
+		TArray<float> Radii;
+		const bool bJet = !A->GetLiftRotors(Hubs, Radii);
+		FRTSSmokeSmolder& Sm = Frame.Smolders.AddDefaulted_GetRef();
+		Sm.Id = 0x2A000000u | (It.Key & 0x00FFFFFFu);
+		Sm.PosCm = A->GetEngineWorldCm();
+		Sm.RatePerS = 0.0f;
+		Sm.StepM = bJet ? 0.9f : 0.45f;
+		Sm.ExtM2 = bJet ? 0.6f : 0.8f;   // (01/11) o dobro: a fuligem da gravação presa saiu (a diluição acima), o rastro leva ela
+		Sm.SigmaM = 0.45f;
+		Sm.RiseMs = 1.0f;
+		Sm.Kind = 1;
+		Sm.FadeTauS = 3.5f;
+	}
+}
+
+URTSMatchSubsystem::FAirFire* URTSMatchSubsystem::FindAirFire(uint32 Id, bool bFalling)
+{
+	return AirFires.FindByPredicate([Id, bFalling](const FAirFire& F) { return F.Id == Id && F.bFalling == bFalling; });
+}
+
+// ---------------------------------------------------------------- (25/10, v5) a arma leve e o estouro no ar (o Linebacker e o Stryker)
+
+FVector URTSMatchSubsystem::LightGunAim(ARTSUnitActor* Victim, const FVector& FromCm, uint32 Seed) const
+{
+	// o ponto do tiro na vítima desenhada, pelo hash do tiro (o traçante e o acerto, no mesmo lugar). Na aeronave, o estouro em volta
+	// dela: a espoleta de proximidade abre a 1–2,5 m (o 35 mm de estouro no ar, AHEAD); no veículo, a face virada pra quem atirou, no
+	// meio do casco
+	FVector Center, Extent;
+	Victim->GetActorBounds(false, Center, Extent);
+	const uint32 H = HashCombine(GetTypeHash(Seed), 0x51ED27u);
+	const auto F = [H](int32 Shift) { return float((H >> Shift) & 0xFFu) / 255.0f * 2.0f - 1.0f; };
+	if (Victim->IsAircraft())
+	{
+		FVector Off(F(0), F(8), 0.6f * F(16));
+		Off = Off.IsNearlyZero() ? FVector(0.0, 0.0, 1.0) : Off.GetSafeNormal();
+		return FVector(Center.X, Center.Y, Victim->GetActorLocation().Z + 120.0) + Off * (100.0f + 150.0f * float((H >> 24) & 0xFFu) / 255.0f);
+	}
+	const FVector Dir = (FromCm - Center).GetSafeNormal2D();
+	const float R = 0.7f * float(FMath::Min(Extent.X, Extent.Y));
+	return Center + Dir * R + FVector(-Dir.Y, Dir.X, 0.0) * (0.5f * R * F(0)) + FVector(0.0, 0.0, 0.3 * Extent.Z * F(16));
+}
+
+void URTSMatchSubsystem::LightGunTracer(const FVector& FromCm, const FVector& ToCm, float SpeedCmPerS, uint32 Seed, float LengthCm)
+{
+	// o traçante da arma leve: o risco curto e aceso (o 35 mm e a .50 levam traçante a cada poucos tiros; no jogo, todo tiro), sem luz
+	// própria (8 por segundo: a luz que anda é a do tiro de tanque)
+	if (UWorld* W = GetWorld())
+	{
+		const float K = 0.9f + 0.2f * float(HashCombine(GetTypeHash(Seed), 0x7A11u) & 0xFFu) / 255.0f;
+		// a espessura lê na câmera do jogo (~20 px por metro a 75 m: 8–13 cm dão 2–3 px com o brilho; com 4 cm sumia no vídeo)
+		ARTSEffect::SpawnStreak(W, FromCm, ToCm, FMath::Max(SpeedCmPerS, 1000.0f), LengthCm, FMath::Clamp(LengthCm / 20.0f, 6.0f, 14.0f),
+			FLinearColor(12.0f * K, 5.0f * K, 1.4f * K));
+	}
+}
+
+void URTSMatchSubsystem::UpdateConstructionFx()
+{
+	// (30/10, a obra com vida; a revisão: "a obra está parada, sem vida: falta poeira de obra, faísca de solda e o Dozer trabalhando, como no
+	// ZH") as faíscas da solda caindo da estrutura, num ponto da borda na altura que a obra já subiu, uma a cada ~0,35–1 s por obra, e de vez
+	// em quando a poeira baixa no pé dela (no campo único de poeira). Só desenho, pelo relógio do mundo
+	UWorld* W = GetWorld();
+	UBlastFxDirector* Fx = UBlastFxDirector::ShotFxEnabled() ? UBlastFxDirector::Get(this) : nullptr;
+	if (!W || !Fx || !State)
+	{
+		return;
+	}
+	const double Now = W->GetTimeSeconds();
+	ARTSTreadDust* Dust = TreadDust.Get();
+	BulletDustUntil.RemoveAllSwap([Now](double Until) { return Until <= Now; });
+	TArray<ARTSTreadDust::FImpactPuff> Puffs;
+	for (const TPair<uint32, TObjectPtr<ARTSUnitActor>>& It : Views)
+	{
+		ARTSUnitActor* A = It.Value.Get();
+		if (A && !A->IsStructure())
+		{
+			// (30/10, 3ª volta: o puff na lâmina não aparecia em duas voltas; o jeito do ZH, o DozerDirtFall) a cada subida da lâmina na
+			// obra ou no conserto, a terra escorrega pela borda de cima e levanta areia na frente
+			const uint32 Lifts = A->GetBladeLifts();
+			if (Lifts != 0 && !A->IsDead() && !A->IsFogHidden())
+			{
+				uint32& Seen = BladeLiftsSeen.FindOrAdd(It.Key);
+				FVector Lip, Fw;
+				float HalfW = 0.0f;
+				if (Seen != Lifts && A->GetBladeLip(Lip, Fw, HalfW))
+				{
+					Seen = Lifts;
+					Fx->DozerDirtFall(Lip, Fw, HalfW, HashCombine(GetTypeHash(It.Key), Lifts));
+					// (31/10, o Felipe: "faltou subir um pouco de poeira do chão dependendo da textura, areia por exemplo, poeiras levadas ao
+					// vento bem pequenas e sutis, porém detalhadas e visíveis") a areia fina que a terra caindo e a lâmina raspando soltam: 2–3
+					// puffs pequenos e ralos na frente da lâmina, na poeira em volume (a camada que fica e deriva no vento do mapa), pelo quanto
+					// o chão solta (o asfalto e a laje nada, a areia tudo)
+					if (Dust && BulletDustUntil.Num() < 60)
+					{
+						FRandomStream Rng(int32(HashCombine(GetTypeHash(It.Key), Lifts * 2654435761u) & 0x7fffffffu));
+						const FVector F2 = Fw.GetSafeNormal2D(), S2(-F2.Y, F2.X, 0.0);
+						const int32 NPuffs = 2 + (Rng.FRand() < 0.5f ? 1 : 0);
+						for (int32 Pk = 0; Pk < NPuffs; ++Pk)
+						{
+							const FVector At = Lip + F2 * Rng.FRandRange(40.0f, 140.0f) + S2 * Rng.FRandRange(-HalfW, HalfW);
+							const FVector2D At2(At.X, At.Y);
+							const float Y = float(FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(At2)));
+							if (Y < 0.05f)
+							{
+								continue;
+							}
+							ARTSTreadDust::FImpactPuff& O = Puffs.AddDefaulted_GetRef();
+							O.PosM = FVector(At.X, At.Y, State->Baked.GroundZCm(At2)) / 100.0;
+							O.VelM = F2 * Rng.FRandRange(0.2f, 0.5f) + S2 * Rng.FRandRange(-0.2f, 0.2f);
+							O.SizeM = Rng.FRandRange(0.9f, 1.6f);
+							O.LifeS = Rng.FRandRange(4.0f, 6.0f);
+							O.Mass = 0.5f * Y * Rng.FRandRange(0.7f, 1.2f);
+							O.DelayS = Rng.FRandRange(0.1f, 0.4f);   // a terra chega no chão depois de cair da borda
+							O.Layer = 2;
+							BulletDustUntil.Add(Now + double(O.LifeS));
+						}
+					}
+					if (CVarBulletLog.GetValueOnGameThread() != 0)
+					{
+						const FVector Rel = A->GetActorTransform().InverseTransformPosition(Lip);
+						UE_LOG(LogTemp, Display, TEXT("RTS obra: terra da lâmina do Dozer %u (subida %u), a borda a (%.0f, %.0f, %.0f) cm do centro, meia largura %.0f cm"),
+							It.Key, Lifts, Rel.X, Rel.Y, Rel.Z, HalfW);
+					}
+				}
+			}
+			continue;
+		}
+		if (!A || !A->IsStructure() || A->IsDead() || A->GetBuildFraction() >= 1.0f || A->IsFogHidden())
+		{
+			continue;
+		}
+		// (30/10, 2ª volta: um estalo solto a cada ~0,7 s era um lampejo de 1 px de dia) a solda é um trabalho: no ponto da vez, uma
+		// sequência de estalos a cada ~0,1 s por 0,5–0,9 s (o arco piscando branco-azulado e a cascata de faíscas), depois a pausa e o
+		// soldador vai pra outro ponto
+		FWeld& Wd = Welds.FindOrAdd(It.Key);
+		if (Wd.Until > Now && Now >= Wd.NextPop)
+		{
+			const uint32 Hp = HashCombine(GetTypeHash(It.Key), uint32(Now * 31.0) * 2246822519u);
+			Wd.NextPop = Now + 0.08 + 0.05 * double((Hp & 0xFFu) / 255.0f);
+			Fx->WeldSpark(Wd.Cm, Wd.Out, Hp);
+			ARTSEffect::SpawnFlash(W, Wd.Cm + Wd.Out * 15.0, 22.0f, 2.5e5f, 0.06f, FLinearColor(0.55f, 0.65f, 1.0f));
+		}
+		double& Next = ConstructionSparkAt.FindOrAdd(It.Key);
+		if (Now < Next)
+		{
+			continue;
+		}
+		const uint32 H = HashCombine(GetTypeHash(It.Key), uint32(Now * 7.0) * 2654435761u);
+		const auto U = [H](int32 Shift) { return float((H >> Shift) & 0xFFu) / 255.0f; };
+		Next = Now + 0.35 + 0.65 * double(U(0));
+		// um ponto na borda da planta (o perímetro), na altura da obra de agora
+		const FBox2D Fp = A->GetFootprintCm();
+		const FVector2D Size = Fp.GetSize();
+		const float Per = 2.0f * float(Size.X + Size.Y);
+		float S = U(8) * Per;
+		FVector2D L;
+		if (S < Size.X) { L = FVector2D(Fp.Min.X + S, Fp.Min.Y); }
+		else if ((S -= float(Size.X)) < Size.Y) { L = FVector2D(Fp.Max.X, Fp.Min.Y + S); }
+		else if ((S -= float(Size.Y)) < Size.X) { L = FVector2D(Fp.Max.X - S, Fp.Max.Y); }
+		else { S -= float(Size.X); L = FVector2D(Fp.Min.X, Fp.Max.Y - S); }
+		const float Hgt = A->GetHeightCm() * FMath::Clamp(A->GetBuildFraction(), 0.15f, 1.0f) * FMath::Lerp(0.45f, 1.0f, U(16));
+		const FTransform T = A->GetActorTransform();
+		const FVector Weld = T.TransformPosition(FVector(L.X, L.Y, Hgt));
+		if (!IsPointShown(FVector2D(Weld.X, Weld.Y)))
+		{
+			continue;
+		}
+		const FVector Out = (Weld - T.TransformPosition(FVector(Fp.GetCenter().X, Fp.GetCenter().Y, Hgt))).GetSafeNormal2D();
+		Wd.Cm = Weld;
+		Wd.Out = Out.IsNearlyZero() ? FVector::ForwardVector : Out;
+		Wd.Until = Now + 0.5 + 0.4 * double(U(4));
+		Wd.NextPop = Now;
+		Next = Wd.Until + 0.25 + 0.5 * double(U(0));   // a pausa entre um ponto e outro
+		if (Dust && U(24) < 0.3f && BulletDustUntil.Num() < 60)
+		{
+			// a poeira da obra no pé dela (rala, larga, devagar)
+			const FVector Foot = T.TransformPosition(FVector(L.X, L.Y, 0.0));
+			ARTSTreadDust::FImpactPuff& O = Puffs.AddDefaulted_GetRef();
+			O.PosM = FVector(Foot.X, Foot.Y, State->Baked.GroundZCm(FVector2D(Foot.X, Foot.Y))) / 100.0;
+			O.VelM = FVector(Out.X * 0.5, Out.Y * 0.5, 0.0);
+			O.SizeM = 2.0f;
+			O.LifeS = 3.0f;
+			O.Mass = 1.2f;
+			O.Layer = 0;
+			BulletDustUntil.Add(Now + 3.0);
+		}
+	}
+	if (Dust && Puffs.Num())
+	{
+		Dust->AddImpactPuffs(Puffs, uint32(Now * 331.0) | 1u);
+	}
+}
+
+float URTSMatchSubsystem::BulletDustMass()
+{
+	// (30/10, item 29) a massa do véu da bala na gravação própria (o pico da coluna dela igual ao do chute das lagartas); -BulletDustMass=
+	// (v12, A/B na rajada da Stryker: a 1 vira algodão de ~3 m que cobre a área; a 0,3 some; a 0,5 fica o véu com volume e textura)
+	static const float M = [] { float V = 0.5f; FParse::Value(FCommandLine::Get(), TEXT("BulletDustMass="), V); return V; }();
+	return M;
+}
+
+bool URTSMatchSubsystem::BulletRoundsOn()
+{
+	static const bool bOn = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("BulletRounds="), V); return V != 0; }();
+	return bOn;
+}
+
+void URTSMatchSubsystem::QueueBulletRounds(ARTSUnitActor* Shooter, uint32 ShooterId, uint32 TargetId, ARTSUnitActor* Victim, const FVector& GroundAimCm, float SpeedCmPerS, uint32 Seed)
+{
+	// (30/10, docs/ESTUDO_IMPACTOS.md G) as 2 balas desenhadas de um tiro da simulação: a DShK (~600/min) e a M2 (450–575/min) dão ~10
+	// balas por segundo, e a simulação atira 5 vezes por segundo. A rajada cai numa elipse em volta do alvo (o estudo A: 2–3 × 4–8 m; o
+	// semieixo ao longo do tiro é o light_gun_spread_m da arma: a picape espalha mais, o Stryker estabilizado a metade), as 3 primeiras
+	// caminhando até ele; das outras, ~30–45% batem no casco
+	UWorld* W = GetWorld();
+	if (!W || !Shooter || !State)
+	{
+		return;
+	}
+	const double Now = W->GetTimeSeconds();
+	constexpr double Gap = 0.1;
+	FBulletBurst& Burst = BulletBursts.FindOrAdd(ShooterId);
+	if (Now - Burst.LastAt > 0.6)
+	{
+		Burst.Count = 0;   // parou de atirar: a rajada nova começa caminhando de novo
+	}
+	const FVector Mz = Shooter->MuzzleLocation();
+	const float Spread = Shooter->GetLightGunSpreadCm();
+	const float HitP = FMath::Clamp(0.6f - 0.1f * Spread / 100.0f, 0.2f, 0.5f);
+	// (30/10, o Felipe: "o tiro saindo numa velocidade extremamente lenta"; docs/ESTUDO_INFANTARIA_VISUAL.md §0 e §5) a arma de acerto
+	// imediato na simulação (projectile_mps 0, o fuzil) caía no piso de 10 m/s e a bala levava 2,6 s pra cruzar os 26 m; no desenho ela
+	// voa na velocidade da boca do 5,56 (M855, ~900 m/s: 2 quadros até o alvo, o risco do traçante). E o soldado desenha 1 bala por tiro
+	// da simulação (a rajada de 3 do Ranger já são 3 tiros), não as 2 da metralhadora
+	const bool bRifle = Shooter->IsInfantry();
+	if (SpeedCmPerS <= 0.0f)
+	{
+		SpeedCmPerS = 90000.0f;
+	}
+	const int32 Rounds = bRifle ? 1 : 2;
+	if (CVarBulletDrawMps.GetValueOnGameThread() > 0.0f)
+	{
+		SpeedCmPerS = CVarBulletDrawMps.GetValueOnGameThread() * 100.0f;   // (01/11) o A/B da velocidade desenhada
+	}
+	for (int32 K = 0; K < Rounds; ++K)
+	{
+		const uint32 H = HashCombine(GetTypeHash(Seed), 0xB0B0u + uint32(K) * 0x9E37u);
+		const auto U = [H](int32 Shift) { return float((H >> Shift) & 0xFFu) / 255.0f; };
+		FBulletRound R;
+		R.FireAt = Now + Gap * K;
+		R.Shooter = Shooter;
+		R.Target = TargetId;
+		R.FromCm = Mz;
+		R.Seed = H;
+		const int32 N = Burst.Count++;
+		// (01/11, A2) o traçante fixo, por contador (a fita da metralhadora de verdade: 4 comuns pra 1 traçante, FM 3-21.8): no fuzil o 1º de cada
+		// rajada (a de 3 do Ranger sempre leva um; o sorteio de antes deixava 42% das rajadas sem nenhum), na metralhadora 1 em 4
+		R.bTracer = bRifle ? N % 3 == 0 : N % 4 == 0;
+		R.bFlash = K == 0;                  // (o custo, medido: um clarão com luz por bala custava ~7 ms com 12 armas)
+		const float Gx = U(8) + U(16) - 1.0f, Gy = U(4) + U(12) - 1.0f;   // ~triangular em −1..1
+		if (Victim && !Victim->IsDead())
+		{
+			// a caixa do casco no rumo do tiro (o casco das sombras, no quadro dele): quanto ele ocupa ao longo do tiro e de través
+			FVector2D BoxC;
+			float HalfLen = 0.0f, HalfWidth = 0.0f, HullTop = 0.0f, Height = 0.0f;
+			Victim->GetShadowBoxCm(BoxC, HalfLen, HalfWidth, HullTop, Height);
+			const FTransform Vt = Victim->GetActorTransform();
+			const FVector C3 = Vt.TransformPosition(FVector(BoxC.X, BoxC.Y, 0.0));
+			const FVector2D C2(C3.X, C3.Y);
+			FVector2D Dir = (C2 - FVector2D(Mz.X, Mz.Y)).GetSafeNormal();
+			Dir = Dir.IsNearlyZero() ? FVector2D(1.0, 0.0) : Dir;
+			const FVector2D Side(-Dir.Y, Dir.X);
+			const FVector Fw3 = Vt.TransformVectorNoScale(FVector::ForwardVector);
+			const FVector2D Fw = FVector2D(Fw3.X, Fw3.Y).GetSafeNormal();
+			const float Ca = float(FMath::Abs(FVector2D::DotProduct(Fw, Dir))), Sa = float(FMath::Abs(FVector2D::DotProduct(Fw, Side)));
+			const float Along = FMath::Max(HalfLen * Ca + HalfWidth * Sa, 100.0f);     // a meia planta ao longo do tiro
+			const float Across = FMath::Max(HalfLen * Sa + HalfWidth * Ca, 100.0f);    // e de través
+			R.bHull = N >= 3 && U(0) < HitP;
+			if (R.bHull)
+			{
+				R.ToCm = LightGunAim(Victim, Mz, H);
+			}
+			else
+			{
+				// (30/10, 3ª volta: a elipse em volta do centro punha quase toda bala errada embaixo do próprio casco, escondida) a bala que
+				// erra cai ANTES do alvo, passa DO LADO ou passa por cima e cai ATRÁS, longe (a trajetória é rasa: a ~1,5 m do chão, a bala
+				// que passa por cima de um casco de 2,5 m só desce dezenas de metros depois); as primeiras da rajada caminham até ele
+				const float Pick = U(20);
+				FVector2D P;
+				if (N < 3)
+				{
+					P = C2 - Dir * double(Along + 60.0f * float(3 - N) + 50.0f * U(28)) + Side * double(0.3f * Across * Gy);
+				}
+				else if (Pick < 0.5f)
+				{
+					P = C2 - Dir * double(Along + 30.0f + Spread * U(28)) + Side * double((Across + 0.3f * Spread) * Gy);          // antes
+				}
+				else if (Pick < 0.8f)
+				{
+					const float Out = Across + 40.0f + 0.4f * Spread * U(28);
+					P = C2 + Dir * double(Along * Gx) + Side * double(Gy < 0.0f ? -Out : Out);                                       // do lado
+				}
+				else
+				{
+					P = C2 + Dir * double(Along + 300.0f + 4.0f * Spread * U(28)) + Side * double(0.5f * Spread * Gy);                // atrás, longe
+				}
+				R.ToCm = FVector(P.X, P.Y, State->Baked.GroundZCm(P));
+			}
+		}
+		else
+		{
+			// o chão (o tiro forçado): em volta do ponto, metade da elipse
+			const FVector2D A(GroundAimCm.X, GroundAimCm.Y);
+			FVector2D Dir = (A - FVector2D(Mz.X, Mz.Y)).GetSafeNormal();
+			Dir = Dir.IsNearlyZero() ? FVector2D(1.0, 0.0) : Dir;
+			const FVector2D Side(-Dir.Y, Dir.X);
+			const FVector2D P = A + Dir * double(0.5f * Spread * Gx) + Side * double(0.25f * Spread * Gy);
+			R.ToCm = FVector(P.X, P.Y, State->Baked.GroundZCm(P));
+		}
+		R.HitAt = R.FireAt + FVector::Dist(Mz, R.ToCm) / double(FMath::Max(SpeedCmPerS, 1000.0f));
+		BulletRounds.Add(R);
+	}
+	Burst.LastAt = Now + Gap;
+}
+
+void URTSMatchSubsystem::UpdateBulletRounds()
+{
+	UWorld* W = GetWorld();
+	if (!W || !State || BulletRounds.IsEmpty())
+	{
+		return;
+	}
+	const double Now = W->GetTimeSeconds();
+	UBlastFxDirector* HitFx = UBlastFxDirector::ShotFxEnabled() ? UBlastFxDirector::Get(this) : nullptr;
+	ARTSTreadDust* Dust = TreadDust.Get();
+	const int32 Preset = FMath::Clamp(BlastFxHitLife::Preset(), 0, 3);
+	constexpr int32 DustCap[4] = { 0, 40, 90, 140 };   // os puffs de bala vivos no campo de poeira (baixa sem, como os de impacto)
+	BulletDustUntil.RemoveAllSwap([Now](double Until) { return Until <= Now; });
+	TArray<ARTSTreadDust::FImpactPuff> Puffs;
+	for (int32 I = BulletRounds.Num() - 1; I >= 0; --I)
+	{
+		FBulletRound& R = BulletRounds[I];
+		ARTSUnitActor* Sh = R.Shooter.Get();
+		if (!R.bFired && Now >= R.FireAt)
+		{
+			R.bFired = true;
+			if (Sh && !Sh->IsDead() && !Sh->IsFogHidden())
+			{
+				const FVector Mz = Sh->MuzzleLocation();
+				R.FromCm = Mz;
+				// o clarão da boca e o pulso de luz quente que acende o chão e o casco em volta (o LightPulse da metralhadora do ZH, raio 25
+				// e 0,5 s; aqui ~5 m e 0,1 s por bala: a 10 balas/s vira o pisca contínuo de quem está atirando)
+				// (30/10, "tá saindo um fogo no chão no lugar das infantarias") o fuzil com o clarão do tamanho dele (light_gun_flash_m, 15 cm):
+				// o piso de 45 cm é das metralhadoras de veículo; a 1 m do chão a bola de 90 cm e a luz de 5 m acendiam a areia como fogo
+				const float Rf = Sh->IsInfantry() ? Sh->GetLightGunFlashCm() : FMath::Max(Sh->GetLightGunFlashCm(), 45.0f);
+				// (01/11, A4) o atirador pisca: a luz quente no chão dele, uma por arma reacesa a cada tiro (o LightPulse do ZH: o fuzil 2,6 m
+				// caindo em 0,2 s, a metralhadora da picape 6,6 m em 0,5 s). O pico pela conta da leitura de dia: ~15% do sol na areia (18 000 lux)
+				// a ~1 m da boca do fuzil e a ~2 m da da metralhadora: ~1,8·10⁴ e ~7·10⁴ cd
+				if (R.bFlash && CVarShooterPulse.GetValueOnGameThread() != 0)
+				{
+					const bool bInf = Sh->IsInfantry();
+					Sh->PulseLight(Mz + FVector(0.0, 0.0, 20.0), bInf ? 260.0f : 660.0f, bInf ? 1.8e4f : 7.0e4f, bInf ? 0.2f : 0.5f, FLinearColor(1.0f, 0.62f, 0.3f));
+				}
+				if (R.bFlash)
+				{
+					// (o custo, cena custo_metralhadora: 12 armas a 10 balas/s davam +11 ms) um clarão por par, 5 por segundo, que dura 0,16 s:
+					// o pulso do ZH (a picape a 5 tiros/s com a luz caindo em 0,5 s) segue contínuo
+					ARTSEffect::SpawnFlash(W, Mz + Sh->MuzzleDirection() * (0.8f * Rf), Rf, 1.5e6f * FMath::Square(Rf / 60.0f), 0.16f, FLinearColor(0.35f, 0.16f, 0.04f));
+				}
+				if (R.bTracer)
+				{
+					// o traçante: fino (~1,5 px pela câmera) e laranja-avermelhado sem estourar (a radiância do traçante do tanque × ~0,8)
+					const float Speed = float(FVector::Dist(Mz, R.ToCm) / FMath::Max(R.HitAt - Now, 0.02));
+					const FVector Dir = (R.ToCm - Mz).GetSafeNormal();
+					ARTSEffect::SpawnBulletTracer(W, Mz + Dir * 80.0, R.ToCm, Speed, FMath::Min(Sh->GetLightGunTracerCm(), 300.0f), 0.001f,
+						FLinearColor(0.2f, 0.055f, 0.01f));
+				}
+			}
+		}
+		if (Now < R.HitAt)
+		{
+			continue;
+		}
+		const FVector2D At2(R.ToCm.X, R.ToCm.Y);
+		if (HitFx && IsPointShown(At2))
+		{
+			ARTSUnitActor* V = R.bHull && R.Target ? ViewOf(R.Target) : nullptr;
+			if (V && !V->IsDead() && !V->IsFogHidden() && V->IsInfantry())
+			{
+				// (30/10, "sangue SIM"; antes a bala no soldado fazia o acerto de casco: faísca de metal, o clarão e o pó da tinta, que de perto
+				// lia como uma bola de fogo do lado dele) o tranco do corpo e, em 1 de cada 3, o respingo no chão além dele, onde as gotas
+				// caem (0,4–1,4 m: a 2,5–5,5 m/s de ~1,6 m de altura). (v4) Sem as gotas em 3D: as peças de destroço de 2–4 cm ficavam de pé
+				// na areia como palitos vermelhos
+				++BulletLogHull;
+				const FVector Dir = (R.ToCm - R.FromCm).GetSafeNormal();
+				const FVector2D Dir2 = FVector2D(Dir.X, Dir.Y).GetSafeNormal();
+				V->PlayHit(FVector2D(R.FromCm.X, R.FromCm.Y));
+				// (01/11, A4/A5: "quando a infantaria levava dano") o pó da farda do lado de saída (a regra de não tapar: rente, ~0,5 m, some em
+				// 0,4 s) e o sangue em 1 de 2 (antes 1 de 3)
+				if (HitFx)
+				{
+					const FVector Out = V->GetActorLocation() + FVector(Dir2.X * 40.0, Dir2.Y * 40.0, 110.0);
+					HitFx->BulletGroundHit(Out, R.FromCm, R.Seed ^ 0x5A17u, false);
+				}
+				if ((R.Seed >> 7) % 2u == 0u)
+				{
+					const float Reach = 40.0f + 100.0f * float((R.Seed >> 11) & 0xFFu) / 255.0f;
+					const FVector2D At = FVector2D(V->GetActorLocation()) + Dir2 * Reach;
+					AddBlood(FVector(At.X, At.Y, State->Baked.GroundZCm(At)), Dir2, 50.0f + 40.0f * float((R.Seed >> 19) & 0xFFu) / 255.0f, 1.0f, 0.06f, R.Seed);
+				}
+			}
+			else if (V && !V->IsDead() && !V->IsFogHidden())
+			{
+				FVector HullAt = R.ToCm, HullN = (R.FromCm - R.ToCm).GetSafeNormal();
+				++BulletLogHull;
+				// (01/11, A5) o metal pisca: o pulso de 4 m caindo em 0,5 s no casco (o FX_DamageTankStruckSmallArms do ZH), no máximo um a cada
+				// 0,1 s por alvo (a luz é uma por ator: o acerto seguinte reacende). (01/11, a prova v35: com 2,5·10⁴ cd a 60 cm o ponto levava
+				// ~69 mil lux, quase 4× o sol de 18 mil, e a metralhadora a 10 balas/s deixava a Technical estourada, pálida) a conta: +50% do sol
+				// no ponto do acerto = 9 mil lux a 1 m: 9·10³ cd a 1 m do casco (lê "o alvo responde" sem lavar a pintura)
+				if (W->GetTimeSeconds() - V->LastHitPulseS > 0.1)
+				{
+					V->LastHitPulseS = W->GetTimeSeconds();
+					V->PulseLight(R.ToCm + HullN * 100.0, 400.0f, 9.0e3f, 0.5f, FLinearColor(1.0f, 0.7f, 0.4f));
+				}
+				// o casco: as faíscas finas do ricochete; em 1 de 4 o risco que bate e sobe (na picape a bala atravessa: sem ricochete)
+				if (HitFx->BulletHit(R.ToCm, R.FromCm, V, State->Baked.GroundZCm(At2), R.Seed, HullAt, HullN) && V->GetDeathScale() >= 0.5f
+					&& (R.Seed >> 9) % 4u == 0u)
+				{
+					const FVector In = (HullAt - R.FromCm).GetSafeNormal();
+					FVector Out = (In - 2.0 * FVector::DotProduct(In, HullN) * HullN).GetSafeNormal();
+					const float Up = FMath::DegreesToRadians(10.0f + 20.0f * float((R.Seed >> 12) & 0xFFu) / 255.0f);
+					Out = (FVector(Out.X, Out.Y, 0.0).GetSafeNormal() * FMath::Cos(Up) + FVector(0.0, 0.0, FMath::Sin(Up))).GetSafeNormal();
+					const float Reach = 2000.0f + 4000.0f * float((R.Seed >> 20) & 0xFFu) / 255.0f;
+					ARTSEffect::SpawnBulletTracer(W, HullAt, HullAt + Out * Reach, 30000.0f, 180.0f, 0.001f, FLinearColor(0.2f, 0.055f, 0.01f));
+				}
+			}
+			else
+			{
+				// a areia: os grãos claros e, no campo único de poeira (a sombra do mapa, a luz do sol e das explosões), o véu baixo da bala
+				const FVector Ground(At2.X, At2.Y, State->Baked.GroundZCm(At2));
+				++BulletLogGround;
+				if ((R.Seed >> 3) & 1u)
+				{
+					HitFx->BulletGroundHit(Ground, R.FromCm, R.Seed, false);   // (o custo) os grãos em metade dos erros; o véu em todos
+				}
+				if (Dust && DustCap[Preset] > 0 && BulletDustUntil.Num() < DustCap[Preset] && !(Dust->IsVolumePath() && Dust->BricksInUse() > 3000))
+				{
+					const float Y = float(FRTSHitLife::DustYieldOf(State->Baked.SurfaceAt(At2)));
+					if (Y >= 0.03f)
+					{
+						FRandomStream Rng(int32(R.Seed & 0x7fffffffu));
+						const FVector2D Away = (At2 - FVector2D(R.FromCm.X, R.FromCm.Y)).GetSafeNormal();
+						ARTSTreadDust::FImpactPuff& O = Puffs.AddDefaulted_GetRef();
+						O.PosM = Ground / 100.0;
+						O.VelM = FVector(Away * double(Rng.FRandRange(0.6f, 1.2f)), 0.0);
+						O.SizeM = Rng.FRandRange(1.2f, 1.8f);      // o estudo A: nasce com 1–1,5 m e cresce até 2–2,5 m
+						O.LifeS = Rng.FRandRange(1.5f, 2.6f);      // 1,5–3 s
+						O.Mass = 2.5f * Y * Rng.FRandRange(0.7f, 1.2f);   // (2ª volta: a 0,8 não lia) rala, mas que se vê de cima (o rotor: 5 num puff de 2–7 m)
+						O.Layer = 0;
+						// (30/10, item 29, A/B v7: o véu ralo, a massa 0,6, pegava o azul do céu e virava bolinha cinza-azulada)
+						// (v11) o véu na gravação própria da bala (Game/Tools/blender_bullet_dust.py: o esguicho simulado no tamanho do mundo, a
+						// cortina pra longe do atirador que abre numa nuvem rala com os redemoinhos e se desfaz em ~1,5 s), tocada na escala 1
+						// (a gravação das lagartas encolhida a 1/3 serrilhava no campo: o "pixelado") e virada pro rumo da bala
+						if (UBlastFxDirector::BulletSandVersion() >= 2 && ARTSTreadDust::HasBulletDust())
+						{
+							O.Layer = 3;
+							O.SizeM = 4.8;                                   // a janela da gravação: a escala 1
+							O.VelM = FVector(Away * 0.4, 0.0);               // o rumo (o giro da gravação) e um resto de deriva
+							O.LifeS = Rng.FRandRange(2.4f, 3.0f);
+							O.Mass = BulletDustMass() * Y * Rng.FRandRange(0.8f, 1.2f);
+						}
+						// (01/11, a prova v35_leitura_tiro_leve: a Technical sumia numa nuvem branca de ~4 m) o "O.Layer = 0" vinha DEPOIS do véu
+						// gravado e o desligava, deixando o puff simples com a janela de 4,8 m da gravação: a versão aprovada em 31/10 (o véu do
+						// EmberGen na massa 0,5) não tocava. O padrão (a camada 0) vai antes; o véu gravado fica com a camada dele
+						BulletDustUntil.Add(Now + double(O.LifeS));
+					}
+				}
+			}
+		}
+		BulletRounds.RemoveAtSwap(I);
+	}
+	if (Dust && Puffs.Num())
+	{
+		Dust->AddImpactPuffs(Puffs, uint32(Now * 613.0) | 1u);
+	}
+	// (30/10) o registro da rajada (rts.BulletLog 1): quantas balas foram pro casco, pra areia e viraram puff, por segundo
+	if (CVarBulletLog.GetValueOnGameThread() != 0)
+	{
+		BulletLogPuffs += Puffs.Num();
+		if (Now - BulletLogAt >= 1.0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("RTS rajada: %d no casco, %d na areia, %d puffs (%d vivos, teto %d, preset %d, poeira %d), %d na fila"),
+				BulletLogHull, BulletLogGround, BulletLogPuffs, BulletDustUntil.Num(), DustCap[Preset], Preset, Dust ? 1 : 0, BulletRounds.Num());
+			BulletLogAt = Now;
+			BulletLogHull = BulletLogGround = BulletLogPuffs = 0;
+		}
+	}
+}
+
+void URTSMatchSubsystem::AddBlood(const FVector& GroundCm, const FVector2D& Dir, float SizeCm, float Kind, float GrowTauS, uint32 Seed, ARTSUnitActor* FollowBody)
+{
+	UWorld* W = GetWorld();
+	if (!W)
+	{
+		return;
+	}
+	static TWeakObjectPtr<UMaterialInterface> Mat;
+	if (!Mat.IsValid())
+	{
+		Mat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_BloodDecal.M_BloodDecal"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Mat.IsValid())
+		{
+			return;   // (o game.ps1 content monta)
+		}
+	}
+	constexpr int32 MaxMarks = 96;
+	while (BloodMarks.Num() >= MaxMarks)
+	{
+		if (UDecalComponent* Old = BloodMarks[0].Decal.Get())
+		{
+			Old->DestroyComponent();
+		}
+		BloodMarks.RemoveAt(0);
+	}
+	// o decal olha pra baixo (o X dele é a profundidade; o Z vira o rumo no chão: o UV.y do material, a cauda do respingo)
+	const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(float(Dir.Y), float(Dir.X)));
+	UDecalComponent* D = UGameplayStatics::SpawnDecalAtLocation(W, Mat.Get(), FVector(60.0, 0.5 * SizeCm, 0.5 * SizeCm), GroundCm, FRotator(-90.0f, Yaw, 0.0f), 0.0f);
+	if (!D)
+	{
+		return;
+	}
+	D->SetFadeScreenSize(0.0f);
+	D->SortOrder = 6;   // por cima da memória do chão e do contato
+	UMaterialInstanceDynamic* M = D->CreateDynamicMaterialInstance();
+	if (M)
+	{
+		M->SetScalarParameterValue(TEXT("Kind"), Kind);
+		M->SetScalarParameterValue(TEXT("Seed"), float(Seed % 9973u) / 9973.0f);
+		M->SetScalarParameterValue(TEXT("Grow"), 0.0f);
+		M->SetScalarParameterValue(TEXT("Wet"), 1.0f);
+		M->SetScalarParameterValue(TEXT("Fade"), 1.0f);
+	}
+	FBloodMark& B = BloodMarks.AddDefaulted_GetRef();
+	B.Decal = D;
+	B.Mid = M;
+	B.Body = FollowBody;
+	B.Born = W->GetTimeSeconds();
+	B.GrowTauS = GrowTauS;
+	B.LifeS = Kind < 0.5f ? 45.0f : 30.0f;
+}
+
+void URTSMatchSubsystem::UpdateBlood()
+{
+	UWorld* W = GetWorld();
+	if (!W || BloodMarks.IsEmpty())
+	{
+		return;
+	}
+	const double Now = W->GetTimeSeconds();
+	for (int32 I = BloodMarks.Num() - 1; I >= 0; --I)
+	{
+		FBloodMark& B = BloodMarks[I];
+		UDecalComponent* D = B.Decal.Get();
+		UMaterialInstanceDynamic* M = B.Mid.Get();
+		const float Age = float(Now - B.Born);
+		if (!D || !M || Age > B.LifeS)
+		{
+			if (D)
+			{
+				D->DestroyComponent();
+			}
+			BloodMarks.RemoveAtSwap(I);
+			continue;
+		}
+		// cresce (1 − e^(−t/τ): o respingo de uma vez, a poça escorrendo em segundos), seca em ~25 s (o sangue na areia escurece e perde o
+		// brilho molhado) e some nos últimos 4 s
+		M->SetScalarParameterValue(TEXT("Grow"), 1.0f - FMath::Exp(-Age / FMath::Max(B.GrowTauS, 0.01f)));
+		M->SetScalarParameterValue(TEXT("Wet"), FMath::Clamp(1.0f - Age / 25.0f, 0.0f, 1.0f));
+		M->SetScalarParameterValue(TEXT("Fade"), FMath::Clamp((B.LifeS - Age) / 4.0f, 0.0f, 1.0f));
+		// a poça segue o tronco enquanto o corpo cai (a morte animada leva ~1–2 s e anda até ~1 m)
+		if (ARTSUnitActor* Body = B.Body.Get(); Body && Age < 3.0f)
+		{
+			const FVector C = Body->GetSoldierChestCm();
+			D->SetWorldLocation(FVector(C.X, C.Y, D->GetComponentLocation().Z));
+		}
+	}
+}
+
+void URTSMatchSubsystem::FlakBurst(const FVector& AtCm, const FVector& FromCm, uint32 Seed)
+{
+	// o estouro do antiaéreo no ar: o clarão e as faíscas do acerto de míssil na escala da carga pequena (K 0,42: a de ~0,3 kg; o clarão
+	// e a vida das faíscas × K, a luz × K²: a luz acende a fumaça perto), sem o brilho em sprite, e a baforada escura em volume
+	UWorld* W = GetWorld();
+	if (!W)
+	{
+		return;
+	}
+	const FVector Normal = (FromCm - AtCm).GetSafeNormal();
+	if (UBlastFxDirector::ShotFxEnabled())
+	{
+		if (ABlastDebris* Fx = W->SpawnActor<ABlastDebris>(ABlastDebris::StaticClass(), FTransform::Identity))
+		{
+			Fx->GlowScale = 1.1f;   // o ImpactGlow do diretor
+			Fx->StartMissileHit(AtCm, Normal.IsNearlyZero() ? FVector::UpVector : Normal, int32(HashCombine(GetTypeHash(Seed), 0xF1A4u) >> 1), 0.42f, false);
+		}
+	}
+	else
+	{
+		ARTSEffect::SpawnFlash(W, AtCm, 50.0f, 3.0e5f, 0.06f, FLinearColor(0.4f, 0.22f, 0.07f));
+	}
+	AirBurstSmoke(AtCm, 0.42f, 0.22f, Seed);
+}
+
+void URTSMatchSubsystem::AirBurstSmoke(const FVector& AtCm, float SigmaM, float ExtM2, uint32 Seed)
+{
+	FFlakPuff& P = FlakPuffs.AddDefaulted_GetRef();
+	P.Cm = AtCm;
+	P.Start = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	P.Id = 0x2C000000u | (++FlakSerial & 0x00FFFFFFu);
+	P.SigmaM = SigmaM;
+	P.ExtM2 = ExtM2;
+	if (FlakPuffs.Num() > 96)
+	{
+		FlakPuffs.RemoveAt(0, FlakPuffs.Num() - 96);
+	}
 }

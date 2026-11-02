@@ -149,6 +149,10 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [x] **O viés −0,5 das sombras no Alta, de novo com a água filtrada** (16/10, o Felipe escolheu: "ligue no alta"; em `DefaultScalability.ini` [ShadowQuality@3]): −0,8 ms (32,2 × 33,0 ms). A água ficou quase igual, com as listras da sombra um pouco mais riscadas no ampliado (`captures/game/ab_agua_b05.jpg` e `ab_agua_b05_zoom_a.jpg`). Não liguei: é escolha de gosto do Felipe, um A/B pra ele.
 
 ### Mecânica
+- [~] **A infantaria: o Ranger e o quartel da USA** (30/10 de madrugada, a sessão do v5r1; sem o teste do Felipe, sem commit): a simulação 26
+  (a armadura de infantaria e o atropelamento do ZH, o `SquishCollide`), o `usa_ranger` e o `usa_barracks` com os números do ZH, o soldado
+  e o quartel provisórios (`Tools/blender_provisional.py`), a operação `train` do laboratório. Falta a IA usar e o ícone dos botões.
+  Ver `docs/ESTUDO_INFANTARIA.md` §5; as cenas `fx_infantaria`, `fx_infantaria_tanque`, `fx_quartel`.
 - [~] **A defesa de base da USA (a Patriot)** (14/10 de madrugada, a noite da v3; o Felipe aprovou o modelo: "top, manda pros cara botar no jogo"):
   - **Os números são do ZH**, de `AmericaPatriotBattery`, `PatriotMissileWeapon` e `PatriotMissileLocomotor`, × 0,2633 m:
     - custa 1000, leva 25 s e gasta 3 de energia;
@@ -163,6 +167,10 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - **No jogo:** ela está no menu do Dozer, com o botão `usa_missile_defense` do kit da Arte. A cena de teste é `patriot_defesa`.
   - **A IA:** monta a 1ª defesa depois da fábrica, a 45 m da base rumo ao inimigo, e a 2ª com $3000 sobrando. A defesa não entra mais na onda de ataque, e a onda que cai para 2 tanques volta a juntar, com a próxima 2 tanques maior (até 14).
   - **O que ficou:** robô contra robô com defesa termina empatado em 15 min, porque os depósitos secam e a IA não vai buscar outro (a do ZH vai). É item da IA pra v3. O tiro antiaéreo entra quando houver avião.
+  - [~] **01/11 (sessão do Elenco), a IA escolhe o contra:** a fábrica e o quartel só misturam o armado que faz ao menos metade do % de dano
+    do melhor contra o exército de terra inimigo visto por último (o custo por blindagem; sem nada visto, contra tanque). Antes a GLA
+    perdia todas (metade da fábrica em Technical e Toxin Tractor, 25% contra tanque). Os testes da simulação e o determinismo passam;
+    o torneio IA × IA de 10 partidas antes e depois em `docs/ELENCO.md` §8.3. `SkirmishAI.cpp` (`Versus`, `BestVersus`, `EnemyArmorCost`).
   - [~] **16/10 (sessão do jogo), a IA expande:** com os depósitos perto da base secos (nenhum com caixa ao alcance de 184 m do caminhão de nenhum centro dela), ela faz um centro novo no depósito com caixa mais perto de casa, até 3.
     - Enquanto espera o centro, a fábrica para de gastar (com a fila de 2 tanques sempre cheia, o dinheiro nunca chegava no preço).
     - O caminhão parado sem depósito vai pro com caixa mais perto dele, do lado de casa primeiro.
@@ -213,11 +221,15 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
     - Contra penhasco ou prédio ela trava, e aí segura o tanque.
     - O casco é dois círculos no eixo, e cabem até 256 carcaças no mapa.
   - **No desenho:** o modelo, o fogo e as brasas vão junto, e a carcaça arrastada risca o chão.
+  - [~] **O fogo simulado da carcaça** (25/10, a sessão do fogo; `docs/FOGO.md`): a simulação própria do anel da torre queimando, em
+    volume no raymarch, com a vida inteira (acende, queima, baixa, brasa), no tanque e na aeronave caída. Atrás de `blast.Fire.Version 2`;
+    o de hoje fica o padrão até o Felipe ver o A/B.
   - **Os testes:** `simtest` (`[carcaca]`) e o cenário `carcaca_empurra`.
 - [ ] **Vegetação baixa** amassa ou dobra quando o tanque passa (jogo + WorldForge, dono do material da vegetação).
 - [ ] **Visão pelo relevo.** Se o morro tapar a visão, a simulação precisa da altura por célula, e isso entra no pedido da grade ao WorldForge. Se a visão for um círculo como no ZH, não precisa.
 - [ ] **Direção do tiro** pros efeitos na blindagem: o desenho tira da posição do atirador, sem mexer na simulação.
 - [ ] **Separar o impacto:** "acertou tanque vivo" contra "caiu no chão", e o efeito pelo tipo de chão (areia, rocha, asfalto; água dá respingo). Hoje os dois são a mesma esfera.
+  - [~] 24/10 (o laboratório, `lab-chao`): o tiro de tanque no chão já reage ao tipo de chão posto pelo laboratório (`UBlastFxDirector::GroundResponseOf`: areia = o tiro aprovado, exato; asfalto, terra, grama, neve, barro com as peças de cada um; `docs/TIPOS_DE_CHAO.md`). O mapa sem o laboratório não muda. Falta o Felipe ver; a água e o míssil no chão ficam pra depois.
 - [ ] **Ligar no jogo o que os efeitos novos pedem:** o plugin Niagara, o ProceduralMeshComponent e o Json (fogo do FXLab, destroços do BlastLab) e um módulo de shader global carregado cedo (raymarch).
 - [ ] **Evento único, como o FXList do ZH:** efeito, pulso de luz, tremor, som e marca saem do mesmo evento; clarão em t = 0, som e tremor em d/343 s do ponto de mira.
 - [~] **Ctrl força o tiro, como no C&C clássico** (pedido do Felipe, 13/10 de manhã; feito na mesma manhã, sem o teste dele): segurando Ctrl, o clique manda atirar em qualquer coisa:
@@ -346,6 +358,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
            - **O arco final** é do Fluxo (`docs/ESTUDO_ESMAGAR_E_POSTE.md`), trocando o `WireArc`.
          - **A palmeira (compilação 28):** o toco fica de pé e o tronco cai pela quebra a 0,8 m até a ponta tocar o chão; a copa atrasa, chicoteia no impacto e assenta pelo material do WorldForge (CustomPrimitiveData 1–4). A cena é a `palmeira_toco` (World_TestTrample).
          - **A pedra pequena (compilação 29):** a do RockSmall parte no lugar sob o tanque e o Dozer (a `_Broken` do WorldForge), com o pó fino e um tranco. A grande fica.
+         - **O lote limpo (01/11, a sessão do Elenco; compilado):** o prédio que nasce (a obra, o de largada, o da cena) tira do lote as pedras, as moitas, os tufos e as pedrinhas do mapa (as instâncias de ISM de até 3 m de roda; casas, carros e palmeiras ficam), como o C&C limpa o chão da construção. Achado no tour da Rússia: pedras no pátio de formatura do quartel. `URTSMatchSubsystem::ClearScatterUnder` (o índice numa grade de 10 m, uma vez; a sombra do sol refeita na área). Numa partida IA × IA um prédio tirou até 214 instâncias.
          - **O carro (compilação 29):** o efeito do Fluxo (`CarCrushStart`/`CarCrushEnd`: o vidro que estoura e pisca ao sol, as lanternas, os pneus, a poeira e o raspão), pela passagem da lagarta; o pisca-alerta em metade dos carros.
          - **O capim (compilação 28):** as plantas da montagem (etiqueta `WorldForgeTrample`) leem o caderno da batalha e a trilha fresca: o WorldForge deita e escurece pelo material (`UseTrample`).
        - **A defesa (o item 1, a simulação 17, compilando):**
@@ -425,7 +438,40 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - **12/10:** aparecem no jogo (cenário rápido "vila"), duas por tanque, com as garras e a curva da manobra. Custam +0,2 ms na mediana e +0,9 no p95, mais ~80 MB de memória de vídeo.
   - **Falta:** a borda de areia levantada; areia marca forte, rocha não marca e estrada marca de leve (precisa do tipo de chão do WorldForge); riscar no escuro e mostrar quando a área for revista; ver em vídeo.
   - **13/10 à noite, o Felipe:** no jogo a lagarta "não modela" (risco chapado ou nada). O alvo é a folha `captures/look/areia_C_final.jpg` (a trilha fresca + a velha cruzando, meio coberta pelo vento). **Dono do visual: o Look** (a MF `look_mf.py` lendo os cadernos do relevo). Prova: no jogo, ao lado da folha. Estado em `docs/CHAO_DEFORMAVEL.md` (o topo). **14/10, madrugada: o Felipe tirou da v2** ("pra v2 não vai ter mais nenhum ajuste, isso aí tudo vai ser pra v3"). Lagarta e cratera no chão vão pra v3 com o plano de relevo por pixel (`docs/CHAO_DEFORMAVEL.md`, a decisão no topo).
-- [ ] **Esteira andando:** textura correndo pela velocidade (as rodas já giram).
+- [~] **Bandeiras com física em tudo** (sessão Elenco, 01/11, sem aprovação; o Felipe: "tudo que tem bandeira tem que ter física"): um sistema só pra todas, a Technical inclusive.
+  - O pano fixo `SM_FlagCloth` (1 × 1 m, 672 triângulos, sem Nanite) que o `M_FlagCloth` balança na placa, com a mesma conta de onda e queda do pano da Technical. A normal da dobra e o emblema (o círculo da GLA, a estrela da China) saem no pixel.
+  - A CPU só manda o vento quando ele muda: o prédio uma vez, o veículo quando acelera ou vira. Antes o pano da Technical era refeito na CPU a cada quadro.
+  - O `model_run_detail.py` tira o pano dos modelos e anota o mastro (`flags.json` → `visual.flags`).
+- [~] **O prédio recorta o chão do mapa** (sessão Elenco, 01/11, sem aprovação; o Felipe: "as construções vão poder manipular o chão [...] a construção é finalizada, ela recorta parte do chão pra ficar funcional").
+  - Os mestres do chão ficam mascarados e leem até 8 retângulos do `MPC_GroundCut` (`Game/Tools/ground_cut.py`; o `build_slice.py` põe a máscara no mestre que monta).
+  - O prédio pronto liga o retângulo dele (`visual.ground_cut_m`); a obra e a venda não.
+  - O primeiro é o Arms Dealer: a rampa desce ao túnel, e o veículo novo sobe dele (`visual.tunnel_exit`, só desenho).
+  - **O custo:** A/B na mesma cena (`elenco_china_gcA` × `gcB`).
+  - **DESFEITO em 01/11 de manhã:** o mestre mascarado não compilou no jogo e o chão caiu no material padrão (o xadrez). A causa,
+    pelo log: o chão já usa 2 coleções de parâmetros (`MPC_Ground` e `MPC_Wind`), e a Unreal só aceita 2 por material (o
+    `MPC_GroundCut` era a 3ª). A máscara saiu dos 15 mestres (`GROUND_CUT_UNDO=1`), e o `build_slice.py` só a põe com `GROUND_CUT=1`.
+    O conserto lê os retângulos de uma coleção que o chão já usa, ou dos parâmetros da instância do chão (`RTSGroundMemory`), e pede C++.
+    Antes de religar: o A/B do custo, porque o chão mascarado passa o terreno inteiro pelo rasterizador programável do Nanite.
+  - **01/11, 09h: o conserto compilou e o chão compila (sem xadrez), mas o buraco NÃO abre.** Os retângulos agora moram na `MPC_Ground`;
+    o jogo manda o do Arms Dealer (o log: 1 retângulo, 12 × 9 m) e o mestre do mapa recebeu a máscara. Mesmo assim o pátio segue com areia,
+    com o Nanite ligado e desligado (a cena `gc_debug`, `captures/game/gc_debug/`), e o custo não mudou (B 42,7/42,3/42,7 ms, A 42,6/41,9):
+    a máscara não chega a desenhar. **A causa, confirmada no fonte da Unreal 5.8** (`Runtime/Landscape/Private/LandscapeRender.cpp`, o
+    proxy Nanite do Landscape): o terreno Nanite TIRA a máscara de opacidade de propósito ("Remove masking for any materials that are only
+    pixel programmable because of masking"), e o `LandscapeNaniteComponent` desliga o WPO (`bEvaluateWorldPositionOffset = false`). O
+    buraco do Landscape Nanite só existe pela camada de visibilidade pintada no editor e assada na malha Nanite: em tempo de jogo, por
+    máscara, nunca abre. Desligado de novo nos 14 mestres. ~~O World_TestSalt2 nem tem o deslocamento~~ (errado, 01/11 19h30: o mapa do
+    jogo já tem o afundar de verdade desde 31/10, a cratera APROVADA; o caminho do recorte é o prédio escrever o rebaixo no caderno do chão,
+    como a cratera: `docs/elenco/TAREFAS.md` item 22).
+    **Os caminhos (a decisão do Felipe, é a mecânica que ele pediu):**
+    1. **o prédio levanta em vez de cavar** (o que os RTS fazem: o túnel da GLA no ZH é um morro com a boca): o lote do Arms Dealer vira uma
+       plataforma de ~2,5 m com os muros, a boca do túnel no pé dela e a rampa subindo; o veículo sai do escuro e sobe. Funciona hoje, sem
+       mexer no chão de ninguém;
+    2. **o terreno sem Nanite** (a máscara funciona no Landscape comum): mexe no desempenho e no visual aprovado do chão (o WorldForge e o
+       Look decidem junto);
+    3. **o poço raso pelo deslocamento** (até ~1 m): só nos mapas com o deslocamento ligado, e raso demais pra rampa de um túnel.
+  - **01/11: a mancha azul no pátio do Arms Dealer** era a silhueta (o raio-X) do veículo subindo do túnel debaixo do chão. Tirada enquanto a
+    unidade está no túnel (`ARTSUnitActor::ApplyStencil`); provado no vídeo `captures/game/elenco_gla_v4`.
+- [~] **Esteira andando** (sessão Elenco, 01/11, sem aprovação): não é textura, a esteira do elenco é de elos com forma. Cada elo desliza pela tangente dele × a fase que o jogo manda (dado 10; `M_StructureTrack`, o deslocamento só na instância `TankTrackRun`), e na volta da fase cai onde o anterior estava. O quadro anterior vai pro TSR (`PreviousFrameSwitch`) sem o salto. Limitada a 0,4 passo por quadro, por causa do efeito da roda de carroça. As rodas da lagarta viraram uma malha por roda (`wheel_*`), e cada lado anda com a sua esteira (no giro no lugar, um lado pra frente e o outro pra trás). Só nos modelos do elenco, que trazem a tangente no UV2/UV3 (`model_run_detail.track_uv`); o tanque aprovado da USA fica parado até ganhar a esteira nova. **Falta:** a prova em vídeo.
 - [~] **Chão que guarda a batalha** (jogo, 11–13/10, a mesma memória do chão; estudo, revisão e números em `docs/CHAO_DEFORMAVEL.md`):
   - **13/10, depois do estudo e de duas críticas (o revisor e o Look):**
     - a morte do tanque deixa o **avental** em volta do casco (terra queimada e combustível, brasa nos primeiros ~30 s, areia espirrada e torrões);
@@ -492,7 +538,14 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
     - O minimapa continua o do jogo (orientação, névoa, clique), desenhado no buraco da peça nova.
     - Os botões de sempre seguem pelos mesmos ids. Os grupos, a fila, Stop, Attack Move e as teclas das casas (QWERTYU / ZXCVBNM; o R posicionando prédio segue girando) funcionam; poderes e patente ainda não existem na partida.
   - painel da fábrica (fila, botão do tanque), sala de espera e tela de conexão;
-  - cursor próprio e fonte final (a licença vai no `CREDITOS.md`);
+  - [~] **(Cursores, 01/11) os cursores próprios:** desenhos aprovados (`docs/CURSORES.md`, o mestre `art/cursors/cursors.html`),
+    ligados no jogo por `RTSCursors.h/.cpp` e a escolha no `TickMatch` (a mesma ordem do clique), arquivos `Content/Cursors/`
+    gerados por `art/tools/make_cursors.py`; falta o teste dele, clicando;
+  - [~] **(Cursores, 01/11) a barra de vida A** (escolhida: a cor contínua do ZH, o contorno no tom escurecido, um risco a cada 100,
+    o pedaço perdido no tiro em branco, a obra azul → ciano, a marquinha do time e a insígnia da patente no lugar dela, afastada):
+    `ARTSHUD::DrawHealthBar`, encostada no topo do modelo (o prédio pela planta e o casco), da largura da unidade na tela. A patente
+    da unidade ainda não existe na simulação. Testada em `v4_conserto` e `v4_cliques` (0 falhas); falta o teste dele;
+  - fonte final (a licença vai no `CREDITOS.md`);
   - tela de carregar com arte.
   - A arte de referência vem da sessão de arte.
 - [~] **Vento único** (jogo, 13/10): `/Game/Materials/MPC_Wind`, vetor `Wind` = (x, y, m/s, rajada), com x, y a direção pra onde sopra; o jogo preenche no começo da partida pelo Maps.json (`wind_yaw`, `wind_speed`). A memória do chão já usa. Falta cada sessão ler: a fumaça (explosões), a areia (Look), as palmeiras (WorldForge) e as bandeiras. O contrato já foi mandado pra elas.
@@ -546,6 +599,8 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - máscara da cor: a lona do cesto é a maior área vista de cima; passar no teste de visão de longe;
   - texturas de dano e queimado, a carcaça e as antenas.
 - [ ] **Se for USA contra GLA:** tanque GLA e Oficina GLA em 3D (as fichas já estão aprovadas).
+  - [~] 28/10 (o laboratório, a cena do game shot): a **Technical v5** (o modelo do Felipe com o atlas assado: `Game/Tools/export_gla_technical.py`) e o **tanque GLA provisório** de 13/10 entraram no jogo (`game.ps1 glamodels` → `Game/Tools/import_gla.py`; o material de atlas `M_UnitAtlas`, o 1º com textura de UV, com a cor do jogador, o dano e a carcaça do jogo) e no `Units.json` (`gla_technical`, `gla_tank`, números do ZH 1.04; ninguém produz: só o laboratório e as cenas põem). A cena `r1_raid` do laboratório (`LabScenes.json`, montada por `Game/Tools/scene_r1_raid.py` a partir do LAYOUT da cena do Blender) abre na câmera do alvo r1 com os rastros velhos do alvo no chão, as unidades chegando, a luz do lado do alvo e a explosão no instante do alvo (10 s); depois é jogável (`game.ps1 view -Scenario r1_raid` e o Skirmish do menu, ou LAB → Scene → r1_raid). Sem facção GLA no menu, sem a Oficina. Falta o Felipe ver.
+  - [~] 29/10 (a sessão do Blender, "resolva todos numa versão nova do jogo"): a luz `uma_i1_s18_v5` (sol 4400 K) como padrão do World_TestSalt2 e do Lab_Flat, a areia com a ondulação assada do sol de 18° e sem o grão do cascalho na duna, e os prédios em concreto gasto (juntas, tom por placa, escorrido, areia no pé). Receita e números em `docs/RECEITAS_DO_LOOK.md` §10; provas em `captures/game/r1_raid_v5/` e `r1_raid_v5b/`. Falta o Felipe ver; sem commit. Mais tarde: a base na areia (a terra batida do deserto usa a areia, `DIRT_SAND`) e a cor da duna do alvo; vídeos em `captures/game/r1_comparacao/`. À tarde: os prédios em 0,6 (a frente da War Factory em 2,4 M1, a medida dos game shots), a morte v3 (maior, a fuligem marrom-escura, a nuvem que fica; `-DeathV=2` volta) e o tanque do GLA pela ficha (a torre, os sacos, a gaiola, as cores). Receita em `docs/RECEITAS_DO_LOOK.md` §10.
 - [ ] **Fatia vertical do deserto** (proposta da arte, aceita pelo Felipe em 12/10). Entra **quando as frentes atuais das outras sessões terminarem**, sem atropelar ninguém.
   - **O que é:** um canto do mapa do deserto, na câmera do jogo, **lado a lado com `docs/concept/scenes/desert_golden_hour/best/town_battle_top_gemini.webp`**. É a prova de que o jogo chega nos game shots.
   - **Os modelos:** provisórios **caprichados e fiéis às fichas aprovadas** (War Factory, tanque, Dozer e Chinook da USA, mais o tanque e a picape do GLA). Quina dura, a proporção e a silhueta da ficha, material com desgaste, o pó subindo de baixo pra cima e a cor do time. Os finais do Felipe substituem depois, sem mudar o lugar.
@@ -706,6 +761,7 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - vai no JSON do mapa (`"sand": 1|2|3`); a montagem e o jogo usam a do mapa.
 - [ ] **Lote plano da War Factory em cada base,** sem seixo nem marola, com a estrada chegando na porta e a saída marcada.
 - [ ] **Tipo de chão por camada** (areia, cascalho, terra, rocha, salina, asfalto): dá a cor da poeira e dos torrões.
+  - [~] 24/10 (o laboratório, `lab-chao`): a tabela `Game/Config/RTS/Surfaces.json` (areia, asfalto, terra, grama, neve, barro) e a camada de tipos por cima do mapa que o laboratório põe (`URTSGroundTypes`): a poeira (quanto e a cor), o sulco, a marca, a cratera e o tiro de cada tipo. `docs/TIPOS_DE_CHAO.md`. Falta o Felipe ver.
 - [ ] **"Memória do chão"** no material do terreno, pros rastros de esteira, o queimado e a cratera.
 - [ ] **Simetria:** as pedras pequenas não ficam iguais entre os dois lados (o deslocamento não gira com o mapa).
 - [ ] **Mapa de 4 bases** se for 2v2 ou cada um por si. Já existe o candidato a mapa oficial 1v1, o "AlUla" (`docs/concept/maps/alula_1v1_candidate.webp`).

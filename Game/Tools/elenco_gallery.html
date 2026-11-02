@@ -1,0 +1,250 @@
+<title>Elenco das Facções</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: a mesa de avaliação do diretor de arte. Uma faixa fixa com o placar e os filtros; cada peça é uma prancha (a foto grande do
+   jogo à esquerda, a ficha e o veredito à direita), uma embaixo da outra, na ordem da árvore de cada facção. */
+:root {
+  --bg: #e9ebe6;
+  --panel: #f7f8f5;
+  --ink: #1b1f22;
+  --muted: #5a6168;
+  --line: #d2d6cf;
+  --accent: #9c5419;
+  --usa: #2f62a6;
+  --china: #ad3326;
+  --gla: #437f31;
+  --russia: #4c5f73;
+  --civ: #7a7166;
+  --ok: #2c7a4b;
+  --rumo: #a87512;
+  --redo: #a83434;
+  --shade: rgba(20, 24, 28, 0.06);
+  --f-display: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111416; --panel: #191d20; --ink: #e2e5df; --muted: #9aa2a8; --line: #2b3237; --accent: #d98b42;
+    --usa: #6c9be0; --china: #e2685b; --gla: #7cbd67; --russia: #8fa7bf; --civ: #b3a998; --ok: #5cbf83; --rumo: #e0ad45; --redo: #e06b6b;
+    --shade: rgba(0, 0, 0, 0.35); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111416; --panel: #191d20; --ink: #e2e5df; --muted: #9aa2a8; --line: #2b3237; --accent: #d98b42;
+  --usa: #6c9be0; --china: #e2685b; --gla: #7cbd67; --russia: #8fa7bf; --civ: #b3a998; --ok: #5cbf83; --rumo: #e0ad45; --redo: #e06b6b;
+  --shade: rgba(0, 0, 0, 0.35); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+header.bar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding-block: 12px; }
+h1 { font: 700 26px/1.1 var(--f-display); letter-spacing: 0.02em; margin: 0; text-transform: uppercase; text-wrap: balance; }
+h1 small { display: block; font: 500 12px/1.3 var(--f-mono); letter-spacing: 0.06em; color: var(--muted); text-transform: none; margin-top: 3px; }
+.score { display: flex; gap: 14px; flex-wrap: wrap; font: 500 13px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
+.score span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.ok { background: var(--ok); } .dot.rumo { background: var(--rumo); } .dot.redo { background: var(--redo); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.chip { font: 500 13px/1 var(--f-body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; border-radius: 999px; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.chip:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { font-size: 13px; color: var(--muted); padding-block: 10px 0; }
+main { display: flex; flex-direction: column; gap: 22px; padding-block: 20px 60px; }
+.piece { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; box-shadow: 0 1px 0 var(--shade); scroll-margin-top: 90px; }
+.piece[data-verdict="ok"] { border-left: 4px solid var(--ok); }
+.piece[data-verdict="rumo"] { border-left: 4px solid var(--rumo); }
+.piece[data-verdict="redo"] { border-left: 4px solid var(--redo); }
+.shots { background: #0d0f10; display: flex; flex-direction: column; min-width: 0; }
+.shots .main { aspect-ratio: 16 / 9; width: 100%; max-width: 100%; object-fit: cover; display: block; background: #1a1d1f; }
+.shots .empty { aspect-ratio: 16 / 9; display: grid; place-items: center; color: #8a9196; font: 500 13px var(--f-mono); }
+.thumbs { display: flex; gap: 6px; padding: 8px; overflow-x: auto; }
+.thumbs button { border: 2px solid transparent; padding: 0; background: none; cursor: pointer; flex: 0 0 auto; border-radius: 3px; }
+.thumbs button[aria-pressed="true"] { border-color: var(--accent); }
+.thumbs img { width: 112px; aspect-ratio: 16 / 9; object-fit: cover; display: block; border-radius: 2px; }
+.thumbs span { display: block; font: 500 11px/1.3 var(--f-mono); color: #a7aeb3; padding: 3px 2px 0; text-align: left; }
+.info { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tags { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font: 600 11px/1 var(--f-body); letter-spacing: 0.08em; text-transform: uppercase; }
+.fac { color: #fff; padding: 4px 8px; border-radius: 3px; }
+.fac.usa { background: var(--usa); } .fac.china { background: var(--china); } .fac.gla { background: var(--gla); } .fac.russia { background: var(--russia); } .fac.civ { background: var(--civ); }
+.kind { color: var(--muted); }
+.key { font: 400 12px var(--f-mono); color: var(--muted); text-transform: none; letter-spacing: 0; margin-left: auto; }
+h2 { font: 700 30px/1.05 var(--f-display); letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+.role { color: var(--muted); margin: 0; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; font-size: 14px; }
+dt { font: 600 11px/1.9 var(--f-body); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+dd { margin: 0; font-variant-numeric: tabular-nums; }
+.idea { margin: 0; max-width: 65ch; }
+.ficha { font: 400 12px var(--f-mono); color: var(--muted); word-break: break-all; }
+.verdict { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.seg button { font: 600 13px/1 var(--f-body); padding: 10px 6px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.seg button[data-v="ok"][aria-pressed="true"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+.seg button[data-v="rumo"][aria-pressed="true"] { background: var(--rumo); border-color: var(--rumo); color: #fff; }
+.seg button[data-v="redo"][aria-pressed="true"] { background: var(--redo); border-color: var(--redo); color: #fff; }
+.seg button:disabled, .save:disabled { opacity: 0.5; cursor: default; }
+textarea { width: 100%; min-height: 64px; resize: vertical; font: 14px/1.45 var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.save { font: 600 13px/1 var(--f-body); padding: 9px 14px; border-radius: 4px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; }
+.status { font: 400 12px var(--f-mono); color: var(--muted); }
+@media (max-width: 860px) {
+  .piece { grid-template-columns: minmax(0, 1fr); }
+  .filters { margin-left: 0; }
+  h2 { font-size: 26px; }
+}
+@media (prefers-reduced-motion: no-preference) { .piece { transition: border-color 0.2s ease; } }
+</style>
+
+<header class="bar">
+  <div class="wrap">
+    <h1>Elenco das Facções<small>As peças novas da China, da GLA, da USA e da Rússia, as versões B da USA e o kit civil · o modelo provisório de cada uma</small></h1>
+    <div class="score" aria-live="polite">
+      <span><i class="dot ok"></i><b id="n-ok">0</b> aprovadas</span>
+      <span><i class="dot rumo"></i><b id="n-rumo">0</b> no rumo</span>
+      <span><i class="dot redo"></i><b id="n-redo">0</b> refazer</span>
+      <span><i class="dot"></i><b id="n-none">53</b> sem veredito</span>
+    </div>
+    <div class="filters" role="group" aria-label="Filtrar">
+      <button class="chip" id="f-all" data-f="all" aria-pressed="true">Todas</button>
+      <button class="chip" id="f-china" data-f="china" aria-pressed="false">China</button>
+      <button class="chip" id="f-gla" data-f="gla" aria-pressed="false">GLA</button>
+      <button class="chip" id="f-usa" data-f="usa" aria-pressed="false">USA</button>
+      <button class="chip" id="f-russia" data-f="russia" aria-pressed="false">Rússia</button>
+      <button class="chip" id="f-civ" data-f="civ" aria-pressed="false">Civil</button>
+      <button class="chip" id="f-open" data-f="open" aria-pressed="false">Sem veredito</button>
+    </div>
+  </div>
+  <div class="wrap"><p class="note" id="dbnote">Lendo as avaliações…</p></div>
+</header>
+
+<main class="wrap" id="list"></main>
+
+<script>
+const PIECES = /*__DATA__*/[];
+const KIND = { structure: 'Prédio', vehicle: 'Veículo', infantry: 'Infantaria' };
+const LABEL = { ok: 'Aprovado', rumo: 'No rumo', redo: 'Refazer' };
+const state = { filter: 'all', votes: {}, db: null };
+const list = document.getElementById('list');
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v; else if (k === 'html') e.innerHTML = v; else if (v !== undefined && v !== null) e.setAttribute(k, v);
+  }
+  for (const c of kids) if (c !== null && c !== undefined) e.append(c);
+  return e;
+}
+
+function card(p) {
+  const shots = el('div', { class: 'shots' });
+  if (p.imgs.length) {
+    const main = el('img', { class: 'main', src: p.imgs[0].src, alt: p.name + ': ' + p.imgs[0].label, loading: 'lazy' });
+    const th = el('div', { class: 'thumbs' });
+    p.imgs.forEach((im, i) => {
+      const b = el('button', { type: 'button', 'aria-pressed': i === 0 ? 'true' : 'false', 'aria-label': im.label },
+        el('img', { src: im.src, alt: '', loading: 'lazy' }), el('span', {}, im.label));
+      b.addEventListener('click', () => {
+        main.src = im.src; main.alt = p.name + ': ' + im.label;
+        th.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+      });
+      th.append(b);
+    });
+    shots.append(main, th);
+  } else {
+    shots.append(el('div', { class: 'empty' }, 'sem imagem ainda'));
+  }
+  const dl = el('dl', {});
+  for (const [k, v] of [['Custo e tempo', p.cost], ['Vida', p.life], ['Arma', p.weapon]]) {
+    if (v) dl.append(el('dt', {}, k), el('dd', {}, v));
+  }
+  const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Veredito' });
+  for (const v of ['ok', 'rumo', 'redo']) {
+    const b = el('button', { type: 'button', 'data-v': v, 'aria-pressed': 'false', id: 'v-' + p.key + '-' + v }, LABEL[v]);
+    b.addEventListener('click', () => save(p.key, v));
+    seg.append(b);
+  }
+  const ta = el('textarea', { id: 'n-' + p.key, placeholder: 'O que mudar, o que ficou bom…', 'aria-label': 'Comentário sobre ' + p.name });
+  const btn = el('button', { type: 'button', class: 'save', id: 's-' + p.key }, 'Salvar comentário');
+  btn.addEventListener('click', () => save(p.key, (state.votes[p.key] || {}).veredito || '', true));
+  const status = el('span', { class: 'status', id: 'st-' + p.key });
+  const info = el('div', { class: 'info' },
+    el('div', { class: 'tags' }, el('span', { class: 'fac ' + p.faction }, p.faction.toUpperCase()), el('span', { class: 'kind' }, KIND[p.kind] || ''), el('span', { class: 'key' }, p.key)),
+    el('h2', {}, p.name),
+    p.role ? el('p', { class: 'role' }, p.role) : null,
+    dl,
+    p.idea ? el('p', { class: 'idea', html: p.idea }) : null,
+    p.ficha ? el('div', { class: 'ficha' }, p.ficha) : null,
+    el('div', { class: 'verdict' }, seg, ta, el('div', { class: 'row' }, btn, status)));
+  return el('article', { class: 'piece', id: p.key, 'data-faction': p.faction }, shots, info);
+}
+
+function paint() {
+  let n = { ok: 0, rumo: 0, redo: 0 };
+  for (const p of PIECES) {
+    const v = (state.votes[p.key] || {}).veredito || '';
+    if (n[v] !== undefined) n[v]++;
+    const a = document.getElementById(p.key);
+    if (!a) continue;
+    a.dataset.verdict = v;
+    a.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v ? 'true' : 'false'));
+    const ta = document.getElementById('n-' + p.key);
+    if (ta && document.activeElement !== ta && ta.dataset.dirty !== '1') ta.value = (state.votes[p.key] || {}).nota || '';
+    const st = document.getElementById('st-' + p.key);
+    const q = (state.votes[p.key] || {}).quando;
+    if (st && q) st.textContent = 'Salvo ' + new Date(q).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const show = state.filter === 'all' || (state.filter === 'open' ? !v : p.faction === state.filter);
+    a.hidden = !show;
+  }
+  document.getElementById('n-ok').textContent = n.ok;
+  document.getElementById('n-rumo').textContent = n.rumo;
+  document.getElementById('n-redo').textContent = n.redo;
+  document.getElementById('n-none').textContent = PIECES.length - n.ok - n.rumo - n.redo;
+}
+
+async function save(key, veredito, noteOnly) {
+  if (!state.db) return;
+  const ta = document.getElementById('n-' + key);
+  const st = document.getElementById('st-' + key);
+  const body = { veredito: noteOnly ? ((state.votes[key] || {}).veredito || '') : veredito, nota: ta.value.trim(), quando: new Date().toISOString() };
+  st.textContent = 'Salvando…';
+  try {
+    await state.db.collection('avaliacoes').doc(key).set(body);
+    ta.dataset.dirty = '';
+  } catch (e) {
+    st.textContent = 'Não salvou: ' + (e && e.code === 'not_granted' ? 'esta visualização não pode escrever' : 'tente de novo em instantes');
+  }
+}
+
+PIECES.forEach(p => list.append(card(p)));
+document.querySelectorAll('textarea').forEach(t => t.addEventListener('input', () => { t.dataset.dirty = '1'; }));
+document.querySelectorAll('.filters .chip').forEach(c => c.addEventListener('click', () => {
+  state.filter = c.dataset.f;
+  document.querySelectorAll('.filters .chip').forEach(x => x.setAttribute('aria-pressed', x === c ? 'true' : 'false'));
+  paint();
+}));
+paint();
+
+(async () => {
+  const note = document.getElementById('dbnote');
+  const db = window.claude && window.claude.use ? await window.claude.use('db') : null;
+  if (!db) {
+    note.textContent = 'O veredito só salva com a página aberta no claude.ai, logado. Aqui dá pra ver tudo, mas os botões ficam desligados.';
+    document.querySelectorAll('.seg button, .save').forEach(b => { b.disabled = true; });
+    return;
+  }
+  state.db = db;
+  const timer = setTimeout(() => { note.textContent = 'Não consegui ler as avaliações ainda; o que você marcar fica salvo quando a conexão voltar.'; }, 10000);
+  db.collection('avaliacoes').onSnapshot(snap => {
+    const v = {};
+    snap.docs.forEach(d => { v[d.id] = d.data() || {}; });
+    state.votes = v;
+    if (!snap.metadata.fromCache) { clearTimeout(timer); note.textContent = 'Marque o veredito de cada peça; ele fica salvo e eu leio daqui.'; }
+    paint();
+  }, () => { clearTimeout(timer); note.textContent = 'As avaliações não carregaram. Recarregue a página mais tarde.'; });
+})();
+</script>

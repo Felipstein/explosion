@@ -15,7 +15,7 @@
 
 class ARTSUnitActor;
 class URTSFogOfWar;
-class URTSGroundMemory; class FRTSMissileSmoke; class FRTSHitLife; struct FRTSHitLifeCtx;   // (numa linha só: o GENERATED_BODY não muda de linha)
+class URTSGroundMemory; class FRTSMissileSmoke; class FRTSHitLife; struct FRTSHitLifeCtx; class FRTSLab; struct FRTSLabFxRequest;   // (numa linha só: o GENERATED_BODY não muda de linha; v5: o laboratório, RTSLab.h)
 class ARTSDockActor;
 struct FRTSBakedMap;
 namespace Sim
@@ -24,7 +24,7 @@ namespace Sim
 	struct Command;
 	struct SimEvent;
 }
-class UInstancedStaticMeshComponent;
+class UInstancedStaticMeshComponent; class UStaticMesh;   // (30/10: numa linha só, o GENERATED_BODY não muda de linha)
 struct FRTSUnitVisual;
 struct FRTSMatchState;
 
@@ -104,6 +104,8 @@ struct FRTSMissile
 	float SpeedCmS = 0.0f;
 	/** Segundos desde o disparo (o impulso da saída, a chama mais forte no começo). */
 	float AgeS = 0.0f;
+	/** (01/11) Saindo do tubo no lançamento suave, com o motor de voo ainda apagado: sem a chama, a luz e o rastro. */
+	bool bCoast = false;
 };
 
 struct FRTSUnitState
@@ -116,7 +118,7 @@ struct FRTSUnitState
 	float TurretYawDeg = 0.0f;
 	int32 Hp = 0;
 	int32 MaxHp = 1;
-	bool bMoving = false;
+	bool bMoving = false; uint8 Posture = 0;   // (simulação 29) o soldado: 0 de pé, 1 ajoelhado (suprimido), 2 encolhido (preso pelo fogo); numa linha só (o GENERATED_BODY abaixo não muda de linha)
 	// economia e construção
 	bool bStructure = false;
 	/** A obra: 0 recém-marcada, 1 pronta. */
@@ -129,8 +131,8 @@ struct FRTSUnitState
 	/** O que o Dozer ou o caminhão está fazendo (Sim::UnitTask). */
 	uint8 Task = 0;
 	int32 Cargo = 0; bool bSelling = false; float SellFraction = 0.0f; int32 AimTicks = 0; float AimFraction = 0.0f;   // (v4, 23/10) vender: sendo vendido e quanto da desmontagem já andou (0..1); a mira antes do tiro (o lançador): os passos do relógio da simulação e a fração dele (0..1, entre os passos), o mesmo número do tiro; numa linha só (o GENERATED_BODY abaixo não muda de linha)
-	bool bHasRally = false;
-	FVector2D RallyCm = FVector2D::ZeroVector;
+	bool bHasRally = false; bool bAir = false; bool bAirborne = false; float AltCm = 0.0f; float AirPitchDeg = 0.0f; float AirRollDeg = 0.0f; float Rotor01 = 0.0f; uint8 Flight = 0; int32 Clip = 0; int32 ClipSize = 0; int32 Clip2 = 0; int32 ClipSize2 = 0; float RearmFraction = 0.0f; bool bPatrol = false; bool bReturning = false; bool bStarving = false; uint32 AirBase = 0; int32 AirPad = -1;   // (v5, 24/10) o ar (docs/AEREO.md §4.3): a aeronave, no ar agora, a altura sobre o chão (cm, entre os passos), a inclinação que a física pede (graus: o nariz e a rolagem), o rotor (0..1), o estado de voo (Sim::FlightState), a munição das 2 armas (os pontinhos), o rearme na vaga (0..1), a patrulha, a volta, sem Airfield, e a vaga (o Airfield e o índice); numa linha só (o GENERATED_BODY abaixo não muda de linha)
+	FVector2D RallyCm = FVector2D::ZeroVector; uint32 Inside = 0; int32 InsideSlot = -1; uint32 Boarding = 0; int32 Passengers = 0; int32 TransportSlots = 0; bool bUnloading = false; bool bAiming = false;   // (simulação 35) o transporte: em quem o soldado está (0 = no mapa) e a vaga dele, indo entrar em quem; no transporte, quantos leva e as vagas, desembarcando; e mirando alguém agora; numa linha só (o GENERATED_BODY abaixo não muda de linha)
 };
 
 /** Um tipo de unidade ou prédio como o HUD vê (os números do Units.json). */
@@ -148,7 +150,7 @@ struct FRTSDefInfo
 	bool bSupplyCenter = false;
 	TArray<uint16> Produces;
 	TArray<uint16> Constructs;
-	TArray<uint16> Requires; int32 RequiresRank = 0; int32 MaxPerPlayer = 0; float AirliftPeriodS = 0.0f;   // (v4, 22/10) a patente que o tipo exige (0 = nenhuma), o teto por jogador (0 = sem) e o intervalo do avião de carga da zona de lançamento (s; 0 = não é zona); numa linha só: o GENERATED_BODY abaixo não muda de linha (o cc_check usa o .generated.h da última compilação)
+	TArray<uint16> Requires; int32 RequiresRank = 0; int32 MaxPerPlayer = 0; float AirliftPeriodS = 0.0f; bool bAir = false; bool bJet = false; float AirRangeM = 0.0f; float GroundRangeM = 0.0f; int32 Pads = 0; bool bHelipad = false;   // (v5, 24/10) o ar: a aeronave, o jato, o alcance de ar e de chão (m; o círculo do HUD), as vagas e o heliponto do prédio   // (v4, 22/10) a patente que o tipo exige (0 = nenhuma), o teto por jogador (0 = sem) e o intervalo do avião de carga da zona de lançamento (s; 0 = não é zona); numa linha só: o GENERATED_BODY abaixo não muda de linha (o cc_check usa o .generated.h da última compilação)
 };
 
 /** Um depósito de suprimentos (ou a pilha que um caminhão destruído soltou). */
@@ -286,7 +288,62 @@ public:
 	/** (v4, 23/10) Vender os prédios (o Sell do ZH): só os do jogador local, prontos e ainda não vendidos (a simulação confere de novo). */
 	void OrderSell(const TArray<uint32>& Structures);
 	/** (v4) O Dozer mais perto do grupo conserta o prédio (o DozerAIUpdate do ZH). */
-	void OrderRepair(const TArray<uint32>& Dozers, uint32 Structure);
+	/** (simulação 35, 01/11, o pedido do Felipe: "atalho de Alt [...] uma FILA de tarefas") o Alt segurado: toda ordem que entra na fila
+	 *  sai com a marca (Issue); o desenho da linha lê a fila de cada unidade (GetOrderPath). Kind: 0 andar, 1 atacar, 2 o trabalho do Dozer */
+	struct FRTSOrderStep { FVector Cm = FVector::ZeroVector; uint8 Kind = 0; };
+	void SetQueueOrders(bool bOn) { bQueueOrders = bOn; }
+	bool IsQueueingOrders() const { return bQueueOrders; }
+	double LastQueuedOrderSeconds() const { return LastQueuedOrderS; }
+	void OrderTrimQueue(const TArray<uint32>& Units);
+	/** (simulação 35) O transporte: os soldados do grupo entram em Transport (o do jogador local, com vaga); os transportes do grupo
+	 *  desembarcam todos; e se a seleção tem soldado que cabe em Transport (o clique vira "entrar"). */
+	void OrderEnter(const TArray<uint32>& Units, uint32 Transport);
+	void OrderUnload(const TArray<uint32>& Units);
+	/** (01/11) Tira só o passageiro Passenger do transporte Transport (a casa dele no painel); e quem está dentro, na ordem das vagas. */
+	void OrderUnloadOne(uint32 Transport, uint32 Passenger);
+	void GetPassengers(uint32 Transport, TArray<uint32>& Out) const;
+	bool CanEnter(const TArray<uint32>& Units, uint32 Transport) const;
+	bool GetOrderPath(uint32 Id, TArray<FRTSOrderStep>& Out) const;
+	/** (01/11, o botão do trabalhador) Os construtores do jogador sem trabalho (sem obra, conserto ou sucata, sem ordem e sem fila), na ordem do Id. */
+	void GetIdleBuilders(uint8 Player, TArray<uint32>& Out) const;
+	void OrderRepair(const TArray<uint32>& Dozers, uint32 Structure); void OrderSalvage(const TArray<uint32>& Dozers, uint32 Scrap); uint32 SalvageAt(const FVector2D& Cm) const;   // (simulação 30) a sucata: o Dozer desmancha a carcaça ou o entulho em Cm (0 = nada ali)
+	/** (v5, 24/10) O ar: a patrulha que volta em PointCm (só as aeronaves armadas do grupo) e o Voltar à base (o jato pousa e rearma,
+	 *  o helicóptero de ataque conserta no heliponto). */
+	void OrderPatrol(const TArray<uint32>& Units, const FVector2D& PointCm);
+	void OrderReturnToBase(const TArray<uint32>& Units);
+	/** (v5, 25/10) A guarda (G): a área em PointCm com o raio RadiusCm (0 = o do grupo), ou a escolta de Target (a unidade ou o prédio,
+	 *  do jogador ou do aliado; o ponto é ignorado). Todas as unidades do grupo, do chão e do ar. */
+	void OrderGuard(const TArray<uint32>& Units, const FVector2D& PointCm, uint32 Target, float RadiusCm);
+	/** (v5, 25/10) O raio da guarda sem arraste pro grupo (m): o maior alcance das armas dele (World::GuardRadiusOf), o que a área do
+	 *  HUD desenha antes do arraste. */
+	float GuardRadiusM(const TArray<uint32>& Units) const;
+	/** (v5, 25/10) A unidade está de guarda? O centro (cm; a escolta: onde o protegido está), o raio (cm) e o protegido (0 = a área). */
+	bool GetGuard(uint32 Id, FVector2D& OutCenterCm, float& OutRadiusCm, uint32& OutTarget) const;
+	/** (v5, 25/10) As vagas que sobram pra fila do Airfield (os jatos dele e os da fila contam); −1 = não é Airfield. O botão do
+	 *  jato trava com 0 (o CANMAKE_PARKING_PLACES_FULL do ZH). */
+	int32 AirfieldPadsLeft(uint32 Structure) const;
+	/** (v5) Alguma unidade do grupo consegue atacar o alvo (a camada: o tanque não mira o helicóptero no ar)? */
+	bool CanAnyTarget(const TArray<uint32>& Units, uint32 Target) const;
+	/** (v5) O Airfield como o HUD vê: cada vaga (e o heliponto, a última) com quem está nela e como. State: 0 livre, 1 reservada
+	 *  (a aeronave no ar ou no táxi), 2 estacionada rearmando ou consertando, 3 estacionada pronta. */
+	struct FAirPadInfo
+	{
+		int32 State = 0;
+		uint16 Def = 0;
+		float Health = 1.0f;
+		int32 Clip = 0;
+		int32 ClipSize = 0;
+		float Rearm = 0.0f;
+	};
+	struct FAirfieldInfo
+	{
+		TArray<FAirPadInfo> Pads;
+		bool bHelipad = false;
+		FAirPadInfo Helipad;
+		/** A fila de jatos parada sem vaga ("Runways full"). */
+		bool bRunwaysFull = false;
+	};
+	bool GetAirfield(uint32 Id, FAirfieldInfo& Out) const;
 	/** (v4) O jogador local pode vender o prédio agora? E quanto volta ($). */
 	bool CanSell(uint32 Structure) const;
 	int32 SellRefund(uint32 Structure) const;
@@ -344,7 +401,7 @@ public:
 	 *  (PowerUsed do inimigo) e o avião de carga a caminho (AirliftInbound). */
 	struct FHudNotice
 	{
-		enum class EKind : uint8 { Promoted, StrikeIncoming, AirliftInbound };
+		enum class EKind : uint8 { Promoted, StrikeIncoming, AirliftInbound, AirNoRunway };   // (v5) a aeronave sem Airfield
 		EKind Kind = EKind::Promoted;
 		/** Segundos de mundo em que chegou. */
 		double At = 0.0;
@@ -398,6 +455,18 @@ public:
 	/** O time local inteiro caiu (ou era só ele): o espectador vê o mapa todo. Antes disso, só a
 	 *  visão do time (escolha do Felipe, 11/10: não dá pra "soprar" pro aliado na mesma sala). */
 	bool IsSpectatingAll() const;
+	/**
+	 * (25/10, o vento ao vivo) O vento único do mapa: pra onde sopra (graus, 0 = +X) e a velocidade a 10 m (m/s). Nasce do Maps.json
+	 * (wind_yaw/wind_speed) e quem muda no meio (o painel do laboratório, rts.Wind) passa por aqui: o MPC_Wind (as palmeiras, as
+	 * bandeiras), o BlastFx (a nuvem da ogiva, a areia que fica, a coluna da carcaça, a fumaça dos destroços), o rastro do míssil e a
+	 * poeira em volume (as lagartas, os acertos, o rotor) leem dele. Só desenho: a simulação não vê o vento.
+	 */
+	void SetWind(float YawDeg, float SpeedMs);
+	float GetWindYawDeg() const { return WindYawDeg; }
+	float GetWindSpeedMs() const { return WindSpeedMs; }
+	/** O vento do Maps.json desta partida (o "volta pro do mapa" do painel). */
+	float GetMapWindYawDeg() const { return MapWindYawDeg; }
+	float GetMapWindSpeedMs() const { return MapWindSpeedMs; }
 	/** Os avisos de derrota (o HUD mostra os recentes). */
 	const TArray<FRTSDefeatNotice>& DefeatNotices() const { return Defeats; }
 	/** Onde foi a última morte à vista (o Espaço do espectador). */
@@ -420,6 +489,8 @@ public:
 
 	// --- leitura pro desenho, a câmera e o HUD
 	uint8 LocalPlayer() const { return LocalSlot; }
+	/** (31/10, o elenco das 3 facções) A facção de cada jogador ("usa", "china", "gla"; vazio fora da partida). */
+	FString FactionOf(uint8 Player) const { return PlayerFactionKeys.IsValidIndex(Player) ? PlayerFactionKeys[Player] : FString(TEXT("usa")); }
 	bool IsEnemyOfLocal(uint8 Owner) const;
 	bool GetUnit(uint32 Id, FRTSUnitState& Out) const;
 	void GetUnits(TArray<FRTSUnitState>& Out) const;
@@ -470,6 +541,8 @@ private:
 	void UpdateDocks();
 	/** O prédio destruído: a explosão principal e as secundárias espalhadas pela área. */
 	void StructureDeath(const ARTSUnitActor& View, const FVector2D& CenterCm, uint32 Id);
+	/** (30/10, o B do chão; docs/COMPARACAO_GAMESHOTS.md item 1) As pedras soltas do terreno (-RTSTerrainStones). */
+	void PlaceTerrainStones();
 	void SaveReplay();
 	void IssueGroupIfChanged(const TArray<uint32>& Units);
 	void UpdateFog(float DeltaTime);
@@ -483,6 +556,113 @@ private:
 
 	UPROPERTY()
 	TMap<uint32, TObjectPtr<ARTSUnitActor>> Views;
+	/** (v5, 24/10) As aeronaves caindo (a simulação segue o corpo até o chão: Sim::World::CrashView): o ator e o dono, até o AirCrash. */
+	TMap<uint32, TObjectPtr<ARTSUnitActor>> Falling;
+	TMap<uint32, uint8> FallingOwner;
+	void UpdateFalling(float DeltaTime);
+	/** (24/10, o escopo B do ar; docs/AEREO.md §3.10) O desenho do ar na partida (no fim do RTSMatchSubsystem.cpp, "o ar: o desenho"):
+	 *  o vento do rotor levantando a poeira em volume pelo tipo de chão (os puffs de impacto do RTSTreadDust, o jato de parede radial)
+	 *  e empurrando a fumaça; o pós-combustor e a rampa; a fumaça e o fogo da queda; a sombra da aeronave no ar no mapa do sol. */
+	void UpdateAirFx(float DeltaTime);
+	void AddAirSmoke(struct FRTSSmokeFrame& Frame);
+	void UpdateAirLook(uint32 Id, ARTSUnitActor& A, const FRTSUnitState& U);
+	bool AirToSun(FVector& OutToSun);
+	/** O vento do rotor de cada helicóptero: o que falta soltar (puffs) e o sorteio; os cartões vivos (o teto do preset). */
+	struct FRotorWash { double Acc = 0.0; double LingerAcc = 0.0; uint32 Seed = 1; };
+	TMap<uint32, FRotorWash> RotorWash;
+	TArray<double> WashUntil;
+	/** O fogo de verdade (a gravação do EmberGen em loop no raymarch, UBlastFxDirector::FireLoop): o da queda (o ator segue o motor) e o
+	 *  da carcaça (nasce dentro da fumaça da morte), com a entrada, a saída e a coluna de fuligem por cima (RTSMissileSmoke). */
+	struct FAirFire
+	{
+		TWeakObjectPtr<class AExplosionVolume> V;
+		uint32 Id = 0;
+		double Start = 0.0, End = 0.0;
+		FVector FootCm = FVector::ZeroVector;
+		float Scale = 0.17f;
+		uint32 Variant = 0;
+		bool bFalling = false;
+		int32 FireId = -1;      // (25/10) o fogo simulado da carcaça (blast.Fire.Version 2; UBlastFxDirector::StartFire)
+	};
+	TArray<FAirFire> AirFires;
+	FAirFire* FindAirFire(uint32 Id, bool bFalling);
+	/** A 2ª bola do jato que cai (o combustível espirrando pra frente, alguns metros adiante e um instante depois). */
+	struct FJetBlast { double At = 0.0; FVector Ground = FVector::ZeroVector; uint32 Variant = 0; };
+	TArray<FJetBlast> JetBlasts;
+	/** (25/10, v5) A arma leve e o estouro no ar (o Linebacker e o Stryker; no fim do RTSMatchSubsystem.cpp): o ponto do tiro na vítima
+	 *  desenhada (pelo hash do tiro: o traçante e o acerto no mesmo lugar), o traçante pequeno, o estouro do antiaéreo (o clarão, as
+	 *  faíscas e a baforada) e a baforada escura em volume no ar (um ponto que fumega ~0,22 s no RTSMissileSmoke, AddAirSmoke). */
+	struct FFlakPuff { FVector Cm = FVector::ZeroVector; double Start = 0.0; uint32 Id = 0; float SigmaM = 0.3f; float ExtM2 = 0.15f; };
+	TArray<FFlakPuff> FlakPuffs;
+	uint32 FlakSerial = 0;
+	FVector LightGunAim(class ARTSUnitActor* Victim, const FVector& FromCm, uint32 Seed) const;
+	void LightGunTracer(const FVector& FromCm, const FVector& ToCm, float SpeedCmPerS, uint32 Seed, float LengthCm);
+	void FlakBurst(const FVector& AtCm, const FVector& FromCm, uint32 Seed);
+	void AirBurstSmoke(const FVector& AtCm, float SigmaM, float ExtM2, uint32 Seed);
+	/** (30/10, a metralhadora pelo fenômeno real: docs/ESTUDO_IMPACTOS.md G e docs/LINGUAGEM_DO_COMBATE.md) a rajada desenhada: cada tiro
+	 *  da simulação da arma leve num alvo no chão (ou no chão) vira 2 balas desenhadas (a DShK e a M2 a ~10 tiros/s); a maioria cai na
+	 *  areia em volta do alvo (as 3 primeiras da rajada caminham até ele) e ~1 em 3 bate no casco; o traçante em 1 de 4; o clarão e o
+	 *  pulso de luz a cada bala (o pulso largo da metralhadora do ZH). Só o desenho: o dano é o da simulação. -BulletRounds=0 volta. */
+	struct FBulletRound
+	{
+		double FireAt = 0.0, HitAt = 0.0;
+		TWeakObjectPtr<ARTSUnitActor> Shooter;
+		uint32 Target = 0;                       // a entidade (0 = o chão)
+		FVector FromCm = FVector::ZeroVector;
+		FVector ToCm = FVector::ZeroVector;      // onde ela cai (o casco ou a areia)
+		uint32 Seed = 0;
+		bool bHull = false, bTracer = false, bFired = false;
+		bool bFlash = true;                      // (o custo) o clarão com luz na 1ª bala do par: 5 pulsos por segundo
+	};
+	TArray<FBulletRound> BulletRounds;
+	struct FBulletBurst { double LastAt = -10.0; int32 Count = 0; };
+	TMap<uint32, FBulletBurst> BulletBursts;
+	TArray<double> BulletDustUntil;              // os puffs de areia das balas vivos no campo de poeira (o teto por preset)
+	double BulletLogAt = 0.0;                    // (rts.BulletLog) o registro da rajada
+	int32 BulletLogHull = 0, BulletLogGround = 0, BulletLogPuffs = 0;
+	/** (30/10, a obra com vida) a próxima solda de cada obra (o relógio do mundo) e as faíscas e a poeira (UpdateConstructionFx). */
+	TMap<uint32, double> ConstructionSparkAt;
+	/** (30/10, 2ª volta) a solda de cada obra: o ponto, até quando o soldador fica nele e o próximo estalo (a sequência de estalos). */
+	struct FWeld { FVector Cm = FVector::ZeroVector; FVector Out = FVector::ForwardVector; double Until = -1.0; double NextPop = 0.0; };
+	TMap<uint32, FWeld> Welds;
+	/** (30/10, 3ª volta) a última subida da lâmina de cada Dozer que já virou terra caindo (ARTSUnitActor::GetBladeLifts). */
+	TMap<uint32, uint32> BladeLiftsSeen;
+	void UpdateConstructionFx();
+	/** (simulação 25, 30/10) os tiros que ricochetearam (o ShotRicochet chega antes do WeaponFired): o traçante e o acerto deles têm a cara do ricochete. */
+	TSet<uint32> RicochetShots;
+	/** (simulação 26, 30/10) os soldados esmagados neste passo (o UnitCrushed sai antes do UnitDied): a morte deles fica achatada. */
+	TSet<uint32> CrushedIds;
+	static bool BulletRoundsOn();
+	static float BulletDustMass();
+	void QueueBulletRounds(class ARTSUnitActor* Shooter, uint32 ShooterId, uint32 TargetId, class ARTSUnitActor* Victim, const FVector& GroundAimCm, float SpeedCmPerS, uint32 Seed);
+	void UpdateBulletRounds();
+	/** (30/10, a infantaria: "sangue SIM") as manchas de sangue no chão (o decal M_BloodDecal, aceso pela luz e pela sombra do mapa): o
+	 *  respingo além de quem levou bala (Kind 1, no rumo dela) e a poça que cresce embaixo do corpo (Kind 0, seguindo o tronco enquanto ele
+	 *  cai). Ficam LifeS, secam (perdem o brilho e escurecem) e somem nos últimos 4 s; teto de 96, a mais velha sai. */
+	struct FBloodMark
+	{
+		TWeakObjectPtr<class UDecalComponent> Decal;
+		TWeakObjectPtr<class UMaterialInstanceDynamic> Mid;
+		TWeakObjectPtr<ARTSUnitActor> Body;
+		double Born = 0.0;
+		float GrowTauS = 0.1f, LifeS = 40.0f;
+	};
+	TArray<FBloodMark> BloodMarks;
+	void AddBlood(const FVector& GroundCm, const FVector2D& Dir, float SizeCm, float Kind, float GrowTauS, uint32 Seed, ARTSUnitActor* FollowBody = nullptr);
+	/** (30/10, item 37) o corpo de cada míssil em voo (a malha do atirador, guardada no 1º quadro: o atirador pode morrer antes do acerto). */
+	struct FMissileLook
+	{
+		TWeakObjectPtr<UStaticMesh> Mesh;
+		float LengthCm = 0.0f;
+		float TrailWidthK = 1.0f, TrailDensityK = 1.0f, TrailS = 0.0f;
+	};
+	TMap<uint32, FMissileLook> MissileLooks;
+	/** (01/11) Os mísseis do lançamento suave ainda com o motor apagado (a ignição no ar acontece quando saem daqui). */
+	TSet<uint32> CoastingMissiles;
+	const FMissileLook& MissileLookOf(const struct FRTSMissile& M);
+	void UpdateBlood();
+	FVector AirSunCached = FVector(0.0, 0.0, 1.0);
+	double AirSunAt = -1.0;
 	UPROPERTY()
 	TArray<TObjectPtr<ARTSUnitActor>> Wrecks;
 	/** A carcaça de veículo seguindo a da simulação (13/10, com física): a base no lugar da morte e o último desenho. */
@@ -504,12 +684,16 @@ private:
 		double RemovedAt = -1.0;
 		float RemovedFromP = 0.0f;
 		bool bGhost = false;
+		/** (31/10, a sucata) O passo em que o desenho viu o Dozer chegar no alcance (−1 = ninguém desmanchando agora) e se o fogo já é do
+		 *  desmanche (UBlastFxDirector::WreckSalvage: desce com o casco e sai pelo fim simulado, até depois de a carcaça sumir). */
+		int64 SalvageFrom = -1;
+		bool bSalvaged = false;
 	};
 	TMap<uint32, FWreckPose> WreckPoses;
 	/** (22/10) A carcaça some (o item 4 da v4): os eventos da simulação, o fim (tira das listas e destrói) e os fantasmas da
 	 *  névoa (no máximo 32, os mais velhos somem sem aviso). */
 	void OnWreckSinking(const Sim::SimEvent& E);
-	void OnWreckRemoved(const Sim::SimEvent& E);
+	void OnWreckRemoved(const Sim::SimEvent& E); void OnGroundClaimed(const Sim::SimEvent& E); void OnRuinCleared(const Sim::SimEvent& E);
 	void FinishWreck(uint32 Id);
 	TArray<uint32> WreckGhosts;
 	/** As que a simulação tirou antes da morte desenhada (a onda do derrotado com mais de 64 de uma vez): afundam logo depois. */
@@ -583,6 +767,10 @@ private:
 	bool bRocksCollected = false;
 	void CollectRocks();
 	void BreakRock(int32 Rock);
+	/** (01/11) o lote do prédio novo sem as pedras, as moitas e os tufos do mapa (as instâncias pequenas de ISM fora das unidades). */
+	void ClearScatterUnder(uint32 Id);
+	TMap<FIntPoint, TArray<TPair<TWeakObjectPtr<UInstancedStaticMeshComponent>, int32>>> ScatterGrid;
+	bool bScatterIndexed = false;
 	/** (16/10) Os carros sendo esmagados agora (o efeito do Fluxo segue a passagem; acaba antes se o tanque parar ou morrer). */
 	struct FCarPass
 	{
@@ -606,6 +794,8 @@ private:
 	/** A poeira das lagartas (13/10, o plugin RTSTreadDust da arte): um ator só, que recebe a cada quadro os veículos de
 	 *  lagarta perto da câmera (só desenho; nada volta pra simulação). */
 	TWeakObjectPtr<class ARTSTreadDust> TreadDust;
+	/** (25/10) O vento de agora e o do mapa (SetWind). */
+	float WindYawDeg = 0.0f, WindSpeedMs = 4.0f, MapWindYawDeg = 0.0f, MapWindSpeedMs = 4.0f;
 	struct FDustMotion
 	{
 		FVector2D Cm = FVector2D::ZeroVector;
@@ -665,10 +855,81 @@ public:
 	/** O preset da poeira das lagartas (0 baixa … 3 ultra; a nuvem cobre igual em todos). */
 	void SetDustQuality(int32 Level);
 	uint32 SimTick() const;
+
+	// --- (v5, 24/10) o laboratório (RTSLab.h): a família Lab da simulação (só com MatchSetup::bLab; a LAN nunca tem), o
+	// relógio, as IAs e os efeitos no cursor. Fora do laboratório nada disto é chamado e o jogo fica igual
+	/** O laboratório desta partida (nulo fora dele). */
+	FRTSLab* GetLab() const { return Lab; }
+	/** A montagem é o laboratório (MatchSetup::bLab). */
+	bool IsLab() const;
+	/** Os comandos Lab (vão pela fila como qualquer ordem e entram no replay; a simulação confere tudo). YawDeg: pra onde nasce
+	 *  virado (o prédio arredonda pro quarto de volta); bComplete: o prédio pronto (falso = a fundação que um Dozer termina). */
+	void LabSpawn(uint16 Def, uint8 Player, const FVector2D& Cm, float YawDeg, bool bComplete);
+	void LabRemove(uint32 Id);
+	/** A vida vira Fraction (0..1) da cheia; 0 = a morte de sempre (a explosão, a carcaça). */
+	void LabSetHealth(uint32 Id, float Fraction);
+	void LabAddMoney(uint8 Player, int32 Amount);
+	void LabSetRank(uint8 Player, int32 Rank);
+	/** A ordem dada como outro jogador (o laboratório manda em todos): o grupo e a ordem (Type = Sim::CommandType: Move,
+	 *  AttackMove, AttackGround, Attack, Stop) com o Player dele. */
+	void LabOrderAs(uint8 Player, const TArray<uint32>& Units, uint8 Type, const FVector2D& Cm, uint32 Target, int32 Value = 0);
+	/** O tipo nasce pelo LabSpawn (tem vida e não é a munição de um poder, como o míssil do ataque)? */
+	bool LabCanSpawn(uint16 Def) const;
+	/** O prédio cabe ali pelo LabSpawn (Sim::World::CanLabPlace: o chão vale, o dinheiro, a patente e a névoa não)? */
+	ERTSPlace LabCanPlace(uint16 Def, int32 Dir, const FVector2D& Cm, bool bComplete, FVector2D& OutCenterCm, FVector2D& OutHalfCm) const;
+	/** O relógio parado do laboratório (o passo segura; o desenho para pela dilatação do mundo, no FRTSLab) e o passo a passo. */
+	void LabSetHold(bool bHold);
+	bool IsLabHold() const { return bLabHold; }
+	void LabStep(int32 Ticks);
+	/** A IA de cada jogador (o jogador sem cérebro ganha um) e o log das decisões dela. */
+	void LabSetAI(uint8 Player, bool bOn);
+	bool LabIsAI(uint8 Player) const;
+	const TArray<FString>& LabAILog() const { return LabAILines; }
+	/** Joga como outro jogador (o laboratório): a câmera, a névoa, o HUD e a seleção passam a ser dele. */
+	void LabPlayAs(uint8 Player);
+	/** Um efeito do jogo no ponto (só desenho: as chamadas que os eventos já fazem; RTSLab.h, ERTSLabFx). */
+	void LabEffect(const FRTSLabFxRequest& R);
+	/** A semente e o mapa da montagem (a cena gravada do laboratório). */
+	uint64 LabSeed() const;
+	FString LabMapName() const;
+	/** (v5) A peça civil do catálogo do laboratório (FRTSLab::PropDefs, Style = o índice) no ponto, virada pra YawDeg (a frente
+	 *  da malha; a casa e o muro no quarto de volta), pelo LabSpawnProp; bChain = o poste ligado pelos fios ao poste anterior.
+	 *  O desenho nasce do evento da simulação (LabPropPlaced), igual no replay. Falso: fora do laboratório ou a malha não existe. */
+	bool LabSpawnProp(int32 Style, const FVector2D& Cm, float YawDeg, bool bChain);
+	/** O meio tamanho (cm, no quadro da malha: X e Y dela) e a altura (cm) da peça do catálogo, pela malha. */
+	static bool LabPropSize(int32 Style, FVector2D& OutHalfCm, float& OutHeightCm);
+	/** O poste do laboratório mais novo (o que o próximo poste ligado encontra): a posição; falso sem nenhum. */
+	bool LabLastPoleCm(FVector2D& OutCm) const;
+private:
+	FRTSLab* Lab = nullptr;
+	TArray<bool> LabAIOn;
+	TArray<FString> LabAILines;
+	bool bLabHold = false;
+	int32 LabPendingSteps = 0;
+	/** (v5) O desenho da peça civil que a simulação pôs (o evento LabPropPlaced): a malha na camada do laboratório, e o carro, a
+	 *  palmeira, a miudeza que amassa e o poste com os fios entram nas listas da vila (o esmagar, o tombar e o fio que arrebenta
+	 *  são os de sempre). */
+	void OnLabPropPlaced(const Sim::SimEvent& E);
+	TWeakObjectPtr<AActor> LabPropActor;
+	TMap<FString, TWeakObjectPtr<UInstancedStaticMeshComponent>> LabPropLayers;
+	/** As peças do laboratório no VillagePieceInstance (acima das da vila) e o último poste dele (o índice em Poles). */
+	int32 LabNextPiece = 1000000;
+	int32 LabLastPole = -1;
+	/** O acerto de ogiva do laboratório (o ramo do ProjectileHit no chão, com a munição escolhida). */
+	void LabMissileHit(const FRTSLabFxRequest& R, bool bHeavy);
 private:
 	/** A memória do chão: esteiras, queimados e crateras (só desenho; -RTSNoGround desliga, pro A/B). */
 	UPROPERTY()
 	TObjectPtr<URTSGroundMemory> GroundMemory;
+	/** (31/10, "os destroços [...] não ficando na física no buraco, e os tanques passando por cima e voando") O chão DESENHADO (cm): o
+	 *  terreno assado mais a cratera e o avental que o afundar mostra (URTSGroundMemory::CraterHeightCmAt). Pra quem pousa ou anda
+	 *  no desenho (as pedras, o entulho, os pedaços da carcaça, as rodas); a simulação fica no terreno assado. */
+	float VisualGroundZCm(const FVector2D& P) const;
+	/** (31/10) O veículo assentado no chão desenhado pelas rodas (o casco e a inclinação no buraco); infantaria pelo pé. */
+	void SeatOnCraters(const FRTSUnitState& U, bool bInfantry, FVector& InOutGround, FVector& InOutNormal) const;
+	/** (simulação 35) O soldado dentro do transporte: escondido; quem mira ou atirou há pouco sobe da cintura pra cima na escotilha da vaga
+	 *  dele, virado pro alvo (o clarão sai da boca da arma dele, onde ele está). */
+	void PlacePassenger(ARTSUnitActor& A, const FRTSUnitState& U, float DeltaTime);
 	/** (16/10) A fumaça dos mísseis (os puffs simulados; só desenho). */
 	FRTSMissileSmoke* MissileSmoke = nullptr;
 	/** (23/10) A explosão com vida, do lado do jogo (RTSHitLife.h: o pulso do acerto de míssil e as reações; só desenho). */
@@ -738,6 +999,11 @@ private:
 	bool bLastFogShown = true;
 	TArray<FVector2D> DamageAlerts;
 	TArray<FRTSMoneyPopup> MoneyPopups;
+	/** (simulação 30) O entulho de cada prédio que caiu: a pose, a planta, a altura (o espirrado vai até ~metade dela além da parede) e a
+	 *  casca queimada (o ator morto), pra tirar tudo quando a simulação tira o entulho (a obra em cima, a sucata). */
+	TMap<uint32, TTuple<FTransform, FBox2D, float, TWeakObjectPtr<ARTSUnitActor>>> RuinAreas;
+	/** (31/10, a sucata) O entulho que um Dozer desmancha agora: o passo em que ele encostou (o monte desce no ritmo da simulação). */
+	TMap<uint32, int64> RuinSalvageFrom;
 
 	/** Segura a partida até a cena estar pronta (a tela de carregar continua até lá). */
 	void UpdateWarmup();
@@ -749,7 +1015,11 @@ private:
 	class URTSNetSession* Net() const;
 
 	bool bNet = false;
+	bool bQueueOrders = false;          // (simulação 35) o Alt segurado
+	double LastQueuedOrderS = -1.0e9;   // quando saiu a última ordem com a marca (a linha fica 1,5 s)
 	uint8 LocalSlot = 0;
+	/** (31/10) A facção de cada jogador, na ordem dos lugares (montada no StartSkirmish). */
+	TArray<FString> PlayerFactionKeys;
 	bool bNetAwaitSetup = false;
 	FString NetMapName;
 	/** -RTSNetBot: o robô de teste joga pelo jogador local, mandando os comandos pela rede. */

@@ -15,6 +15,7 @@
 #include "Framework/Application/IInputProcessor.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformMisc.h"
+#include "Misc/App.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
@@ -663,9 +664,22 @@ void URTSAutoTest::Build()
 	}
 	if (!bLan)
 	{
+		// (01/11) sem placa (-nullrhi: as partidas IA × IA que provam o equilíbrio enquanto a placa roda os testes dos outros) o menu não
+		// se desenha e o botão não tem lugar na tela: começa pela mesma função do botão
+		auto ClickSkirmish = [this]()
+		{
+			URTSSessionSubsystem* S = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSSessionSubsystem>() : nullptr;
+			if (!FApp::CanEverRender() && S)
+			{
+				UE_LOG(LogTemp, Display, TEXT("RTS TEST sem placa: o Play Skirmish pela função do botão"));
+				S->StartSkirmish();
+				return;
+			}
+			QueueClick(ButtonCenter(TEXT("skirmish")));
+		};
 		Steps.Add({ TEXT("jogar_skirmish"),
-			[this]() { RetryAt = 6.0f; QueueClick(ButtonCenter(TEXT("skirmish"))); },
-			[this]()
+			[this, ClickSkirmish]() { RetryAt = 6.0f; ClickSkirmish(); },
+			[this, ClickSkirmish]()
 			{
 				if (Match() != nullptr && Match()->IsReady() && PC() && !PC()->IsMenu())
 				{
@@ -678,7 +692,7 @@ void URTSAutoTest::Build()
 					RetryAt = Timer + 6.0f;
 					const FVector2D B = ButtonCenter(TEXT("skirmish"));
 					UE_LOG(LogTemp, Warning, TEXT("RTS TEST o clique no Play Skirmish não pegou; de novo em (%.0f, %.0f)"), B.X, B.Y);
-					QueueClick(B);
+					ClickSkirmish();
 				}
 				return false;
 			},
@@ -2044,6 +2058,48 @@ void URTSAutoTest::BuildAIvsAI()
 	// vai até ele e fotografa a 1,5, 3 e 5 s. Acaba em -RTSTestMinutes= (padrão 20) ou no fim da partida
 	float Minutes = 20.0f;
 	FParse::Value(FCommandLine::Get(), TEXT("-RTSTestMinutes="), Minutes);
+	// (01/11, a prova da Rússia) o placar a cada minuto de partida: o equilíbrio das facções não é só quem vence (o dinheiro, o exército
+	// armado pelo custo, o apoio, os prédios de pé de cada lado)
+	TSharedRef<float> NextScore = MakeShared<float>(60.0f);
+	auto LogScore = [this, NextScore]()
+	{
+		URTSMatchSubsystem* M = Match();
+		if (!M || M->MatchSeconds() < *NextScore)
+		{
+			return;
+		}
+		*NextScore = M->MatchSeconds() + 60.0f;
+		TArray<FRTSUnitState> Units;
+		M->GetUnits(Units);
+		int32 Army[2] = {}, ArmyN[2] = {}, Support[2] = {}, Built[2] = {};
+		for (const FRTSUnitState& U : Units)
+		{
+			FRTSDefInfo Info;
+			if (U.Owner >= 2 || !M->GetDef(uint16(U.Def), Info))
+			{
+				continue;
+			}
+			if (U.bStructure)
+			{
+				Built[U.Owner] += U.BuildFraction >= 1.0f ? 1 : 0;
+			}
+			else if (Info.bArmed)
+			{
+				Army[U.Owner] += Info.Cost;
+				++ArmyN[U.Owner];
+			}
+			else
+			{
+				++Support[U.Owner];
+			}
+		}
+		FString Line;
+		for (int32 P = 0; P < 2; ++P)
+		{
+			Line += FString::Printf(TEXT(" | p%d: $%d, exército %d ($%d), apoio %d, prédios %d"), P, M->Money(uint8(P)), ArmyN[P], Army[P], Support[P], Built[P]);
+		}
+		UE_LOG(LogTemp, Display, TEXT("RTS TEST placar aos %.0f s%s"), M->MatchSeconds(), *Line);
+	};
 	Steps.Add({ TEXT("ia_x_ia"),
 		[this]()
 		{
@@ -2053,7 +2109,7 @@ void URTSAutoTest::BuildAIvsAI()
 			WatchBurst.Reset();
 			bWatchStarted = false;
 		},
-		[this, Minutes]() { return WatchTick() || (Match() && Match()->MatchSeconds() >= Minutes * 60.0f); },
+		[this, Minutes, LogScore]() { LogScore(); return WatchTick() || (Match() && Match()->MatchSeconds() >= Minutes * 60.0f); },
 		[this]()
 		{
 			const URTSMatchSubsystem* M = Match();

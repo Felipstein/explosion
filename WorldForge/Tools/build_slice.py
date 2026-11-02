@@ -686,15 +686,15 @@ float slope = smoothstep(0.03, 0.25, 1.0 - saturate(VNrm.z));
 float trod = saturate(Trod);
 float rock = saturate(Rock);
 float open = saturate(1.0 - trod - rock);
-float nA = zf[0] + 0.12 * trod - 0.10 * slope;
+float nA = zf[0] + lerp(0.12, 0.04, GroundV) * trod - 0.10 * slope;   // (29/10) o pisado puxa pouco pro liso: a base virou areia (DIRT_SAND) e o r1 tem ondulacao entre os rastros; GroundV 0 = o chao de 29/10 de manha (MPC_Ground)
 float nB = zf[1] + 0.15 * slope + 0.10 * rock;
-float nC = zf[2] + 0.04 * open + 0.25 * saturate(Far) - 0.15 * trod - 0.15 * slope;   // longe do pisado a ondulacao domina
+float nC = zf[2] + 0.04 * open + 0.25 * saturate(Far) - lerp(0.15, 0.05, GroundV) * trod - 0.15 * slope;   // longe do pisado a ondulacao domina
 float nD = zf[3];
 // a borda rasgada, não macia (o Look, 13/10): um ruído fino (0,8 m, +-0,06) antes de um limiar estreito (0,03)
 float fe = (zn[0] - 0.5) * 0.45;
 float zs = smoothstep(0.595, 0.625, nA + fe);
 float zg = smoothstep(0.615, 0.645, nB + fe) * (1.0 - zs);
-float zr = smoothstep(0.575, 0.605, nC + fe) * (1.0 - zs) * (1.0 - zg);
+float zr = smoothstep(0.535, 0.565, nC + fe) * (1.0 - zs) * (1.0 - zg);   // (29/10) mais campo de ondulacao: o r1 tem ondulacao na maior parte da areia aberta
 float zd = smoothstep(0.695, 0.725, nD + fe) * (1.0 - zr);
 // a cor: a v1 (albedo fisico, o desenho da textura fraco, +-10% em 8/40/200 m)
 float3 g1 = GravD.Sample(SS(GravD), p / 1.3).rgb;
@@ -704,20 +704,36 @@ float mv8 = saturate((Beach.Sample(SS(Beach), p / 8.0 + 0.71).g - 0.22) / 0.04);
 float mv40 = saturate((Beach.Sample(SS(Beach), p / 40.0 + 0.29).r - 0.26) / 0.05);
 float mv200 = saturate((Beach.Sample(SS(Beach), p / 200.0 + 0.53).g - 0.22) / 0.04);
 float macro3 = 1.0 + 0.2 * ((mv8 - 0.5) + (mv40 - 0.5) + (mv200 - 0.5)) / 1.5;
-float3 sand = Albedo * lerp(1.0, sl, Mottle) * macro3;
+float3 sand = Albedo * lerp(float3(1.0, 1.0, 1.0), float3(1.0, 0.93, 0.86), GroundV) * lerp(1.0, sl, Mottle * lerp(0.5, 1.0, zg)) * macro3;   // (29/10) a cor da duna do alvo r1
 float gao = GravM.Sample(SS(GravM), p / 1.3).r;
-sand *= lerp(1.0, gao * gao, 0.7 * (1.0 - 0.6 * zs) + 0.3 * zg);   // o liso tem menos fresta; o pedregoso mais
+sand *= lerp(1.0, gao * gao, 0.3 * (1.0 - 0.6 * zs) + 0.7 * zg);   // o liso tem menos fresta; o pedregoso mais (29/10: a areia aberta 0,7 -> 0,3: o cascalho sujava a duna)
 // pouco tom (o Look, 13/10: com x0,88 e x1,07 as zonas liam como manchas de agua seca a 100 m; a diferenca
 // fica no grao, na fresta e no espalhamento)
 sand *= lerp(1.0, 1.03, zs);                                          // o compactado um pouco mais claro
 sand *= lerp(float3(1, 1, 1), float3(0.96, 0.95, 0.93), zg);          // o pedregoso um pouco mais escuro e frio
 sand *= lerp(float3(1, 1, 1), float3(0.94, 0.92, 0.89), zd);          // a revirada (solta, um pouco umida)
+// (29/10, a sessao do Blender: o r1_raid_slabs tem pedrinhas e torroes escuros espalhados, 1-2 px no zoom do jogo) uma
+// pedrinha por celula de 0,6 m em ~11% das celulas (o dobro no pedregoso, pouco no liso), raio 4-9 cm (o torrao do alvo, 2-3 px), escura e quente. O
+// serrilhado pela largura do pixel: o disco anti-serrilhado com a area conservada (longe vira so um leve escurecido, sem cintilar)
+{
+    float pcs = 0.6;
+    float2 pci = floor(p / pcs);
+    float2 ph = frac(sin(float2(dot(pci, float2(127.1, 311.7)), dot(pci, float2(269.5, 183.3)))) * 43758.5453);
+    float ph3 = frac(sin(dot(pci, float2(419.2, 371.9))) * 43758.5453);
+    float ph4 = frac(ph3 * 7.31 + 0.13);
+    float pdens = (0.11 * (1.0 - 0.75 * zs) + 0.2 * zg) * (1.0 - GroundV);   // (29/10 a noite, o Felipe: "essas pintas foi um LIXO": discos chapados lendo como bolinhas; so no chao de manha)
+    float pr = 0.04 + 0.05 * ph3 * ph3;
+    float pfw = max(length(fwidth(p)), 1e-4);
+    float pd = length(p - (pci + 0.15 + 0.7 * ph) * pcs);
+    float pcov = saturate((pr - pd) / pfw + 0.5) * pow(pr / (pr + 0.5 * pfw), 2.0) * step(ph4, pdens);
+    sand = lerp(sand, sand * float3(0.34, 0.30, 0.27), pcov);
+}
 // o relevo fino: grao, montinhos a 6 m em manchas e a 2,3 m girada; o liso alisa, o pedregoso marca
 float2 n1 = (GravN.Sample(SS(GravN), p / 1.3).rg * 2.0 - 1.0) * 1.35;
 float2 n2 = BeachN.Sample(SS(BeachN), p / 6.0 + 0.19).rg * 2.0 - 1.0;
 float2 n3 = BeachN.Sample(SS(BeachN), float2(0.6 * p.x + 0.8 * p.y, -0.8 * p.x + 0.6 * p.y) / 2.3 + 0.61).rg * 2.0 - 1.0;
 float rp = smoothstep(0.35, 0.75, saturate((Beach.Sample(SS(Beach), p / 25.0 + 0.83).g - 0.22) / 0.04));
-float2 nxy = n1 * lerp(1.0, 0.35, zs) * lerp(1.0, 1.4, zg) + (n2 * lerp(0.25, 0.9, rp) + n3 * 0.45) * lerp(1.0, 0.25, zs);
+float2 nxy = n1 * lerp(1.0, 0.35, zs) * lerp(0.45, 1.4, zg) + (n2 * lerp(0.25, 0.9, rp) + n3 * 0.45) * lerp(1.0, 0.25, zs) * lerp(0.5, 1.0, zg);   // (29/10) o grao do cascalho so no pedregoso: a areia de duna e lisa; os montinhos da praia (as bolhas de contorno escuro) e a mancha do cascalho pela metade fora dele
 // as ondulacoes simuladas: o ladrilho de 10 m no espaco do vento, em hexagonos sem girar, so na zona delas
 {
     float wy = radians(WindYaw);
@@ -1103,6 +1119,40 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         disp = g.sample(s['disp'], uv(tile_m), 'masks')
         return {'name': lname, 'base': (c, ''), 'nor': (c, 'Nrm'), 'rough': (c, 'Rough'), 'ao': (c, 'AO'), 'disp': (disp, 'R')}
 
+    gv_cache = []
+    bs_cache = []
+
+    def base_sand_node():
+        """(30/10, a decisão do Felipe: "a base fica com a areia nova; as trilhas de terra da base até a vila voltam pra terra escura
+        antiga") a terra batida vira a areia (DIRT_SAND) só dentro das bases: a chave do chão (GroundV) vezes a máscara das 4 áreas de
+        base do mapa (BaseSand0..3 = x, y, raio em cm, das áreas reservadas do painel, o "keepout" de raio ≥ 60 m), com a borda macia
+        de ~25% do raio. BaseSandOn 0 (o padrão: as fatias e os mapas sem bases) = a terra batida inteira na areia, como antes."""
+        if not bs_cache:
+            wpn = g.node(unreal.MaterialExpressionWorldPosition, -900, 300)
+            on = g.node(unreal.MaterialExpressionScalarParameter, -900, 400, parameter_name='BaseSandOn', default_value=0.0)
+            ins = [('G', ground_version_node(), ''), ('P', wpn, ''), ('On', on, '')]
+            for k in range(4):
+                v = g.node(unreal.MaterialExpressionVectorParameter, -900, 500 + 100 * k, parameter_name='BaseSand%d' % k,
+                           default_value=unreal.LinearColor(0.0, 0.0, 0.0, 0.0))
+                ins.append(('B%d' % k, v, ''))
+            code = '\n'.join(['float m = 1.0;', 'if (On > 0.5) {', '    m = 0.0;'] + [
+                '    if (B%d.z > 0.0) m = max(m, 1.0 - smoothstep(B%d.z * 0.8, B%d.z * 1.05, distance(P.xy, B%d.xy)));' % (k, k, k, k)
+                for k in range(4)] + ['}', 'return G * m;'])
+            bs_cache.append(g.custom(code, ins, F1, -700))
+        return bs_cache[0]
+
+    def ground_version_node():
+        """(29/10 à noite, o Felipe: "deixa a variação antiga disponível no WorldForge, no jogo") a chave do chão: GroundV da
+        coleção /Game/Materials/MPC_Ground (1 = o de agora, 0 = o de 29/10 de manhã: a terra batida nas bases, a cor de antes,
+        as pedrinhas, a ondulação dense). O jogo troca (F12 e o "ground_version" do Maps.json); a coleção mora nos dois projetos
+        (o mesmo arquivo)."""
+        if not gv_cache:
+            n = g.node(unreal.MaterialExpressionCollectionParameter, -800)
+            n.set_editor_property('collection', unreal.load_asset('/Game/Materials/MPC_Ground'))
+            n.set_editor_property('parameter_name', 'GroundV')
+            gv_cache.append(n)
+        return gv_cache[0]
+
     def sand_v2_layer(lname, s, tile_m, albedo, extra):
         """A areia v2 do Look: a v1 + as zonas pelo terreno + as ondulações simuladas no vento do mapa."""
         def tobj(tex, kind):
@@ -1153,7 +1203,12 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
     // 3 amostras; sem o corte pelo fw (a mip segura a distancia), sem a normal da ondulacao e sem a sombra velha na cor
     float rl = (RipLitT.SampleGrad(SS(RipLitT), q + o1, dqx, dqy).r * w.x + RipLitT.SampleGrad(SS(RipLitT), q + o2, dqx, dqy).r * w.y
               + RipLitT.SampleGrad(SS(RipLitT), q + o3, dqx, dqy).r * w.z) * 1.25;
-    RipLit = lerp(1.0, rl, zr * lerp(0.6, 1.0, m2) * RipTex);""")
+    float rlOld = (RipLitOld.SampleGrad(SS(RipLitOld), q + o1, dqx, dqy).r * w.x + RipLitOld.SampleGrad(SS(RipLitOld), q + o2, dqx, dqy).r * w.y
+              + RipLitOld.SampleGrad(SS(RipLitOld), q + o3, dqx, dqy).r * w.z) * 1.25;
+    rl = lerp(rlOld, rl, GroundV);   // (29/10) a de manha (dense) e a de agora (fullsc)
+    // (29/10, a sessao do Blender: medido no jogo contra o r1_raid_slabs, a ondulacao so nos campos zr e na forca fisica nao
+    // aparecia no pixel do jogo; o alvo tem ondulacao em quase toda a areia aberta) x3 nos campos, metade fora deles, nada no pedregoso
+    RipLit = 1.0 + (rl - 1.0) * 3.0 * lerp(0.5, 1.0, zr) * (1.0 - 0.6 * zs) * (1.0 - zg) * lerp(0.8, 1.0, m2) * RipTex;""")
         c = g.custom(code, [('WP', wp, ''), ('VNrm', g.node(unreal.MaterialExpressionVertexNormalWS, -700), ''),
                                     ('Trod', trod, ''), ('Rock', rock, ''), ('Far', far, ''), ('WindYaw', wind, ''),
                                     ('Albedo', g.const3(albedo, -500), ''),
@@ -1163,7 +1218,8 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
                                     ('GravM', tobj(grav['arm'], 'masks'), ''), ('Beach', tobj(beach['diff'], 'color'), ''),
                                     ('BeachN', tobj(beach['nor'], 'normal'), ''), ('SandM', tobj(s['arm'], 'masks'), ''),
                                     ('Ripples', tobj(ripples_texture(), 'masks'), '')]
-                     + ([('RipLitT', tobj(riplit_texture(), 'gray'), '')] if v3 else []),
+                     + ([('RipLitT', tobj(riplit_texture(), 'gray'), ''), ('RipLitOld', tobj(riplit_texture('dense'), 'gray'), '')] if v3 else [])
+                     + [('GroundV', ground_version_node(), '')],
                      F3, -150, extra=[('Nrm', F3), ('Rough', F1), ('AO', F1)] + ([('RipLit', F1)] if v3 else []))
         disp = g.sample(s['disp'], uv(tile_m), 'masks')
         out = {'name': lname, 'base': (c, ''), 'nor': (c, 'Nrm'), 'rough': (c, 'Rough'), 'ao': (c, 'AO'), 'disp': (disp, 'R')}
@@ -1328,6 +1384,19 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         else:
             layers.append(layer(lname, S[sid], tile, tint, extra))
     blends = {}
+    # (29/10, a sessão do Blender: os cinco game shots da base, r1_*_gemini, têm a base na areia dourada pisada, nunca na terra
+    # escura e vermelha) no deserto a terra batida das bases, das trilhas e dos campos usa a própria areia: a areia v2 já leva o
+    # pisado (Trod = Dirt + Asphalt) pras zonas, e o surface.png do jogo continua dizendo "terra batida" (o sulco mais raso).
+    # A terra de antes fica na chave do chão (GroundV 0). DIRT_SAND=0 volta a terra sem a chave
+    sand_layer = next((L for L in layers if L['name'] == 'Sand'), None)
+    dirt_sand = (biome == 'desert' and sand_layer is not None and any(L['name'] == 'Dirt' for L in layers)
+                 and os.environ.get('DIRT_SAND', '1') == '1')
+    dirt_sand_live = None
+    if dirt_sand:
+        names = [L['name'] for L in layers]
+        si, di = names.index('Sand'), names.index('Dirt')
+        dirt_sand_live = 'float gd = w[%d] * G; w[%d] = saturate(w[%d] + gd); w[%d] -= gd;' % (di, si, si, di)
+        log('desert dirt', 'a terra batida usa a areia (DIRT_SAND)')
     if live:
         weights = live_weights
         n = len(layers)
@@ -1337,12 +1406,13 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
                                  ('ao', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION, 1800)):
             vec = channel in ('base', 'nor')
             code = ['float w[6] = { W.r, W.g, W.b, W.a, V.r, V.g };',
+                    ] + ([dirt_sand_live] if dirt_sand_live else []) + [
                     'float sum = 0.0;',
                     ('float3' if vec else 'float') + ' acc = 0;']
             for i in range(n):
                 code.append('{ float m = clamp(lerp(-1.0, 1.0, w[%d]) + H%d, 0.0001, 1.0); acc += L%d * m; sum += m; }' % (i, i, i))
             code.append('return acc / sum;')
-            inputs = [('W', weights, ''), ('V', weights, 'WB')]
+            inputs = [('W', weights, ''), ('V', weights, 'WB')] + ([('G', base_sand_node(), '')] if dirt_sand_live else [])
             for i, L in enumerate(layers):
                 inputs.append(('L%d' % i, L[channel][0], L[channel][1]))
                 inputs.append(('H%d' % i, L['disp'][0], L['disp'][1]))
@@ -1393,16 +1463,21 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         dirt = {}
         for ch, typ in (('base', F3), ('nor', F3), ('rough', F1), ('ao', F1)):
             # (a 1ª: VC.a pela saída RGB do nó, o shader não compilava e a laje saía em xadrez no jogo: o A vem à parte)
-            code = ['float w[4] = { saturate(1.0 - VC.g - VC.b - VA), VC.g, VC.b, VA };', 'float sum = 0.0;',
+            # (29/10 à noite) a sujeira de terra na laje segue a chave do chão como o Landscape (DIRT_SAND: GroundV 1 = a areia);
+            # sem isso, perto das bases a areia da pista saía na terra marrom de antes, pedaços laranja no meio da areia
+            code = ['float w[4] = { saturate(1.0 - VC.g - VC.b - VA), VC.g, VC.b, VA };'] + (
+                    ['float gd = w[2] * G; w[0] = saturate(w[0] + gd); w[2] -= gd;'] if dirt_sand else []) + ['float sum = 0.0;',
                     ('float3' if typ == F3 else 'float') + ' acc = 0;']
-            ins = [('VC', vc, ''), ('VA', vc, 'A')]
+            ins = [('VC', vc, ''), ('VA', vc, 'A')] + ([('G', base_sand_node(), '')] if dirt_sand else [])
             for i, x in enumerate(dl):
                 code.append('{ float m = clamp(lerp(-1.0, 1.0, w[%d]) + H%d, 0.0001, 1.0) * step(0.004, w[%d]); acc += L%d * m; sum += m; }' % (i, i, i, i))
                 ins += [('L%d' % i, x[ch][0], x[ch][1]), ('H%d' % i, x['disp'][0], x['disp'][1])]
             code.append('return acc / max(sum, 0.0001);')
             dirt[ch] = g.custom('\n'.join(code), ins, typ, 450)
-        dmask = g.custom('return saturate((VC.r - 0.5) * 2.5 + 0.5 + (0.5 - HA) * 1.2) * step(0.004, VC.r);',
-                         [('VC', vc, ''), ('HA', L['disp'][0], L['disp'][1])], F1, 450)
+        # (29/10 à noite) a areia solta não para em parede mais íngreme que o ângulo de repouso (~33°, a normal com z < 0,84): a
+        # parede da quebra e do buraco fica a face escura do asfalto (a beira aprovada), não um bloco cor de areia aceso pelo sol
+        dmask = g.custom('return saturate((VC.r - 0.5) * 2.5 + 0.5 + (0.5 - HA) * 1.2) * step(0.004, VC.r) * smoothstep(0.7, 0.86, VN.z);',
+                         [('VC', vc, ''), ('HA', L['disp'][0], L['disp'][1]), ('VN', vn, '')], F1, 450)
         # (16/10, a comparação com os game shots aprovados, road_town_battle, road_battle e street_battle: neles o asfalto
         # inteiro tem um véu de poeira em manchas, a beira tem sempre uma linha fina de poeira (a forma mais comum da areia
         # na estrada, pela pesquisa) e as trincas têm areia dentro) o véu: manchas largas (~10 m) fracas, a faixa de ~1,5 m
@@ -1439,7 +1514,12 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         ao = g.custom('return lerp(A, SA, M);', [('A', L['ao'][0], L['ao'][1]), ('SA', dirt['ao'], ''), ('M', dmask, '')], F1, 500)
         if GROUND_V3 and ground_memory is not None:
             blends['ao'] = ao
-            blends['riplit'] = g.node(unreal.MaterialExpressionConstant, 400, 2100, r=1.0)
+            # (29/10 à noite, o Felipe: a areia na estrada "só ficou como textura") a película de areia na laje com a mesma luz
+            # assada da ondulação do chão do lado (sem ela a areia da laje saía chapada e mais clara que a do Landscape)
+            if Sd is not None and 'riplit' in Sd:
+                blends['riplit'] = g.custom('return lerp(1.0, R, M);', [('R', Sd['riplit'][0], Sd['riplit'][1]), ('M', dmask, '')], F1, 500)
+            else:
+                blends['riplit'] = g.node(unreal.MaterialExpressionConstant, 400, 2100, r=1.0)
         else:
             g.out(ao, '', unreal.MaterialProperty.MP_AMBIENT_OCCLUSION)
         if ground_memory is None:
@@ -1464,7 +1544,15 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             entries.append(e)
         blend.set_editor_property('layers', entries)
         for L in layers:
-            g.link(L[channel][0], L[channel][1], blend, 'Layer ' + L['name'])
+            if dirt_sand and L['name'] == 'Dirt':
+                # a terra de antes × a areia, pela chave do chão (GroundV: 1 = a areia), só dentro das bases (30/10)
+                lp = g.node(unreal.MaterialExpressionLinearInterpolate, 450, y + 120)
+                g.link(L[channel][0], L[channel][1], lp, 'A')
+                g.link(sand_layer[channel][0], sand_layer[channel][1], lp, 'B')
+                g.link(base_sand_node(), '', lp, 'Alpha')
+                g.link(lp, '', blend, 'Layer ' + L['name'])
+            else:
+                g.link(L[channel][0], L[channel][1], blend, 'Layer ' + L['name'])
             g.link(L['disp'][0], L['disp'][1], blend, 'Height ' + L['name'])
         if channel in ('base', 'rough', 'riplit') or (channel == 'nor' and ground_memory is not None) or (channel == 'ao' and v3_mem):
             blends[channel] = blend
@@ -1540,7 +1628,9 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         ins = [('WP', wp, ''), ('BC', wet, ''), ('N', blends['nor'], ''), ('Rg', wet, 'Rough'),
                # o chão de cada pixel pra cratera v2 (13/10, o Look): 1 = asfalto (o peso da camada, já com a beira de
                # 1,2 m e os buracos), 0 = areia/terra (a estrada de terra pinta a Dirt; a Salt também fica 0)
-               ('Surf', g.node(unreal.MaterialExpressionConstant, 1000, r=1.0) if slab else
+               # (29/10 à noite) na laje, a película de areia é areia (a aspereza, a luz e a cratera da areia: com Surf = 1 ela saía
+               # lisa e brilhante, "só textura"); o asfalto descoberto continua 1
+               ('Surf', g.custom('return 1.0 - M;', [('M', dmask, '')], F1, 1000) if slab else
                 g.node(unreal.MaterialExpressionLandscapeLayerSample, 1000, parameter_name='Asphalt', preview_weight=0.0), '')]
         # (as texturas que o CODE lê; GroundTrackMid entrou em 13/10: o queimado no caderno do meio, que a câmera
         # do RTS vê; antes ele sumia com o pixel de 10–20 cm)
@@ -1602,6 +1692,10 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         # magnitude 200 cm e centro 0,5 (sem multiplicar no grafo: UE-370671, o terreno fantasma). DispOn = 0 (padrão)
         # devolve 0,5: nada mexe até o jogo ligar
         disp_code = look_disp_code() if not slab else None   # (a laje não tessela: 12 cm de malha de verdade)
+        # (29/10 à noite) GROUND_DISP=0 monta sem o deslocamento: o World_TestSalt2 aprovado não o tinha, e remontado com ele o jogo
+        # ligava o afundar (DispOn) e a janela do caderno em volta da câmera saía um retângulo liso, sem as dunas
+        if os.environ.get('GROUND_DISP', '1') == '0':
+            disp_code = None
         if disp_code:
             farm = texture(os.path.join(os.path.dirname(PROJECT), 'captures', 'look', 'downloads', 'farm_soil', 'farm_soil_disp_2k.jpg'),
                            '/Game/Slice/Look', 'masks')
@@ -1627,7 +1721,11 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
             if fade:
                 fs, fe = (float(v) for v in fade.split(','))
                 g.m.set_editor_property('displacement_fade_range', unreal.DisplacementFadeRange(start_size_pixels=fs, end_size_pixels=fe))
-            mag = float(os.environ.get('DISPMAG', '200'))
+            # (31/10, a cratera que vira buraco: o "retângulo liso" de 29/10) a magnitude é no espaço LOCAL do Landscape, e o Landscape do
+            # WorldForge tem a escala Z 100 (BuildSliceLandscape: o mesmo caminho do "New Landscape" do editor): os 200 da maquete do Look
+            # viravam até ±100 m no mundo, o chão da janela do caderno ia lá pra baixo (plano, sem a ondulação e sem sombra, as unidades
+            # flutuando). 2 locais = os 2 m no mundo da maquete
+            mag = float(os.environ.get('DISPMAG', '2'))
             g.m.set_editor_property('displacement_scaling', unreal.DisplacementScaling(magnitude=mag, center=0.5))
             log('ground displacement', ('ok' if lib.connect_material_displacement(dnode, '') else 'FALHOU a ligacao')
                 + ' (%s, %.0f cm, %s)' % (os.environ.get('DISPTEST', 'codigo'), mag, ('fade ' + fade + ' px') if fade else 'sem fade'))
@@ -1643,6 +1741,17 @@ def ground_material(name, S, specs, cracks, biome='desert', live=False, slab=Fal
         # o chão é Nanite e usa a instância deste mapa: sem a marca, a instância
         # caía no material padrão (o chão sumia, 07/10)
         mel.set_base_material_usage(g.m, unreal.MaterialUsage.MATUSAGE_NANITE)
+        # (01/11, o jogo: "as construções vão poder manipular o chão") o recorte do chão pelos prédios prontos (Game/Tools/ground_cut.py:
+        # o mestre mascarado lendo o MPC_GroundCut). DESLIGADO por padrão (01/11 manhã: o mestre mascarado não compilou no jogo e o chão
+        # caiu no material padrão, o xadrez); GROUND_CUT=1 liga, só depois de consertado e provado. Nunca derruba a montagem
+        if not slab and os.environ.get('GROUND_CUT', '0') == '1':
+            try:
+                sys.path.insert(0, os.path.join(os.path.dirname(PROJECT), 'Game', 'Tools'))
+                import ground_cut
+                ground_cut.add_ground_cut(g.m)
+                log('ground cut', 'a máscara do recorte dos prédios (MPC_GroundCut)')
+            except Exception as e:
+                log('ground cut falhou (o mapa sai sem o recorte):', e)
     return g.finish(name)
 
 
@@ -1878,8 +1987,10 @@ def ground_v3_for(sname):
     log('ground v3', sname, GROUND_V3)
 
 
-def riplit_texture():
-    kind = os.environ.get('RIPLIT', 'patch')
+def riplit_texture(kind=None):
+    # (29/10) a do sol de 18° (look_ripples_v3.py 87 18 -82.9): fullsc = a física em quase toda a areia + o relevo macio de
+    # 1–3 m (SCALLOP_CM=2.0), que aparece até o fundo; dense = a de antes, em manchas; patch = a de 16/10 (8°)
+    kind = kind or os.environ.get('RIPLIT', 'fullsc')
     src = os.path.join(os.path.dirname(PROJECT), 'captures', 'look', 'textures_v3', 'T_LL_RippleLit_%s.png' % kind)
     return texture(src, DEST + '/Surfaces/ripples', 'gray')
 
@@ -2924,7 +3035,7 @@ def ocean_material(sname):
     return g.finish('ocean material ' + sname)
 
 
-def map_instance(parent, name, textures, scalars):
+def map_instance(parent, name, textures, scalars, vectors=None):
     """Instância de material deste mapa (a textura da água é por mapa)."""
     path = DEST + '/Water/' + name
     if eal.does_asset_exist(path):
@@ -2935,9 +3046,21 @@ def map_instance(parent, name, textures, scalars):
         mel.set_material_instance_texture_parameter_value(mi, k, v)
     for k, v in scalars.items():
         mel.set_material_instance_scalar_parameter_value(mi, k, v)
+    for k, v in (vectors or {}).items():
+        mel.set_material_instance_vector_parameter_value(mi, k, unreal.LinearColor(*v))
     mel.update_material_instance(mi)
     eal.save_loaded_asset(mi)
     return mi
+
+
+def base_sand_params(cfg):
+    """(30/10) As áreas de base do mapa (o "keepout" do painel com raio ≥ 60 m: as 4 largadas) pra máscara da areia (base_sand_node);
+    BASE_SAND=0 no ambiente volta a terra inteira na areia (o chão de 29/10)."""
+    bases = [b for b in cfg.get('base_sand', []) if b[2] >= 60.0][:4]
+    if not bases or os.environ.get('BASE_SAND', '1') != '1':
+        return {}, {}
+    log('base sand', len(bases), 'bases', bases)
+    return {'BaseSandOn': 1.0}, {'BaseSand%d' % k: (b[0] * 100.0, b[1] * 100.0, b[2] * 100.0, 0.0) for k, b in enumerate(bases)}
 
 
 def water_plane(size_m):
@@ -2972,6 +3095,12 @@ def water_plane(size_m):
     log('water plane at z', z)
 
 
+# (17/10, docs/WORLDFORGE.md item 8) o espaçamento dos paredões (m, o de 8 m e o de 20 m). CLIFF_DENSE=1: mais juntos, um
+# cobrindo a ponta aberta do vizinho (o encaixe que esconde o oco deixa cada peça mais enterrada; a densidade devolve a
+# pedra à vista à encosta)
+CLIFF_SPACINGS = (6.0, 9.0) if os.environ.get('CLIFF_DENSE', '0') == '1' else (9.0, 13.0)
+
+
 def scatter(cfg, meshes):
     group = lib.spawn_group_actor('Scatter')
     for kind, spacing, (smin, smax), key, cull in cfg['scatter']:
@@ -2995,7 +3124,7 @@ def scatter(cfg, meshes):
     if cfg.get('cliffs'):
         # paredões escaneados cobrindo os cortes do terreno: em pé ao longo da
         # parede, costas na encosta, altura pelo desnível (C++)
-        for (mesh, mats), spacing in ((meshes['cliffs'][0], 9.0), (meshes['cliffs'][1], 13.0)):
+        for (mesh, mats), spacing in zip(meshes['cliffs'][:2], CLIFF_SPACINGS):
             xs = lib.slice_scatter_meshes('Cliff', spacing, 0.9, 1.25, [mesh], 0.0)[0].transforms
             lib.add_instances(group, mesh, xs, True, 0, mats)
             log('scatter Cliff', mesh.get_name(), len(xs))
@@ -3059,8 +3188,13 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
     info_path = DEST + '/Water/T_WaterInfo_' + MAP_NAME
     lib.reset_slice_map()
     WATER_INFO = lib.make_water_info_texture(info_path, WATER_INFO_SIZE)
+    base_scalars, base_vectors = base_sand_params(cfg)   # (30/10) a areia só nas bases
     ground_mi = map_instance(ground, 'MI_Ground_' + MAP_NAME, {'WaterInfo': WATER_INFO},
-                             {'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0})
+                             dict({'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0}, **base_scalars), base_vectors)
+    # (17/10, docs/WORLDFORGE.md item 8) CLIFF_BURY=1: os paredões assentam antes do relevo (pela ficha da malha, até 25%
+    # enterrados) e o chão sobe atrás da borda aberta deles, o "bury" do Minecraft; os mesmos espaçamentos do scatter()
+    if os.environ.get('CLIFF_BURY', '0') == '1' and cfg.get('cliffs'):
+        lib.slice_cliff_bury_setup([meshes['cliffs'][0][0], meshes['cliffs'][1][0]], list(CLIFF_SPACINGS))
     landscape, err = lib.build_slice_landscape(cfg['seed'], 2, cfg['biome'], 1024.0, c, grid[0], grid[1], grid[2],
                                                ground_mi, layers, cfg['road'])
     # (com água ou com salina: o C++ deixa a textura vazia quando não há nenhuma)
@@ -3083,8 +3217,20 @@ def build(sname, tag=None, cfg=None, grid=(COMPONENTS, QUADS, QUAD_M), center=No
         road_frame_path = DEST + '/Water/T_RoadFrame_' + MAP_NAME
         road_frame = lib.make_road_frame_texture(road_frame_path, WATER_INFO_SIZE)
         eal.save_loaded_asset(unreal.load_asset(road_frame_path))
+        if os.environ.get('DUMP_ROADFRAME', '0') == '1':
+            # (30/10, o X de areia no cruzamento, item 24) a posição na pista em EXR, pra conferir o que a faixa pintada lê
+            try:
+                task = unreal.AssetExportTask()
+                task.set_editor_property('object', unreal.load_asset(road_frame_path))
+                task.set_editor_property('filename', os.path.join(PROJECT, 'Saved', 'WorldForge', 'exports', MAP_NAME, 'roadframe.exr'))
+                task.set_editor_property('automated', True)
+                task.set_editor_property('prompt', False)
+                task.set_editor_property('replace_identical', True)
+                log('roadframe dump', unreal.Exporter.run_asset_export_task(task))
+            except Exception as e:   # (só depuração: nunca derruba a montagem)
+                log('roadframe dump falhou', e)
         slab_mi = map_instance(slab_mat, 'MI_RoadSlab_' + MAP_NAME, {'WaterInfo': WATER_INFO, 'RoadDir': road_dir, 'RoadFrame': road_frame},
-                               {'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0})
+                               dict({'InfoSize': WATER_INFO_SIZE, 'WaterOn': 1.0}, **base_scalars), base_vectors)
         log('road slab', lib.build_road_slabs(slab_mi, DEST + '/RoadSlab', MAP_NAME))
         global SLAB_ON
         SLAB_ON = True
@@ -3186,6 +3332,13 @@ def build_world(path):
     with open(path, encoding='utf-8-sig') as f:   # (o JSON gravado pelo PowerShell vem com BOM)
         wj = json.load(f)
     cfg['map'] = wj.get('map', '/Game/Maps/World_Full')
+    # (30/10) as áreas de base (x, y, raio em m) pra areia só nas bases: o "keepout" do painel vem como texto JSON
+    try:
+        ko = wj.get('keepout', [])
+        ko = json.loads(ko) if isinstance(ko, str) else ko
+        cfg['base_sand'] = [(float(k[0]), float(k[1]), float(k[2])) for k in ko if len(k) >= 3]
+    except (ValueError, TypeError):
+        cfg['base_sand'] = []
     # a areia por tipo de mapa (13/10, o Look: "tipos de mapa, não regra"): o albedo da areia v2 (SAR/SAG/SAB do
     # sand_desert_v2_ground) e, na mesma razão, o cascalho, a terra e a cor da esteira, pra não misturar duas
     # areias. Os monólitos (o AlUla) saem na areia de arenito com óxido de ferro, 0,45/0,26/0,15 (a medida do Look
@@ -3199,7 +3352,9 @@ def build_world(path):
         cfg['layers'] = SAND_CLASSIC + [l for l in cfg['layers'] if l[1] not in ('Sand', 'Gravel', 'Dirt')]
         log('desert sand: classic (o mapa)')
     dune = sname == 'desert' and ((pick == 3 and not os.environ.get('SAND')) or int(wj.get('relief_type', 0)) == 1)
-    alb = os.environ.get('SANDALB', '') or ('0.45,0.26,0.15' if dune else '')
+    # (29/10, a sessão do Blender: o jogo contra o r1_raid_slabs no mesmo quadro, no World_TestSalt2 com a base em areia) a duna
+    # × (1; 0,93; 0,86): a areia ia a sat 0,42 e matiz 32 contra 0,46/30 do alvo; com ela, 0,46/32 e L 0,70 (o alvo 0,68)
+    alb = os.environ.get('SANDALB', '') or ('0.45,0.26,0.15' if dune else '')   # (a × (1; 0,93; 0,86) do r1 vai no código da areia, pela chave GroundV)
     alb_tag = ''
     if alb and sname == 'desert' and sand == 'v2':
         cfg = sand_albedo(cfg, tuple(float(v) for v in alb.split(',')))
@@ -3342,7 +3497,7 @@ def write_live_manifest(sname, cfg, meshes):
         entries.append({'kind': kind, 'spacing': spacing, 'smin': smin, 'smax': smax, 'cull': cull,
                         'meshes': [mesh_entry(m, mats) for m, mats in meshes[key]]})
     if cfg.get('cliffs'):
-        for (mesh, mats), spacing in ((meshes['cliffs'][0], 9.0), (meshes['cliffs'][1], 13.0)):
+        for (mesh, mats), spacing in zip(meshes['cliffs'][:2], CLIFF_SPACINGS):
             entries.append({'kind': 'Cliff', 'spacing': spacing, 'smin': 0.9, 'smax': 1.25, 'cull': 0,
                             'meshes': [mesh_entry(mesh, mats)]})
     path = os.path.join(PROJECT, 'Saved', 'WorldForge', 'live_%s.json' % sname)

@@ -16,6 +16,16 @@ from mathutils import Matrix, Vector
 
 COLORS = {}
 MATS = {}
+# (31/10, o detalhe AAA: docs/ESTUDO_DETALHE_AAA.md §2.1) o modo de detalhe, opcional (os modelos antigos exportam igual): o chanfro
+# redondo de 3 segmentos, com a largura mínima da classe (veículo 4 cm: 1–2 px na câmera; prédio 9 cm); as máscaras de quina, contato e
+# fresta vêm do model_detail.py (bake_masks) e saem na cor de vértice
+DETAIL = {'on': False, 'floor': 0.0, 'defer': None}
+
+
+def detail_mode(kind):
+    """Liga o modo de detalhe pro modelo: 'vehicle' (chanfro mínimo 4 cm) ou 'building' (9 cm)."""
+    DETAIL['on'] = True
+    DETAIL['floor'] = {'vehicle': 0.04, 'building': 0.09}[kind]
 
 
 def srgb(r, g, b):
@@ -180,6 +190,12 @@ def harden(o, width):
     b = o.modifiers.new('bevel', 'BEVEL')
     b.width = width
     b.segments = 2 if width >= 0.02 else 1
+    if DETAIL['on']:
+        # o chanfro redondo que pega o sol (a peça fina fica com o que cabe: o clamp do modificador)
+        b.width = max(width, DETAIL['floor'] if width >= 0.015 else width * 2.0)
+        b.segments = 3
+        b.profile = 0.5
+        b.use_clamp_overlap = True
     b.limit_method = 'ANGLE'
     b.angle_limit = math.radians(30)
     b.harden_normals = True
@@ -193,19 +209,35 @@ def harden(o, width):
 
 
 
+def _mask_export(objs):
+    """(31/10) Com as máscaras do model_detail.py (o atributo 'Col'), a cor de vértice e o UV (UV0 em metros, UV1.x a semente da
+    peça) vão no GLB; sem elas, como sempre (sem UV, sem cor)."""
+    if all(o.type == 'MESH' and o.data.color_attributes.get('Col') is not None for o in objs):
+        return {'export_texcoords': True, 'export_vertex_color': 'ACTIVE', 'export_all_vertex_colors': False}
+    return {'export_texcoords': False}
+
+
 def export(o, out_dir):
+    if DETAIL['defer'] is not None:
+        # (31/10) o executor do detalhe (model_run_detail.py) segura a exportação até o modelo estar inteiro (as máscaras pegam a
+        # sombra de uma peça na outra)
+        DETAIL['defer'].append(('one', [o], out_dir, o.name))
+        return sum(len(poly.vertices) - 2 for poly in o.data.polygons)
     select_only(o)
     path = os.path.join(out_dir, o.name + '.glb')
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_apply=True,
-                              export_yup=True, export_materials='EXPORT', export_normals=True, export_texcoords=False)
+                              export_yup=True, export_materials='EXPORT', export_normals=True, **_mask_export([o]))
     tris = sum(len(poly.vertices) - 2 for poly in o.data.polygons)
     print('MODEL', o.name, tris, 'tris ->', path)
     return tris
 
 
 def clear_scene():
+    # (31/10) no executor do detalhe as peças já "exportadas" esperam o fim do modelo: ficam
+    keep = {o.as_pointer() for _, objs, _, _ in (DETAIL["defer"] or []) for o in objs}
     for o in list(bpy.data.objects):
-        bpy.data.objects.remove(o, do_unlink=True)
+        if o.as_pointer() not in keep:
+            bpy.data.objects.remove(o, do_unlink=True)
 
 
 def flag(p, pole, top, length, height, m='Team', trail=-1.0, phase=0.0):
@@ -223,6 +255,11 @@ def flag(p, pole, top, length, height, m='Team', trail=-1.0, phase=0.0):
         z0 = z1 - h
         t = 0.006
         rings.append([(x, y - t, z0), (x, y + t, z0), (x, y + t, z1), (x, y - t, z1)])
+    # (01/11, o Felipe: "tudo que tem bandeira tem que ter física") no executor do detalhe o pano sai num material à parte (<m>Flag):
+    # o model_run_detail.py tira ele da malha e anota o mastro (flags.json), e o jogo desenha o pano no vento (RTSUnitActor::StepFlag)
+    if DETAIL['on']:
+        COLORS.setdefault(m + 'Flag', COLORS.get(m, (200, 200, 200)))
+        m = m + 'Flag'
     p.loft(m, rings, bevel=0.0, smooth=True)
 
 
@@ -300,12 +337,15 @@ def track_path(circles, pitch):
 def export_group(objs, out_dir, name):
     """Várias peças num GLB só, cada uma uma malha com o nome dela (a Unreal cria uma malha por peça: é assim
     que as rodas viram wheel_001, wheel_002… e o jogo gira cada uma pelo centro da caixa dela)."""
+    if DETAIL['defer'] is not None:
+        DETAIL['defer'].append(('group', list(objs), out_dir, name))
+        return sum(len(poly.vertices) - 2 for o in objs for poly in o.data.polygons)
     select_only(objs[0])
     for o in objs:
         o.select_set(True)
     path = os.path.join(out_dir, name + '.glb')
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_apply=True,
-                              export_yup=True, export_materials='EXPORT', export_normals=True, export_texcoords=False)
+                              export_yup=True, export_materials='EXPORT', export_normals=True, **_mask_export(objs))
     tris = sum(len(poly.vertices) - 2 for o in objs for poly in o.data.polygons)
     print('MODEL', name, tris, 'tris', f'({len(objs)} malhas) ->', path)
     return tris
