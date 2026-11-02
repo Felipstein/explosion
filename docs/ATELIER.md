@@ -172,3 +172,13 @@ o detalhe; `GET /api/usage`):
   "limite · volta em ..." quando bate; pela chave da API, o gasto contado.
 - O aviso de limite some sozinho no próximo acerto daquela conta (e ao religar, pela ordem das
   falhas e acertos guardados).
+
+## As chaves "sumiram" depois de religar o PC (02/11)
+
+- **Causa:** as chaves estavam no arquivo (`%APPDATA%\Atelier\settings.json`), mas o serviço tinha
+  sido ligado pela ponte MCP de uma sessão ao abrir o PC, com um ambiente enxuto sem `APPDATA`; ele
+  procurava as configurações em outro lugar e mostrava tudo vazio.
+- **Conserto:** `settings.mjs` acha a pasta pela pasta do usuário quando falta o `APPDATA`, e o
+  serviço completa `USERPROFILE`, `HOME`, `APPDATA` e `LOCALAPPDATA` pros filhos (Codex, Claude).
+  Ao ligar, o registro (`captures/atelier/atelier.log`) diz de onde leu as configurações e quais
+  chaves achou.

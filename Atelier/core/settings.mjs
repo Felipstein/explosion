@@ -5,7 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const DIR = path.join(process.env.APPDATA || os.homedir(), 'Atelier');
+// a pasta vem da pasta do usuário, não só do APPDATA: o serviço às vezes é ligado pela ponte MCP de uma
+// sessão, com um ambiente enxuto sem APPDATA, e aí as chaves "sumiam" (02/11)
+export const SETTINGS_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Atelier');
+const DIR = SETTINGS_DIR;
 const FILE = path.join(DIR, 'settings.json');
 const LEGACY = path.join(DIR, 'keys.json');
 const ENV = { gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], openai: ['OPENAI_API_KEY'], elevenlabs: ['ELEVENLABS_API_KEY', 'XI_API_KEY'] };

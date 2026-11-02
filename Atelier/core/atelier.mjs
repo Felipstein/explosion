@@ -7,7 +7,14 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { PROVIDERS, hasKey } from './providers.mjs';
-import { readSettings, writeSettings, publicKeys, key } from './settings.mjs';
+import os from 'node:os';
+import { readSettings, writeSettings, publicKeys, key, SETTINGS_DIR } from './settings.mjs';
+
+// ligado pela ponte MCP de uma sessão, o serviço pode vir com um ambiente enxuto: completa o básico pela
+// pasta do usuário, senão o Codex e o Claude (que rodam como filhos dele) não acham o login
+const HOME_DIR = os.homedir();
+for (const [k, v] of Object.entries({ USERPROFILE: HOME_DIR, HOME: HOME_DIR, APPDATA: path.join(HOME_DIR, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(HOME_DIR, 'AppData', 'Local') }))
+  if (!process.env[k]) process.env[k] = v;
 
 export const PORT = +(process.env.ATELIER_PORT || 8140);
 const BOOT = Date.now();
@@ -204,7 +211,7 @@ function summary(r) {
 }
 
 /* ---------- o Claude dentro: `claude -p` na assinatura dele, olhando as imagens pelo Read ---------- */
-const CLAUDE = process.env.CLAUDE_BIN || path.join(process.env.USERPROFILE || '', '.local', 'bin', 'claude.exe');
+const CLAUDE = process.env.CLAUDE_BIN || path.join(os.homedir(), '.local', 'bin', 'claude.exe');
 function claudeContext(r, text, selKey) {
   const L = [];
   L.push('Você é o diretor de arte dentro do Atelier, o app do Felipe pra gerar imagens no GPT e no Gemini pro jogo dele, um RTS estilo C&C Zero Hour moderno (câmera de RTS vista de cima; jogabilidade antes do realismo; ancorar sempre na raiz aprovada, nunca encadear derivadas).');
@@ -517,4 +524,7 @@ const server = http.createServer(async (req, res) => {
   } catch (e) { send(res, 400, { error: String(e.message || e) }); }
 });
 server.on('error', e => { if (e.code === 'EADDRINUSE') { console.log('Atelier já está rodando na porta', PORT); process.exit(0); } throw e; });
-server.listen(PORT, '127.0.0.1', () => { log('rodando', PORT, 'pid', process.pid, 'pedidos', R.size); console.log(`Atelier em http://127.0.0.1:${PORT}`); pump(); });
+server.listen(PORT, '127.0.0.1', () => {
+  log('rodando', PORT, 'pid', process.pid, 'pedidos', R.size);
+  const keys = Object.entries(publicKeys()).filter(([, v]) => v.set).map(([k]) => k);
+  log('configurações de', SETTINGS_DIR, '· chaves:', keys.join(', ') || 'nenhuma', '· GPT via', readSettings().gptVia); console.log(`Atelier em http://127.0.0.1:${PORT}`); pump(); });
