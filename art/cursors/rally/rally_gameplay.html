@@ -20,6 +20,9 @@ const rgbOf = h => [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
 const hex = c => "#" + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
 const mixc = (c, t, w) => c.map((v, i) => v + (t[i] - v) * w);
 const T0 = rgbOf(TH);
+// o contorno quase preto e mais largo (a B, aprovada em 02/11: as cores quentes sumiam na areia com a A)
+const STRONG = !/fina/.test(location.hash);   // (02/11) a B aprovada é o padrão; #fina = a A
+const CAS = STRONG ? "rgba(4,6,10,.9)" : "rgba(6,10,18,.72)", CASW = STRONG ? 8 : 6.5, CORW = STRONG ? 4 : 3.5, CHW = STRONG ? 7 : 6;
 const TEAM = hex(T0), TEAMd = hex(T0.map(v => v * 0.42)), CORE = hex(mixc(T0, [255, 255, 255], 0.35)), CHEV = hex(mixc(T0, [255, 255, 255], 0.8));
 const DOOR = { x: 392, y: 452 }, PT = { x: 1410, y: 190 };
 let s = "";
@@ -30,12 +33,12 @@ s += `<rect x="${bx - 1}" y="${by - 1}" width="${bw + 2}" height="${bh + 2}" fil
   + `<rect x="${bx - 5}" y="${by - 1}" width="4" height="${bh + 2}" fill="#1D3866"/><rect x="${bx - 4}" y="${by}" width="2" height="${bh}" fill="${TEAM}"/>`;
 // a reta
 const ang = Math.atan2(PT.y - DOOR.y, PT.x - DOOR.x) * 180 / Math.PI, len = Math.hypot(PT.x - DOOR.x, PT.y - DOOR.y);
-s += `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="rgba(6,10,18,.72)" stroke-width="6.5" stroke-linecap="round"/>`
-  + `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="${CORE}" stroke-width="3.5" stroke-linecap="round"/>`;
+s += `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="${CAS}" stroke-width="${CASW}" stroke-linecap="round"/>`
+  + `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="${CORE}" stroke-width="${CORW}" stroke-linecap="round"/>`;
 const n = Math.floor(len / 90);
 for (let k = 1; k < n; k++) {
   const t = k / n, x = DOOR.x + (PT.x - DOOR.x) * t, y = DOOR.y + (PT.y - DOOR.y) * t;
-  s += `<g transform="translate(${x} ${y}) rotate(${ang})"><polyline points="-6,-7 2,0 -6,7" fill="none" stroke="rgba(6,10,18,.75)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`
+  s += `<g transform="translate(${x} ${y}) rotate(${ang})"><polyline points="-6,-7 2,0 -6,7" fill="none" stroke="${CAS}" stroke-width="${CHW}" stroke-linecap="round" stroke-linejoin="round"/>`
     + `<polyline points="-6,-7 2,0 -6,7" fill="none" stroke="${CHEV}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></g>`;
 }
 // a bandeira 3D no ponto (um pouco maior que na prancha: 56 px de mastro)
