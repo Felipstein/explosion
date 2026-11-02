@@ -34,6 +34,13 @@ canvas { position: absolute; inset: 0; width: 1920px; height: 1080px; }
 .menu li:hover::before, .menu li.hv::before { width: 18px; }
 .menu li:hover::after, .menu li.hv::after { color: rgb(var(--ac)); }
 svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-events: none; }
+.dbg { position: absolute; left: 196px; bottom: 38px; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); padding: 5px 10px; border: 1px dashed rgba(230,220,190,.3); cursor: pointer; z-index: 6; }
+.dbg:hover { color: rgb(var(--ac)); border-color: rgba(var(--ac),.7); }
+.dbgp { position: absolute; left: 110px; bottom: 76px; z-index: 7; width: 560px; padding: 16px 18px 18px; background: rgba(10,13,12,.96); border: 1px solid rgba(230,220,190,.2); box-shadow: 0 20px 60px rgba(0,0,0,.6); display: none; }
+.dbgp.on { display: block; }
+.dbgp .g { font: 600 11px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); margin: 12px 0 6px; } .dbgp .g:first-child { margin-top: 0; }
+.dbgp .l { display: flex; flex-wrap: wrap; gap: 6px; } .dbgp a { font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgba(238,241,244,.85); padding: 7px 11px; border: 1px solid rgba(230,220,190,.16); text-decoration: none; }
+.dbgp a:hover { color: #fff; border-color: rgba(var(--ac),.7); background: rgba(216,173,78,.07); }
 .ver { position: absolute; left: 110px; bottom: 44px; font: 500 15px 'Barlow Semi Condensed'; color: rgba(230,220,190,.38); letter-spacing: 2px; }
 .corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; }
 .c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
@@ -58,6 +65,13 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
     </ul>
   </div>
   <div class="ver">v0.5.2</div>
+  <div class="dbg" id="dbg">DEBUG · ALL SCREENS ▸</div>
+  <div class="dbgp" id="dbgp">
+    <div class="g">BEFORE THE MATCH</div><div class="l"><a href="skirmish.html">SKIRMISH ROOM</a><a href="multiplayer.html">MULTIPLAYER LIST</a><a href="skirmish.html?mp=1&host=FELIPE&src=lan">MP ROOM · HOST</a><a href="skirmish.html?mp=1&host=RAFA&room=SUNDAY%202V2&src=online">MP ROOM · GUEST</a><a href="screens.html?s=load">LOADING</a><a href="screens.html?s=first">FIRST LAUNCH</a></div>
+    <div class="g">IN THE MATCH</div><div class="l"><a href="screens.html?s=esc&esc=sk">ESC · SKIRMISH</a><a href="screens.html?s=esc&esc=mp">ESC · MULTIPLAYER</a><a href="screens.html?s=net&nv=wait">WAITING FOR PLAYER</a><a href="screens.html?s=net&nv=lost">DISCONNECTED</a><a href="screens.html?s=net&nv=ver">VERSION</a><a href="screens.html?s=net&nv=sync">OUT OF SYNC</a></div>
+    <div class="g">AFTER THE MATCH</div><div class="l"><a href="screens.html?s=res&r=win">VICTORY</a><a href="screens.html?s=res&r=def">DEFEAT</a></div>
+    <div class="g">SETTINGS</div><div class="l"><a href="screens.html?s=opt&from=menu">OPTIONS</a></div>
+  </div>
   <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
 </div></div>
 <audio id="music" preload="auto"></audio>
@@ -184,9 +198,9 @@ const over = document.createElement('canvas'); over.width = W; over.height = H;
 const EMB = {}; for (const id of ['usa', 'china', 'gla', 'russia']) { const im = new Image(); im.src = `a/${id}_emblem.webp`; EMB[id] = im; }
 const ARMY = [
   { id: 'usa', name: 'USA · 1-64 AR', col: [92, 160, 240], frame: 'rect', from: [225, .95], spd: 11 },
+  { id: 'russia', name: 'RUS · 2 GTD', col: [214, 222, 232], frame: 'square', from: [318, .95], spd: 10 },
   { id: 'china', name: 'PLA · 112 MECH', col: [226, 86, 70], frame: 'diamond', from: [72, .96], spd: 9 },
-  { id: 'gla', name: 'GLA · CELL 7', col: [214, 182, 104], frame: 'clover', from: [142, .94], spd: 14 },
-  { id: 'russia', name: 'RUS · 2 GTD', col: [214, 222, 232], frame: 'square', from: [318, .95], spd: 10 }];
+  { id: 'gla', name: 'GLA · CELL 7', col: [214, 182, 104], frame: 'clover', from: [142, .94], spd: 14 }];
 const LEG = 240;                                  // segundos pra cada exército chegar perto da vila
 function armyPos(a, t) {
   const p0 = polar(a.from[0] * D2R, a.from[1] * R), k = ((t / LEG) + ARMY.indexOf(a) * .13) % 1, e = k * .82;   // param antes de chegar
@@ -377,12 +391,16 @@ document.querySelectorAll('#menu li').forEach(li => {
   li.addEventListener('mouseenter', () => hover(li));
   li.addEventListener('mouseleave', () => hover(null));
   li.addEventListener('mousedown', () => { if (li.dataset.k === 'quit') { offT = 1; setTimeout(() => offT = 0, 1800); } });
+  li.addEventListener('click', () => { const go = { skirmish: 'skirmish.html', multi: 'multiplayer.html', options: 'screens.html?s=opt&from=menu' }[li.dataset.k]; if (go) setTimeout(() => location.href = go, 260); });   // cada item abre a sua tela
 });
+document.getElementById('dbg').onclick = () => document.getElementById('dbgp').classList.toggle('on');     // o painel de debug: todas as telas a um clique (F2 também)
+addEventListener('keydown', e => { if (e.key === 'F2') { e.preventDefault(); document.getElementById('dbgp').classList.toggle('on'); } if (e.key === 'Escape') document.getElementById('dbgp').classList.remove('on'); });
 // ---------- o som do site: a trilha do menu no primeiro clique, o clique da interface; a cascata ouve a trilha ----------
 // as três trilhas do menu do assgets, uma depois da outra (V1, V2, V3 e volta)
+const MUSIC_VOL = .55, MUSIC_OK = () => true;
 const music = document.getElementById('music'); let track = (+(Q.get('music') || 1) - 1) % 3;
-music.src = `snd/Main_Menu_${track + 1}.wav`; music.volume = .55;
-music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.wav`; music.play().catch(() => { }); });
+music.src = `snd/Main_Menu_${track + 1}.mp3`; music.volume = MUSIC_VOL;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
 // o clique do menu do assgets em todo clique dos menus: o contexto nasce já (suspenso) com o som decodificado, então o 1º clique também toca
 const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
 if (actx) {
@@ -398,6 +416,15 @@ function clickable(el) {           // tudo que se clica: botão, link, campo, ou
 function audioOn() { if (!actx) return; actx.resume(); if (!musicOn) { musicOn = true; music.play().catch(() => { }); } }
 addEventListener('pointerdown', e => { audioOn(); if (clickable(e.target)) click(); }, true);
 addEventListener('keydown', audioOn, { once: true });
+// a trilha atravessa as telas: ao sair, cada tela guarda a faixa, o ponto e o volume; a próxima continua dali e vai suave pro seu volume
+// (o skirmish e o multiplayer abaixam a música uns 8 dB: são telas de conversa e decisão; a volta pro menu sobe de novo)
+function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume, t0 = performance.now();
+  musicFade.t = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); music.volume = v0 + (to - v0) * k * k * (3 - 2 * k); if (k >= 1) clearInterval(musicFade.t); }, 30); }
+(() => { let m = null; try { m = JSON.parse(sessionStorage.getItem('menu_music')); } catch (e) { }
+  if (!m || Date.now() - m.at > 20000 || Q.get('mute') || Q.get('nomusic') || !MUSIC_OK()) return;
+  track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
+  if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
+addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
 // ---------- o laço (ou o passo a passo pra gravar) ----------
 window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };
 window.__hover = i => { document.querySelectorAll('#menu li').forEach(l => l.classList.remove('hv')); if (i) { const li = document.querySelector(`#menu li:nth-child(${i})`); li.classList.add('hv'); hover(li); } else hover(null); };

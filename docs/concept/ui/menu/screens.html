@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* As outras telas do jogo, no mesmo console das aprovadas: o carregando, o Esc, o resultado, as opções, os avisos de rede
+   e a primeira abertura. Uma barra de protótipo em cima troca a tela (fora do desenho). */
+:root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; --line: rgba(230,220,190,.10); --card: rgba(16,21,19,.62); --ok: 120,200,120; --bad: 240,110,90; }
+html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; user-select: none; }
+#proto { position: fixed; left: 10px; bottom: 10px; z-index: 50; display: flex; gap: 6px; align-items: center; font: 600 13px 'Barlow Semi Condensed'; background: rgba(10,12,12,.86); padding: 6px 8px; border: 1px solid #2a2f2c; border-radius: 4px; }
+#proto button { font: 600 13px 'Barlow Semi Condensed'; color: #e8e6df; background: #191d1b; border: 1px solid #343a36; border-radius: 3px; padding: 4px 9px; cursor: pointer; }
+#proto button.on { background: #3a3220; border-color: rgb(var(--ac)); }
+#proto span { color: #8b938e; margin: 0 4px; }
+body.clean #proto { display: none; }
+#wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center;
+  background-color: rgb(10,13,11);
+  background-image: radial-gradient(at 50% 0%, rgba(216,173,78,.07), rgba(0,0,0,0) 60%),
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px; }
+.scr { position: absolute; inset: 0; display: none; }
+.scr.on { display: block; }
+.corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; z-index: 5; }
+.c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
+.c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
+.kicker { font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 8px; color: rgb(var(--ac)); }
+.backbtn { position: absolute; left: 110px; top: 30px; z-index: 35; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 10px; cursor: pointer;
+  font: 800 19px 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.9); background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.32); transition: all .15s; }
+.backbtn:hover { color: rgb(216,173,78); border-color: rgba(216,173,78,.8); }
+.backbtn svg { width: 22px; height: 22px; } .backbtn kbd { font: 600 11px 'IBM Plex Mono'; letter-spacing: 1px; padding: 2px 6px; border: 1px solid currentColor; opacity: .7; }
+
+.lab { font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); }
+.big { font: 900 88px/0.92 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.tok { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--pc); box-shadow: inset 0 -3px 6px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.4); }
+.tok img { width: 25px; height: 25px; }
+.btn { box-sizing: border-box; height: 64px; display: flex; align-items: center; justify-content: center; gap: 12px; white-space: nowrap; padding: 0 26px; cursor: pointer; font: 900 28px 'Big Shoulders Display'; letter-spacing: 5px; color: rgba(238,241,244,.9); border: 1px solid rgba(230,220,190,.22); background: rgba(16,21,19,.6); transition: all .15s; }
+.btn:hover { color: #fff; border-color: rgba(230,220,190,.45); letter-spacing: 7px; }
+.btn.gold { color: #0a0d0b; background: rgb(var(--ac)); border-color: rgb(var(--ac)); box-shadow: 0 0 40px rgba(216,173,78,.25); }
+.btn.gold:hover { box-shadow: 0 0 60px rgba(216,173,78,.45); }
+.btn.red { color: rgb(var(--bad)); border-color: rgba(var(--bad),.55); }
+.btn.red:hover { background: rgba(240,110,90,.1); }
+.btn kbd { font: 600 12px 'IBM Plex Mono'; letter-spacing: 1px; padding: 3px 6px; border: 1px solid currentColor; opacity: .6; }
+.cells { display: flex; gap: 3px; } .cells i { width: 12px; height: 22px; background: rgba(230,220,190,.1); transform: skewX(-12deg); } .cells i.f { background: var(--pc); box-shadow: 0 0 8px var(--pc); }
+.gamebg { position: absolute; inset: 0; background: url(ref/game_bg.jpg) center/cover; }
+.dim { position: absolute; inset: 0; background: rgba(6,8,7,.72); backdrop-filter: blur(3px) saturate(.6); }
+
+/* o carregando */
+#load .left { position: absolute; left: 110px; top: 110px; width: 760px; }
+#load .fac { margin-top: 26px; display: flex; align-items: center; gap: 26px; }
+#load .fac img { width: 200px; height: 200px; filter: drop-shadow(0 20px 40px rgba(0,0,0,.6)); }
+#load .fac b { display: block; font: 900 64px/1 'Big Shoulders Display'; letter-spacing: 3px; color: #fff; }
+#load .fac span { display: block; margin-top: 8px; font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 5px; color: var(--mute); }
+#load .pl { margin-top: 36px; display: flex; flex-direction: column; gap: 8px; }
+#load .row { display: grid; grid-template-columns: 6px 50px 1fr 380px; align-items: center; height: 58px; background: var(--card); border: 1px solid var(--line); }
+#load .row .bar { height: 100%; background: var(--pc); box-shadow: 0 0 12px var(--pc); }
+#load .row .tok { margin-left: 12px; }
+#load .row b { font: 800 22px 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; padding-left: 12px; }
+#load .row b small { font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); margin-left: 10px; }
+#load .row .st { display: flex; align-items: center; gap: 12px; justify-content: flex-end; padding-right: 14px; font: 600 13px 'IBM Plex Mono'; color: rgba(230,220,190,.6); }
+#load .row .st .ready { color: rgb(var(--ok)); font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 3px; }
+#load .slow { color: rgb(var(--ac)); font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 2px; white-space: nowrap; }
+#load .kickb { white-space: nowrap; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 3px 7px; border: 1px solid rgba(var(--bad),.6); color: rgb(var(--bad)); cursor: pointer; }
+#load canvas { position: absolute; left: 1010px; top: 110px; width: 820px; height: 820px; }
+#load .total { position: absolute; left: 110px; bottom: 70px; width: 760px; }
+#load .total .cells i { width: 16px; height: 10px; }
+
+/* o Esc */
+#esc .panel { position: absolute; left: 50%; top: 50%; width: 560px; transform: translate(-50%, -50%); padding: 40px 44px 44px; background: rgba(12,16,15,.92); border: 1px solid rgba(230,220,190,.16); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+#esc .panel::before, #esc .panel::after { content: ''; position: absolute; width: 16px; height: 16px; border: 2px solid rgba(var(--ac),.75); }
+#esc .panel::before { left: -2px; top: -2px; border-right: 0; border-bottom: 0; } #esc .panel::after { right: -2px; bottom: -2px; border-left: 0; border-top: 0; }
+#esc h2 { margin: 6px 0 0; font: 900 64px/1 'Big Shoulders Display'; letter-spacing: 3px; color: #fff; }
+#esc .sub { margin-top: 8px; font: 600 14px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+#esc .btns { margin-top: 30px; display: flex; flex-direction: column; gap: 10px; }
+#esc .confirm { display: none; gap: 10px; } #esc .confirm.on { display: flex; } #esc .confirm .btn { flex: 1 0 auto; }
+#esc .q { font: 700 15px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgb(var(--bad)); text-align: center; margin: 6px 0 2px; display: none; } #esc .q.on { display: block; }
+
+/* o resultado */
+#res .head { position: absolute; left: 110px; top: 90px; }
+#res .vic { font: 900 150px/0.85 'Big Shoulders Display'; letter-spacing: 6px; color: rgb(var(--ac)); text-shadow: 0 0 60px rgba(216,173,78,.35); }
+#res .vic.def { color: rgb(var(--bad)); text-shadow: 0 0 60px rgba(240,110,90,.3); }
+#res .meta { margin-top: 14px; font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 4px; color: var(--mute); }
+#res .meta b { color: #fff; }
+#res table { position: absolute; left: 110px; top: 330px; width: 1000px; border-collapse: separate; border-spacing: 0 6px; }
+#res th { text-align: right; font: 600 11.5px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); padding: 0 14px 4px; }
+#res th:first-child { text-align: left; }
+#res td { height: 56px; background: var(--card); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: right; padding: 0 14px; font: 600 17px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
+#res td:first-child { text-align: left; border-left: 4px solid var(--pc); }
+#res td .who { display: flex; align-items: center; gap: 12px; font: 800 22px 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+#res td .who small { font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+#res td.best { color: rgb(var(--ac)); }
+#res tr.out td { opacity: .55; }
+#res .graph { position: absolute; left: 1170px; top: 330px; width: 640px; height: 400px; background: var(--card); border: 1px solid var(--line); }
+#res .graph .lab { position: absolute; left: 16px; top: 14px; }
+#res .tabs { position: absolute; right: 14px; top: 10px; display: flex; gap: 4px; }
+#res .tabs span { font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 4px 8px; color: rgba(238,241,244,.55); border: 1px solid rgba(230,220,190,.12); cursor: pointer; }
+#res .tabs span.on { color: rgb(var(--ac)); border-color: rgba(var(--ac),.65); }
+#res .graph canvas { position: absolute; left: 0; top: 44px; width: 640px; height: 356px; }
+#res .actions { position: absolute; left: 110px; right: 110px; bottom: 60px; display: flex; gap: 12px; }
+#res .actions .btn { flex: 1; }
+
+/* as opções: os presets no topo (preenchem tudo; mexer vira CUSTOM), os grupos de um AAA, e à direita o que cada item faz,
+   quanto custa e a memória de vídeo com os quadros estimados */
+#opt .left { position: absolute; left: 110px; top: 88px; }
+#opt .tabs { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; width: 280px; }
+#opt .tab { padding: 15px 18px; font: 800 26px 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.6); background: var(--card); border: 1px solid var(--line); cursor: pointer; transition: all .15s; }
+#opt .tab:hover { color: #fff; border-color: rgba(230,220,190,.28); }
+#opt .tab.on { color: #fff; border-color: rgba(var(--ac),.75); }
+#opt .main { position: absolute; left: 430px; top: 96px; width: 960px; bottom: 140px; overflow-y: auto; padding-right: 14px; }
+#opt .main::-webkit-scrollbar { width: 8px; } #opt .main::-webkit-scrollbar-thumb { background: rgba(230,220,190,.18); }
+#opt .pane { display: none; } #opt .pane.on { display: block; }
+#opt .presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+#opt .pr { height: 128px; padding: 14px; background: var(--card); border: 1px solid var(--line); cursor: pointer; position: relative; transition: all .15s; }
+#opt .pr:hover { border-color: rgba(230,220,190,.3); }
+#opt .pr.on { border-color: rgba(var(--ac),.85); background: rgba(216,173,78,.06); }
+#opt .pr b { display: block; font: 900 28px/1 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+#opt .pr span { display: block; margin-top: 6px; font: 600 11.5px/1.3 'Barlow Semi Condensed'; letter-spacing: 1.5px; color: var(--mute); }
+#opt .pr .fps { position: absolute; left: 14px; bottom: 12px; font: 600 14px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
+#opt .pr .fps em { font-style: normal; color: var(--mute); font-size: 11px; }
+#opt .pr .bars { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 3px; align-items: flex-end; } #opt .pr .bars i { width: 5px; background: rgba(230,220,190,.2); } #opt .pr .bars i.f { background: rgb(var(--ac)); }
+#opt .pr.auto { border-style: dashed; }
+#opt .pr .warn { position: absolute; left: 14px; bottom: 34px; font: 700 10px 'Barlow Semi Condensed'; letter-spacing: 1.5px; color: rgb(var(--bad)); }
+#opt .custom { margin-top: 10px; height: 0; overflow: hidden; transition: height .2s; }
+#opt .custom.on { height: 34px; }
+#opt .custom div { display: inline-flex; align-items: center; gap: 10px; height: 30px; padding: 0 12px; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgb(var(--ac)); border: 1px dashed rgba(var(--ac),.6); }
+#opt .grp { display: flex; align-items: center; gap: 14px; margin: 24px 0 8px; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 5px; color: rgba(216,173,78,.75); }
+#opt .grp::after { content: ''; flex: 1; height: 1px; background: rgba(230,220,190,.1); }
+#opt .grp:first-child { margin-top: 0; }
+#opt .r { display: flex; align-items: center; min-height: 48px; padding: 0 14px; margin-bottom: 5px; background: var(--card); border: 1px solid var(--line); transition: border-color .12s; }
+#opt .r:hover { border-color: rgba(230,220,190,.28); }
+#opt .r .n { width: 280px; flex: none; font: 700 15px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(238,241,244,.88); }
+#opt .seg { display: flex; gap: 4px; flex-wrap: wrap; } #opt .seg span { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 1.5px; padding: 6px 11px; color: rgba(238,241,244,.55); border: 1px solid rgba(230,220,190,.12); cursor: pointer; transition: all .1s; }
+#opt .seg span:hover { color: #fff; border-color: rgba(230,220,190,.3); }
+#opt .seg span.on { color: rgb(var(--ac)); border-color: rgba(var(--ac),.7); background: rgba(216,173,78,.07); }
+#opt .seg span.na { opacity: .3; pointer-events: none; text-decoration: line-through; }
+#opt .sl { flex: 1; max-width: 460px; height: 4px; background: rgba(230,220,190,.14); position: relative; cursor: pointer; }
+#opt .sl::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; bottom: -10px; }
+#opt .sl i { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(var(--ac)); }
+#opt .sl b { position: absolute; top: -7px; width: 14px; height: 18px; margin-left: -7px; background: #e9e2cf; box-shadow: 0 2px 6px rgba(0,0,0,.6); }
+#opt .r .v { margin-left: 20px; font: 600 14px 'IBM Plex Mono'; color: rgba(238,241,244,.8); width: 60px; }
+#opt kbd.k { display: inline-grid; place-items: center; min-width: 34px; height: 32px; padding: 0 10px; margin-right: 8px; font: 600 15px 'IBM Plex Mono'; color: #fff; border: 1px solid rgba(230,220,190,.3); background: rgba(0,0,0,.3); box-shadow: inset 0 -2px 0 rgba(0,0,0,.4); }
+#opt .r.conf { border-color: rgba(var(--bad),.6); } #opt .r.conf kbd.k { border-color: rgb(var(--bad)); color: rgb(var(--bad)); }
+#opt .r .cf { margin-left: auto; font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgb(var(--bad)); }
+#opt .search { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 46px; border: 1px solid rgba(230,220,190,.2); background: rgba(16,21,19,.8); max-width: 520px; margin-bottom: 10px; }
+#opt .search input { flex: 1; background: none; border: 0; outline: 0; color: #fff; font: 600 17px 'Barlow Semi Condensed'; }
+#opt .info { position: absolute; right: 70px; top: 96px; width: 400px; }
+#opt .info .card { padding: 20px 22px 22px; background: var(--card); border: 1px solid var(--line); min-height: 250px; }
+#opt .info h4 { margin: 4px 0 0; font: 900 30px/1 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+#opt .info p { margin: 12px 0 0; font: 500 16px/1.45 'Barlow Semi Condensed'; color: rgba(238,241,244,.78); }
+#opt .info .cost { margin-top: 16px; display: grid; grid-template-columns: 70px 1fr; gap: 8px 12px; align-items: center; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+#opt .info .pips { display: flex; gap: 4px; } #opt .info .pips i { width: 26px; height: 7px; background: rgba(230,220,190,.12); } #opt .info .pips i.f { background: rgb(var(--ac)); } #opt .info .pips i.h { background: rgb(var(--bad)); }
+#opt .info .meter { margin-top: 12px; padding: 18px 22px; background: var(--card); border: 1px solid var(--line); }
+#opt .info .meter .row { display: flex; justify-content: space-between; align-items: baseline; }
+#opt .info .meter b { font: 900 46px/1 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; } #opt .info .meter b em { font-style: normal; font-size: 18px; color: var(--mute); margin-left: 6px; }
+#opt .info .vbar { margin-top: 12px; height: 10px; background: rgba(230,220,190,.1); position: relative; } #opt .info .vbar i { position: absolute; left: 0; top: 0; bottom: 0; background: rgb(var(--ac)); transition: width .2s; } #opt .info .vbar.over i { background: rgb(var(--bad)); }
+#opt .info .vt { margin-top: 8px; display: flex; justify-content: space-between; font: 600 13px 'IBM Plex Mono'; color: rgba(238,241,244,.75); }
+#opt .info .gpu { margin-top: 10px; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+#opt .foot { position: absolute; right: 70px; bottom: 50px; display: flex; gap: 12px; }
+#opt .foot .btn { width: 240px; }
+
+/* os avisos de rede */
+#net .panel { position: absolute; left: 50%; top: 50%; width: 760px; transform: translate(-50%, -50%); padding: 36px 44px 40px; background: rgba(12,16,15,.94); border: 1px solid rgba(230,220,190,.16); box-shadow: 0 30px 80px rgba(0,0,0,.6); }
+#net .panel.badp { border-color: rgba(var(--bad),.45); }
+#net h2 { margin: 6px 0 0; font: 900 52px/1 'Big Shoulders Display'; letter-spacing: 3px; color: #fff; }
+#net .ring { width: 120px; height: 120px; margin: 24px auto 6px; position: relative; }
+#net .ring svg { width: 120px; height: 120px; }
+#net .ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 600 30px 'IBM Plex Mono'; color: #fff; }
+#net .who { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 12px; font: 800 26px 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+#net .info { margin-top: 10px; text-align: center; font: 600 15px 'Barlow Semi Condensed'; letter-spacing: 2px; color: var(--mute); line-height: 1.5; }
+#net .info b { color: #fff; font-family: 'IBM Plex Mono'; font-weight: 600; }
+#net .votes { margin: 18px auto 0; display: flex; justify-content: center; gap: 8px; }
+#net .votes i { width: 28px; height: 6px; background: rgba(230,220,190,.15); } #net .votes i.f { background: rgb(var(--bad)); }
+#net .btns { margin-top: 26px; display: flex; gap: 10px; } #net .btns .btn { flex: 1 0 auto; font-size: 24px; letter-spacing: 4px; } #net .btns .btn:hover { letter-spacing: 4px; }
+#net .var { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); display: flex; gap: 6px; }
+#net .var span { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 2px; padding: 6px 12px; color: rgba(238,241,244,.55); border: 1px solid rgba(230,220,190,.14); cursor: pointer; background: rgba(10,12,12,.7); }
+#net .var span.on { color: rgb(var(--ac)); border-color: rgba(var(--ac),.7); }
+
+/* a primeira abertura */
+#first .mid { position: absolute; left: 50%; top: 50%; width: 900px; transform: translate(-50%, -50%); text-align: center; }
+#first h2 { margin: 10px 0 0; font: 900 76px/1 'Big Shoulders Display'; letter-spacing: 4px; color: #fff; }
+#first .sub { margin-top: 12px; font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 4px; color: var(--mute); }
+#first .bigcells { margin: 46px auto 0; display: flex; justify-content: center; gap: 5px; }
+#first .bigcells i { width: 22px; height: 46px; background: rgba(230,220,190,.08); transform: skewX(-12deg); transition: background .2s, box-shadow .2s; }
+#first .bigcells i.f { background: rgb(var(--ac)); box-shadow: 0 0 14px rgba(216,173,78,.7); }
+#first .pct { margin-top: 16px; font: 600 18px 'IBM Plex Mono'; color: rgba(238,241,244,.8); }
+#first .step { margin-top: 40px; display: flex; justify-content: center; gap: 30px; }
+#first .step span { font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(238,241,244,.35); }
+#first .step span.on { color: rgb(var(--ac)); } #first .step span.done { color: rgba(120,200,120,.85); }
+#first .result { margin-top: 40px; display: none; } #first .result.on { display: block; }
+#first .result .pick { display: inline-block; padding: 18px 40px; border: 1px solid rgba(var(--ac),.8); background: rgba(216,173,78,.06); }
+#first .result .pick b { display: block; font: 900 56px/1 'Big Shoulders Display'; letter-spacing: 4px; color: rgb(var(--ac)); }
+#first .result .pick span { display: block; margin-top: 6px; font: 600 15px 'IBM Plex Mono'; color: rgba(238,241,244,.85); }
+#first .result .btn { width: 340px; margin: 26px auto 0; }
+#first .skip { position: absolute; right: 110px; bottom: 60px; font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.55); cursor: pointer; }
+#first .skip:hover { color: #fff; }
+</style>
+</head>
+<body>
+<div id="proto"><span>Tela</span>
+  <button data-s="load">Carregando</button><button data-s="esc">Esc</button><button data-s="res" data-r="win">Vitória</button><button data-s="res" data-r="def">Derrota</button><button data-s="opt">Opções</button><button data-s="net">Aviso de rede</button><button data-s="first">Primeira abertura</button>
+</div>
+<div id="wrap"><div id="stage">
+
+  <!-- o carregando -->
+  <div class="scr" id="load">
+    <div class="left">
+      <div class="kicker">OPERATION · SALT FLATS · 2 V 2</div>
+      <div class="big" style="margin-top:12px">RED WARDEN</div>
+      <div class="fac"><img src="a/usa_emblem.webp"><div><b>UNITED STATES</b><span>PRECISION OVER NUMBERS</span></div></div>
+      <div class="pl" id="lrows"></div>
+    </div>
+    <canvas id="lmap" width="820" height="820"></canvas>
+    <div class="total"><div class="lab" style="margin-bottom:10px">ALL PLAYERS</div><div class="cells" id="ltotal"></div></div>
+  </div>
+
+  <!-- o Esc -->
+  <div class="scr" id="esc">
+    <div class="gamebg"></div><div class="dim"></div>
+    <div class="panel">
+      <div class="kicker" id="escK">SKIRMISH · PAUSED</div>
+      <h2>RED WARDEN</h2>
+      <div class="sub" id="escS">12:48 · SALT FLATS · VS 2 AI</div>
+      <div class="btns">
+        <div class="btn gold" id="resume">RESUME <kbd>ESC</kbd></div>
+        <div class="btn" id="eopt">OPTIONS</div>
+        <div class="btn" id="erestart">RESTART</div>
+        <div class="btn red" id="esur">SURRENDER</div>
+        <div class="q" id="eq">SURRENDER THE MATCH?</div>
+        <div class="confirm" id="econf"><div class="btn red" id="eyes">YES, SURRENDER</div><div class="btn" id="eno">NO</div></div>
+        <div class="btn" id="equit">QUIT TO MENU</div>
+      </div>
+    </div>
+    <div id="escvar" style="position:absolute;left:50%;bottom:60px;transform:translateX(-50%);display:flex;gap:6px"></div>
+  </div>
+
+  <!-- o resultado -->
+  <div class="scr" id="res">
+    <div class="gamebg" style="filter:grayscale(.4)"></div><div class="dim" style="background:rgba(6,8,7,.8)"></div>
+    <div class="head"><div class="kicker">OPERATION RED WARDEN · SALT FLATS</div><div class="vic" id="vic">VICTORY</div><div class="meta" id="vmeta"></div></div>
+    <table id="rtab"></table>
+    <div class="graph"><div class="lab">ARMY VALUE</div><div class="tabs" id="gtabs"><span class="on">ARMY</span><span>ECONOMY</span><span>KILLS</span></div><canvas id="gcv" width="640" height="356"></canvas></div>
+    <div class="actions"><div class="btn" id="rmap">VIEW MAP</div><div class="btn">BACK TO LOBBY</div><div class="btn gold">REMATCH</div><div class="btn" id="rmenu">MAIN MENU</div></div>
+  </div>
+
+  <!-- as opções -->
+  <div class="scr" id="opt">
+    <div class="backbtn" id="oback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg><span>BACK</span><kbd>ESC</kbd></div>
+    <div class="left"><div class="kicker">OPTIONS</div><div class="big" style="font-size:72px;margin-top:12px">SETTINGS</div>
+      <div class="tabs" id="otabs"><div class="tab on" data-p="gfx">GRAPHICS</div><div class="tab" data-p="snd">SOUND</div><div class="tab" data-p="keys">CONTROLS</div><div class="tab" data-p="game">GAME</div><div class="tab" data-p="acc">ACCESSIBILITY</div></div></div>
+    <div class="main" id="omain">
+      <div class="pane on" id="p-gfx"><div class="presets" id="presets"></div><div class="custom" id="ocustom"><div>CUSTOM · YOUR CHANGES</div></div><div id="gfxrows"></div></div>
+      <div class="pane" id="p-snd"><div id="sndrows"></div></div>
+      <div class="pane" id="p-keys"><div id="ctlrows"></div><div class="grp">KEYS</div>
+        <div class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(230,220,190,.6)" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><input id="kq" placeholder="Search actions or keys" spellcheck="false"></div>
+        <div id="keyrows"></div></div>
+      <div class="pane" id="p-game"><div id="gamerows"></div></div>
+      <div class="pane" id="p-acc"><div id="accrows"></div></div>
+    </div>
+    <div class="info" id="oinfo"><div class="card" id="ocard"></div><div class="meter" id="ometer"></div></div>
+    <div class="foot"><div class="btn" id="oreset">RESET</div><div class="btn gold" id="oapply">APPLY</div></div>
+  </div>
+
+  <!-- os avisos de rede -->
+  <div class="scr" id="net">
+    <div class="gamebg"></div><div class="dim"></div>
+    <div class="panel" id="npanel"></div>
+    <div class="var" id="nvar"><span data-v="wait" class="on">WAITING</span><span data-v="lost">DISCONNECTED</span><span data-v="ver">VERSION</span><span data-v="sync">OUT OF SYNC</span></div>
+  </div>
+
+  <!-- a primeira abertura -->
+  <div class="scr" id="first">
+    <div class="mid">
+      <div class="kicker" id="fk">FIRST LAUNCH</div>
+      <h2 id="fh">PREPARING EFFECTS</h2>
+      <div class="sub" id="fs">BUILDING THE EXPLOSIONS FOR YOUR GRAPHICS CARD · ONLY THIS ONCE</div>
+      <div class="bigcells" id="fcells"></div>
+      <div class="pct" id="fpct">0%</div>
+      <div class="step"><span id="st1" class="on">1 · EFFECTS</span><span id="st2">2 · MEASURING YOUR PC</span><span id="st3">3 · READY</span></div>
+      <div class="result" id="fres"><div class="pick"><b>HIGH</b><span>62 FPS IN THE BATTLE TEST · GTX 1660</span></div><div class="btn gold" id="fgo">CONTINUE</div></div>
+    </div>
+    <div class="skip" id="fskip">SKIP THE TEST ▸</div>
+  </div>
+
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+</div></div>
+<audio id="music" preload="auto"></audio>
+<script src="shared_maps.js"></script>
+<script>
+const W = 1920, H = 1080, Q = new URLSearchParams(location.search), $ = s => document.querySelector(s);
+const stage = $('#stage');
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+if (Q.get('clean')) document.body.classList.add('clean');
+const COLORS = { blue: '#3d7fe0', red: '#d83a2e', gold: '#e3b23c', purple: '#9a5ad8' };
+const tok = (f, c, z = 34) => `<div class="tok" style="--pc:${c};width:${z}px;height:${z}px"><img src="../../factions/small/glyph_${f}.png" style="width:${z * .74}px;height:${z * .74}px"></div>`;
+const cells = (n, k, c) => `<div class="cells" style="--pc:${c}">${Array.from({ length: n }, (_, i) => `<i class="${i < k ? 'f' : ''}"></i>`).join('')}</div>`;
+const PLAYERS = [
+  { n: 'FELIPE', f: 'usa', c: COLORS.blue, t: 1, base: 0, human: true },
+  { n: 'PAI', f: 'russia', c: COLORS.purple, t: 1, base: 2, human: true },
+  { n: 'AI · HARD', f: 'china', c: COLORS.red, t: 2, base: 1 },
+  { n: 'AI · MEDIUM', f: 'gla', c: COLORS.gold, t: 2, base: 3 }];
+let cur = Q.get('s') || 'load';
+function show(s) { cur = s; document.querySelectorAll('.scr').forEach(e => e.classList.toggle('on', e.id === s)); document.querySelectorAll('#proto [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === s && (!b.dataset.r || b.dataset.r === resVar))); if (INIT[s]) INIT[s](); }
+document.querySelectorAll('#proto [data-s]').forEach(b => b.onclick = () => { if (b.dataset.r) resVar = b.dataset.r; show(b.dataset.s); });
+let resVar = Q.get('r') || 'win', optFrom = Q.get('from') || 'menu';
+const INIT = {};
+
+// ---------- o carregando: a sua facção grande, o mapa com as bases, uma barra de células por jogador na cor dele (a IA sem barra, como no ZH) ----------
+let lprog = [0, 0], ltimer = null, lT = 0;
+INIT.load = async () => {
+  const M = await getMap({ id: 0, real: 'World_TestSalt2', terr: 'DESERT', cond: 'DAY' });
+  const flat = renderMinimap(M, 1024), cv = $('#lmap'), g = cv.getContext('2d'), S = 820, side = 560;
+  g.clearRect(0, 0, S, S); g.save(); g.translate(S / 2, S / 2); g.rotate(Math.PI / 4); g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 40; g.drawImage(flat, -side / 2, -side / 2, side, side); g.shadowBlur = 0;
+  g.strokeStyle = 'rgba(230,220,190,.35)'; g.lineWidth = 1.5; g.strokeRect(-side / 2, -side / 2, side, side); g.restore();
+  const sc = side / 1024, toP = (x, y) => [S / 2 + (x - y) * Math.SQRT1_2 * sc, S / 2 + (x + y) * Math.SQRT1_2 * sc];
+  for (const p of PLAYERS) { const [a, b] = toP(...M.starts[p.base]); g.fillStyle = 'rgba(0,0,0,.45)'; g.beginPath(); g.arc(a + 2, b + 4, 27, 0, 7); g.fill(); g.fillStyle = p.c; g.beginPath(); g.arc(a, b, 25, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+    const im = new Image(); im.onload = () => g.drawImage(im, a - 18, b - 18, 36, 36); im.src = `../../factions/small/glyph_${p.f}.png`;
+    g.font = "800 16px 'Big Shoulders Display'"; const lw = g.measureText(p.n).width + 16; g.fillStyle = 'rgba(8,10,9,.88)'; g.fillRect(a - lw / 2, b + 31, lw, 22); g.fillStyle = p.c; g.fillRect(a - lw / 2, b + 31, 3, 22); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(p.n, a + 1, b + 43); }
+  lprog = [.18, .05]; lT = 0; clearInterval(ltimer); renderLoad(); ltimer = setInterval(() => { lT += .25; lprog[0] = Math.min(1, lprog[0] + .035); lprog[1] = Math.min(.62, lprog[1] + .012); if (cur === 'load') renderLoad(); }, 250);
+};
+function renderLoad() {
+  const N = 24;
+  $('#lrows').innerHTML = PLAYERS.map((p, i) => {
+    const pr = p.human ? lprog[i] : 1, k = Math.round(pr * N), slow = p.human && i === 1 && lT > 6;
+    const st = p.human ? `${slow ? `<span class="slow">${Math.round(lT)} S</span>` : ''}${cells(N, k, p.c)}<span>${Math.round(pr * 100)}%</span>${slow && lT > 9 ? '<span class="kickb">KICK</span>' : ''}` : '<span class="ready">READY</span>';
+    return `<div class="row" style="--pc:${p.c}"><div class="bar"></div>${tok(p.f, p.c)}<b>${p.n}<small>${p.f.toUpperCase()} · TEAM ${p.t}</small></b><div class="st">${st}</div></div>`; }).join('');
+  const tot = (lprog[0] + lprog[1] + 2) / 4; $('#ltotal').innerHTML = Array.from({ length: 48 }, (_, i) => `<i class="${i < Math.round(tot * 48) ? 'f' : ''}" style="--pc:rgb(216,173,78)"></i>`).join('');
+  $('#ltotal').style.setProperty('--pc', 'rgb(216,173,78)');
+}
+
+// ---------- o Esc: no skirmish pausa e tem RESTART; no multiplayer não pausa e vira SURRENDER (que confirma) ----------
+let escMode = 'sk';
+INIT.esc = () => {
+  $('#escvar').innerHTML = ['sk', 'mp'].map(m => `<span data-m="${m}" class="${m === escMode ? 'on' : ''}" style="font:700 13px 'Barlow Semi Condensed';letter-spacing:2px;padding:6px 12px;border:1px solid ${m === escMode ? 'rgba(216,173,78,.7)' : 'rgba(230,220,190,.14)'};color:${m === escMode ? 'rgb(216,173,78)' : 'rgba(238,241,244,.55)'};cursor:pointer;background:rgba(10,12,12,.7)">${m === 'sk' ? 'SKIRMISH' : 'MULTIPLAYER'}</span>`).join('');
+  $('#escvar').onclick = e => { const s = e.target.closest('[data-m]'); if (s) { escMode = s.dataset.m; INIT.esc(); } };
+  const mp = escMode === 'mp';
+  $('#escK').textContent = mp ? 'MULTIPLAYER · THE MATCH GOES ON' : 'SKIRMISH · PAUSED';
+  $('#escS').textContent = mp ? '12:48 · SALT FLATS · WITH PAI VS 2 AI' : '12:48 · SALT FLATS · VS 2 AI';
+  $('#erestart').style.display = mp ? 'none' : 'flex'; $('#esur').style.display = mp ? 'flex' : 'none';
+  $('#eq').classList.remove('on'); $('#econf').classList.remove('on');
+};
+$('#esur').onclick = () => { $('#esur').style.display = 'none'; $('#eq').classList.add('on'); $('#econf').classList.add('on'); };
+$('#eno').onclick = () => INIT.esc();
+$('#eopt').onclick = () => { optFrom = 'esc'; show('opt'); };
+$('#oback').onclick = () => { if (optFrom === 'esc') show('esc'); else location.href = 'menu.html'; };
+addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (cur === 'opt') $('#oback').click(); else if (cur === 'esc') location.href = 'menu.html'; });
+$('#rmenu').onclick = () => { location.href = 'menu.html'; };
+
+// ---------- o resultado: a tabela por jogador, o gráfico com as marcas dos combates ----------
+let gtab = 0;
+INIT.res = () => {
+  const win = resVar === 'win';
+  $('#vic').textContent = win ? 'VICTORY' : 'DEFEAT'; $('#vic').classList.toggle('def', !win);
+  $('#vmeta').innerHTML = win ? '<b>24:16</b> · 2 V 2 · YOUR TEAM WON · <b>+1 STAR</b>' : '<b>18:42</b> · 2 V 2 · YOUR TEAM WAS DEFEATED · KEEP YOUR STARS';
+  const rows = [
+    { p: PLAYERS[0], u: [86, 41], b: [14, 2], m: 48200, k: 61, s: 21450 }, { p: PLAYERS[1], u: [72, 38], b: [12, 3], m: 41900, k: 44, s: 17320 },
+    { p: PLAYERS[2], u: [94, 77], b: [15, 15], m: 45100, k: 39, s: 12880, out: true }, { p: PLAYERS[3], u: [110, 98], b: [11, 11], m: 38700, k: 30, s: 10420, out: true }];
+  if (!win) rows.forEach((r, k) => { r.out = k < 2; r.s = [9840, 8120, 18760, 16400][k]; r.k = [27, 22, 58, 49][k]; r.u = [[61, 59], [55, 52], [102, 44], [118, 51]][k]; r.b = [[11, 11], [9, 9], [16, 3], [12, 2]][k]; });
+  const best = k => Math.max(...rows.map(r => typeof r[k] === 'number' ? r[k] : r[k][0]));
+  $('#rtab').innerHTML = `<tr><th>PLAYER</th><th>UNITS BUILT · LOST</th><th>BUILDINGS · LOST</th><th>MONEY EARNED</th><th>KILLS</th><th>SCORE</th></tr>` + rows.map(r =>
+    `<tr class="${r.out ? 'out' : ''}"><td style="--pc:${r.p.c}"><div class="who">${tok(r.p.f, r.p.c)}${r.p.n}<small>TEAM ${r.p.t}${r.out ? ' · DEFEATED' : ''}</small></div></td><td class="${r.u[0] === best('u') ? 'best' : ''}">${r.u[0]} · ${r.u[1]}</td><td>${r.b[0]} · ${r.b[1]}</td><td class="${r.m === best('m') ? 'best' : ''}">$${r.m.toLocaleString('en-US')}</td><td class="${r.k === best('k') ? 'best' : ''}">${r.k}</td><td class="${r.s === best('s') ? 'best' : ''}">${r.s.toLocaleString('en-US')}</td></tr>`).join('');
+  drawGraph();
+};
+$('#gtabs').onclick = e => { const s = e.target.closest('span'); if (!s) return; gtab = [...$('#gtabs').children].indexOf(s); [...$('#gtabs').children].forEach((x, k) => x.classList.toggle('on', k === gtab)); drawGraph(); };
+function drawGraph() {
+  const g = $('#gcv').getContext('2d'), w = 640, h = 356, pad = 34; g.clearRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(230,220,190,.06)'; for (let k = 0; k <= 4; k++) { const y = pad + (h - pad * 2) * k / 4; g.beginPath(); g.moveTo(pad, y); g.lineTo(w - 16, y); g.stroke(); }
+  g.font = "500 11px 'IBM Plex Mono'"; g.fillStyle = 'rgba(230,220,190,.45)'; ['0', '6', '12', '18', '24 MIN'].forEach((t, k) => g.fillText(t, pad + (w - pad - 30) * k / 4 - 4, h - 10));
+  const fights = [[.34, 'A'], [.58, 'B'], [.83, 'C']];      // as marcas dos combates grandes (como o SC2)
+  fights.forEach(([x]) => { const X = pad + (w - pad - 30) * x; g.strokeStyle = 'rgba(240,110,90,.25)'; g.setLineDash([3, 4]); g.beginPath(); g.moveTo(X, pad - 8); g.lineTo(X, h - pad); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = 'rgba(255,150,130,.95)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(X - 5, pad - 18); g.lineTo(X + 5, pad - 8); g.moveTo(X + 5, pad - 18); g.lineTo(X - 5, pad - 8); g.stroke(); g.lineWidth = 1; });
+  PLAYERS.forEach((p, i) => { const r = rng(17 + i * 31 + gtab * 7); g.strokeStyle = p.c; g.lineWidth = 2.2; g.beginPath(); let v = .05;
+    for (let k = 0; k <= 48; k++) { const t = k / 48; v += (r() - .35) * .05 * (gtab === 2 ? .6 : 1); fights.forEach(([fx]) => { if (Math.abs(t - fx) < .02) v *= i < 2 ? .82 : .62; }); v = Math.max(.02, Math.min(.95, v)); if (i >= 2 && t > .86) v *= .7;
+      const X = pad + (w - pad - 30) * t, Y = h - pad - v * (h - pad * 2); k ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke(); });
+}
+
+// ---------- as opções: os presets preenchem tudo (CLASSIC, LOW, MEDIUM, HIGH, ULTRA, AUTO); mexer em qualquer item vira CUSTOM;
+// o painel da direita diz o que o item faz, quanto custa e estima a memória de vídeo e os quadros (a GTX 1660 de 6 GB) ----------
+const PRESETS = [['CLASSIC', 'THE 2003 LOOK · CRISP, VIVID'], ['LOW', 'PCS FROM 2014'], ['MEDIUM', 'BALANCED'], ['HIGH', 'FULL VOLUME SMOKE'], ['ULTRA', 'EVERYTHING ON'], ['AUTO', 'MEASURED ON THIS PC']];
+// p = o valor em cada preset [CLASSIC, LOW, MEDIUM, HIGH, ULTRA]; w = custo de placa (ms no máximo); m = memória de vídeo (GB no máximo)
+const GFX = [
+  { g: 'DISPLAY', k: 'res', n: 'RESOLUTION', o: ['1280×720', '1600×900', '1920×1080', '2560×1440', '3840×2160'], v: 2, fixed: 1, d: 'How many pixels the game draws. Higher is sharper and costs more of everything.' },
+  { g: 'DISPLAY', k: 'mode', n: 'DISPLAY MODE', o: ['FULLSCREEN', 'BORDERLESS', 'WINDOWED'], v: 0, fixed: 1, d: 'Fullscreen is the fastest. Borderless lets you switch windows instantly.' },
+  { g: 'DISPLAY', k: 'fps', n: 'FRAME LIMIT', o: ['30', '60', '120', '144', 'OFF'], v: 1, fixed: 1, d: 'The most frames per second the game will draw. 60 keeps the card cool and steady.' },
+  { g: 'DISPLAY', k: 'vsync', n: 'V-SYNC', o: ['OFF', 'ON'], v: 0, fixed: 1, d: 'Stops tearing by waiting for the monitor. Adds a little input delay.' },
+  { g: 'DISPLAY', k: 'bright', n: 'BRIGHTNESS', s: [0, 100], v: 50, fixed: 1, d: 'Adjust until the darkest shadow detail is barely visible.' },
+  { g: 'DISPLAY', k: 'hdr', n: 'HDR', o: ['OFF', 'ON'], v: 0, fixed: 1, na: [1], d: 'High dynamic range for HDR monitors. No HDR monitor was found.' },
+  { g: 'UPSCALING & PERFORMANCE', k: 'up', n: 'UPSCALER', o: ['OFF', 'TSR', 'FSR 3', 'DLSS', 'XeSS'], p: [0, 2, 1, 1, 1], na: [3], d: 'Draws fewer pixels and rebuilds the image. TSR is Unreal\'s own; DLSS needs an RTX card.' },
+  { g: 'UPSCALING & PERFORMANCE', k: 'upq', n: 'UPSCALER QUALITY', o: ['PERFORMANCE', 'BALANCED', 'QUALITY', 'NATIVE'], p: [3, 0, 1, 2, 3], d: 'How much the upscaler cuts. Native draws every pixel and only smooths edges.' },
+  { g: 'UPSCALING & PERFORMANCE', k: 'fg', n: 'FRAME GENERATION', o: ['OFF', 'ON'], p: [0, 0, 0, 0, 0], d: 'Invents a frame between two real ones. Smoother, but adds delay: not for competitive play.' },
+  { g: 'UPSCALING & PERFORMANCE', k: 'lat', n: 'LOW LATENCY', o: ['OFF', 'ON', 'ON + BOOST'], p: [1, 1, 1, 1, 1], d: 'Makes the card answer your clicks sooner.' },
+  { g: 'IMAGE', k: 'aa', n: 'ANTI-ALIASING', o: ['OFF', 'FXAA', 'TAA', 'TSR'], p: [1, 1, 2, 3, 3], w: 1.2, d: 'Smooths jagged edges. TSR is the sharpest in motion.' },
+  { g: 'IMAGE', k: 'sharp', n: 'SHARPENING', o: ['OFF', 'LOW', 'MEDIUM', 'HIGH'], p: [3, 1, 1, 1, 1], d: 'Brings back detail lost to smoothing and upscaling.' },
+  { g: 'IMAGE', k: 'tex', n: 'TEXTURES', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [1, 0, 1, 2, 3], w: .3, m: 2.2, d: 'Surface detail of units, buildings and ground. Mostly costs video memory.' },
+  { g: 'IMAGE', k: 'aniso', n: 'TEXTURE FILTERING', o: ['2X', '4X', '8X', '16X'], p: [1, 0, 1, 3, 3], w: .3, d: 'Keeps the ground sharp toward the horizon of the camera.' },
+  { g: 'IMAGE', k: 'unit', n: 'UNIT DETAIL', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [1, 0, 1, 2, 3], w: 1.4, m: .4, d: 'How far away units keep their full model. Big battles cost more.' },
+  { g: 'LIGHTING & SHADOWS', k: 'gi', n: 'GLOBAL ILLUMINATION', o: ['OFF', 'LOW', 'HIGH', 'EPIC'], p: [0, 0, 1, 2, 3], w: 5.5, m: .5, d: 'Light that bounces: fire glowing on walls, sand lighting the shade.' },
+  { g: 'LIGHTING & SHADOWS', k: 'shadow', n: 'SHADOWS', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [0, 0, 1, 2, 3], w: 3.2, m: .3, d: 'Sharpness and reach of the shadows of the sun and of the fires.' },
+  { g: 'LIGHTING & SHADOWS', k: 'contact', n: 'CONTACT SHADOWS', o: ['OFF', 'ON'], p: [0, 0, 1, 1, 1], w: .5, d: 'The thin shadow where a tank touches the ground.' },
+  { g: 'LIGHTING & SHADOWS', k: 'ao', n: 'AMBIENT OCCLUSION', o: ['OFF', 'SSAO', 'GTAO'], p: [0, 0, 1, 2, 2], w: 1.0, d: 'Soft darkening in corners, under units and between buildings.' },
+  { g: 'LIGHTING & SHADOWS', k: 'refl', n: 'REFLECTIONS', o: ['OFF', 'SCREEN SPACE', 'LUMEN'], p: [0, 0, 1, 1, 2], w: 1.8, d: 'Water and wet ground reflecting fires and the sky.' },
+  { g: 'LIGHTING & SHADOWS', k: 'sky', n: 'SKY & ATMOSPHERE', o: ['LOW', 'HIGH', 'ULTRA'], p: [0, 0, 1, 1, 2], w: .8, d: 'The haze, the sun glow and the color of the distance.' },
+  { g: 'EFFECTS', k: 'boom', n: 'EXPLOSIONS', o: ['VOLUME LOW', 'VOLUME MEDIUM', 'VOLUME HIGH', 'VOLUME ULTRA'], p: [0, 0, 1, 2, 3], w: 4.5, m: .6, d: 'Our explosions are real volumes of fire and smoke. Higher adds detail and steps.' },
+  { g: 'EFFECTS', k: 'smoke', n: 'SMOKE & DUST', o: ['VOLUME LOW', 'VOLUME MEDIUM', 'VOLUME HIGH', 'VOLUME ULTRA'], p: [0, 0, 1, 2, 3], w: 3.5, m: .4, d: 'Always volumetric: it takes the map\'s shadows, casts its own and is lit by fire.' },
+  { g: 'EFFECTS', k: 'smokelit', n: 'LIGHT IN SMOKE', o: ['LOW', 'HIGH', 'ULTRA'], p: [0, 0, 1, 1, 2], w: 2.0, d: 'How finely fire, explosions and lamps light up the smoke around them.' },
+  { g: 'EFFECTS', k: 'debris', n: 'DEBRIS & SPARKS', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [1, 0, 1, 2, 3], w: 1.1, d: 'Chunks, sparks and dirt thrown by hits. Mostly costs the processor.' },
+  { g: 'EFFECTS', k: 'scorch', n: 'SCORCH MARKS', o: ['SHORT', 'LONG', 'PERMANENT'], p: [2, 0, 1, 2, 2], m: .3, d: 'How long burns stay on the ground. Craters always stay: they are part of the battle.' },
+  { g: 'EFFECTS', k: 'part', n: 'PARTICLE DENSITY', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [1, 0, 1, 2, 3], w: 1.2, d: 'Embers, sand and small effects around the battle.' },
+  { g: 'WORLD', k: 'terrain', n: 'TERRAIN DETAIL', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [1, 0, 1, 2, 3], w: 1.3, m: .4, d: 'The shape of dunes, tracks and craters up close.' },
+  { g: 'WORLD', k: 'foliage', n: 'FOLIAGE', o: ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'], p: [0, 0, 1, 2, 3], w: 1.6, m: .2, d: 'Grass, bushes and palms. Never covers units at any level.' },
+  { g: 'WORLD', k: 'dist', n: 'DRAW DISTANCE', o: ['NEAR', 'MEDIUM', 'FAR', 'MAX'], p: [1, 0, 1, 2, 3], w: 1.0, d: 'How far the detail reaches when the camera tilts.' },
+  { g: 'WORLD', k: 'water', n: 'WATER', o: ['LOW', 'HIGH', 'ULTRA'], p: [0, 0, 1, 1, 2], w: .9, d: 'Waves, foam and wakes behind boats.' },
+  { g: 'WORLD', k: 'weather', n: 'WEATHER EFFECTS', o: ['LOW', 'HIGH', 'ULTRA'], p: [0, 0, 1, 1, 2], w: .9, d: 'Rain, snowfall and storms, when the map has them.' },
+  { g: 'POST-PROCESSING', k: 'look', n: 'COLOR LOOK', o: ['CLASSIC VIVID', 'NATURAL', 'CINEMATIC'], p: [0, 1, 1, 2, 2], d: 'Classic is crisp and saturated, like the strategy games of the early 2000s.' },
+  { g: 'POST-PROCESSING', k: 'bloom', n: 'BLOOM', o: ['OFF', 'LOW', 'HIGH'], p: [0, 0, 1, 1, 2], w: .4, d: 'The glow around fire and bright light.' },
+  { g: 'POST-PROCESSING', k: 'dof', n: 'DEPTH OF FIELD', o: ['OFF', 'ON'], p: [0, 0, 0, 0, 0], w: .6, d: 'Blurs what is far. Off by default: it hides the battle.' },
+  { g: 'POST-PROCESSING', k: 'mblur', n: 'MOTION BLUR', o: ['OFF', 'LOW', 'HIGH'], p: [0, 0, 0, 0, 0], w: .5, d: 'Blur when the camera moves fast.' },
+  { g: 'POST-PROCESSING', k: 'grain', n: 'FILM GRAIN', o: ['OFF', 'ON'], p: [0, 0, 0, 1, 1], d: 'A fine film texture over the image.' },
+  { g: 'POST-PROCESSING', k: 'lens', n: 'LENS EFFECTS', o: ['OFF', 'ON'], p: [0, 0, 0, 1, 1], w: .2, d: 'Flares and color fringes from bright explosions.' }];
+const SND = [
+  { g: 'VOLUME', k: 'master', n: 'MASTER', s: [0, 100], v: 80 }, { g: 'VOLUME', k: 'music', n: 'MUSIC', s: [0, 100], v: 55 }, { g: 'VOLUME', k: 'sfx', n: 'EFFECTS', s: [0, 100], v: 90 },
+  { g: 'VOLUME', k: 'voice', n: 'UNIT VOICES', s: [0, 100], v: 75 }, { g: 'VOLUME', k: 'ui', n: 'INTERFACE', s: [0, 100], v: 60 }, { g: 'VOLUME', k: 'amb', n: 'AMBIENCE', s: [0, 100], v: 65 },
+  { g: 'OUTPUT', k: 'out', n: 'SPEAKER SETUP', o: ['HEADPHONES', 'STEREO', 'SURROUND 5.1', 'SURROUND 7.1'], v: 1, d: 'Match it to what you listen with. Headphones adds a 3D mix.' },
+  { g: 'OUTPUT', k: 'dyn', n: 'DYNAMIC RANGE', o: ['NIGHT', 'NORMAL', 'WIDE'], v: 1, d: 'Night keeps explosions from being much louder than voices.' },
+  { g: 'OUTPUT', k: 'bgmute', n: 'MUTE IN BACKGROUND', o: ['OFF', 'ON'], v: 1 }];
+const CTL = [
+  { g: 'CAMERA', k: 'camspeed', n: 'CAMERA SPEED', s: [0, 100], v: 55 },
+  { g: 'CAMERA', k: 'edge', n: 'EDGE SCROLL', o: ['ON', 'OFF'], v: 0, d: 'The camera moves when the mouse touches the edge of the screen.' },
+  { g: 'CAMERA', k: 'zoom', n: 'ZOOM SPEED', s: [0, 100], v: 50 },
+  { g: 'CAMERA', k: 'pan', n: 'DRAG TO PAN', o: ['MIDDLE BUTTON', 'RIGHT BUTTON'], v: 0 },
+  { g: 'KEYS', k: 'layout', n: 'HOTKEY LAYOUT', o: ['CLASSIC', 'GRID'], v: 0, d: 'Classic uses each command\'s letter. Grid maps the build panel to the keys under your left hand.' }];
+const GAMEO = [
+  { g: 'LANGUAGE', k: 'lang', n: 'LANGUAGE', o: ['ENGLISH', 'PORTUGUÊS'], v: 0, d: 'The language of the menus, the texts and, if you choose, the unit voices.' },
+  { g: 'LANGUAGE', k: 'voices', n: 'UNIT VOICES', o: ['FACTION LANGUAGE', 'GAME LANGUAGE'], v: 0, d: 'Faction language: each army speaks its own (English, Russian, Chinese, Arabic). Game language: every unit speaks the language chosen above.' },
+  { g: 'MATCH', k: 'timer', n: 'MATCH TIMER', o: ['ON', 'OFF'], v: 0 },
+  { g: 'MATCH', k: 'chat', n: 'CHAT', o: ['ALL', 'ALLIES ONLY', 'OFF'], v: 0 },
+  { g: 'MATCH', k: 'tips', n: 'TOOLTIPS', o: ['FAST', 'NORMAL', 'OFF'], v: 1 }];
+const ACC = [
+  { g: 'VISION', k: 'cb', n: 'COLORBLIND MODE', o: ['OFF', 'PROTANOPIA', 'DEUTERANOPIA', 'TRITANOPIA'], v: 0, d: 'Shifts player colors and the interface so every army stays different.' },
+  { g: 'VISION', k: 'outline', n: 'UNIT OUTLINES', o: ['OFF', 'ON'], v: 0, d: 'A thin outline in the player color around every unit.' },
+  { g: 'VISION', k: 'uiscale', n: 'INTERFACE SIZE', s: [80, 130], v: 100 },
+  { g: 'COMFORT', k: 'shake', n: 'SCREEN SHAKE', s: [0, 100], v: 70, d: 'How much big explosions shake the camera.' },
+  { g: 'COMFORT', k: 'flash', n: 'FLASH REDUCTION', o: ['OFF', 'ON'], v: 0, d: 'Softens the brightest flashes of explosions.' },
+  { g: 'COMFORT', k: 'subs', n: 'SUBTITLES', o: ['OFF', 'ON'], v: 0, d: 'Shows what units and the announcer say.' }];
+const OPT = {}; [GFX, SND, CTL, GAMEO, ACC].forEach(L => L.forEach(x => OPT[x.k] = x.v !== undefined ? x.v : x.p[3]));
+let pre = 5, custom = false;       // começa no AUTO (que escolheu o HIGH medindo)
+function applyPreset(k) { pre = k; custom = false; const pi = k === 5 ? 3 : k; GFX.forEach(x => { if (!x.fixed && x.p) OPT[x.k] = x.p[pi]; }); }
+function estimate(vals) {          // quadros e memória de vídeo estimados pra GTX 1660 (6 GB)
+  const resF = [.44, .69, 1, 1.78, 4][vals.res], upF = vals.up ? [.5, .62, .76, 1][vals.upq] : 1; let ms = 4.2, gb = .9;
+  GFX.forEach(x => { if (!x.w && !x.m) return; const f = vals[x.k] / (x.o.length - 1); ms += (x.w || 0) * f * resF * upF; gb += (x.m || 0) * f * Math.sqrt(resF); });
+  if (vals.fg) ms *= .62; return { fps: Math.round(1000 / ms), gb: Math.round(gb * 10) / 10 };
+}
+function presetVals(k) { const v = { ...OPT }; const pi = k === 5 ? 3 : k; GFX.forEach(x => { if (!x.fixed && x.p) v[x.k] = x.p[pi]; }); return v; }
+function rowHTML(x) {
+  if (x.s) { const f = (OPT[x.k] - x.s[0]) / (x.s[1] - x.s[0]) * 100; return `<div class="r" data-k="${x.k}"><div class="n">${x.n}</div><div class="sl" data-k="${x.k}"><i style="width:${f}%"></i><b style="left:${f}%"></b></div><div class="v">${OPT[x.k]}${x.k === 'uiscale' ? '%' : ''}</div></div>`; }
+  return `<div class="r" data-k="${x.k}"><div class="n">${x.n}</div><div class="seg">${x.o.map((o, i) => `<span data-k="${x.k}" data-i="${i}" class="${OPT[x.k] === i ? 'on' : ''} ${x.na && x.na.includes(i) ? 'na' : ''}">${o}</span>`).join('')}</div></div>`;
+}
+function groupHTML(L) { let h = '', g = ''; for (const x of L) { if (x.g !== g) { g = x.g; h += `<div class="grp">${g}</div>`; } h += rowHTML(x); } return h; }
+function renderOpt() {
+  $('#presets').innerHTML = PRESETS.map(([n, d], k) => { const e = estimate(presetVals(k)), bars = k === 0 ? 1 : k === 5 ? 4 : k + 1;
+    return `<div class="pr ${k === pre && !custom ? 'on' : ''} ${k === 5 ? 'auto' : ''}" data-p="${k}">${k === 4 && e.fps < 45 ? '<div class="warn">ABOVE THIS PC</div>' : ''}<b>${n}</b><span>${k === 5 ? 'MEASURED · HIGH' : d}</span><div class="fps">${e.fps} <em>FPS</em></div><div class="bars">${[8, 12, 16, 20, 24].map((h, i) => `<i class="${i < bars ? 'f' : ''}" style="height:${h}px"></i>`).join('')}</div></div>`; }).join('');
+  $('#ocustom').classList.toggle('on', custom);
+  $('#gfxrows').innerHTML = groupHTML(GFX); $('#sndrows').innerHTML = groupHTML(SND); $('#ctlrows').innerHTML = groupHTML(CTL); $('#gamerows').innerHTML = groupHTML(GAMEO); $('#accrows').innerHTML = groupHTML(ACC);
+  renderKeys(); meter(); if (!$('#ocard').dataset.k) card(null);
+}
+function meter() { const e = estimate(OPT), over = e.gb > 6;
+  $('#ometer').innerHTML = `<div class="row"><b>${e.fps}<em>FPS</em></b><span class="lab">ESTIMATED IN BATTLE</span></div><div class="vbar ${over ? 'over' : ''}"><i style="width:${Math.min(100, e.gb / 6 * 100)}%"></i></div><div class="vt"><span>VIDEO MEMORY ${e.gb} GB</span><span>6.0 GB</span></div><div class="gpu">${over ? 'ABOVE THIS CARD\'S MEMORY · EXPECT STUTTERS' : 'NVIDIA GEFORCE GTX 1660 · 6 GB'}</div>`; }
+function card(k) {
+  const all = [...GFX, ...SND, ...CTL, ...GAMEO, ...ACC], x = all.find(o => o.k === k), c = $('#ocard'); c.dataset.k = k || '';
+  if (!x) { const n = custom ? 'CUSTOM' : PRESETS[pre][0]; c.innerHTML = `<div class="lab">QUALITY</div><h4>${n}</h4><p>${custom ? 'Your own mix. Pick a preset to start over.' : 'Every graphics setting below follows this preset. Change any of them and it becomes your own mix.'}</p><p style="color:var(--mute);font-size:14px">Point at a setting to see what it does and what it costs.</p>`; return; }
+  const pip = (v, hi) => `<div class="pips">${[0, 1, 2, 3, 4].map(i => `<i class="${i < v ? (hi && v >= 4 ? 'h' : 'f') : ''}"></i>`).join('')}</div>`;
+  const gpu = x.w ? Math.min(5, Math.ceil(x.w / 1.2)) : 0, vram = x.m ? Math.min(5, Math.ceil(x.m / .45)) : 0;
+  c.innerHTML = `<div class="lab">${x.g}</div><h4>${x.n}</h4><p>${x.d || ''}</p>${x.w || x.m ? `<div class="cost"><span>GPU</span>${pip(gpu, 1)}<span>MEMORY</span>${pip(vram, 1)}</div>` : ''}`;
+}
+$('#omain').addEventListener('mouseover', e => { const r = e.target.closest('.r'); if (r) card(r.dataset.k); });
+$('#omain').addEventListener('mouseleave', () => card(null));
+$('#omain').addEventListener('click', e => {
+  const p = e.target.closest('.pr'); if (p) { applyPreset(+p.dataset.p); renderOpt(); return; }
+  const s = e.target.closest('.seg span'); if (s) { OPT[s.dataset.k] = +s.dataset.i; if (GFX.some(x => x.k === s.dataset.k && !x.fixed)) custom = true; renderOpt(); card(s.dataset.k); }
+});
+let slDrag = null;
+$('#omain').addEventListener('pointerdown', e => { const sl = e.target.closest('.sl'); if (!sl) return; slDrag = sl.dataset.k; slSet(e); });
+addEventListener('pointermove', e => { if (slDrag) slSet(e); }); addEventListener('pointerup', () => slDrag = null);
+function slSet(e) { const sl = document.querySelector(`.sl[data-k="${slDrag}"]`); if (!sl) return; const x = [...GFX, ...SND, ...CTL, ...GAMEO, ...ACC].find(o => o.k === slDrag), r = sl.getBoundingClientRect();
+  OPT[slDrag] = Math.round(x.s[0] + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (x.s[1] - x.s[0])); const f = (OPT[slDrag] - x.s[0]) / (x.s[1] - x.s[0]) * 100;
+  sl.querySelector('i').style.width = f + '%'; sl.querySelector('b').style.left = f + '%'; sl.nextElementSibling.textContent = OPT[slDrag] + (slDrag === 'uiscale' ? '%' : ''); }
+$('#otabs').onclick = e => { const t = e.target.closest('.tab'); if (!t) return; document.querySelectorAll('#otabs .tab').forEach(x => x.classList.toggle('on', x === t)); document.querySelectorAll('#opt .pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + t.dataset.p)); $('#omain').scrollTop = 0; card(null); $('#ometer').style.display = t.dataset.p === 'gfx' ? '' : 'none'; };   // os quadros só fazem sentido nos gráficos
+$('#oreset').onclick = () => { applyPreset(5); renderOpt(); };
+INIT.opt = () => { if (!INIT.opt.done) { applyPreset(5); INIT.opt.done = true; } renderOpt(); };
+const KEYS = [['SELECT ALL UNITS', 'Q'], ['ATTACK MOVE', 'A'], ['FORCE FIRE', 'CTRL'], ['STOP', 'S'], ['GUARD', 'G'], ['SCATTER', 'X'], ['CENTER ON BASE', 'H'], ['NEXT IDLE WORKER', '.'], ['CHAT', 'ENTER'], ['GENERAL POWERS', 'G']];
+function renderKeys() {
+  const q = ($('#kq').value || '').toUpperCase(), cnt = {}; KEYS.forEach(([, k]) => cnt[k] = (cnt[k] || 0) + 1);
+  $('#keyrows').innerHTML = KEYS.filter(([a, k]) => !q || a.includes(q) || k.includes(q)).map(([a, k]) => `<div class="r ${cnt[k] > 1 ? 'conf' : ''}"><div class="n">${a}</div><kbd class="k">${k}</kbd>${cnt[k] > 1 ? `<div class="cf">ALSO USED BY ${KEYS.find(([b, kk]) => kk === k && b !== a)[0]}</div>` : ''}</div>`).join('');
+}
+$('#kq').oninput = renderKeys;
+
+// ---------- os avisos de rede: um desenho só pros quatro casos ----------
+let nv = 'wait', ntimer = null, nleft = 42;
+INIT.net = () => { document.querySelectorAll('#nvar span').forEach(s => s.classList.toggle('on', s.dataset.v === nv)); clearInterval(ntimer); nleft = 42; renderNet(); if (nv === 'wait') ntimer = setInterval(() => { nleft = Math.max(0, nleft - 1); if (cur === 'net') renderNet(); }, 1000); };
+$('#nvar').onclick = e => { const s = e.target.closest('[data-v]'); if (s) { nv = s.dataset.v; INIT.net(); } };
+function renderNet() {
+  const p = $('#npanel'); p.className = 'panel' + (nv !== 'wait' ? ' badp' : '');
+  if (nv === 'wait') { const f = nleft / 60, C = 2 * Math.PI * 52;
+    p.innerHTML = `<div class="kicker">MATCH PAUSED FOR EVERYONE</div><h2>WAITING FOR PAI</h2>
+      <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="rgba(230,220,190,.12)" stroke-width="6"/><circle cx="60" cy="60" r="52" fill="none" stroke="rgb(216,173,78)" stroke-width="6" stroke-dasharray="${C * f} ${C}" transform="rotate(-90 60 60)" stroke-linecap="butt"/></svg><b>0:${String(nleft).padStart(2, '0')}</b></div>
+      <div class="who">${tok('russia', COLORS.purple, 30)}PAI</div><div class="info">NO SIGNAL FOR <b>${18 + 42 - nleft} S</b> · LAST PING <b>3 MS</b><br>THE MATCH GOES ON IF HE COMES BACK; AT 0:00 HE IS DROPPED</div>
+      <div class="votes"><i class="f"></i><i></i></div><div class="btns"><div class="btn red">DROP PAI · 1 / 2</div><div class="btn">KEEP WAITING</div></div>`; }
+  if (nv === 'lost') p.innerHTML = `<div class="kicker" style="color:rgb(240,110,90)">CONNECTION LOST</div><h2>THE HOST IS GONE</h2><div class="info" style="margin-top:20px">RAFA STOPPED ANSWERING AT <b>14:02</b> (STEP <b>25 236</b>)<br>THE REPLAY UP TO HERE WAS SAVED</div><div class="btns"><div class="btn gold">RECOVER FROM REPLAY</div><div class="btn">MAIN MENU</div></div>`;
+  if (nv === 'ver') p.innerHTML = `<div class="kicker" style="color:rgb(240,110,90)">CAN'T JOIN</div><h2>DIFFERENT VERSION</h2><div class="info" style="margin-top:20px">YOU <b>v0.5.2</b> · HOST <b>v0.5.1</b><br>EVERYONE IN A ROOM NEEDS THE SAME VERSION</div><div class="btns"><div class="btn">BACK TO ROOMS</div></div>`;
+  if (nv === 'sync') p.innerHTML = `<div class="kicker" style="color:rgb(240,110,90)">MATCH STOPPED</div><h2>OUT OF SYNC</h2><div class="info" style="margin-top:20px">THE GAMES DISAGREED AT STEP <b>1 056</b> (FINGERPRINT <b>9F3A·C21E</b>)<br>A REPORT WAS SAVED FOR THE DEVELOPERS</div><div class="btns"><div class="btn gold">RECOVER FROM REPLAY</div><div class="btn">OPEN REPORT</div><div class="btn">MAIN MENU</div></div>`;
+}
+
+// ---------- a primeira abertura: prepara os efeitos (os shaders) com as células enchendo, mede a nossa cena e diz o preset ----------
+let ftimer = null;
+INIT.first = () => {
+  clearInterval(ftimer); let pct = 0, phase = 1; const N = 32;
+  const set = () => { $('#fcells').innerHTML = Array.from({ length: N }, (_, i) => `<i class="${i < Math.round(pct / 100 * N) ? 'f' : ''}"></i>`).join(''); $('#fpct').textContent = phase === 2 ? `${Math.round(30 + pct * .4)} FPS · ${Math.round(pct)}%` : `${Math.round(pct)}%`; };
+  $('#fh').textContent = 'PREPARING EFFECTS'; $('#fs').textContent = 'BUILDING THE EXPLOSIONS FOR YOUR GRAPHICS CARD · ONLY THIS ONCE'; $('#fres').classList.remove('on'); $('#fcells').style.display = 'flex'; $('#fpct').style.display = 'block';
+  ['st1', 'st2', 'st3'].forEach((s, k) => $('#' + s).className = k === 0 ? 'on' : ''); set();
+  ftimer = setInterval(() => { pct = Math.min(100, pct + (phase === 1 ? 2.2 : 3)); set();
+    if (pct >= 100 && phase === 1) { phase = 2; pct = 0; $('#st1').className = 'done'; $('#st2').className = 'on'; $('#fh').textContent = 'MEASURING YOUR PC'; $('#fs').textContent = 'A 20 SECOND BATTLE WITH OUR HEAVIEST EXPLOSIONS'; }
+    else if (pct >= 100 && phase === 2) { clearInterval(ftimer); $('#st2').className = 'done'; $('#st3').className = 'on'; $('#fh').textContent = 'READY'; $('#fs').textContent = 'YOU CAN CHANGE THIS ANYTIME IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); } }, 120);
+};
+$('#fskip').onclick = () => { clearInterval(ftimer); $('#fh').textContent = 'READY'; $('#fs').textContent = 'MEDIUM UNTIL YOU MEASURE IN SETTINGS'; $('#fcells').style.display = 'none'; $('#fpct').style.display = 'none'; $('#fres').classList.add('on'); $('#fres b').textContent = 'MEDIUM'; $('#fres .pick span').textContent = 'THE SAFE START · NOT MEASURED'; };
+
+// ---------- o som (o aprovado) ----------
+const MUSIC_VOL = .55, MUSIC_OK = () => !['esc', 'net', 'res'].includes(cur);
+const music = $('#music'); let track = 0; music.src = `snd/Main_Menu_1.mp3`; music.volume = MUSIC_VOL;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
+const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
+if (actx) fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
+function clickable(el) { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (/^(BUTTON|A|SELECT|INPUT|LABEL)$/.test(e.tagName) || getComputedStyle(e).cursor === 'pointer') return true; } return false; }
+addEventListener('pointerdown', e => { if (!actx) return; actx.resume(); if (!musicOn && !Q.get('nomusic') && !['esc', 'net', 'res'].includes(cur)) { musicOn = true; music.play().catch(() => { }); }
+  if (clickable(e.target) && clickBuf) { const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; g.gain.value = .6; s.connect(g).connect(actx.destination); s.start(); } }, true);
+// a trilha atravessa as telas: ao sair, cada tela guarda a faixa, o ponto e o volume; a próxima continua dali e vai suave pro seu volume
+// (o skirmish e o multiplayer abaixam a música uns 8 dB: são telas de conversa e decisão; a volta pro menu sobe de novo)
+function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume, t0 = performance.now();
+  musicFade.t = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); music.volume = v0 + (to - v0) * k * k * (3 - 2 * k); if (k >= 1) clearInterval(musicFade.t); }, 30); }
+(() => { let m = null; try { m = JSON.parse(sessionStorage.getItem('menu_music')); } catch (e) { }
+  if (!m || Date.now() - m.at > 20000 || Q.get('mute') || Q.get('nomusic') || !MUSIC_OK()) return;
+  track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
+  if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
+addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+(async () => { await document.fonts.ready; if (Q.get('esc')) escMode = Q.get('esc'); if (Q.get('nv')) nv = Q.get('nv'); show(cur); setTimeout(() => window.__ready = true, 1600); })();
+</script>
+</body>
+</html>

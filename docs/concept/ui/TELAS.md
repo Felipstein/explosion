@@ -100,6 +100,91 @@ de radar de verdade:
   toca (e solta a trilha). No hover não toca nada. Vale no `menu.html` e no `shell.html` (sala, carregando); o REPLAYS saiu do `shell.html` também.
 - Custo: só canvas 2D. Os rascunhos anteriores ficam em `menu_scenes.html`, `menu_table.html`, `menu_table2.html` e `menu_radar_copia.html`.
 
+## 6. A tela do Skirmish (01/11, em teste)
+
+O pedido: "agora vamos focar na tela do SKIRMISH", e "não ficamos enviesados só com o C&C ZH: eu quero melhor, moderno, criativo, fora da
+curva, algo novo se fizer sentido".
+
+**O piso (o ZH, pelo código, `SkirmishGameOptionsMenu.cpp`):** 8 vagas (aberta, fechada, IA fácil/média/difícil), cor sem repetir, facção
+(aleatória por padrão), time, as bases como marcas clicáveis no mapa (clique pega, botão direito larga), escolher o mapa, a velocidade, o
+dinheiro inicial, o limite das superarmas; antes de começar confere mapa, número de jogadores, base e cor sem repetir. O nosso jogo já tem:
+vagas com IA, cor, time (–, 1 a 4, sorteio), a névoa em 3 tipos, o dinheiro de 10 a 50 mil (`docs/MULTIPLAYER.md` Parte 7).
+
+**O que vai além (`captures/concept/ui/shell/skirmish.html`):**
+- o mesmo console do menu aprovado: o mapa escolhido no radar, **o mapa de verdade** (o chão pintado do WorldForge: a rocha devolve eco, a
+  estrada e a água ficam escuras, como no radar real; as casas, os postes, as palmeiras e as docas da vila). Os dados saem de
+  `Game/Config/RTS` pelo `tools/export_maps.py` (só lê);
+- **o mapa é a sala:** clicar numa base põe a vaga escolhida nela (troca se estiver ocupada); **arrastar de uma base a outra faz a
+  aliança** (a linha dourada), arrastar de novo desfaz, botão direito tira do time; a linha aprovada liga a vaga à base no hover;
+- **o tempo até o 1º contato** entre cada exército e o inimigo mais perto (pelo caminho, ~1,37× a reta, o tanque a ~7 m/s: o número do
+  `Maps.json`), com o glifo das espadas; as docas do meio (as disputadas) pulsam;
+- **o nome da operação** sai da combinação (mudou a combinação, muda o nome) e vai pro carregando;
+- **combinações prontas** (1 V 1, 2 V 2, FREE FOR ALL, REMATCH = a última que começou) e **o dado** que sorteia tudo;
+- **NEW WORLD #semente:** o WorldForge gerando um mapa novo pela semente, dentro do skirmish (nenhum RTS tem);
+- regras: dinheiro, névoa, superarmas (ON, LIMITED, OFF) e a hora do dia (DAY, DUSK, NIGHT; o jogo já tem a noite);
+- o som aprovado (o clique em todo clique, as três trilhas); o SKIRMISH do menu abre a sala; START (ou ENTER) acelera o feixe e trava
+  nas bases.
+
+**A v2 (01/11, depois das reprovações, registradas no `APROVADOS.md`):**
+- saíram a névoa e a hora do dia (vêm da criação do mapa: a hora, o céu, a tempestade aparecem como atributo do mapa), os botões de
+  combinação pronta e o dado; as superarmas são UNLIMITED, LIMITED, OFF; o dinheiro é um seletor deslizante (10 a 50 mil) com o valor grande;
+- **a prévia do mapa é o minimapa do jogo:** o losango com N, E, S, W, desenhado do chão de verdade (areia com as ondinhas, a rocha com o
+  relevo e a luz do oeste, a estrada, a água, as casas com a sombra pro leste, as palmeiras, as docas), no jeito do minimapa dos game shots;
+- **as vagas são uma tabela com cabeçalho** (PLAYER, ARMY, COLOR, TEAM, START); cada campo abre a sua lista; a largada é o minimapinha com o
+  ponto e o nome (NORTH, WEST...), não letra;
+- **as fichas do mapa usam a silhueta nova do exército** (pedido "Emblemas pequenos (ficha e silhueta)" no Atelier, `captures/concept/80_...`;
+  em uso as silhuetas da variação 2, as mais legíveis em 28 px; falta ele escolher);
+- **o navegador de mapas** (CHANGE MAP): busca, ordem (POPULAR, NEWEST, NAME), favoritos, filtros (jogadores, tamanho, terreno, condições,
+  origem) e a grade que só desenha o que aparece (testado com 1.024 mapas: os 2 de verdade e 1.022 gerados pela semente, só pro protótipo);
+  o 1º cartão é sempre o NEW WORLD (o WorldForge pela semente).
+
+**Depois da aprovação da v2 (01/11):** uns 100 mapas no teste (com mil travava: abrir o navegador 7,4 s → 0,1 s, rolar 9,1 s → 0,02 s;
+as miniaturas saem numa fila, em grade pequena, só as que aparecem; no jogo elas vêm prontas do WorldForge) e **a escolha das posições
+refeita:** todos começam na bandeja RANDOM START (a largada sorteada); clicar numa base livre põe o próximo da ordem (o ZH); no hover a ficha
+fantasma mostra quem cai ali; arrastar qualquer ficha pra qualquer base (ocupada, os dois trocam); arrastar pra bandeja ou botão direito tira
+a posição; ↺ devolve todos. A aliança arrastando saiu (o time fica na tabela).
+
+## 7. O multiplayer e as outras telas (01/11, em teste)
+
+- **`multiplayer.html`, a lista de salas:** ONLINE (Steam, amigos primeiro), LAN e DIRECT IP (o endereço e os recentes); a lista ordena
+  pelo cabeçalho, se atualiza sozinha, e tem os filtros HIDE FULL, HIDE IN GAME, MY VERSION (as queixas do AoE II DE e do AoM: sala cheia
+  aparecendo livre, lista que não ordena); a sala escolhida mostra o minimapa com as fichas, quem está nela (a coroa do anfitrião) e o JOIN
+  (ou "NEEDS v0.5.1", "ROOM FULL"); HOST GAME. As salas são de mentira (protótipo).
+- **A sala do multiplayer é a mesma do skirmish** (`skirmish.html?mp=1`): os nomes, a coroa, o ping, o pronto; cada um mexe só na sua
+  linha (o anfitrião também nas IAs, no mapa e nas regras); o chat embaixo das regras, nunca por cima dos jogadores; o anfitrião expulsa
+  (✕ no hover); START só com todos prontos, numa contagem de 5 que cancela se algo mudar; quem entrou aperta READY.
+- **`screens.html`:** o carregando (a sua facção grande, o mapa com as bases, as células de carregamento na cor de cada um, a IA READY, o
+  KICK pra quem demora), o Esc (no skirmish pausa e tem RESTART; no multiplayer não pausa e o SURRENDER confirma), o resultado (VICTORY ou
+  DEFEAT sobre a partida parada, a tabela com o melhor de cada coluna em dourado, o gráfico com as marcas dos combates, VIEW MAP, REMATCH,
+  BACK TO LOBBY), as opções (os presets com o AUTO medido e o aviso "acima deste PC", poucas linhas, as teclas com busca e conflito em
+  vermelho), os avisos de rede (um desenho só: esperando com tempo e votos, desconectado, versão diferente, fora de sincronia, com o
+  RECOVER FROM REPLAY) e a primeira abertura (preparar os efeitos com as células, medir o PC, dizer o preset).
+
+**Rodadas 5 e 6 (01/11, pedidos dele):** 24 cores em 4 fileiras por tom, mais a aleatória, com o nome no hover, quem já usa e o aviso
+"HARD TO SEE ON DESERT" (diferença no Lab contra o chão do mapa); a lista e a coluna do exército com as fichas na cor da facção (as geradas
+pra isso), maiores, e a Rússia sempre em segundo (USA, RUSSIA, CHINA, GLA); times de 1 a 8 numa grade com os pontinhos de quem está em cada
+um; mapas de até 16 jogadores (a tabela compacta com rolagem, as fichas menores no mapa); no navegador de mapas, os tipos dos game shots
+(DESERT, TEMPERATE, FOREST, JUNGLE, SNOW, STEPPE, MOUNTAIN, CITY, ISLANDS, COAST, de `42_environments` e `32_world_targets`), as condições
+(MORNING, DAY, LOW SUN, DUSK, NIGHT, RAIN, MONSOON, SNOWFALL, BLIZZARD, STORM, cada uma só onde cabe), o ⚓ NAVAL (mapas com mar, onde dá pra
+construir e fabricar unidades navais), sem COMMUNITY por enquanto, e as posições de largada em cada miniatura; **o voltar padrão: BACK · ESC no
+alto à esquerda em todas as telas, e o Esc do teclado faz o mesmo**; o resultado com a DEFEAT; o menu abre o MULTIPLAYER e o OPTIONS, e o
+chip DEBUG · ALL SCREENS (ou F2) abre todas as telas.
+
+**Rodadas 7 a 9 (01/11, aprovadas):** 100 mapas de teste com as miniaturas numa fila (≤ 8 ms por quadro) e o losango assado uma vez (abrir o
+navegador 7,4 s → 0,1 s); a ordem padrão por número de jogadores; a IA nova vem na cor aleatória; **os atalhos pra mapa grande**: FILL WITH AI
+na dificuldade escolhida, CLEAR AI, seleção de várias linhas (Ctrl/Shift) mudando todas de uma vez, o menu TEAMS (FFA, 2 e 4 times, norte ×
+sul, oeste × leste, você × IA) e a sala que lembra o último arranjo de cada mapa. **A música**: a trilha atravessa as telas (cada tela guarda a
+faixa e o ponto ao sair) e abaixa uns 8 dB no skirmish e no multiplayer, subindo de novo no menu; no protótipo as trilhas são cópias leves em
+mp3 (o servidor de teste não entrega pedaço do arquivo e a wav de 28 MB dava silêncio na troca; no jogo a música vive num componente só).
+**Os botões nunca quebram linha** (o aviso de sincronia com três botões cresce pela palavra, sem o letreiro abrir no hover).
+**As opções v2**: os presets CLASSIC (o visual de 2003: nítido, cores vivas, sem névoa; o nome do jogo de referência não aparece), LOW,
+MEDIUM, HIGH, ULTRA e AUTO preenchem tudo; mexer em qualquer item vira CUSTOM. Os grupos: DISPLAY, UPSCALING & PERFORMANCE (DLSS riscado na
+GTX 1660), IMAGE, LIGHTING & SHADOWS, EFFECTS (explosões e fumaça sempre em volume; o preset só muda o detalhe), WORLD e POST-PROCESSING
+(profundidade de campo e borrão desligados em todos: escondem a batalha). À direita, o que o item faz, o custo de placa e de memória, e os
+quadros e a memória de vídeo estimados (6 GB). SOUND, CONTROLS (câmera, EDGE SCROLL = a câmera anda quando o mouse encosta na borda, as
+teclas), GAME (LANGUAGE e **UNIT VOICES: no idioma da facção ou no do jogo**) e ACCESSIBILITY (daltonismo, contorno das unidades, tamanho da
+interface, tremor, clarões, legendas). **Sem HEALTH BARS**: a vida só aparece nas selecionadas ou com o mouse em cima (decisão dele).
+
 ## 4. A primeira rodada, olhada com rigor
 
 - **Menu:** forte. O console desligado na borda de baixo é a assinatura que pedimos. Veio uma fileira com os 4 emblemas que não pedi: lê

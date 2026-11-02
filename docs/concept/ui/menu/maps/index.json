@@ -1,0 +1,20 @@
+[
+ {
+  "name": "World_TestSalt2",
+  "title": "SALT FLATS",
+  "bases": 4,
+  "docks": 6
+ },
+ {
+  "name": "World_TestHills",
+  "title": "BROKEN HILLS",
+  "bases": 4,
+  "docks": 6
+ },
+ {
+  "name": "World_TestDunesSim",
+  "title": "DUNE SEA",
+  "bases": 4,
+  "docks": 6
+ }
+]

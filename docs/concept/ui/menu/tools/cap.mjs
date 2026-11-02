@@ -1,5 +1,6 @@
 // Captura do menu pelo Chrome sem janela (CDP), em 1920x1080, com a placa de vídeo.
 //  node cap.mjs shot <url> <saida.jpg>
+//  node cap.mjs eval <url> <expressão js>   (imprime o resultado)
 //  node cap.mjs rec <url> <pasta> <quadros> [roteiro.json]   (roteiro: [{f: quadro, js: "..."}])
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -28,7 +29,8 @@ try {
   for (let i = 0; i < 200; i++) { if (await evalJs('window.__ready === true')) break; await sleep(150); }
   await evalJs('document.fonts.ready.then(() => true)'); await sleep(300);
   const shot = async file => { const r = await send('Page.captureScreenshot', { format: 'jpeg', quality: 92 }); writeFileSync(file, Buffer.from(r.result.data, 'base64')); };
-  if (mode === 'shot') { await shot(out); console.log('ok', out, await evalJs('navigator.userAgent.includes("Headless") + " " + (document.querySelector("canvas").getContext("webgl2").getParameter(0x1F01))')); }
+  if (mode === 'eval') { console.log(JSON.stringify(await evalJs(out))); }
+  else if (mode === 'shot') { await shot(out); console.log('ok', out, await evalJs('navigator.userAgent.includes("Headless") + " " + (document.querySelector("canvas").getContext("webgl2").getParameter(0x1F01))')); }
   else {
     mkdirSync(out, { recursive: true }); const n = +nArg; const script = scriptPath ? JSON.parse(readFileSync(scriptPath, 'utf8')) : [];
     for (let f = 0; f < n; f++) {
