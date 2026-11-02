@@ -2526,6 +2526,7 @@ void ARTSUnitActor::SetupSoldierLook(const FRTSUnitVisual& Visual)
 				const bool bTeam = Sk && Sk->GetMaterials().IsValidIndex(Slot) && Sk->GetMaterials()[Slot].MaterialSlotName.ToString().Contains(TEXT("Team"));
 				M->SetScalarParameterValue(TEXT("UseTex"), 0.0f);
 				M->SetScalarParameterValue(TEXT("TeamSlot"), bTeam ? 1.0f : 0.0f);
+				M->SetScalarParameterValue(TEXT("TeamShade"), 1.0f);   // (02/11) a cor do time com a sombra assada (a cor do vértice das faces do time)
 				M->SetVectorParameterValue(TEXT("TeamColor"), Visual.SoldierTeam);
 				SoldierMesh->SetMaterial(Slot, M);
 			}

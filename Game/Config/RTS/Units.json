@@ -5545,6 +5545,602 @@
 				"mass_t": 0.1,
 				"death_kind": "infantry"
 			}
+		},
+		{
+			"key": "usa_javelin_v3",
+			"name": "Javelin (v3, teste)",
+			"_source": "AmericaInfantryMissileDefender (AmericaInfantry.ini; MissileDefenderMissileWeapon)",
+			"infantry": true,
+			"max_hp": 100,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 5.3,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"usa_barracks",
+				"usa_strategy_center"
+			],
+			"cost": 300,
+			"build_time_s": 5,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 46.0,
+				"damage": 40,
+				"damage_type": "armor_piercing",
+				"reload_s": 1.0,
+				"aim_tolerance_deg": 4,
+				"projectile_mps": 70.0,
+				"targets": [
+					"ground",
+					"air"
+				],
+				"missile": {
+					"launch_mps": 30.0,
+					"accel_mps2": 160.0,
+					"turn_dps": 160.0,
+					"boost_s": 0.1,
+					"launch_pitch_deg": 6.0,
+					"launch_height_m": 1.6,
+					"spread_deg": 2.0,
+					"life_s": 2.5
+				}
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/USA_AT/SKM_Soldier_USA_AT.SKM_Soldier_USA_AT",
+					"rifle": "/Game/Weapons/Launchers/SM_Launcher_Javelin/StaticMeshes/SM_Launcher_Javelin",
+					"scale": 1.25,
+					"cloth": [0.36, 0.31, 0.22],
+					"team": [0.07, 0.1, 0.24],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 0.9,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry",
+				"missile_model": {
+					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
+					"length_m": 1.0,
+					"trail_width": 0.2,
+					"trail_density": 0.5
+				},
+				"warhead_kg": 1.0
+			}
+		},
+		{
+			"key": "china_rifleman_v3",
+			"name": "Red Guard (v3, teste)",
+			"_source": "ChinaInfantryRedguard (ChinaInfantry.ini; RedguardMachineGun)",
+			"infantry": true,
+			"max_hp": 120,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 6.6,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"china_barracks"
+			],
+			"cost": 300,
+			"build_time_s": 10,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 26.3,
+				"damage": 15,
+				"damage_type": "small_arms",
+				"reload_s": 1.0,
+				"aim_tolerance_deg": 5,
+				"projectile_mps": 0
+			},
+			"produce_count": 2,
+			"_pair": "(31/10) sai em par: o QuantityModifier do ZH (o preço é do par)",
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/CHINA/SKM_Soldier_CHINA.SKM_Soldier_CHINA",
+					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
+					"scale": 1.25,
+					"cloth": [0.12, 0.13, 0.08],
+					"team": [0.32, 0.03, 0.02],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 1.05,
+				"light_gun": true,
+				"light_gun_flash_m": 0.15,
+				"light_gun_tracer_m": 2.6,
+				"light_gun_spread_m": 1.5,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry"
+			}
+		},
+		{
+			"key": "china_tank_hunter_v3",
+			"name": "Tank Hunter (v3, teste)",
+			"_source": "ChinaInfantryTankHunter (ChinaInfantry.ini; TankHunterMissileWeapon)",
+			"infantry": true,
+			"max_hp": 100,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 5.3,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"china_barracks"
+			],
+			"cost": 300,
+			"build_time_s": 5,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 46.0,
+				"damage": 40,
+				"damage_type": "armor_piercing",
+				"reload_s": 1.0,
+				"aim_tolerance_deg": 4,
+				"projectile_mps": 70.0,
+				"targets": [
+					"ground",
+					"air"
+				],
+				"missile": {
+					"launch_mps": 30.0,
+					"accel_mps2": 160.0,
+					"turn_dps": 160.0,
+					"boost_s": 0.1,
+					"launch_pitch_deg": 6.0,
+					"launch_height_m": 1.6,
+					"spread_deg": 2.0,
+					"life_s": 2.5
+				}
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/CHINA_AT/SKM_Soldier_CHINA_AT.SKM_Soldier_CHINA_AT",
+					"rifle": "/Game/Weapons/Launchers/SM_Launcher_PF98/StaticMeshes/SM_Launcher_PF98",
+					"scale": 1.25,
+					"cloth": [0.12, 0.13, 0.08],
+					"team": [0.32, 0.03, 0.02],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 0.9,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry",
+				"missile_model": {
+					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
+					"length_m": 1.0,
+					"trail_width": 0.2,
+					"trail_density": 0.5
+				},
+				"warhead_kg": 1.0
+			}
+		},
+		{
+			"key": "gla_worker_v3",
+			"name": "Worker (v3, teste)",
+			"_source": "GLAInfantryWorker (GLAInfantry.ini): constrói e desmancha carcaça em dinheiro",
+			"infantry": true,
+			"max_hp": 100,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 7.9,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"cost": 200,
+			"build_time_s": 3,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"repair_pct_per_s": 2.0,
+			"constructs": [
+				"gla_supply_stash",
+				"gla_barracks",
+				"gla_arms_dealer",
+				"gla_palace",
+				"gla_stinger_site",
+				"gla_command_center"
+			],
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/GLA_WORKER/SKM_Soldier_GLA_WORKER.SKM_Soldier_GLA_WORKER",
+					"rifle": "",
+					"scale": 1.25,
+					"cloth": [0.21, 0.19, 0.14],
+					"team": [0.1, 0.18, 0.05],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 1.05,
+				"light_gun": true,
+				"light_gun_flash_m": 0.15,
+				"light_gun_tracer_m": 2.6,
+				"light_gun_spread_m": 1.5,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry"
+			}
+		},
+		{
+			"key": "gla_rebel_v3",
+			"name": "Rebel (v3, teste)",
+			"_source": "GLAInfantryRebel (GLAInfantry.ini; GLAInfantryRifle)",
+			"infantry": true,
+			"max_hp": 120,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 5.3,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 39.5,
+			"requires": [
+				"gla_barracks"
+			],
+			"cost": 150,
+			"build_time_s": 5,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 26.3,
+				"damage": 5,
+				"damage_type": "small_arms",
+				"reload_s": 0.1,
+				"aim_tolerance_deg": 5,
+				"projectile_mps": 0,
+				"clip_size": 3,
+				"clip_reload_s": 0.7
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/GLA/SKM_Soldier_GLA.SKM_Soldier_GLA",
+					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
+					"scale": 1.25,
+					"cloth": [0.21, 0.19, 0.14],
+					"team": [0.1, 0.18, 0.05],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 1.05,
+				"light_gun": true,
+				"light_gun_flash_m": 0.15,
+				"light_gun_tracer_m": 2.6,
+				"light_gun_spread_m": 1.5,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry"
+			}
+		},
+		{
+			"key": "gla_rpg_v3",
+			"name": "RPG Trooper (v3, teste)",
+			"_source": "GLAInfantryTunnelDefender (GLAInfantry.ini; TunnelDefenderRocketWeapon)",
+			"infantry": true,
+			"max_hp": 100,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 5.3,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"gla_barracks"
+			],
+			"cost": 300,
+			"build_time_s": 5,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 46.0,
+				"damage": 40,
+				"damage_type": "armor_piercing",
+				"reload_s": 1.0,
+				"aim_tolerance_deg": 4,
+				"projectile_mps": 70.0,
+				"targets": [
+					"ground",
+					"air"
+				],
+				"missile": {
+					"launch_mps": 30.0,
+					"accel_mps2": 160.0,
+					"turn_dps": 160.0,
+					"boost_s": 0.1,
+					"launch_pitch_deg": 6.0,
+					"launch_height_m": 1.6,
+					"spread_deg": 2.0,
+					"life_s": 2.5
+				}
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/GLA_AT/SKM_Soldier_GLA_AT.SKM_Soldier_GLA_AT",
+					"rifle": "/Game/Weapons/Launchers/SM_Launcher_RPG7/StaticMeshes/SM_Launcher_RPG7",
+					"scale": 1.25,
+					"cloth": [0.21, 0.19, 0.14],
+					"team": [0.1, 0.18, 0.05],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 0.9,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry",
+				"missile_model": {
+					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
+					"length_m": 1.0,
+					"trail_width": 0.2,
+					"trail_density": 0.5
+				},
+				"warhead_kg": 1.0
+			}
+		},
+		{
+			"key": "russia_motostrelok_v3",
+			"name": "Motostrelok (v3, teste)",
+			"_source": "(Rússia) o fuzileiro motorizado (AK-12)",
+			"infantry": true,
+			"max_hp": 140,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 6.6,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"russia_barracks"
+			],
+			"cost": 200,
+			"build_time_s": 8,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 26.3,
+				"damage": 16,
+				"damage_type": "small_arms",
+				"reload_s": 1.0,
+				"aim_tolerance_deg": 5,
+				"projectile_mps": 0
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/RUSSIA/SKM_Soldier_RUSSIA.SKM_Soldier_RUSSIA",
+					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
+					"scale": 1.25,
+					"cloth": [0.1, 0.11, 0.095],
+					"team": [0.3, 0.03, 0.03],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 1.05,
+				"light_gun": true,
+				"light_gun_flash_m": 0.15,
+				"light_gun_tracer_m": 2.6,
+				"light_gun_spread_m": 1.5,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry"
+			}
+		},
+		{
+			"key": "russia_kornet_v3",
+			"name": "Kornet Team (v3, teste)",
+			"_source": "(Rússia) o antitanque de tripé: o tiro mais longe da infantaria",
+			"infantry": true,
+			"max_hp": 100,
+			"armor": "infantry",
+			"radius_m": 1.0,
+			"path_radius_m": 0.4,
+			"speed_mps": 5.0,
+			"accel_mps2": 26.3,
+			"brake_mps2": 26.3,
+			"turn_dps": 500,
+			"turret_turn_dps": 500,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 26.3,
+			"requires": [
+				"russia_barracks"
+			],
+			"cost": 300,
+			"build_time_s": 6,
+			"wreck_life_s": 0,
+			"wreck_sink_s": 0,
+			"weapon": {
+				"range_m": 55.0,
+				"damage": 70,
+				"damage_type": "armor_piercing",
+				"reload_s": 2.0,
+				"aim_tolerance_deg": 4,
+				"projectile_mps": 70.0,
+				"missile": {
+					"launch_mps": 30.0,
+					"accel_mps2": 160.0,
+					"turn_dps": 160.0,
+					"boost_s": 0.1,
+					"launch_pitch_deg": 6.0,
+					"launch_height_m": 1.6,
+					"spread_deg": 2.0,
+					"life_s": 2.5
+				}
+			},
+			"visual": {
+				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
+				"hull": [],
+				"turret": [
+					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
+				],
+				"legs": {
+					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
+					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
+					"hip_m": [0.0, 0.1125, 1.1],
+					"stride_m": 3.6
+				},
+				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
+				"turret_pivot_m": [0.0, 0.0],
+				"muzzle_height_m": 1.64,
+				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
+				"soldier": {
+					"mesh": "/Game/Characters/Soldier/V3/RUSSIA_AT/SKM_Soldier_RUSSIA_AT.SKM_Soldier_RUSSIA_AT",
+					"rifle": "/Game/Weapons/Launchers/SM_Launcher_Javelin/StaticMeshes/SM_Launcher_Javelin",
+					"scale": 1.25,
+					"cloth": [0.1, 0.11, 0.095],
+					"team": [0.3, 0.03, 0.03],
+					"paint": [],
+					"pieces": []
+				},
+				"muzzle_forward_m": 0.9,
+				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
+				"mass_t": 0.1,
+				"death_kind": "infantry",
+				"missile_model": {
+					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
+					"length_m": 1.0,
+					"trail_width": 0.2,
+					"trail_density": 0.5
+				},
+				"warhead_kg": 1.2
+			},
+			"_balance": "(01/11) a força 100 × 35 ÷ 300² = 0,039, 12% abaixo do Tank Hunter, do RPG e do Javelin (0,044): o preço do alcance (55 m contra 46) e do tiro mais pesado (70); não atira no ar"
 		}
 	],
 	"_about_rank": "(v4, 22/10) A patente do general, só pela luta (spec v4, o debate de design; o Felipe 11/10: 'por enquanto a patente mesmo', 'pras pessoas precisarem ir pra luta'). Cada acerto vale C = o dano até a vida que o alvo tinha, em valor C x custo / vida cheia: 1 XP por dealt_value_per_xp $ pro dono de quem acertou, 1 por taken_value_per_xp $ pro dono do alvo; obra inacabada, alvo próprio ou aliado e o que custa 0 valem nada. xp = o XP de cada patente (1 a 5). A escada aprovada (IDEIAS:178-186): 2 = o 1º poder, 3 = as unidades médias de topo (o Tomahawk), 4 = o poder cresce, 5 = a superarma (depois)",

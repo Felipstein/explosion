@@ -26764,8 +26764,8 @@
      "player": 1,
      "key": "gla_technical",
      "at_m": [
-      -280.0,
-      128.0
+      -150.0,
+      220.0
      ],
      "facing_deg": 270.0
     }
@@ -27010,6 +27010,332 @@
     }
    ]
   }
- }
+ },
+  {
+   "name": "infantaria_v3_tipos",
+   "about": "(01/11, a 3ª volta da infantaria: Tools/soldier_outfit.py) Os 9 tipos do soldado novo lado a lado, todos do MESMO jogador (a facção e o tipo têm de ler pela forma): da esquerda pra direita USA (Ranger, Ranger, Missile Defender), China (Red Guard, Red Guard, Tank Hunter), GLA (Worker, Rebel, RPG) e Rússia (Motostrelok, Motostrelok, Kornet). Parados de frente (16 m) até 3 s, andam 6 m, de costas aos 6 s (a carga das costas), e aos 10 s a câmera do jogo (67 m). game.ps1 view -Folder X -Scenario infantaria_v3_tipos -Record",
+   "map": "World_TestSalt2",
+   "seed": 52,
+   "fog": "off",
+   "hud": false,
+   "starts_m": [
+    [
+     -340.0,
+     100.0
+    ],
+    [
+     -260.0,
+     140.0
+    ]
+   ],
+   "units_per_player": [],
+   "units": [
+    {
+     "player": 0,
+     "key": "usa_ranger_v3",
+     "at_m": [
+      -310.5,
+      95.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "usa_ranger_v3",
+     "at_m": [
+      -310.5,
+      98.0
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "usa_javelin_v3",
+     "at_m": [
+      -310.5,
+      100.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "china_rifleman_v3",
+     "at_m": [
+      -303.5,
+      95.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "china_rifleman_v3",
+     "at_m": [
+      -303.5,
+      98.0
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "china_tank_hunter_v3",
+     "at_m": [
+      -303.5,
+      100.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "gla_worker_v3",
+     "at_m": [
+      -296.5,
+      95.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "gla_rebel_v3",
+     "at_m": [
+      -296.5,
+      98.0
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "gla_rpg_v3",
+     "at_m": [
+      -296.5,
+      100.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "russia_motostrelok_v3",
+     "at_m": [
+      -289.5,
+      95.5
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "russia_motostrelok_v3",
+     "at_m": [
+      -289.5,
+      98.0
+     ],
+     "facing_deg": 90.0
+    },
+    {
+     "player": 0,
+     "key": "russia_kornet_v3",
+     "at_m": [
+      -289.5,
+      100.5
+     ],
+     "facing_deg": 90.0
+    }
+   ],
+   "orders": [
+    {
+     "t_s": 3.0,
+     "player": 0,
+     "type": "move",
+     "unit": 0,
+     "to_m": [
+      -310.5,
+      101.5
+     ]
+    },
+    {
+     "t_s": 3.0,
+     "player": 0,
+     "type": "move",
+     "unit": 1,
+     "to_m": [
+      -310.5,
+      104.0
+     ]
+    },
+    {
+     "t_s": 3.0,
+     "player": 0,
+     "type": "move",
+     "unit": 2,
+     "to_m": [
+      -310.5,
+      106.5
+     ]
+    },
+    {
+     "t_s": 3.2,
+     "player": 0,
+     "type": "move",
+     "unit": 3,
+     "to_m": [
+      -303.5,
+      101.5
+     ]
+    },
+    {
+     "t_s": 3.2,
+     "player": 0,
+     "type": "move",
+     "unit": 4,
+     "to_m": [
+      -303.5,
+      104.0
+     ]
+    },
+    {
+     "t_s": 3.2,
+     "player": 0,
+     "type": "move",
+     "unit": 5,
+     "to_m": [
+      -303.5,
+      106.5
+     ]
+    },
+    {
+     "t_s": 3.4,
+     "player": 0,
+     "type": "move",
+     "unit": 6,
+     "to_m": [
+      -296.5,
+      101.5
+     ]
+    },
+    {
+     "t_s": 3.4,
+     "player": 0,
+     "type": "move",
+     "unit": 7,
+     "to_m": [
+      -296.5,
+      104.0
+     ]
+    },
+    {
+     "t_s": 3.4,
+     "player": 0,
+     "type": "move",
+     "unit": 8,
+     "to_m": [
+      -296.5,
+      106.5
+     ]
+    },
+    {
+     "t_s": 3.6,
+     "player": 0,
+     "type": "move",
+     "unit": 9,
+     "to_m": [
+      -289.5,
+      101.5
+     ]
+    },
+    {
+     "t_s": 3.6,
+     "player": 0,
+     "type": "move",
+     "unit": 10,
+     "to_m": [
+      -289.5,
+      104.0
+     ]
+    },
+    {
+     "t_s": 3.6,
+     "player": 0,
+     "type": "move",
+     "unit": 11,
+     "to_m": [
+      -289.5,
+      106.5
+     ]
+    }
+   ],
+   "camera": {
+    "focus_m": [
+     -300.0,
+     98.0
+    ],
+    "distance_m": 16,
+    "yaw_deg": 110.0,
+    "pitch_deg": 26.0
+   },
+   "shots_s": [],
+   "end_s": 14.0,
+   "lab": {
+    "panel": false,
+    "tab": "spawn",
+    "ground_base": "map",
+    "ops": [
+     {
+      "t_s": 0.0,
+      "op": "camera",
+      "focus_m": [
+       -300.0,
+       98.0
+      ],
+      "distance_m": 16,
+      "yaw_deg": 110.0,
+      "pitch_deg": 26.0
+     },
+     {
+      "t_s": 0.0,
+      "op": "sun",
+      "elevation": 24,
+      "azimuth": 45
+     },
+     {
+      "t_s": 2.0,
+      "op": "shot",
+      "name": "frente",
+      "after_real_s": 0.0
+     },
+     {
+      "t_s": 6.0,
+      "op": "camera",
+      "focus_m": [
+       -300.0,
+       104.0
+      ],
+      "distance_m": 16,
+      "yaw_deg": 290.0,
+      "pitch_deg": 30.0
+     },
+     {
+      "t_s": 8.0,
+      "op": "shot",
+      "name": "costas",
+      "after_real_s": 0.0
+     },
+     {
+      "t_s": 10.0,
+      "op": "camera",
+      "focus_m": [
+       -300.0,
+       103.0
+      ],
+      "distance_m": 67,
+      "yaw_deg": 110.0,
+      "pitch_deg": 40.0
+     },
+     {
+      "t_s": 12.5,
+      "op": "shot",
+      "name": "jogo",
+      "after_real_s": 0.0
+     }
+    ]
+   }
+  }
  ]
 }

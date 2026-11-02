@@ -49,6 +49,25 @@ KITS = {
     # (01/11) a Rússia: a EMR pixelada, o colete 6B45 (placas grandes, gola alta, virilha, ombreiras), o 6B47 com os óculos, a balaclava
     ('russia', 'rifle'): dict(shirt_off=0.012, sleeve_off=0.016, camo='emr', gear='russia', head='6b47', balaclava=True),
     ('gla', 'rifle'): dict(shirt_off=0.018, sleeve_off=0.022, camo=False, gear='gla', head='wrap', pants_off=0.030, bare_hands=True),
+    # (01/11) os tipos: cada um com o seu jeito (ele: "os tipos de infantaria, cada um tem seu jeito"). A carga das costas é o que a
+    # câmera do RTS lê primeiro (as costas e os ombros); o lançador vai no ombro direito pelo jogo, então a carga fica pro lado esquerdo
+    # o Missile Defender: o soldado americano com a mochila e o tubo do Javelin reserva de pé nas costas
+    ('usa', 'at'): dict(shirt_off=0.010, sleeve_off=0.015, camo=True, gear='usa', head='ach', back='javelin'),
+    # o Tank Hunter: sem o casacão (a jaqueta e o colete de lona tipo 56 no peito), o capacete de aço com os óculos, os 3 foguetes
+    ('china', 'at'): dict(shirt_off=0.017, sleeve_off=0.021, camo=False, gear='china_at', head='gk80', back='rockets3'),
+    # o trabalhador: a túnica cinza-azulada, o turbante claro, a barba cheia (de volume), o saco e a pá nas costas, sem colete
+    ('gla', 'worker'): dict(shirt_off=0.020, sleeve_off=0.024, camo=False, gear='gla', head='turban', pants_off=0.032, bare_hands=True,
+                            beard=True, back='sack', waistcoat=False, bandolier=False,
+                            col=dict(cloth=(0.135, 0.145, 0.15), spot1=(0.12, 0.13, 0.135), spot2=(0.155, 0.16, 0.16),
+                                     pants=(0.17, 0.15, 0.115), turban=(0.38, 0.355, 0.30), beard=(0.03, 0.024, 0.02),
+                                     sash=(0.16, 0.12, 0.08))),
+    # o RPG: o lenço escuro, a túnica e a calça escuras, a bolsa de lona com as 3 ogivas e a alça cruzada no peito
+    ('gla', 'at'): dict(shirt_off=0.018, sleeve_off=0.022, camo=False, gear='gla', head='wrap', pants_off=0.030, bare_hands=True,
+                        back='warheads3', bandolier=False,
+                        col=dict(cloth=(0.16, 0.15, 0.12), spot1=(0.14, 0.13, 0.105), spot2=(0.18, 0.17, 0.135),
+                                 pants=(0.095, 0.095, 0.085), wrap=(0.07, 0.065, 0.058), vest=(0.10, 0.08, 0.055))),
+    # o Kornet: o russo com a armação nas costas, o tubo do míssil e o tripé dobrado
+    ('russia', 'at'): dict(shirt_off=0.012, sleeve_off=0.016, camo='emr', gear='russia', head='6b47', balaclava=True, back='kornet'),
 }
 K = KITS.get((FACTION, ROLE), KITS[('usa', 'rifle')])
 
@@ -333,6 +352,10 @@ COL = {
 }
 
 
+if K.get('col'):
+    COL[FACTION] = dict(COL[FACTION], **K['col'])
+
+
 def camo(p, k=9.0):
     x, y, z = p[:, 0] * k, p[:, 1] * k, p[:, 2] * k
     a = np.sin(x * 1.3 + np.sin(z * 0.7) * 2.0) + np.sin(y * 1.1 + z * 0.9 + 1.7) + 0.6 * np.sin(z * 2.3 + x * 0.8)
@@ -434,7 +457,7 @@ def check_sheet(tag):
     shots = []
     cz = float((P0[:, 2].min() + P0[:, 2].max()) / 2.0)
     views = [('frente', (0.0, -4.2, cz), cz, 50, 480, 720), ('lado', (4.2, 0.0, cz), cz, 50, 480, 720),
-             ('cima', (0.0, -2.0, cz + 4.0), cz, 50, 480, 720),
+             ('cima', (0.0, -2.0, cz + 4.0), cz, 50, 480, 720), ('costas', (1.2, 4.0, cz + 0.6), cz, 50, 480, 720),
              ('rosto', (HEAD_C[0] + 0.18, -0.75, Z_EYE + 0.02), Z_EYE - 0.01, 85, 600, 600),
              ('perfil', (HEAD_C[0] + 0.75, HEAD_C[1] - 0.05, Z_EYE + 0.02), Z_EYE - 0.01, 85, 600, 600)]
     for tag2, loc, tz, lens, rx, ry in views:
@@ -450,6 +473,7 @@ def check_sheet(tag):
     log('conferência', shots)
 
 
+FACEINFO = {}
 MEAN = r'C:/Program Files/Epic Games/UE_5.8/Engine/Plugins/MetaHuman/MetaHumanAnimator/Content/MeshFitting/Template/mean.obj'
 
 
@@ -583,6 +607,8 @@ def human_head():
     hair &= ~np.isin(np.arange(len(W)), ids('crv_ear_outer_helix_l'))
     hair &= ~np.isin(np.arange(len(W)), ids('crv_ear_outer_helix_l') + ids('ear_outer_helix_r'))
     col[hair] = np.array(C['hair']) * 1.15
+    FACEINFO.update(chin=float(chin * k + (HEAD_TOP - top * k)), lip_top=float(lu[:, 2].max()), lip_bot=mz, mx=float(lips[:, 0].mean()),
+                    mw=float(np.ptp(lips[:, 0])), ear_y=ear_y, ear_top=ear_top, ear_bot=ear_bot, brow=brow_top)
     if K.get('balaclava'):
         bl = np.concatenate([curve('crv_brow_lower_l'), curve('crv_brow_lower_r')])
         el = np.concatenate([curve('crv_eyelid_lower_l'), curve('crv_eyelid_lower_r')])
@@ -1322,28 +1348,29 @@ def gear_gla():
     s3 = bh('spine_03')
     cx = float(s3[0])
     tunic_skirt('tunic', Z_PELVIS + 0.06, Z_KNEE + 0.02, 0.06, Z_PELVIS - 0.10)
-    # o colete civil aberto (o "waistcoat" de lã escura): a casca do tronco a 1,3 cm, aberta na frente, do peito à cintura
-    zlo, zhi = float(Z_PELVIS + 0.06), float(bh('neck_01')[2] - 0.07)
-    bm = bmesh.new()
-    grid = []
-    seg, rings = 64, 12
-    for j in range(rings + 1):
-        z = zlo + (zhi - zlo) * j / rings
-        row = []
-        for k in range(seg + 1):
-            a = math.radians(-90 + 9) + math.radians(360 - 18) * k / seg
-            o = Vector((cx + 0.6 * math.cos(a), float(s3[1]) + 0.6 * math.sin(a), z))
-            h, n = hit(o, Vector((cx, float(s3[1]), z)) - o, 0.8, BVH_T)
-            row.append(bm.verts.new(h + n * 0.013 if h is not None else o))
-        grid.append(row)
-    for j in range(rings):
-        for k in range(seg):
-            bm.faces.new((grid[j][k], grid[j][k + 1], grid[j + 1][k + 1], grid[j + 1][k]))
-    vest = mk('Waistcoat', bm)
-    modapply(vest, 'SOLIDIFY', thickness=0.008, offset=1.0)
-    modapply(vest, 'BEVEL', width=0.003, segments=2, limit_method='ANGLE')
-    modapply(vest, 'SUBSURF', levels=1)
-    GEAR.append((vest, C['vest'], None))
+    if K.get('waistcoat', True):
+        # o colete civil aberto (o "waistcoat" de lã escura): a casca do tronco a 1,3 cm, aberta na frente, do peito à cintura
+        zlo, zhi = float(Z_PELVIS + 0.06), float(bh('neck_01')[2] - 0.07)
+        bm = bmesh.new()
+        grid = []
+        seg, rings = 64, 12
+        for j in range(rings + 1):
+            z = zlo + (zhi - zlo) * j / rings
+            row = []
+            for k in range(seg + 1):
+                a = math.radians(-90 + 9) + math.radians(360 - 18) * k / seg
+                o = Vector((cx + 0.6 * math.cos(a), float(s3[1]) + 0.6 * math.sin(a), z))
+                h, n = hit(o, Vector((cx, float(s3[1]), z)) - o, 0.8, BVH_T)
+                row.append(bm.verts.new(h + n * 0.013 if h is not None else o))
+            grid.append(row)
+        for j in range(rings):
+            for k in range(seg):
+                bm.faces.new((grid[j][k], grid[j][k + 1], grid[j + 1][k + 1], grid[j + 1][k]))
+        vest = mk('Waistcoat', bm)
+        modapply(vest, 'SOLIDIFY', thickness=0.008, offset=1.0)
+        modapply(vest, 'BEVEL', width=0.003, segments=2, limit_method='ANGLE')
+        modapply(vest, 'SUBSURF', levels=1)
+        GEAR.append((vest, C['vest'], None))
     # a faixa de pano na cintura (o nó do lado)
     zb = float(Z_PELVIS + 0.07)
     bm = bmesh.new()
@@ -1368,29 +1395,30 @@ def gear_gla():
     if h is not None:
         GEAR.append((rbox('SashKnot', (0.03, 0.06, 0.05), (h.x + 0.025, h.y, zb), 0.015, 3), C['sash'], None))
         GEAR.append((rbox('SashTail', (0.012, 0.05, 0.16), (h.x + 0.03, h.y + 0.01, zb - 0.1), 0.006, 2), C['sash'], None))
-    # a bandoleira de couro (do ombro esquerdo ao quadril direito) com as 3 bolsas de carregador de AK
-    ul = bh('upperarm_l')
-    tr = bh('thigh_r')
-    x0, x1 = cx + 0.75 * (ul[0] - cx), cx + 1.6 * (tr[0] - cx)
-    pts = []
-    top = hit((x0, float(s3[1]), float(bh('neck_01')[2]) + 0.4), (0.0, 0.0, -1.0), 0.8, BVH_T)[0]
-    if top is not None:
-        pts.append(top + Vector((0.0, 0.0, 0.025)))
-    for i in range(16):
-        t = i / 15.0
-        x = x0 * (1.0 - t) + x1 * t
-        z = (float(bh('neck_01')[2]) - 0.03) * (1.0 - t) + (Z_PELVIS + 0.02) * t
-        h, n = hit((x, -0.8, z), (0.0, 1.0, 0.0), 1.6, BVH_T)
-        if h is not None:
-            pts.append(h + Vector((0.0, -0.028, 0.0)))
-    if len(pts) > 5:
-        st = strap_path(pts, 0.05, 0.008, 'Bandolier')
-        GEAR.append((st, C['leather'], None))
-        for k, i in enumerate((6, 9, 12)):
-            if i < len(pts):
-                p_ = pts[i]
-                GEAR.append((rbox('MagPouch_%d' % k, (0.075, 0.035, 0.09), (p_.x, p_.y - 0.02, p_.z), 0.008, 3), C['leather'], None))
-                GEAR.append((rbox('MagTop_%d' % k, (0.035, 0.022, 0.03), (p_.x, p_.y - 0.02, p_.z + 0.055), 0.004, 2), C['mag'], None))
+    if K.get('bandolier', True):
+        # a bandoleira de couro (do ombro esquerdo ao quadril direito) com as 3 bolsas de carregador de AK
+        ul = bh('upperarm_l')
+        tr = bh('thigh_r')
+        x0, x1 = cx + 0.75 * (ul[0] - cx), cx + 1.6 * (tr[0] - cx)
+        pts = []
+        top = hit((x0, float(s3[1]), float(bh('neck_01')[2]) + 0.4), (0.0, 0.0, -1.0), 0.8, BVH_T)[0]
+        if top is not None:
+            pts.append(top + Vector((0.0, 0.0, 0.025)))
+        for i in range(16):
+            t = i / 15.0
+            x = x0 * (1.0 - t) + x1 * t
+            z = (float(bh('neck_01')[2]) - 0.03) * (1.0 - t) + (Z_PELVIS + 0.02) * t
+            h, n = hit((x, -0.8, z), (0.0, 1.0, 0.0), 1.6, BVH_T)
+            if h is not None:
+                pts.append(h + Vector((0.0, -0.028, 0.0)))
+        if len(pts) > 5:
+            st = strap_path(pts, 0.05, 0.008, 'Bandolier')
+            GEAR.append((st, C['leather'], None))
+            for k, i in enumerate((6, 9, 12)):
+                if i < len(pts):
+                    p_ = pts[i]
+                    GEAR.append((rbox('MagPouch_%d' % k, (0.075, 0.035, 0.09), (p_.x, p_.y - 0.02, p_.z), 0.008, 3), C['leather'], None))
+                    GEAR.append((rbox('MagTop_%d' % k, (0.035, 0.022, 0.03), (p_.x, p_.y - 0.02, p_.z + 0.055), 0.004, 2), C['mag'], None))
     log('equipamento GLA: %d peças' % len(GEAR))
 
 
@@ -1436,7 +1464,7 @@ def head_wrap():
         p = v.co
         ang = math.atan2(p.y - c[1], p.x - c[0])
         r = Vector((p.x - c[0], p.y - c[1], p.z - (top - 0.09))).normalized()
-        wrinkle = 0.004 * math.sin((p.z - 0.25 * ang * 0.05) * 160.0 + ang * 2.0)
+        wrinkle = 0.008 * math.sin((p.z - 0.25 * ang * 0.05) * 95.0 + ang * 2.0)   # as voltas do pano (a cada ~6 cm, na diagonal)
         bulk = 0.02 * max(0.0, (p.z - (ez + 0.03)) / 0.12)
         v.co = p + r * (wrinkle + bulk)
     bm.to_mesh(w.data)
@@ -1537,7 +1565,8 @@ def gear_russia():
         GEAR.append((rbox('Radio', (0.05, 0.08, 0.15), (h.x - 0.045, float(s3[1]) + 0.02, zc - 0.03), 0.01, 3), C['armor'], None))
         GEAR.append((rbox('Antenna', (0.007, 0.007, 0.36), (h.x - 0.045, float(s3[1]) + 0.04, zc + 0.2), 0.003, 1), C['dark'], None))
     ybk = yb + 0.036 + 0.02 - 0.26 * (1.0 - math.cos(0.0))
-    GEAR.append((rbox('Pack', (0.26, 0.14, 0.32), (cx, ybk + 0.075, zc - 0.03), 0.035, 3), C['armor'], None))
+    if not K.get('back'):
+        GEAR.append((rbox('Pack', (0.26, 0.14, 0.32), (cx, ybk + 0.075, zc - 0.03), 0.035, 3), C['armor'], None))
     log('equipamento Rússia: %d peças' % len(GEAR))
 
 
@@ -1629,6 +1658,9 @@ def weld_gear():
             bpy.context.view_layer.objects.active = ob
             bpy.ops.object.datalayout_transfer(modifier='dt')
             bpy.ops.object.modifier_apply(modifier='dt')
+            tb = ob.vertex_groups.get('TeamBand')
+            if tb is not None:
+                ob.vertex_groups.remove(tb)
         else:
             g = ob.vertex_groups.new(name=bone)
             g.add([v.index for v in ob.data.vertices], 1.0, 'REPLACE')
@@ -1638,8 +1670,15 @@ def weld_gear():
                 cc = emr_color(tuple(v.co), COL['russia'])
             elif col == 'shemagh':
                 # o shemagh: o pano claro com a grade escura (as faixas de ~1 cm a cada 3 cm, nos dois sentidos, e a borda mais escura)
-                g = (abs(math.sin(v.co.x * 105.0 + v.co.z * 30.0)) < 0.22) or (abs(math.sin(v.co.z * 105.0 - v.co.x * 20.0)) < 0.22)
-                cc = (0.20, 0.10, 0.08) if g else COL['gla']['wrap']
+                g = (abs(math.sin(v.co.x * 230.0 + v.co.y * 60.0)) < 0.16) or (abs(math.sin(v.co.z * 230.0 - v.co.y * 40.0)) < 0.16)
+                base = np.array(COL['gla']['wrap'])
+                cc = tuple(base * 0.55 + np.array((0.13, 0.10, 0.08)) * 0.45) if g else tuple(base)
+            elif col == 'beard':
+                # os fios: o escuro com os mais claros e alguns grisalhos (a cor varia por fio, não a forma)
+                f = 0.5 + 0.5 * math.sin(v.co.x * 900.0 + 3.0 * math.sin(v.co.z * 60.0))
+                g = 0.5 + 0.5 * math.sin(v.co.x * 1500.0 - v.co.z * 210.0)
+                base = np.array(COL[FACTION]['beard']) * (0.75 + 0.6 * f)
+                cc = tuple(base * (1.0 - 0.25 * g * g) + np.array((0.16, 0.15, 0.14)) * 0.25 * g * g)
             elif col == 'tunic':
                 wear = 0.5 + 0.5 * math.sin(v.co.x * 23.0 + math.sin(v.co.z * 17.0) * 2.0) * math.sin(v.co.y * 19.0 + v.co.z * 11.0)
                 dust = max(0.0, min(1.0, (Z_KNEE + 0.15 - v.co.z) / 0.3))
@@ -1650,17 +1689,543 @@ def weld_gear():
             ca.data[v.index].color = (cc[0], cc[1], cc[2], 1.0)
         ob.data.materials.clear()
 
+def cyl(name, p0, p1, r0, r1=None, seg=24, bevel=0.004):
+    """O cilindro (o tubo, a perna do tripé, o cabo) de p0 a p1, com as tampas chanfradas."""
+    p0, p1 = Vector(p0), Vector(p1)
+    d = p1 - p0
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=seg, radius1=r0, radius2=r1 if r1 is not None else r0,
+                          depth=d.length)
+    ob = mk(name, bm)
+    rot = Vector((0.0, 0.0, 1.0)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+    ob.data.transform(Matrix.Translation((p0 + p1) / 2.0) @ rot)
+    if bevel > 0:
+        modapply(ob, 'BEVEL', width=bevel, segments=2, limit_method='ANGLE')
+    return ob
+
+
+def lathe(name, prof, p0, d, seg=20, rk=1.0):
+    """O sólido de revolução: o perfil [(raio, distância no eixo)] girado em volta do eixo p0 + d·t (a ogiva, o foguete); 'rk' engrossa."""
+    bm = bmesh.new()
+    rings = []
+    for r, t in prof:
+        r *= rk
+        rings.append([bm.verts.new((r * math.cos(2.0 * math.pi * k / seg), r * math.sin(2.0 * math.pi * k / seg), t)) for k in range(seg)])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for k in range(seg):
+            bm.faces.new((a[k], a[(k + 1) % seg], b[(k + 1) % seg], b[k]))
+    bm.faces.new(rings[0][::-1])
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = mk(name, bm)
+    rot = Vector((0.0, 0.0, 1.0)).rotation_difference(Vector(d).normalized()).to_matrix().to_4x4()
+    ob.data.transform(Matrix.Translation(Vector(p0)) @ rot)
+    return ob
+
+
+# o PG-7 (a ogiva do RPG, a mesma família no Type 69 chinês): o motor fino, a saia, o cone até o bojo de 8,5 cm e o nariz com a espoleta
+PG7 = [(0.018, 0.0), (0.02, 0.01), (0.02, 0.27), (0.024, 0.29), (0.026, 0.31), (0.04, 0.37), (0.0445, 0.41), (0.0445, 0.45),
+       (0.038, 0.51), (0.026, 0.57), (0.014, 0.61), (0.011, 0.645), (0.006, 0.66)]
+
+
+def soft(ob, amp, fq=37.0):
+    """O pano cheio (o saco, a bolsa de lona): o volume irregular por cima da caixa arredondada."""
+    for v in ob.data.vertices:
+        q = v.co
+        v.co = q + Vector((math.sin(q.z * fq + q.x * 13.0), math.sin(q.x * fq * 0.8 + q.y * 11.0),
+                                                   math.sin(q.y * fq * 0.9 + q.z * 7.0))) * amp
+
+
+def chest_strap(name, width, thick, col, flip=False):
+    """A alça cruzada no peito (do ombro esquerdo ao quadril direito; 'flip' o contrário), encostada no pano."""
+    s3 = bh('spine_03')
+    cx = float(s3[0])
+    ua = bh('upperarm_r' if flip else 'upperarm_l')
+    th = bh('thigh_l' if flip else 'thigh_r')
+    x0, x1 = cx + 0.75 * (ua[0] - cx), cx + 1.6 * (th[0] - cx)
+    pts = []
+    top = hit((x0, float(s3[1]), float(bh('neck_01')[2]) + 0.4), (0.0, 0.0, -1.0), 0.8, BVH_T)[0]
+    if top is not None:
+        pts.append(top + Vector((0.0, 0.0, 0.02)))
+    for i in range(16):
+        t = i / 15.0
+        x = x0 * (1.0 - t) + x1 * t
+        z = (float(bh('neck_01')[2]) - 0.03) * (1.0 - t) + (Z_PELVIS + 0.02) * t
+        h, n = hit((x, -0.8, z), (0.0, 1.0, 0.0), 1.6, BVH_T)
+        if h is not None:
+            pts.append(h + Vector((0.0, -0.022, 0.0)))
+    if len(pts) > 5:
+        GEAR.append((strap_path(pts, width, thick, name), col, None))
+    return pts
+
+
+def back_load(kind):
+    """(01/11) A carga das costas de cada tipo: é o que a câmera do RTS lê primeiro. Presa no osso spine_05 (a armação não dobra com o
+    corpo), do lado esquerdo das costas (o lançador do jogo vai no ombro direito e passa 40% pra trás)."""
+    s3 = bh('spine_03')
+    cx = float(s3[0])
+    zc = float(s3[2] + 0.10)
+    yb = surface_y(cx, zc, 1.0)
+    RS = 1.0 if bh('upperarm_r')[0] > cx else -1.0      # o lado direito do soldado
+    LS = -RS
+    B = 'spine_05'
+    if kind == 'javelin':
+        C = dict(pack=(0.17, 0.135, 0.085), pack_d=(0.13, 0.10, 0.065), tube=(0.14, 0.135, 0.09), cap=(0.06, 0.06, 0.052),
+                 strap=(0.10, 0.08, 0.05))
+        yp = yb + 0.03 + 0.075
+        GEAR.append((rbox('Pack', (0.29, 0.15, 0.36), (cx, yp, zc - 0.05), 0.04, 3), C['pack'], B))
+        GEAR.append((rbox('PackLid', (0.26, 0.13, 0.07), (cx, yp + 0.005, zc + 0.15), 0.025, 3), C['pack_d'], B))
+        GEAR.append((rbox('PackPocket', (0.20, 0.05, 0.16), (cx, yp + 0.095, zc - 0.10), 0.018, 3), C['pack'], B))
+        # o tubo do míssil reserva (o CLU fica com o atirador): 1,2 m, Ø 14 cm, as tampas de 16 cm, de pé na mochila e inclinado pra
+        # fora pelo lado esquerdo (o topo passa por cima do ombro: a marca do tipo vista de cima)
+        yt = yp + 0.075 + 0.072
+        p0 = Vector((cx + LS * 0.05, yt, Z_PELVIS - 0.04))
+        p1 = Vector((cx + LS * 0.15, yt + 0.035, Z_PELVIS + 1.16))
+        d = (p1 - p0).normalized()
+        GEAR.append((cyl('JavTube', p0, p1, 0.07, seg=28), C['tube'], B))
+        for t0, t1 in ((0.0, 0.09), (1.11, 1.2)):
+            GEAR.append((cyl('JavCap_%d' % int(t0 * 10), p0 + d * t0, p0 + d * t1, 0.081, seg=28, bevel=0.008), C['cap'], B))
+        for t in (0.38, 0.62):
+            GEAR.append((cyl('JavStrap_%d' % int(t * 100), p0 + d * (t * 1.2 - 0.015), p0 + d * (t * 1.2 + 0.015), 0.074, seg=28, bevel=0.002),
+                         C['strap'], B))
+    elif kind == 'rockets3':
+        C = dict(canvas=(0.15, 0.14, 0.085), canvas_d=(0.11, 0.10, 0.06), war=(0.085, 0.10, 0.055), motor=(0.05, 0.055, 0.04))
+        yp = yb + 0.025 + 0.06
+        GEAR.append((rbox('RocketPack', (0.30, 0.12, 0.30), (cx, yp, zc - 0.07), 0.03, 3), C['canvas'], B))
+        # os 3 tubos de lona (um por foguete) com os foguetes de pé, as ogivas por cima da mochila e atrás da cabeça, em leque
+        # (a 1ª volta abria ±9°: de cima viravam chifres) quase em pé, encostados, o bojo 25% mais grosso (o ícone lê a 67 m)
+        for k, ang in ((-1, -4.0), (0, 0.0), (1, 4.0)):
+            a = math.radians(ang)
+            base = Vector((cx + k * 0.088 + LS * 0.01, yp + 0.065, zc - 0.25))
+            d = Vector((math.sin(a), 0.10, math.cos(a))).normalized()
+            GEAR.append((cyl('RocketSleeve_%d' % k, base, base + d * 0.30, 0.05, seg=20, bevel=0.006), C['canvas_d'], B))
+            GEAR.append((lathe('Rocket_%d' % k, PG7, base + d * 0.02, d, rk=1.25), C['war'], B))
+    elif kind == 'warheads3':
+        C = dict(canvas=(0.19, 0.16, 0.10), strap=(0.10, 0.075, 0.05), war=(0.09, 0.10, 0.06))
+        yp = yb + 0.03 + 0.07
+        bag = rbox('WarBag', (0.26, 0.13, 0.30), (cx + LS * 0.02, yp, zc - 0.10), 0.055, 4)
+        modapply(bag, 'SUBSURF', levels=1)
+        soft(bag, 0.006)
+        GEAR.append((bag, C['canvas'], B))
+        GEAR.append((rbox('WarBagFlap', (0.24, 0.12, 0.05), (cx + LS * 0.02, yp + 0.005, zc + 0.04), 0.022, 3), C['canvas'], B))
+        # as ogivas saindo da boca da bolsa, cada uma num ângulo (o rebelde enfia como dá)
+        for k, (ax, ay) in enumerate(((-6.0, 5.0), (1.0, -3.0), (7.0, 6.0))):
+            d = Vector((math.sin(math.radians(ax)), math.sin(math.radians(ay)), 1.0)).normalized()
+            base = Vector((cx + LS * 0.02 + (k - 1) * 0.07, yp + (k - 1) * 0.01, zc - 0.32))
+            GEAR.append((lathe('Warhead_%d' % k, PG7, base, d, rk=1.2), C['war'], B))
+        chest_strap('BagStrap', 0.04, 0.007, C['strap'])
+    elif kind == 'sack':
+        C = dict(sack=(0.34, 0.29, 0.20), rope=(0.20, 0.16, 0.10), wood=(0.20, 0.13, 0.07), blade=(0.10, 0.10, 0.095))
+        yp = yb + 0.03 + 0.10
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=20, radius=1.0)
+        for v in bm.verts:
+            # o saco de grão cheio: mais largo embaixo (o peso), achatado contra as costas
+            sz = 0.21 if v.co.z > 0 else 0.25
+            v.co = Vector((v.co.x * (0.17 + 0.03 * max(0.0, -v.co.z)), v.co.y * 0.11, v.co.z * sz))
+        sk = mk('Sack', bm)
+        sk.data.transform(Matrix.Translation(Vector((cx + LS * 0.02, yp, zc - 0.10))))
+        soft(sk, 0.008, 29.0)
+        modapply(sk, 'SUBSURF', levels=1)
+        GEAR.append((sk, C['sack'], B))
+        GEAR.append((cyl('SackNeck', (cx + LS * 0.02, yp, zc + 0.09), (cx + LS * 0.02, yp + 0.01, zc + 0.16), 0.035, 0.05, seg=16, bevel=0.01),
+                     C['sack'], B))
+        GEAR.append((cyl('SackTie', (cx + LS * 0.02, yp, zc + 0.095), (cx + LS * 0.02, yp, zc + 0.115), 0.04, seg=16, bevel=0.003), C['rope'], B))
+        # as cordas pelos ombros (o saco amarrado como mochila)
+        s5 = bh('spine_05')
+        for sd in (-1.0, 1.0):
+            x = cx + sd * 0.08
+            pts = []
+            for ang in np.linspace(-80, 75, 11):
+                a = math.radians(ang)
+                o = Vector((x, float(s5[1]) + math.sin(a) * 0.5, float(s5[2]) - 0.02 + math.cos(a) * 0.5))
+                h, n = hit(o, Vector((x, float(s5[1]), float(s5[2]) - 0.02)) - o, 0.7, BVH_T)
+                if h is not None:
+                    pts.append(h + n * 0.008)
+            if len(pts) > 4:
+                GEAR.append((strap_path(pts, 0.018, 0.012, 'Rope_%d' % int(sd)), C['rope'], None))
+        # a pá amarrada no saco, na diagonal: o cabo de baixo à direita, a lâmina por cima do ombro esquerdo
+        p0 = Vector((cx + RS * 0.17, yp + 0.12, Z_PELVIS - 0.10))
+        p1 = Vector((cx + LS * 0.14, yp + 0.13, Z_PELVIS + 0.72))
+        d = (p1 - p0).normalized()
+        GEAR.append((cyl('ShovelHandle', p0, p1, 0.016, seg=12, bevel=0.003), C['wood'], B))
+        GEAR.append((cyl('ShovelGrip', p0 - d * 0.10, p0 + d * 0.01, 0.02, seg=12, bevel=0.004), C['wood'], B))
+        rot = Vector((0.0, 0.0, 1.0)).rotation_difference(d).to_matrix()
+        GEAR.append((rbox('ShovelBlade', (0.19, 0.012, 0.24), tuple(p1 + d * 0.11), 0.012, 2, rot=rot), C['blade'], B))
+    elif kind == 'kornet':
+        Cr = COL['russia']
+        C = dict(tlc=(0.065, 0.08, 0.05), cap=(0.035, 0.035, 0.032), frame=Cr['armor'], dark=Cr['dark'])
+        yp = yb + 0.03 + 0.035
+        GEAR.append((rbox('Frame', (0.24, 0.07, 0.44), (cx, yp, zc - 0.08), 0.02, 2), C['frame'], B))
+        # o contêiner do míssil (9M133 no tubo: 1,21 m, Ø 15 cm) de pé do lado esquerdo, com as tampas e as cintas
+        yt = yp + 0.035 + 0.078
+        p0 = Vector((cx + LS * 0.06, yt, Z_PELVIS - 0.05))
+        p1 = Vector((cx + LS * 0.10, yt + 0.02, Z_PELVIS + 1.16))
+        d = (p1 - p0).normalized()
+        GEAR.append((cyl('KornetTLC', p0, p1, 0.076, seg=28), C['tlc'], B))
+        for t0, t1 in ((0.0, 0.07), (1.14, 1.21)):
+            GEAR.append((cyl('KornetCap_%d' % int(t0 * 10), p0 + d * t0, p0 + d * t1, 0.085, seg=28, bevel=0.008), C['cap'], B))
+        for t in (0.35, 0.65):
+            GEAR.append((cyl('KornetBand_%d' % int(t * 100), p0 + d * (t * 1.21 - 0.015), p0 + d * (t * 1.21 + 0.015), 0.08, seg=28, bevel=0.002),
+                         C['dark'], B))
+        # o tripé dobrado (as 3 pernas juntas) e a caixa da mira do lado direito embaixo (longe do lançador no ombro)
+        for k in range(3):
+            a = 2.0 * math.pi * k / 3.0
+            o = Vector((math.cos(a) * 0.018, math.sin(a) * 0.018, 0.0))
+            q0 = Vector((cx + RS * 0.08, yp + 0.06, Z_PELVIS - 0.12)) + o
+            GEAR.append((cyl('TripodLeg_%d' % k, q0, q0 + Vector((0.0, 0.0, 0.62)), 0.012, seg=10, bevel=0.002), C['dark'], B))
+        GEAR.append((rbox('SightBox', (0.15, 0.11, 0.13), (cx + RS * 0.07, yp + 0.09, zc + 0.02), 0.015, 3), C['frame'], B))
+    log('carga das costas: %s' % kind)
+
+
+def turban():
+    """(01/11) O turbante do trabalhador da GLA: o pano enrolado alto (a casca a 3 cm, mais volume em cima, as voltas na diagonal),
+    aberto da testa pra baixo e acima da orelha (o rosto e a barba de fora), a ponta solta caindo atrás."""
+    C = COL.get(FACTION, COL['usa'])
+    F = FACEINFO
+    hv = [o for o in HEADS if o.name == 'HumanHead'][0]
+    HV = np.array([tuple(v.co) for v in hv.data.vertices])
+    top = float(HV[:, 2].max())
+    c = (HV.min(0) + HV.max(0)) / 2.0
+    dg = bpy.context.evaluated_depsgraph_get()
+    T_HEAD = BVHTree.FromObject(hv, dg)
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=72, v_segments=44, radius=0.22)
+    for v in bm.verts:
+        v.co += Vector((c[0], c[1], top - 0.09))
+    w = mk('Turban', bm)
+    sw = w.modifiers.new('sw', 'SHRINKWRAP')
+    sw.target = hv
+    sw.wrap_method = 'NEAREST_SURFACEPOINT'
+    sw.offset = 0.026
+    bpy.ops.object.select_all(action='DESELECT')
+    w.select_set(True)
+    bpy.context.view_layer.objects.active = w
+    bpy.ops.object.modifier_apply(modifier='sw')
+    z_side = F.get('ear_top', top - 0.11) + 0.006
+    z_front = F.get('brow', top - 0.07) + 0.02
+    bm = bmesh.new()
+    bm.from_mesh(w.data)
+
+    def cut_z(v):
+        d = Vector((v.co.x - c[0], v.co.y - c[1], 0.0))
+        fr = max(0.0, -d.y / max(d.length, 1e-6))
+        return z_side + (z_front - z_side) * fr ** 1.5
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < cut_z(v)], context='VERTS')
+    edge = [v for v in bm.verts if v.is_boundary]
+    for v in edge:
+        v.co.z = cut_z(v)
+    for _ in range(3):
+        bmesh.ops.smooth_vert(bm, verts=edge, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    # (a 1ª volta parecia um capacete liso) as voltas do pano: as faixas de ~3 cm (o rolo redondo, o vão fundo entre elas) em duas
+    # famílias inclinadas que se cruzam em X na testa (a de cima sobe pra esquerda, a de baixo pra direita), o volume pros lados (o
+    # turbante é mais largo que alto) e o alto achatado
+    zm = (z_front + top) / 2.0
+    for v in bm.verts:
+        q = v.co
+        dx = (q.x - c[0]) / 0.08
+        fam = 1.0 if q.z > zm + 0.01 * dx else -1.0
+        ph = (q.z + fam * 0.028 * dx) * 105.0
+        roll = 0.011 * abs(math.sin(ph)) ** 0.6
+        hor = Vector((q.x - c[0], q.y - c[1], 0.0))
+        hor = hor.normalized() if hor.length > 1e-6 else Vector((0.0, 0.0, 0.0))
+        # (a 2ª volta: o volume cheio já na borda da testa fazia uma aba de boné) tudo cresce a partir da borda do corte: a borda
+        # encosta na cabeça (a faixa dobrada pra dentro) e o pano engorda nos 4 cm acima dela
+        rise = max(0.0, min(1.0, (q.z - cut_z(v)) / 0.04))
+        side = 0.014 * rise
+        up = Vector((q.x - c[0], q.y - c[1], (q.z - (top - 0.09)) * 0.6)).normalized()
+        flat = -0.012 * max(0.0, (q.z - (top - 0.03)) / 0.03)
+        v.co = q + up * (roll * (0.35 + 0.65 * rise) - 0.006 * (1.0 - rise)) + hor * side + Vector((0.0, 0.0, flat))
+    bm.to_mesh(w.data)
+    bm.free()
+    modapply(w, 'CORRECTIVE_SMOOTH', factor=0.4, iterations=3, smooth_type='LENGTH_WEIGHTED', use_only_smooth=True)
+    modapply(w, 'SOLIDIFY', thickness=0.007, offset=1.0)
+    modapply(w, 'SUBSURF', levels=1)
+    GEAR.append((w, C['turban'], 'head'))
+    # (a ponta solta atrás saía como uma placa reta longe do pescoço: tirada; a espiral das voltas já lê de cima)
+    log('turbante pronto')
+
+
+def beard():
+    """(01/11, ele: "a cor pintada na pele ficou ruim") A barba cheia do trabalhador: volume de pelo, não tinta. A pele do queixo, da
+    mandíbula, do buço e da costeleta copiada da cabeça (com os pesos da cabeça e do pescoço) e afastada pela normal: 1,5 cm no queixo,
+    4 mm nas bordas; a boca aberta; o ruído dos tufos."""
+    C = COL.get(FACTION, COL['usa'])
+    F = FACEINFO
+    hv = [o for o in HEADS if o.name == 'HumanHead'][0]
+    ob = hv.copy()
+    ob.data = hv.data.copy()
+    ob.name = 'Beard'
+    bpy.context.scene.collection.objects.link(ob)
+    for a in list(ob.data.color_attributes):
+        ob.data.color_attributes.remove(a)
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.normal_update()
+
+    HV = np.array([tuple(v.co) for v in hv.data.vertices])
+    y_front = float(HV[:, 1].min())
+
+    def keep(q):
+        dx = abs(q.x - F['mx'])
+        if q.y > F['ear_y'] - 0.018:
+            return False
+        # a linha da bochecha (a 3ª volta: subia até embaixo do olho, uma máscara): do canto da boca sobe pouco pelo lado do rosto e só
+        # perto da orelha vira a costeleta
+        back = min(1.0, max(0.0, (q.y - (y_front + 0.05)) / 0.04))
+        top = F['lip_top'] + 0.014 + 0.008 * min(1.0, max(0.0, (dx - 0.022) / 0.03)) + 0.04 * back ** 1.5   # com o bigode no buço
+        if q.z > top or q.z < F['chin'] - 0.05:
+            return False
+        if dx < F['mw'] * 0.5 + 0.003 and F['lip_bot'] - 0.004 < q.z < F['lip_top'] + 0.002:   # a boca de fora
+            return False
+        return True
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if not keep(v.co)], context='VERTS')
+    bm.normal_update()
+    hop = {v: 0 for v in bm.verts if v.is_boundary}
+    front = list(hop)
+    while front:
+        nxt = []
+        for v in front:
+            for e in v.link_edges:
+                o = e.other_vert(v)
+                if o not in hop:
+                    hop[o] = hop[v] + 1
+                    nxt.append(o)
+        front = nxt
+    for v in bm.verts:
+        dx = abs(v.co.x - F['mx'])
+        chin_w = math.exp(-0.5 * ((v.co.z - F['chin']) / 0.03) ** 2) * math.exp(-0.5 * (dx / 0.04) ** 2)
+        edge = min(1.0, hop.get(v, 14) / 14.0) ** 0.7   # (a 2ª volta: 5 passos = 5 mm, a borda grossa parecia colada)
+        strand = 0.0006 * math.sin(v.co.x * 900.0 + 3.0 * math.sin(v.co.z * 60.0))   # os fios descendo (o sulco fino vertical)
+        v.co = v.co + v.normal * ((0.0035 + 0.009 * chin_w) * edge + strand) + Vector((0.0, 0.0, -0.005 * chin_w))   # o queixo pesa
+    bm.to_mesh(ob.data)
+    bm.free()
+    modapply(ob, 'CORRECTIVE_SMOOTH', factor=0.6, iterations=8, smooth_type='LENGTH_WEIGHTED', use_only_smooth=True)
+    modapply(ob, 'SOLIDIFY', thickness=0.003, offset=-1.0)
+    GEAR.append((ob, 'beard', 'custom'))
+    log('barba pronta: %d vértices' % len(ob.data.vertices))
+
+
+def helmet_gk80():
+    """(01/11) O capacete de aço chinês (o GK80): a casca a 2,1 cm, cortada na sobrancelha e abaixo da metade da orelha, a aba
+    alargada pra fora (a borda que lê de cima), a estrela pequena na frente e os óculos de proteção em cima da aba."""
+    C = COL['china']
+    hv = [o for o in HEADS if o.name == 'HumanHead'][0]
+    HV = np.array([tuple(v.co) for v in hv.data.vertices])
+    top = float(HV[:, 2].max())
+    c = (HV.min(0) + HV.max(0)) / 2.0
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=0.2)
+    for v in bm.verts:
+        v.co += Vector((c[0], c[1], top - 0.09))
+    hel = mk('Helmet', bm)
+    sw = hel.modifiers.new('sw', 'SHRINKWRAP')
+    sw.target = hv
+    sw.wrap_method = 'NEAREST_SURFACEPOINT'
+    sw.offset = 0.021
+    bpy.ops.object.select_all(action='DESELECT')
+    hel.select_set(True)
+    bpy.context.view_layer.objects.active = hel
+    bpy.ops.object.modifier_apply(modifier='sw')
+    modapply(hel, 'CORRECTIVE_SMOOTH', factor=0.9, iterations=10, smooth_type='LENGTH_WEIGHTED', use_only_smooth=True)
+    eyes = [o for o in HEADS if o.name.startswith('Eye_')]
+    ez = float(np.mean([np.mean([v.co.z for v in o.data.vertices]) for o in eyes])) if eyes else top - 0.12
+    bm = bmesh.new()
+    bm.from_mesh(hel.data)
+
+    def cut_z(v):
+        d = Vector((v.co.x - c[0], v.co.y - c[1], 0.0))
+        fr = max(0.0, -d.y / max(d.length, 1e-6))
+        return (top - 0.14) + (ez + 0.04 - (top - 0.14)) * fr ** 1.5
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < cut_z(v)], context='VERTS')
+    edge = [v for v in bm.verts if v.is_boundary]
+    for v in edge:
+        v.co.z = cut_z(v)
+    for _ in range(3):
+        bmesh.ops.smooth_vert(bm, verts=edge, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    # a aba: a borda abre 1,4 cm pra fora e desce 5 mm (o anel logo acima abre a metade: a curva da aba)
+    ring2 = set()
+    for v in edge:
+        for e in v.link_edges:
+            o = e.other_vert(v)
+            if not o.is_boundary:
+                ring2.add(o)
+    for vs, k in ((edge, 1.0), (list(ring2), 0.4)):
+        for v in vs:
+            d = Vector((v.co.x - c[0], v.co.y - c[1], 0.0))
+            if d.length > 1e-6:
+                v.co += d.normalized() * 0.014 * k + Vector((0.0, 0.0, -0.005 * k))
+    bm.to_mesh(hel.data)
+    bm.free()
+    modapply(hel, 'SOLIDIFY', thickness=0.007, offset=1.0)
+    modapply(hel, 'BEVEL', width=0.003, segments=2, limit_method='ANGLE')
+    hel_col = (0.075, 0.095, 0.05)
+    GEAR.append((hel, hel_col, 'head'))
+    dg = bpy.context.evaluated_depsgraph_get()
+    T_HEL = BVHTree.FromObject(hel, dg)
+    # a estrela vermelha pequena na frente (o C&C: a China se lê pela estrela)
+    h, n, _, _ = T_HEL.ray_cast(Vector((c[0], c[1] - 0.5, ez + 0.10)), Vector((0.0, 1.0, 0.0)), 0.8)
+    if h is not None:
+        bm = bmesh.new()
+        pts = []
+        for k in range(10):
+            a = math.pi / 2.0 + k * math.pi / 5.0
+            r = 0.022 if k % 2 == 0 else 0.009
+            pts.append(bm.verts.new((r * math.cos(a), 0.0, r * math.sin(a))))
+        bm.faces.new(pts)
+        st = mk('Star', bm)
+        st.data.transform(Matrix.Translation(h + n * 0.002))
+        modapply(st, 'SOLIDIFY', thickness=0.003, offset=0.0)
+        GEAR.append((st, C['star'], 'head'))
+    # a faixa e os óculos em cima da aba
+    zb = ez + 0.06
+    bm = bmesh.new()
+    grid = []
+    for j in range(2):
+        z = zb - 0.011 + 0.022 * j
+        row = []
+        for k in range(48):
+            a = 2.0 * math.pi * k / 48
+            o = Vector((c[0] + 0.5 * math.cos(a), c[1] + 0.5 * math.sin(a), z + 0.025 * max(0.0, math.sin(a))))
+            hh, nn, _, _ = T_HEL.ray_cast(o, (Vector((c[0], c[1], o.z)) - o).normalized(), 0.8)
+            row.append(bm.verts.new(hh + nn * 0.003 if hh is not None else o))
+        grid.append(row)
+    for k in range(48):
+        bm.faces.new((grid[0][k], grid[0][(k + 1) % 48], grid[1][(k + 1) % 48], grid[1][k]))
+    band = mk('GoggleBand', bm)
+    modapply(band, 'SOLIDIFY', thickness=0.004, offset=1.0)
+    GEAR.append((band, (0.03, 0.03, 0.028), 'head'))
+    h, n, _, _ = T_HEL.ray_cast(Vector((c[0], c[1] - 0.5, zb)), Vector((0.0, 1.0, 0.0)), 0.8)
+    if h is not None:
+        GEAR.append((rbox('GoggleBody', (0.15, 0.03, 0.05), (c[0], h.y - 0.012, zb), 0.012, 3), (0.06, 0.055, 0.04), 'head'))
+        for sd in (-1.0, 1.0):
+            GEAR.append((rbox('GoggleLens_%d' % int(sd), (0.055, 0.012, 0.035), (c[0] + sd * 0.035, h.y - 0.028, zb), 0.008, 2),
+                         (0.03, 0.04, 0.035), 'head'))
+    log('GK80 pronto')
+
+
+def ring_band(name, z, hh, off, thick, col):
+    """A faixa em volta do tronco (o cinto): a grade encolhida no corpo a 'off', com a espessura."""
+    s3 = bh('spine_03')
+    cx = float(s3[0])
+    bm = bmesh.new()
+    grid = []
+    seg = 64
+    for j in range(3):
+        zz = z - hh / 2.0 + hh / 2.0 * j
+        row = []
+        for k in range(seg):
+            a = 2.0 * math.pi * k / seg
+            o = Vector((cx + 0.6 * math.cos(a), float(s3[1]) + 0.6 * math.sin(a), zz))
+            h, n = hit(o, Vector((cx, float(s3[1]), zz)) - o, 0.8, BVH_T)
+            row.append(bm.verts.new(h + n * off if h is not None else o))
+        grid.append(row)
+    for j in range(2):
+        for k in range(seg):
+            bm.faces.new((grid[j][k], grid[j][(k + 1) % seg], grid[j + 1][(k + 1) % seg], grid[j + 1][k]))
+    ob = mk(name, bm)
+    modapply(ob, 'SOLIDIFY', thickness=thick, offset=1.0)
+    GEAR.append((ob, col, None))
+    return ob
+
+
+def gear_china_at():
+    """(01/11) O Tank Hunter: sem o casacão (a jaqueta curta, pra correr com os foguetes), o colete de lona tipo 56 no peito (os 3
+    porta-carregadores altos no meio e os 2 pequenos dos lados, as alças em X nas costas), o cinto de couro com o cantil."""
+    C = COL['china']
+    canvas = (0.15, 0.14, 0.085)
+    canvas_d = (0.115, 0.105, 0.065)
+    s3 = bh('spine_03')
+    s5 = bh('spine_05')
+    cx = float(s3[0])
+    zr = float(s3[2] + 0.02)
+    yf = surface_y(cx, zr, -1.0)
+    rig = panel('ChestRig', (cx, yf - 0.012, zr), 0.32, 0.17, 0.0, 14, 8, 0.2, -1.0, 0.008, 0.003)
+    GEAR.append((rig, canvas, None))
+    yfront = lambda x: yf - 0.012 - 0.004 + 0.2 * (1.0 - math.cos((x - cx) / 0.2))
+    for k in (-1, 0, 1):
+        x = cx + k * 0.062
+        GEAR.append((rbox('RigMag_%d' % k, (0.056, 0.038, 0.15), (x, yfront(x) - 0.02, zr + 0.005), 0.008, 3), canvas, None))
+        GEAR.append((rbox('RigFlap_%d' % k, (0.058, 0.042, 0.02), (x, yfront(x) - 0.022, zr + 0.075), 0.005, 2), canvas_d, None))
+    for sd in (-1.0, 1.0):
+        x = cx + sd * 0.135
+        GEAR.append((rbox('RigSmall_%d' % int(sd), (0.042, 0.034, 0.09), (x, yfront(x) - 0.017, zr - 0.02), 0.007, 3), canvas, None))
+    # as alças: por cima de cada ombro e o X nas costas (do ombro ao lado oposto da cintura)
+    for sd in (-1.0, 1.0):
+        x = cx + sd * 0.07
+        pts = []
+        for ang in np.linspace(-62, 70, 11):
+            a = math.radians(ang)
+            o = Vector((x, float(s5[1]) + math.sin(a) * 0.5, float(s5[2]) - 0.02 + math.cos(a) * 0.5))
+            h, n = hit(o, Vector((x, float(s5[1]), float(s5[2]) - 0.02)) - o, 0.7, BVH_T)
+            if h is not None:
+                pts.append(h + n * 0.006)
+        bpts = []
+        for i in range(10):
+            t = i / 9.0
+            xx = (cx + sd * 0.08) * (1.0 - t) + (cx - sd * 0.15) * t
+            zz = (float(s5[2]) - 0.06) * (1.0 - t) + zr * t
+            h, n = hit((xx, 0.8, zz), (0.0, -1.0, 0.0), 1.6, BVH_T)
+            if h is not None:
+                bpts.append(h + n * 0.006)
+        for nm, pp in (('RigShoulder_%d' % int(sd), pts), ('RigBack_%d' % int(sd), bpts)):
+            if len(pp) > 4:
+                GEAR.append((strap_path(pp, 0.032, 0.005, nm), canvas_d, None))
+    zb = float(Z_PELVIS + 0.09)
+    ring_band('Belt', zb, 0.05, 0.01, 0.008, C['leather'])
+    hb, nb = hit((cx, -0.8, zb), (0.0, 1.0, 0.0), 1.6, BVH_T)
+    yb_ = hb.y if hb is not None else -0.12
+    GEAR.append((rbox('Buckle', (0.06, 0.012, 0.05), (cx, yb_ - 0.016, zb), 0.005, 2), C['brass'], None))
+    h, n = hit((cx - 0.6, float(s3[1]) + 0.04, zb - 0.06), (1.0, 0.0, 0.0), 0.8, BVH_T)
+    if h is not None:
+        GEAR.append((cyl('Canteen', (h.x - 0.045, h.y - 0.08, zb - 0.1), (h.x - 0.045, h.y + 0.08, zb - 0.1), 0.055, seg=20, bevel=0.01),
+                     (0.10, 0.12, 0.07), None))
+    log('equipamento China AT: %d peças' % len(GEAR))
+
+
+
 def team_faces_mask():
-    """A faixa do time no braço esquerdo (o distintivo do ombro, no terço de cima do braço), nos índices do corpo."""
+    """(02/11) A cor do time no corpo, medida pra câmera do jogo (o soldado tem ~20 px a 67 m, ~9 cm por pixel: a faixa de 4 cm do braço
+    esquerdo sumia): as faixas largas nos DOIS braços (8 cm, o que se vê dos ombros de cima) e, na Rússia, as fitas de identificação
+    nas duas coxas (o costume do exército russo de hoje). O alto da cobertura da cabeça vem em team_headwear()."""
     m = np.zeros(len(DOM), dtype=bool)
-    up = bh('upperarm_l')
-    lo = bh('lowerarm_l')
-    ax = lo - up
-    L = float(np.linalg.norm(ax))
-    t = ((P0 - up) @ ax) / max(L * L, 1e-6)
-    arm = starts(['upperarm']) & np.char.endswith(DOM.astype(str), '_l')
-    m[arm & (t > 0.16) & (t < 0.30)] = True
+    bands = [('upperarm', 'lowerarm', 0.10, 0.38)]
+    if K.get('camo') == 'emr':
+        bands.append(('thigh', 'calf', 0.30, 0.48))
+    for b0, b1, t0, t1 in bands:
+        for sd in ('l', 'r'):
+            up = bh('%s_%s' % (b0, sd))
+            lo = bh('%s_%s' % (b1, sd))
+            ax = lo - up
+            L = float(np.linalg.norm(ax))
+            t = ((P0 - up) @ ax) / max(L * L, 1e-6)
+            part = starts([b0]) & np.char.endswith(DOM.astype(str), '_' + sd)
+            m[part & (t > t0) & (t < t1)] = True
     return m
+
+
+def team_headwear():
+    """(02/11) A cor do time no alto da cabeça, a maior área do soldado vista de cima (~20 cm, 2 px a 67 m; o Ranger velho lia pelo
+    capacete): a capa do alto do capacete (USA, China, Rússia), o pano de cima do gorro de pele, o pano de cima do lenço do rebelde e,
+    no trabalhador, o gorro (a kulla) que aparece no meio do turbante, como nos turbantes afegãos. O grupo TeamBand vai pro slot
+    VC_Team na exportação."""
+    for ob, _, _ in GEAR:
+        if ob.name not in ('Helmet', 'Ushanka', 'Wrap', 'Turban'):
+            continue
+        V = np.array([tuple(v.co) for v in ob.data.vertices])
+        top = float(V[:, 2].max())
+        cx, cy = float((V[:, 0].min() + V[:, 0].max()) / 2.0), float((V[:, 1].min() + V[:, 1].max()) / 2.0)
+        r = np.hypot(V[:, 0] - cx, V[:, 1] - cy)
+        if ob.name == 'Turban':
+            sel = (r < 0.055) & (V[:, 2] > top - 0.035)
+        else:
+            sel = V[:, 2] > top - (0.045 if ob.name == 'Wrap' else 0.05)
+        g = ob.vertex_groups.get('TeamBand') or ob.vertex_groups.new(name='TeamBand')
+        g.add(np.where(sel)[0].tolist(), 1.0, 'REPLACE')
+        log('time no alto: %s, %d vértices' % (ob.name, int(sel.sum())))
+
+
+KAO = []
 
 
 def set_materials_for_export():
@@ -1681,6 +2246,20 @@ def set_materials_for_export():
     ME.materials.append(vt)
     for poly in ME.polygons:
         poly.material_index = 1 if all(team_v[i] for i in poly.vertices) else 0
+    # (02/11) nas faces do time a cor do vértice vira só a sombra (cinza = 0,8 × a oclusão): o material multiplica a cor do time por ela
+    # (M_Soldier, TeamShade 1 no jogo); o resto da cor do vértice não muda
+    if len(KAO) == len(ME.vertices):
+        col = ME.color_attributes['Col']
+        n = len(ME.vertices)
+        Cc = np.zeros(n * 4, dtype=np.float32)
+        col.data.foreach_get('color', Cc)
+        Cc = Cc.reshape(n, 4)
+        kk = np.array(KAO, dtype=np.float32) * 0.8
+        Cc[team_v, 0] = kk[team_v]
+        Cc[team_v, 1] = kk[team_v]
+        Cc[team_v, 2] = kk[team_v]
+        col.data.foreach_set('color', Cc.ravel())
+    log('time: %d vértices, %d faces' % (int(team_v.sum()), sum(1 for p in ME.polygons if p.material_index == 1)))
 
 
 def bake_ao():
@@ -1717,6 +2296,7 @@ def bake_ao():
     Cc = Cc.reshape(n, 4)
     k = 0.35 + 0.65 * np.clip(A, 0.0, 1.0) ** 0.8
     Cc[:, :3] *= k[:, None]
+    KAO[:] = k
     col.data.foreach_set('color', Cc.ravel())
     ME.color_attributes.remove(ao)
     ME.color_attributes.active_color = ME.color_attributes['Col']
@@ -1726,8 +2306,24 @@ def bake_ao():
     log('oclusão assada: média %.2f, mínimo %.2f' % (float(A.mean()), float(A.min())))
 
 
+def only_col(me):
+    """(01/11) Só a camada 'Col' sai no FBX: o manequim traz a dele ('Attribute', branca, a de render) e a Unreal pega a primeira
+    (o soldado v3 saiu branco no jogo)."""
+    for nm in [a.name for a in me.color_attributes if a.name != 'Col']:
+        me.color_attributes.remove(me.color_attributes[nm])
+    me.color_attributes.active_color = me.color_attributes['Col']
+    me.color_attributes.render_color_index = me.color_attributes.find('Col')
+
+
 def export_fbx():
     path = os.path.join(OUT, 'SKM_Soldier_%s.fbx' % TAG.upper())
+    only_col(ME)
+    # (02/11) liso por ângulo: a malha saía facetada (cada face com a normal dela: na Unreal 268 mil vértices de desenho pra 77 mil do
+    # Blender, e as facetas marcadas na luz); o pano e a pele lisos, as quinas das placas e das caixas (> 40°) ficam vivas
+    bpy.ops.object.select_all(action='DESELECT')
+    BODY.select_set(True)
+    bpy.context.view_layer.objects.active = BODY
+    bpy.ops.object.shade_smooth_by_angle(angle=math.radians(40.0), keep_sharp_edges=True)
     bpy.ops.object.select_all(action='DESELECT')
     ARM.select_set(True)
     BODY.select_set(True)
@@ -1816,6 +2412,8 @@ human_head()
 BVH2 = body_bvh_now()
 if K['gear'] == 'china':
     gear_china()
+elif K['gear'] == 'china_at':
+    gear_china_at()
 elif K['gear'] == 'gla':
     gear_gla()
 elif K['gear'] == 'russia':
@@ -1824,6 +2422,10 @@ else:
     gear_usa()
 if K['head'] == 'ushanka':
     ushanka()
+elif K['head'] == 'turban':
+    turban()
+elif K['head'] == 'gk80':
+    helmet_gk80()
 elif K['head'] == 'wrap':
     head_wrap()
 elif K['head'] == '6b47':
@@ -1832,7 +2434,12 @@ elif K['head'] == '6b47':
     helmet_6b47()
 else:
     helmet_ach()
+if K.get('beard'):
+    beard()
+if K.get('back'):
+    back_load(K['back'])
 weld_gear()
+team_headwear()
 bpy.ops.object.select_all(action='DESELECT')
 for o in HEADS:
     o.data.materials.clear()

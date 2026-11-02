@@ -841,3 +841,36 @@ ser"); o M1 morre com o fogo da carcaça (o simulado), sem o jato do EmberGen.
   coxas; o gorro de pele com a aba e a estrela) e o rebelde da GLA (a túnica aberta dos lados, a calça larga, o colete civil aberto,
   a faixa, a bandoleira, o lenço enrolado só com os olhos de fora). O jogo pinta a malha pela cor nos vértices (os slots VC e
   VC_Team, `RTSUnitActor`) e o importador (`Game/Tools/import_outfit.py`) prende no `SK_Mannequin`. Prova no jogo: `v44_soldado_v3`.
+- 02/11 ~0h20, **o soldado novo no jogo (`v44_soldado_v3`) e os tipos que faltavam**:
+  - **No jogo** o soldado novo anima direito andando e mirando (o colete, as bolsas, o capacete e a faixa do time no braço esquerdo, na
+    cor do time), mas **saiu branco**: o corpo do manequim traz uma camada de cor própria (branca, a de render) e a Unreal pegou a
+    primeira do FBX. Consertado na exportação (`soldier_outfit.py`: só a camada `Col` sai) e os FBX prontos reexportados. E os
+    soldados correram pra fora do quadro: a Technical da cena atirava neles (estava a 37 m); foi pra 150 m. A prova de novo na v46.
+  - **Os 5 tipos que faltavam no molde novo** (ele: "os tipos de infantaria, cada um tem seu jeito"; a carga das costas é o que a
+    câmera de cima lê primeiro, e fica do lado esquerdo porque o lança-foguetes vai no ombro direito): o **Missile Defender** (a
+    mochila e o tubo do Javelin reserva de pé, passando por cima do ombro), o **Tank Hunter** (sem o casacão: a jaqueta, o colete de
+    lona tipo 56 no peito com as alças em X nas costas, o capacete de aço com a aba e os óculos, os 3 foguetes de pé na mochila), o
+    **trabalhador da GLA** (a túnica cinza-azulada, o turbante com as voltas em X na testa, a **barba de volume**, não tinta, o saco
+    de grão e a pá amarrada na diagonal), o **RPG** (o lenço e a roupa escuros, a bolsa de lona com as 3 ogivas e a alça cruzada) e o
+    **Kornet** (a armação nas costas, o tubo do míssil de 1,2 m, o tripé dobrado e a caixa da mira). A 1ª volta deles: o turbante
+    parecia capacete liso, a barba um tapete quadriculado e os foguetes abertos viravam chifres de cima; refeitos.
+  - Os 9 entram juntos no jogo como unidades de teste (`<chave>_v3`, o pré-requisito da original, nenhum quartel fabrica) e a cena
+    `infantaria_v3_tipos` (os 9 lado a lado, de frente, de costas e na câmera do jogo): `v46_infantaria_v3` na fila.
+- 02/11 ~14h15, **PAUSA (limite da conta): onde parei e o que falta** (a sessão continua em outra conta):
+  - **Rodando sozinho (não precisa de mim):** a fila `v47` (scratchpad `build_v47.ps1`, log `v47.log`): grava `v47_soldado_v3`,
+    `v47_v4_siege` (a prova do anel, rodada 2: o fade do fogo) e `v47_fuligem_missil` (a fuligem). A `v47_infantaria_v3` não vale (a cena
+    não existia na hora). Depois, a fila `v48` (`build_v48.ps1`, log `v48.log`): remonta os 9 no Blender com a **cor do time** (o alto da
+    cabeça + faixas largas nos 2 braços; Rússia também nas coxas; o trabalhador no gorro do meio do turbante; a cor com a sombra assada,
+    `TeamShade` no `M_Soldier` e 1 linha no `RTSUnitActor.cpp`) e a **malha lisa por ângulo** (saía facetada: 268 mil vértices de desenho),
+    compila, refaz o material (`BUILD_CONTENT_ONLY=soldier`), reimporta e grava `v48_infantaria_v3_time` (os 9 lado a lado).
+  - **Ao voltar:** conferir os vídeos de `captures/game/v47_*` e `v48_infantaria_v3_time` (a cor do vértice certa? o soldado anima? a cor do
+    time lê na câmera do jogo, ~20 px por soldado? o anel sumiu? a fuligem aparece?), ampliado e na câmera do jogo; pôr as imagens em
+    `captures/relatorio_01_11/final/` e fazer o relatório item por item (nada aprovado; dizer o que eu mesmo reprovei).
+  - **Perguntas dele em aberto:** a bandeira do Elenco (fita de 6 m, item 23), a poeira amarela nas lagartas/rodas (item 40), o rumo dos
+    assentos, a variante do Apache (eu recomendo a D), o giroflex de dia, a fumaça amarelada, a poeira da cratera A × B.
+  - **Depois do aprovado dos 9:** trocar as unidades de verdade pras malhas v3 (tirar os `_v3` de teste do Units.json) e medir o custo.
+  - **O que foi feito desde a madrugada de 01/11** (o /goal: a fila do Alt, o Stryker com 4 vagas e o tiro de dentro, o bazuqueiro,
+    "todos os ajustes"): os itens deste "andamento" a partir de "01/11 manhã, o que a madrugada e a manhã fizeram", na ordem; as imagens
+    em `captures/relatorio_01_11/` (o `final/` pro relatório). O resumo dado a ele às 14h30 de 02/11: a fila do Alt, o transporte e o painel
+    de lotação, o prédio sob tiro e o desabamento, o Apache, o dano de M1/Stryker, a fuligem do míssil, o canteiro e o andaime, o raio-X a
+    90%, a fumaça (o veículo ferido, o fim do fogo, o anel), o giroflex, a névoa C, o botão do trabalhador, as 3 voltas da infantaria.

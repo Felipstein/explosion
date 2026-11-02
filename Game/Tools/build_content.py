@@ -315,6 +315,173 @@ def unit_contact_material():
     log('M_UnitContact ok')
 
 
+# O sangue na areia (30/10, a infantaria: "sangue SIM"; docs/ESTUDO_INFANTARIA_VISUAL.md §6, o CoH3 e o Men of War): a mancha vista
+# de cima num decal, aceso pela luz e pela sombra do mapa como o chão. Kind 0: a poça (a borda em lóbulos e umas gotas soltas em volta);
+# Kind 1: o respingo (as gotas que encolhem e esticam no rumo da bala, o UV.y). Grow 0–1 abre a forma; Wet 1 → 0 seca (o brilho
+# molhado sai e o vermelho vira marrom); Fade some. A cor: o sangue fresco tem ~0,10 de albedo no vermelho e quase nada no verde e no
+# azul (a hemoglobina); a borda, a areia encharcada, mais clara.
+BLOOD_HLSL = r'''
+float2 p = UV * 2.0 - 1.0;
+float sd = Seed * 6.2831;
+// a borda irregular (a areia chupa o sangue): um ruído fino que encolhe e estica o raio de cada mancha
+float n = 0.5 + 0.25 * sin(p.x * 37.0 + sd * 3.0) * sin(p.y * 41.0 - sd * 2.0) + 0.25 * sin((p.x + p.y) * 23.0 + sd * 5.0);
+float op = 0.0;
+float core = 0.0;
+if (Kind < 0.5)
+{
+    // a poça: a borda em lóbulos que cresce, o miolo mais escuro e umas gotas soltas em volta
+    float r = length(p) * (0.9 + 0.2 * n);
+    float a = atan2(p.y, p.x);
+    float edge = Grow * (0.70 + 0.09 * sin(3.0 * a + sd) + 0.06 * sin(5.0 * a + 2.3 * sd) + 0.04 * sin(11.0 * a + 4.1 * sd));
+    op = 1.0 - smoothstep(edge - 0.10, edge, r);
+    core = 1.0 - smoothstep(0.0, max(edge, 1e-3), r);
+    for (int i = 0; i < 7; i++)
+    {
+        float h1 = frac(sin(float(i) * 12.9898 + Seed * 78.233) * 43758.5453);
+        float h2 = frac(sin(float(i) * 39.3468 + Seed * 11.135) * 24634.6345);
+        float aa = h1 * 6.2831;
+        float2 dc = float2(cos(aa), sin(aa)) * Grow * (0.76 + 0.2 * h2);
+        float rr = Grow * (0.02 + 0.04 * h2 * h2);
+        op = max(op, 1.0 - smoothstep(rr * 0.5, max(rr, 1e-3), length(p - dc) * (0.85 + 0.3 * n)));
+    }
+}
+else
+{
+    // o respingo da saída da bala: o leque de ±25° no rumo dela (+y), da origem em y = -0,8; muitas gotas pequenas e poucas grandes,
+    // as de perto maiores e juntas, as de longe pequenas e esticadas no voo; e o borrifo fino, uma névoa rala no começo do leque
+    float acc = 0.0;
+    for (int i = 0; i < 28; i++)
+    {
+        float h1 = frac(sin(float(i) * 12.9898 + Seed * 78.233) * 43758.5453);
+        float h2 = frac(sin(float(i) * 39.3468 + Seed * 11.135) * 24634.6345);
+        float h3 = frac(sin(float(i) * 73.156 + Seed * 31.871) * 15731.7431);
+        float dist = pow(h1, 0.75) * 1.55 * Grow;
+        float ang = (h2 - 0.5) * 0.9 * (0.35 + 0.65 * h1);
+        float2 dir = float2(sin(ang), cos(ang));
+        float2 dc = float2(0.0, -0.8) + dir * dist;
+        float rr = 0.09 * (1.0 - 0.65 * h1) * (0.25 + 0.75 * h3 * h3) * saturate(Grow * 4.0);
+        float el = 1.0 + 2.2 * h1;
+        float2 d = p - dc;
+        float along = dot(d, dir);
+        float across = dot(d, float2(dir.y, -dir.x));
+        float dd = length(float2(across, along / el)) * (0.85 + 0.3 * n);
+        acc += 1.0 - smoothstep(rr * 0.5, max(rr, 1e-3), dd);
+    }
+    float haze = 0.35 * exp(-(p.x * p.x / 0.03 + (p.y + 0.55) * (p.y + 0.55) / 0.08)) * saturate(Grow * 2.0);
+    op = saturate(acc + haze * (0.6 + 0.4 * n));
+    core = saturate(acc);
+}
+float3 fresh = float3(0.10, 0.012, 0.009);
+float3 dry = float3(0.08, 0.035, 0.022);
+float3 col = lerp(dry, fresh, Wet);
+col = lerp(col * 1.5, col, saturate(core * 2.0));
+Opacity = op * Fade * 0.95;
+Rough = lerp(0.9, 0.3, Wet * saturate(core * 3.0));
+return col;
+'''
+
+
+def blood_decal_material():
+    m = fresh('/Game/Materials/M_BloodDecal', 'M_BloodDecal')
+    m.set_editor_property('material_domain', unreal.MaterialDomain.MD_DEFERRED_DECAL)
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
+    uv = mel.create_material_expression(m, unreal.MaterialExpressionTextureCoordinate, -700, 0)
+    params = {}
+    for i, (n, v) in enumerate((('Kind', 0.0), ('Grow', 1.0), ('Seed', 0.3), ('Wet', 1.0), ('Fade', 1.0))):
+        e = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -700, 100 + 100 * i)
+        e.set_editor_property('parameter_name', n)
+        e.set_editor_property('default_value', v)
+        params[n] = e
+    c = mel.create_material_expression(m, unreal.MaterialExpressionCustom, -400, 0)
+    c.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    ins = []
+    for n in ('UV', 'Kind', 'Grow', 'Seed', 'Wet', 'Fade'):
+        ci = unreal.CustomInput()
+        ci.set_editor_property('input_name', n)
+        ins.append(ci)
+    c.set_editor_property('inputs', ins)
+    outs = []
+    for n in ('Opacity', 'Rough'):
+        co = unreal.CustomOutput()
+        co.set_editor_property('output_name', n)
+        co.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT1)
+        outs.append(co)
+    c.set_editor_property('additional_outputs', outs)
+    c.set_editor_property('code', BLOOD_HLSL)
+    ok = [mel.connect_material_expressions(uv, '', c, 'UV')]
+    ok += [mel.connect_material_expressions(e, '', c, n) for n, e in params.items()]
+    ok += [mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR),
+           mel.connect_material_property(c, 'Opacity', unreal.MaterialProperty.MP_OPACITY),
+           mel.connect_material_property(c, 'Rough', unreal.MaterialProperty.MP_ROUGHNESS)]
+    if not all(ok):
+        raise RuntimeError('M_BloodDecal: ligações falharam %s' % ok)
+    mel.recompile_material(m)
+    unreal.EditorAssetLibrary.save_loaded_asset(m)
+    log('M_BloodDecal ok')
+
+
+# O soldado vestido (30/10; Tools/soldier_dress.py): um material pro corpo e pras peças. O corpo lê a farda pintada nas UVs (Paint, UseTex
+# 1) e o alfa dela marca a cor do time (TeamColor, posta pelo jogo: a faixa do ombro); as peças, a cor dos vértices (UseTex 0), e a parte
+# do time delas é um material à parte (o slot "Team" do GLB: TeamSlot 1, a faixa do capacete). (v7: o alfa da cor do vértice não existe na
+# saída padrão do nó, e o material não compilava: o jogo usava o cinza padrão) Tecido fosco (rugosidade 0,85) com um grão fino de trama no normal (lê de perto e some de longe, sem serrilhar).
+# (02/11, o soldado v3 de malha única) TeamShade 1: nas faces do time a cor do vértice é só a sombra assada (0,8 × a oclusão) e a cor do
+# time sai multiplicada por ela (a cor do time com a sombra embaixo do capacete e entre as dobras, não um adesivo chapado); 0 (o padrão)
+# deixa o kit antigo como era
+SOLDIER_HLSL = r'''
+float3 base = lerp(VC.rgb, Tex.rgb, UseTex);
+float team = saturate(lerp(TeamSlot, Tex.a, UseTex));
+float3 tc = Team.rgb * lerp(1.0, saturate(VC.r * 1.25), TeamShade);
+return lerp(base, tc, team);
+'''
+
+
+def soldier_material():
+    m = fresh('/Game/Materials/M_Soldier', 'M_Soldier')
+    m.set_editor_property('used_with_skeletal_mesh', True)
+    m.set_editor_property('used_with_static_lighting', False)
+    tex = mel.create_material_expression(m, unreal.MaterialExpressionTextureSampleParameter2D, -900, 0)
+    tex.set_editor_property('parameter_name', 'Paint')
+    tex.set_editor_property('texture', unreal.load_asset('/Engine/EngineResources/WhiteSquareTexture'))
+    vc = mel.create_material_expression(m, unreal.MaterialExpressionVertexColor, -900, 300)
+    use = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -900, 450)
+    use.set_editor_property('parameter_name', 'UseTex')
+    use.set_editor_property('default_value', 0.0)
+    team = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -900, 550)
+    team.set_editor_property('parameter_name', 'TeamColor')
+    team.set_editor_property('default_value', unreal.LinearColor(0.12, 0.2, 0.45, 1.0))
+    tslot = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -900, 640)
+    tslot.set_editor_property('parameter_name', 'TeamSlot')
+    tslot.set_editor_property('default_value', 0.0)
+    tshade = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -900, 760)
+    tshade.set_editor_property('parameter_name', 'TeamShade')
+    tshade.set_editor_property('default_value', 0.0)
+    rough = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -900, 700)
+    rough.set_editor_property('parameter_name', 'Rough')
+    rough.set_editor_property('default_value', 0.85)
+    c = mel.create_material_expression(m, unreal.MaterialExpressionCustom, -500, 0)
+    c.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    ins = []
+    for n in ('Tex', 'VC', 'UseTex', 'Team', 'TeamSlot', 'TeamShade'):
+        ci = unreal.CustomInput()
+        ci.set_editor_property('input_name', n)
+        ins.append(ci)
+    c.set_editor_property('inputs', ins)
+    c.set_editor_property('code', SOLDIER_HLSL)
+    ok = [mel.connect_material_expressions(tex, 'RGBA', c, 'Tex'),
+          mel.connect_material_expressions(vc, '', c, 'VC'),
+          mel.connect_material_expressions(use, '', c, 'UseTex'),
+          mel.connect_material_expressions(team, '', c, 'Team'),
+          mel.connect_material_expressions(tslot, '', c, 'TeamSlot'),
+          mel.connect_material_expressions(tshade, '', c, 'TeamShade'),
+          mel.connect_material_property(c, '', unreal.MaterialProperty.MP_BASE_COLOR),
+          mel.connect_material_property(rough, '', unreal.MaterialProperty.MP_ROUGHNESS)]
+    if not all(ok):
+        raise RuntimeError('M_Soldier: ligações falharam %s' % ok)
+    mel.recompile_material(m)
+    unreal.EditorAssetLibrary.save_loaded_asset(m)
+    log('M_Soldier ok')
+
+
 # A silhueta da unidade escondida (13/10, BASE_JOGAVEL: "silhueta atrás da fábrica", como no StarCraft II e no
 # CoH, que mostram a unidade atrás de prédio na cor do time): as peças da unidade gravam a profundidade num
 # buffer próprio (custom depth) com o jogador no stencil (1 + dono); onde essa profundidade fica na frente da
@@ -1024,11 +1191,115 @@ def missile_smoke():
     log('M_MissileSmokeShadow ok')
 
 
+# (24/10, o escopo B do ar; docs/AEREO.md §3.10) O disco borrado do rotor (RTSUnitActorAir.cpp): a malha procedural parada no cubo,
+# UV0 = (r ÷ R, ângulo ÷ 2π), e os dados da primitiva: 0 a opacidade (o giro), 1 a fase das pás fantasma (rad), 2 as pás, 3 o cubo
+# (÷ R), 4 a ponta pintada (÷ R), 5 a solidez na ponta (N·c ÷ 2πR). A cobertura média de uma pá de corda c girando é N·c ÷ 2πr (a
+# fração do círculo de raio r que ela tapa): mais escura perto do cubo, quase nada na ponta, como nas fotos de rotor em velocidade.
+# As pás fantasma: a câmera (24–60 qps, e o olho) pega a pá "parada" com o rastro da exposição atrás; elas andam devagar (a fase vem
+# do jogo). A ponta pintada vira o anel. Sem luz própria: o borrão das pás escuras só escurece o que está atrás (o mesmo no sol, na
+# sombra e de noite; a pá de verdade, escondida, segue fazendo a sombra tremida no chão). A cobertura
+# vai × 2,2 (a leitura do RTS: o disco físico de 5–10% some na câmera alta; os jogos exageram o borrão, o anel e as pás fantasma).
+ROTOR_DISC_HLSL = r"""
+float r = UV.x;
+float th = UV.y * 6.2831853;
+float n = max(Blades, 1.0);
+float cover = saturate(2.2 * Solidity / max(r, 0.08));
+float a = frac((th - Phase) * n / 6.2831853);
+float ghost = exp(-a * 7.0) + 0.35 * exp(-(1.0 - a) * 25.0);
+float k = cover * (0.35 + 1.6 * ghost);
+float tipband = smoothstep(1.0 - Tip - 0.015, 1.0 - Tip + 0.005, r) * step(0.001, Tip);
+float rim = smoothstep(Hub, Hub + 0.04, r) * (1.0 - smoothstep(0.975, 1.0, r));
+Opacity = saturate((k + tipband * (0.08 + 0.2 * ghost)) * rim) * saturate(Opac);
+return float3(0.0, 0.0, 0.0);
+"""
+
+
+def _cpd_scalar(m, name, index, x, y, default=0.0):
+    p = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, x, y)
+    p.set_editor_property('parameter_name', name)
+    p.set_editor_property('use_custom_primitive_data', True)
+    p.set_editor_property('primitive_data_index', index)
+    p.set_editor_property('default_value', default)
+    return p
+
+
+def rotor_disc_material():
+    m = fresh('/Game/Materials/M_RotorDisc', 'M_RotorDisc')
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_TRANSLUCENT)
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property('two_sided', True)
+    c = _custom(m, -400, 0, ROTOR_DISC_HLSL, ('UV', 'Opac', 'Phase', 'Blades', 'Hub', 'Tip', 'Solidity'),
+                unreal.CustomMaterialOutputType.CMOT_FLOAT3, (('Opacity', unreal.CustomMaterialOutputType.CMOT_FLOAT1),))
+    uv = _uv(m, 0, -800, -100)
+    ok = [mel.connect_material_expressions(uv, '', c, 'UV')]
+    for k, name in enumerate(('Opac', 'Phase', 'Blades', 'Hub', 'Tip', 'Solidity')):
+        p = _cpd_scalar(m, 'Disc' + name, k, -800, 50 + 110 * k)
+        ok.append(mel.connect_material_expressions(p, '', c, name))
+    ok += [mel.connect_material_property(c, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR),
+           mel.connect_material_property(c, 'Opacity', unreal.MaterialProperty.MP_OPACITY)]
+    if not all(ok):
+        raise RuntimeError('M_RotorDisc: ligações falharam %s' % ok)
+    mel.recompile_material(m)
+    unreal.EditorAssetLibrary.save_loaded_asset(m)
+    log('M_RotorDisc ok')
+
+
+# (24/10, o escopo B do ar) A chama do pós-combustor (RTSUnitActorAir.cpp): o cone procedural da boca pra −X, UV0 = (x ÷ L, ângulo).
+# Os dados da primitiva: 0 o acelerador (0..1), 1 o brilho (× 60.000 cd/m²). O miolo do jato quente: mais claro no centro da
+# silhueta (o caminho mais longo dentro do gás: |N·V|), os diamantes de choque (o jato sobre-expandido, as células de Prandtl a
+# ~1 diâmetro uma da outra, só no primeiro trecho) e a cor do branco-amarelo na boca ao laranja na ponta. Aditivo, sem sombra.
+AFTERBURNER_HLSL = r"""
+float u = UV.x;
+float nv = abs(dot(normalize(N), normalize(V)));
+float core = pow(nv, 1.2);
+float dia = 1.0 + 1.2 * pow(0.5 + 0.5 * cos(6.2831853 * (u * 4.5)), 8.0) * (1.0 - smoothstep(0.1, 0.75, u));
+float fl = 0.9 + 0.1 * sin(T * 47.0 + u * 13.0);
+float fall = pow(saturate(1.0 - u), 1.8);
+float3 hot = float3(1.0, 0.78, 0.55);
+float3 cool = float3(1.0, 0.36, 0.10);
+float3 c = lerp(hot, cool, smoothstep(0.0, 0.7, u));
+return c * (Rad * 60000.0) * Throttle * core * dia * fall * fl;
+"""
+
+
+def afterburner_material():
+    m = fresh('/Game/Materials/M_Afterburner', 'M_Afterburner')
+    m.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property('blend_mode', unreal.BlendMode.BLEND_ADDITIVE)
+    m.set_editor_property('two_sided', True)
+    m.set_editor_property('enable_responsive_aa', True)
+    m.set_editor_property('has_pixel_animation', True)
+    c = _custom(m, -400, 0, AFTERBURNER_HLSL, ('UV', 'N', 'V', 'T', 'Throttle', 'Rad'), unreal.CustomMaterialOutputType.CMOT_FLOAT3)
+    uv = _uv(m, 0, -800, -100)
+    normal = mel.create_material_expression(m, unreal.MaterialExpressionVertexNormalWS, -800, 0)
+    cam = mel.create_material_expression(m, unreal.MaterialExpressionCameraVectorWS, -800, 100)
+    t = mel.create_material_expression(m, unreal.MaterialExpressionTime, -800, 200)
+    thr = _cpd_scalar(m, 'Throttle', 0, -800, 300)
+    rad = _cpd_scalar(m, 'Radiance', 1, -800, 400, 1.0)
+    ok = [mel.connect_material_expressions(uv, '', c, 'UV'),
+          mel.connect_material_expressions(normal, '', c, 'N'),
+          mel.connect_material_expressions(cam, '', c, 'V'),
+          mel.connect_material_expressions(t, '', c, 'T'),
+          mel.connect_material_expressions(thr, '', c, 'Throttle'),
+          mel.connect_material_expressions(rad, '', c, 'Rad'),
+          mel.connect_material_property(c, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)]
+    if not all(ok):
+        raise RuntimeError('M_Afterburner: ligações falharam %s' % ok)
+    mel.recompile_material(m)
+    unreal.EditorAssetLibrary.save_loaded_asset(m)
+    log('M_Afterburner ok')
+
+
+def air_fx():
+    rotor_disc_material()
+    afterburner_material()
+
+
 # BUILD_CONTENT_ONLY=silhouette,glow (14/10): só esses, sem refazer o resto (de noite, sem ninguém pra conferir os outros)
 _only = [x.strip() for x in __import__('os').environ.get('BUILD_CONTENT_ONLY', '').split(',') if x.strip()]
 for _name, _fn in (('emissive', emissive_material), ('glow', glow_material), ('ground_memory', ground_memory_material),
-                   ('unit_contact', unit_contact_material), ('silhouette', silhouette_material), ('wind', wind_collection),
-                   ('missile_smoke', missile_smoke)):
+                   ('unit_contact', unit_contact_material), ('blood', blood_decal_material), ('soldier', soldier_material), ('silhouette', silhouette_material), ('wind', wind_collection),
+                   ('missile_smoke', missile_smoke), ('air_fx', air_fx)):
     if not _only or _name in _only:
         _fn()
 log('done')
