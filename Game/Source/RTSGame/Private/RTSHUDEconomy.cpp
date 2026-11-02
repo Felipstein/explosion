@@ -4,6 +4,7 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "RTSRallyMarker.h"
 
 // O HUD provisório da economia e da construção (docs/ECONOMIA.md). Fica até o HUD de verdade
 // sair da arte (docs/HUD.md: a barra do ZH modernizada, em Slate). Tudo em inglês (o jogo é em
@@ -524,33 +525,8 @@ void ARTSHUD::DrawPlacementGhost(ARTSPlayerController* PC, URTSMatchSubsystem* M
 
 void ARTSHUD::DrawRallyPoints(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
-	const FRTSBakedMap* Map = Match->BakedMap();
-	if (!Map)
-	{
-		return;
-	}
-	for (const uint32 Id : PC->GetSelection())
-	{
-		FRTSUnitState U;
-		if (!Match->GetUnit(Id, U) || !U.bStructure || !U.bHasRally || U.Owner != Match->LocalPlayer())
-		{
-			continue;
-		}
-		const FLinearColor C = URTSMatchSubsystem::PlayerColor(U.Owner);
-		const FVector From(U.PosCm.X, U.PosCm.Y, Map->GroundZCm(U.PosCm) + 60.0f);
-		const FVector To(U.RallyCm.X, U.RallyCm.Y, Map->GroundZCm(U.RallyCm) + 30.0f);
-		FVector2D A;
-		FVector2D B;
-		FVector2D Top;
-		if (PC->ProjectWorldLocationToScreen(From, A) && PC->ProjectWorldLocationToScreen(To, B) && PC->ProjectWorldLocationToScreen(To + FVector(0, 0, 600.0f), Top))
-		{
-			DrawLine(A.X, A.Y, B.X, B.Y, Alpha(C, 0.55f), 1.5f);
-			// a bandeira do ponto de encontro (ZH): mastro e flâmula na cor do jogador
-			DrawLine(B.X, B.Y, Top.X, Top.Y, FLinearColor(0.9f, 0.9f, 0.9f, 0.9f), 2.0f);
-			const float FlagW = FMath::Max(10.0f, FVector2D::Distance(B, Top) * 0.45f);
-			DrawPanel(Top.X, Top.Y, FlagW, FlagW * 0.6f, C);
-		}
-	}
+	// (02/11, aprovado) a reta rente ao chão com as setas e a bandeira 3D no ponto: RTSRallyMarker.cpp
+	RTSRallyMarker::Draw(Canvas, PC, Match);
 }
 
 void ARTSHUD::DrawMoneyPopups(URTSMatchSubsystem* Match, float DeltaSeconds)

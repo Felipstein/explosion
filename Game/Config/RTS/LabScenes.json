@@ -26846,6 +26846,170 @@
      }
     ]
    }
+  },
+ {
+  "name": "rally_ponto",
+  "about": "(02/11, os cursores; o ponto de encontro aprovado: \"ok tá ótimo, tá aprovado [...] jogar pra dentro do jogo\") a War Factory selecionada com o ponto de encontro a ~53 m (o -RTSRallyAt=-255,-346 marca, como o clique no chão): a reta rente ao chão com as setas e a bandeira 3D entre os tanques; perto (a prova ampliada); e com a câmera longe, o ponto fora da tela (a ficha na borda). Rodar: game.ps1 view -Scenario rally_ponto -Extra '-RTSRallyAt=-255,-346'",
+  "map": "World_TestSalt2",
+  "seed": 28,
+  "fog": "off",
+  "hud": true,
+  "starts_m": [
+   [
+    -292.86,
+    -307.51
+   ],
+   [
+    -249.26,
+    -398.06
+   ]
+  ],
+  "units_per_player": [],
+  "units": [
+   {
+    "player": 0,
+    "key": "usa_war_factory",
+    "at_m": [
+     -295.67,
+     -313.25
+    ],
+    "facing_deg": -90.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -262.0,
+     -352.0
+    ],
+    "facing_deg": -60.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -247.0,
+     -352.0
+    ],
+    "facing_deg": -100.0
+   },
+   {
+    "player": 0,
+    "key": "usa_stryker",
+    "at_m": [
+     -266.0,
+     -338.0
+    ],
+    "facing_deg": -30.0
+   },
+   {
+    "player": 1,
+    "key": "gla_technical",
+    "at_m": [
+     -249.26,
+     -440.0
+    ],
+    "facing_deg": 90.0
+   }
+  ],
+  "orders": [],
+  "camera": {
+   "focus_m": [
+    -275.0,
+    -330.0
+   ],
+   "distance_m": 88,
+   "yaw_deg": 20.0,
+   "pitch_deg": 40.0
+  },
+  "shots_s": [],
+  "end_s": 16.0,
+  "lab": {
+   "panel": false,
+   "tab": "spawn",
+   "ground_base": "map",
+   "ops": [
+    {
+     "t_s": 0.0,
+     "op": "camera",
+     "focus_m": [
+      -275.0,
+      -330.0
+     ],
+     "distance_m": 88,
+     "yaw_deg": 20.0,
+     "pitch_deg": 40.0
+    },
+    {
+     "t_s": 0.0,
+     "op": "sun",
+     "elevation": 24,
+     "azimuth": 338
+    },
+    {
+     "t_s": 0.0,
+     "op": "ai",
+     "player": 1,
+     "on": false
+    },
+    {
+     "t_s": 0.5,
+     "op": "select",
+     "key": "usa_war_factory"
+    },
+    {
+     "t_s": 3.0,
+     "op": "shot",
+     "name": "1_encontro",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 4.0,
+     "op": "camera",
+     "focus_m": [
+      -258.0,
+      -342.0
+     ],
+     "distance_m": 40,
+     "yaw_deg": 20.0,
+     "pitch_deg": 40.0
+    },
+    {
+     "t_s": 6.0,
+     "op": "shot",
+     "name": "2_encontro_perto",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 8.0,
+     "op": "camera",
+     "focus_m": [
+      -330.0,
+      -270.0
+     ],
+     "distance_m": 88,
+     "yaw_deg": 20.0,
+     "pitch_deg": 40.0
+    },
+    {
+     "t_s": 10.0,
+     "op": "shot",
+     "name": "3_encontro_fora",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 11.0,
+     "op": "camera",
+     "focus_m": [
+      -275.0,
+      -330.0
+     ],
+     "distance_m": 88,
+     "yaw_deg": 20.0,
+     "pitch_deg": 40.0
+    }
+   ]
   }
+ }
  ]
 }
