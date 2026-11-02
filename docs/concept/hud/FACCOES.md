@@ -113,9 +113,10 @@ Os prompts: `captures/concept/hud/recursos2/PROMPTS_ARTE.md` (folhas E e F).
   cada aba é um SVG no material da facção, nítido em qualquer escala.
 - **O brasão do dinheiro da China refeito** (`93_china_laca_brasao`): a laca era mais alta (a faixa de nuvens em cima) e subia acima dos outros;
   agora tem a proporção dos outros e a janela única do mostrador. E o mostrador segue a janela de cada facção (uma regra antiga prendia a da USA).
-- **As patentes por facção (proposta, falta ele aprovar):** USA como hoje; China do Exército Popular em pinyin (Shao Jiang, Zhong Jiang,
+- **As patentes por facção (APROVADAS 02/11):** USA como hoje; China do Exército Popular em pinyin (Shao Jiang, Zhong Jiang,
   Shang Jiang, Da Jiang, Yuan Shuai); Rússia transliterada (General-Mayor, General-Leytenant, General-Polkovnik, General Armii, Marshal);
   GLA com títulos de milícia, sem título religioso (Cell Leader, Field Commander, Warlord, High Warlord, Supreme Warlord). Os ícones das
   patentes ainda são os da USA nas quatro.
-- **O teste dos emblemas pequenos no topo** (pedido dele; a outra sessão gerou em `80_emblemas_pequenos_ficha_e_silhueta`, versão 4): `-TopEmblem=1`
-  a silhueta na cor do jogador, `=2` a ficha nas cores da facção; o resto do HUD fica com o emblema inteiro.
+- **O emblema do topo: a silhueta na cor do jogador (ESCOLHIDA 02/11)** (a outra sessão gerou em `80_emblemas_pequenos_ficha_e_silhueta`, versão 4;
+  guardadas em `docs/concept/hud/kit/emblems/glyph_<facção>.png`): o padrão do `DrawTop1v1` (`TopEmblem` 1); o resto do HUD fica com o emblema inteiro.
+  `-TopEmblem=0` mostra o inteiro e `=2` a ficha nas cores da facção, pra comparar.

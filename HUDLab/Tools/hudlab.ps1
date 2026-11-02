@@ -18,7 +18,7 @@ param(
   [string]$Colors = '',
   [switch]$NoQueue,
   [switch]$Bg,
-  [int]$TopEmblem = 0,
+  [int]$TopEmblem = 1,
   [switch]$Measure
 )
 $ErrorActionPreference = 'Stop'

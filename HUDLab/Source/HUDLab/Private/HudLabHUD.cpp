@@ -129,9 +129,9 @@ void AHudLabHUD::DrawHUD()
 		State.TooltipFor = NAME_None;
 		State.HoverId = NAME_None;
 	}
-	// -TopEmblem=1|2: o emblema pequeno no topo (1 a silhueta na cor do jogador, 2 a ficha nas cores da facção)
+	// -TopEmblem=0|1|2: o emblema no topo (1 a silhueta na cor do jogador, aprovada e o padrão; 0 o inteiro; 2 a ficha nas cores da facção)
 	{
-		int32 TE = 0;
+		int32 TE = 1;
 		FParse::Value(FCommandLine::Get(), TEXT("TopEmblem="), TE);
 		State.TopEmblem = uint8(FMath::Clamp(TE, 0, 2));
 	}

@@ -74,3 +74,8 @@ Recorte: `python art/tools/cut_hud_sheets_economy.py <folha_3> <folha_4>` (o ver
 | `medal_first_strike/tank_killer/hold_the_line/logistics.png` | as medalhas das comendas | inteira; ainda não ganha = cinza e escura. A fita da First Strike foi trocada pela americana (a original lembrava a França; a original guardada em `captures/concept/hud/kit/medal_first_strike_fita_franca.png`) |
 | `rank_usa_1..5.png` | os ícones das patentes da USA (BG ★ prata → GA ★★★★★ ouro com águia): no miolo do cubo do general, no cabeçalho e na fileira das patentes da tela do general | inteira; no cubo vai recortado num círculo (o aro próprio do ícone fica de fora). Da folha `captures/concept/hud/kit/rank_icons_gpt.webp` (a do Gemini, `rank_icons_gemini.webp`, perdeu: menor e com aro de rebite que duplicava o do cubo). Os ranks 4 e 5 saem da segunda folha, simples (só estrelas, aro de ouro): `rank_icons_45_gpt.webp` (os detalhados, com águia e louro, foram reprovados por "muito detalhe em pouco espaço"). Comando: `python art/tools/cut_rank_icons.py <folha> <folha_4_e_5>` |
 
+## Emblemas do topo (02/11)
+
+- **`emblems/glyph_<facção>.png`** (512→256, branco sobre transparente): a silhueta de cada emblema feita pra ponto pequeno (a outra sessão,
+  `captures/concept/80_emblemas_pequenos_ficha_e_silhueta/glyphs_v4`). No topo do HUD vai pintada na cor do jogador (escolhida por ele em 02/11);
+  no resto do HUD fica o emblema inteiro (`docs/concept/factions/`). O HUDLab lê a cópia em `HUDLab/LabAssets/emblem_glyph_<facção>.png`.
