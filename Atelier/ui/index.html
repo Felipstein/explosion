@@ -315,6 +315,28 @@ button:disabled{opacity:.4;cursor:default}
 .au-row .pk.on{color:var(--accent)}
 .au-row.pick{border-color:var(--accent)}
 
+/* medidores com o uso de cada conta */
+.meter{position:relative;overflow:hidden}
+.meter.bad{color:var(--del)}
+.meter.bad b{color:var(--del)}
+.mbar{position:absolute;left:10px;right:10px;bottom:3px;height:2px;border-radius:1px;background:rgba(255,255,255,.08)}
+.mbar>i{display:block;height:100%;border-radius:1px;background:var(--add)}
+.mbar.mid>i{background:var(--accent)}
+.mbar.hi>i{background:var(--bad)}
+
+/* apagar e marcar vários */
+.req{position:relative}
+.req-x{position:absolute;right:6px;top:6px;width:20px;height:20px;border-radius:5px;display:grid;place-items:center;color:var(--fg-3);opacity:0;transition:opacity .12s}
+.req-x svg{width:12px;height:12px}
+.req:hover .req-x{opacity:1}
+.req-x:hover{background:var(--bad);color:#fff}
+.req.marked{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
+.multibar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:6px;margin:6px 2px 4px;padding:7px 8px;border-radius:8px;background:var(--raise);border:1px solid var(--line-2);font-size:12px}
+.multibar b{font-weight:600}
+.mini.danger,.primary.danger{background:var(--bad);color:#fff}
+.mini.danger svg{width:11px;height:11px}
+.del-list{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+
 /* configurações */
 .cfg{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:grid;gap:10px}
 .cfg-h{display:flex;align-items:center;gap:8px}

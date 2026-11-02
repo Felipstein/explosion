@@ -13,7 +13,8 @@ export const PORT = +(process.env.ATELIER_PORT || 8140);
 const BOOT = Date.now();
 const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1'));
 const REPO = path.resolve(HERE, '../..');
-const DATA = path.join(REPO, 'captures', 'atelier');
+// ATELIER_DATA troca a pasta dos pedidos (testes numa cópia à parte, sem tocar nos de verdade)
+const DATA = process.env.ATELIER_DATA || path.join(REPO, 'captures', 'atelier');
 const REQS = path.join(DATA, 'requests');
 const UI = path.join(REPO, 'Atelier', 'ui', 'index.html');
 fs.mkdirSync(REQS, { recursive: true });
@@ -67,6 +68,7 @@ const saveTimers = new Map();
 function save(r) {
   clearTimeout(saveTimers.get(r.id));
   saveTimers.set(r.id, setTimeout(() => {
+    if (!R.has(r.id)) return; // apagado no meio
     fs.writeFileSync(path.join(REQS, r.id + '.json'), JSON.stringify(r, null, 1));
     // cópia ao lado das imagens: o pedido se refaz igual a partir da pasta
     try { fs.writeFileSync(path.join(abs(r.folder), 'atelier.json'), JSON.stringify(r, null, 1)); } catch {}
@@ -168,9 +170,9 @@ function start(x) {
   changed(r);
   const attachments = r.att.map(a => abs(a.file));
   PROVIDERS[M.provider]({ prompt: promptFor(x), attachments, outBase: outBase(x), model: M.model, aspect: r.aspect, audio: r.audio, signal: ac.signal })
-    .then(file => { it.st = 'd'; it.file = rel(file); it.took = Math.round((Date.now() - it.t0) / 1000); log('pronta', x.k, it.file, it.took + 's'); })
-    .catch(e => { it.st = 'f'; it.err = String(e.message || e); log('falhou', x.k, it.err); })
-    .finally(() => { running.delete(it); save(r); changed(r); pump(); });
+    .then(file => { it.st = 'd'; it.file = rel(file); it.at = Date.now(); it.took = Math.round((it.at - it.t0) / 1000); noteOk(it.m); log('pronta', x.k, it.file, it.took + 's'); })
+    .catch(e => { it.st = 'f'; it.err = String(e.message || e); it.at = Date.now(); noteLimit(it.m, it.err, it.at); log('falhou', x.k, it.err); })
+    .finally(() => { running.delete(it); if (R.has(r.id)) { save(r); changed(r); } pump(); });
 }
 setInterval(pump, 1000);
 
@@ -255,6 +257,53 @@ function askClaude(r, text, selKey) {
   p.stdin.end(claudeContext(r, text, selKey));
 }
 
+/* ---------- uso: quanto cada conta já gastou e se bateu o limite ----------
+   Só a ElevenLabs diz o uso de verdade (créditos do mês). O Gemini não informa cota pela chave e a conta
+   do ChatGPT não informa o %: deles vem o que o próprio Atelier contou e o aviso quando bate o limite. */
+const ACCOUNT = { gpt: 'gpt', pro: 'gemini', flash: 'gemini', sfx: 'eleven' };
+const LIMITS = { gpt: null, gemini: null, eleven: null };
+let ELEVEN = { at: 0, data: null }; // o uso da conta da ElevenLabs, lido no máximo 1x por minuto
+function noteLimit(m, err, at) {
+  const a = ACCOUNT[m]; if (!a) return;
+  if (a === 'gpt' && /limite de uso da conta|usage limit/i.test(err)) { const t = err.match(/volta em ([^)]+)\)/); LIMITS.gpt = { at, until: t ? t[1] : null, msg: 'limite da conta do ChatGPT' }; }
+  if (a === 'gpt' && /OpenAI 429/.test(err)) LIMITS.gpt = { at, msg: 'limite da chave da OpenAI' };
+  if (a === 'gemini' && /Gemini 429/.test(err)) LIMITS.gemini = { at, msg: /quota/i.test(err) ? 'cota da chave batida' : 'limite por minuto' };
+  if (a === 'eleven' && /ElevenLabs 4(01|02|29)/.test(err)) LIMITS.eleven = { at, msg: 'créditos ou limite da ElevenLabs' };
+}
+function noteOk(m) { const a = ACCOUNT[m]; if (a && LIMITS[a]) LIMITS[a] = null; if (a === 'eleven') ELEVEN.at = 0; }
+// ao ligar, o último limite batido vem das falhas guardadas
+// (falhas e acertos em ordem de tempo: um acerto depois do limite já desfaz o aviso)
+for (const x of all().filter(x => x.it.st === 'f' || x.it.st === 'd').sort((p, q) => (p.it.at || Date.parse(p.r.created)) - (q.it.at || Date.parse(q.r.created))))
+  x.it.st === 'f' ? noteLimit(x.it.m, x.it.err, x.it.at || Date.parse(x.r.created)) : noteOk(x.it.m);
+async function elevenUsage() {
+  const k = key('elevenlabs'); if (!k) return null;
+  if (ELEVEN.data && Date.now() - ELEVEN.at < 60000) return ELEVEN.data;
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/user/subscription', { headers: { 'xi-api-key': k.value } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(r.status);
+    ELEVEN.data = { tier: j.tier, used: j.character_count || 0, limit: j.character_limit || 0, reset: j.next_character_count_reset_unix ? j.next_character_count_reset_unix * 1000 : null };
+  } catch { ELEVEN.data = { error: 'a chave não deixa ler o uso da conta' }; }
+  ELEVEN.at = Date.now();
+  return ELEVEN.data;
+}
+async function usage() {
+  const day = new Date().toDateString(), month = new Date().toISOString().slice(0, 7);
+  const acc = {}; for (const a of ['gpt', 'gemini', 'eleven']) acc[a] = { today: 0, usdToday: 0, month: 0, usdMonth: 0 };
+  for (const x of all()) {
+    const a = ACCOUNT[x.it.m]; if (!a || x.it.st !== 'd') continue;
+    const t = new Date(x.it.at || x.r.created);
+    if (t.toDateString() === day) { acc[a].today++; acc[a].usdToday += x.it.cost || 0; }
+    if (t.toISOString().slice(0, 7) === month) { acc[a].month++; acc[a].usdMonth += x.it.cost || 0; }
+  }
+  const recent = l => l && Date.now() - l.at < 6 * 3600 * 1000 ? l : null; // limite de horas atrás já não vale
+  return {
+    gpt: { ...acc.gpt, via: readSettings().gptVia, limit: LIMITS.gpt && (LIMITS.gpt.until ? LIMITS.gpt : recent(LIMITS.gpt)) },
+    gemini: { ...acc.gemini, limit: recent(LIMITS.gemini) },
+    eleven: { ...acc.eleven, account: await elevenUsage(), limit: recent(LIMITS.eleven) },
+  };
+}
+
 /* ---------- configurações: o login do Codex e o teste das chaves (sem gerar imagem) ---------- */
 const CODEX = { loggedIn: null, text: '' };
 function codexStatus() {
@@ -333,6 +382,15 @@ function pickFolder(start) {
   });
 }
 
+// pra Lixeira do Windows (nunca apaga de vez): uma chamada do PowerShell com a lista num arquivo
+function toRecycle(files) {
+  if (!files.length) return Promise.resolve();
+  const list = path.join(DATA, `lixeira_${Date.now()}.txt`);
+  fs.writeFileSync(list, '\ufeff' + files.join('\r\n'), 'utf8');
+  const ps = `Add-Type -AssemblyName Microsoft.VisualBasic; foreach ($f in Get-Content -LiteralPath '${list}' -Encoding UTF8) { if (Test-Path -LiteralPath $f) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($f, 'OnlyErrorDialogs', 'SendToRecycleBin') } }; Remove-Item -LiteralPath '${list}'`;
+  return new Promise(res => { const p = spawn('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true }); p.on('close', res); p.on('error', res); });
+}
+
 const settingsView = () => ({ gptVia: readSettings().gptVia, keys: publicKeys(), codex: CODEX, models: { pro: MODELS.pro.model, flash: MODELS.flash.model, gpt: MODELS.gpt.model } });
 
 /* ---------- HTTP ---------- */
@@ -344,6 +402,7 @@ const routes = {
   'POST /api/open': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe'); spawn('explorer.exe', [abs(r.folder).replace(/\//g, '\\')], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
   'GET /api/health': () => ({ ok: true, pid: process.pid, boot: BOOT, repo: REPO, gptVia: readSettings().gptVia, models: Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { ...m, ready: m.provider === 'gemini' ? hasKey('gemini') : m.provider === 'openai' ? hasKey('openai') : m.provider === 'eleven' ? hasKey('elevenlabs') : m.provider === 'codex' ? CODEX.loggedIn !== false : true }])) }),
   'GET /api/folders': (b, q) => listFolders(q.get('media')),
+  'GET /api/usage': () => usage(),
   'POST /api/pick-folder': b => pickFolder(b.start),
   'GET /api/settings': async () => { await codexStatus(); return settingsView(); },
   'POST /api/settings': b => { writeSettings(b); log('configurações salvas', 'gpt via', readSettings().gptVia); for (const r of R.values()) changed(r); return settingsView(); },
@@ -393,6 +452,31 @@ const routes = {
     if (s.kind === 'branch') { const rm = { id: 'r' + (SEQ++), name: s.name || 'Outra visão', slots: slotsOf(s.models || { gpt: 1 }), prompt: s.prompt, rounds: [] }; r.ramos.push(rm); addRound(r, rm); s.done = 'ramo'; }
     else { const rm = ramoOf(r, s.branch); rm.prompt = s.prompt; addRound(r, rm, b.only ? [rm.slots[0]] : null); s.done = 'r' + rm.rounds.length; }
     save(r); changed(r); return view(r); },
+  // apagar: o pedido sai da lista; com files, o que ELE gerou (as imagens/sons, as cópias dos anexos e o
+  // atelier.json) vai pra Lixeira, nada mais da pasta; as cópias em docs/aprovados nunca são tocadas
+  'POST /api/delete': async b => {
+    const done = [];
+    for (const id of b.ids || [b.id]) {
+      const r = R.get(id); if (!r) continue;
+      for (const x of items(r)) if (running.has(x.it)) running.get(x.it).abort();
+      R.delete(id); clearTimeout(saveTimers.get(id));
+      const trash = [path.join(REQS, id + '.json')];
+      const dir = abs(r.folder);
+      if (b.files) {
+        for (const x of items(r)) if (x.it.file) trash.push(abs(x.it.file));
+        for (const a of r.att) trash.push(abs(a.file));
+        trash.push(path.join(dir, 'atelier.json'));
+      }
+      await toRecycle(trash.filter(f => fs.existsSync(f)));
+      if (b.files) { // a pasta que ficou vazia sai junto
+        try { const an = path.join(dir, '_anexos'); if (fs.existsSync(an) && !fs.readdirSync(an).length) fs.rmdirSync(an); } catch {}
+        try { if (fs.existsSync(dir) && !fs.readdirSync(dir).length) fs.rmdirSync(dir); } catch {}
+      }
+      done.push(id); log('apagado', id, r.title, b.files ? '(e os arquivos, pra Lixeira)' : '(só da lista)');
+    }
+    for (const st of streams) st.write('data: {"id":"*"}\n\n');
+    return { deleted: done };
+  },
   'POST /api/close': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe'); r.closed = !!b.closed; save(r); changed(r); return view(r); },
 };
 

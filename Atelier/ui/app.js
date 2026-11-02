@@ -46,8 +46,9 @@ const M = {
 };
 const isAudio = x => !!(x && M[x.it.m] && M[x.it.m].audio);
 let HEALTH = {models:{}, repo:''};
+let USAGE = null;
 let R = [];
-const S = { sel:null, selK:null, claude:false, sess:null, cmp:null, lpT:false, ov:null, rail:false, openPrompt:{}, showDiff:{} };
+const S = { multi:new Set(), lastSel:null, sel:null, selK:null, claude:false, sess:null, cmp:null, lpT:false, ov:null, rail:false, openPrompt:{}, showDiff:{} };
 
 /* ---------- serviço ---------- */
 async function api(route, body) {
@@ -66,6 +67,7 @@ async function load() {
     for (const r of list) for (const x of allOf(r)) if (x.it.st === 'g') x.it._t = t - (x.it.elapsed || 0) * 1000;
     R = list;
     notifyChanges(old);
+    refreshUsage();
     if (!S.sel || !req(S.sel)) S.sel = (R.find(r => r.status !== 'closed') || R[0] || {}).id || null;
     render();
   })().finally(() => { loading = null; if (again) { again = false; load(); } });
@@ -131,6 +133,33 @@ function render() {
   hydrateWaves(); paintPlaying();
 }
 
+/* Os medidores do topo: o que está gerando e, parado, quanto cada conta já usou (a barra embaixo é o
+   quanto do mês já foi, quando a conta informa) e se bateu o limite. */
+function usageOf(k) {
+  const U = USAGE || {}, d = v => new Date(v).toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'});
+  const n = (c, a, b) => `${c} ${c === 1 ? a : b}`;
+  if (k === 'gpt' && U.gpt) {
+    const u = U.gpt;
+    if (u.limit) return {txt: u.limit.until ? `limite · volta ${u.limit.until}` : u.limit.msg, bad: true, tip: `${u.limit.msg}${u.limit.until ? ', volta em ' + u.limit.until : ''}. Hoje: ${n(u.today, 'imagem', 'imagens')}.`};
+    return {txt: u.via === 'api' ? `${usd(u.usdToday)} hoje` : `${n(u.today, 'imagem', 'imagens')} hoje`,
+      tip: u.via === 'api' ? `Pela chave da OpenAI: ${usd(u.usdToday)} hoje, ${usd(u.usdMonth)} no mês (contado pelo Atelier).` : `Pela conta do ChatGPT: ${n(u.today, 'imagem', 'imagens')} hoje, ${u.month} no mês. A conta não informa quanto falta; o Atelier avisa quando bate o limite.`};
+  }
+  if ((k === 'pro' || k === 'flash') && U.gemini) {
+    const u = U.gemini;
+    if (u.limit) return {txt: u.limit.msg, bad: true, tip: `Gemini: ${u.limit.msg} (às ${new Date(u.limit.at).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}). A fatura de verdade fica no painel do Google.`};
+    return {txt: k === 'pro' ? `${usd(u.usdToday)} hoje` : 'livre', tip: `Gemini (Pro e Flash): ${usd(u.usdToday)} hoje, ${usd(u.usdMonth)} no mês, contado pelo Atelier. O Google não informa a cota pela chave; o Atelier avisa quando bate.`};
+  }
+  if (k === 'sfx' && U.eleven) {
+    const u = U.eleven, a = u.account;
+    if (u.limit) return {txt: u.limit.msg, bad: true, tip: u.limit.msg};
+    if (a && a.limit) {
+      const pct = Math.min(100, Math.round(a.used / a.limit * 100));
+      return {txt: `${pct}% do mês`, pct, tip: `ElevenLabs, plano ${a.tier}: ${a.used.toLocaleString('pt-BR')} de ${a.limit.toLocaleString('pt-BR')} créditos usados${a.reset ? ', renova em ' + d(a.reset) : ''}. Hoje: ${n(u.today, 'som', 'sons')}.`};
+    }
+    if (a && a.error) return {txt: `${n(u.today, 'som', 'sons')} hoje`, tip: `ElevenLabs: ${a.error}.`};
+  }
+  return null;
+}
 function renderMeters() {
   const all = everything();
   $('#meters').innerHTML = ['gpt', 'pro', 'flash', 'sfx'].map(k => {
@@ -138,10 +167,18 @@ function renderMeters() {
     const g = all.filter(x => x.it.m === k && x.it.st === 'g').length;
     const q = all.filter(x => x.it.m === k && x.it.st === 'q').length;
     const viaApi = k === 'gpt' && HEALTH.gptVia === 'api';
-    const txt = !ready ? (k === 'gpt' && !viaApi ? 'sem login' : 'sem chave') : g ? g + ' gerando' : 'livre';
-    const tip = `${m.name}${k === 'gpt' ? (viaApi ? ' · pela chave da API' : ' · pela sua conta do ChatGPT') : ''}`;
-    return `<button class="meter ${m.cls} ${g ? 'on' : ''}" data-act="settings" title="${tip}"><i class="dot ${!ready ? 'q' : g ? 'g' : 'd'}"></i><b>${m.short}</b><span>${txt}${q ? ' · ' + q + ' na fila' : ''}</span></button>`;
+    const u = ready ? usageOf(k) : null;
+    const txt = !ready ? (k === 'gpt' && !viaApi ? 'sem login' : 'sem chave') : g ? g + ' gerando' : u ? u.txt : 'livre';
+    const tip = `${m.name}${k === 'gpt' ? (viaApi ? ' · pela chave da API' : ' · pela sua conta do ChatGPT') : ''}${u ? '\n' + u.tip : ''}`;
+    const lvl = u && u.pct != null ? (u.pct >= 90 ? 'hi' : u.pct >= 70 ? 'mid' : 'lo') : '';
+    return `<button class="meter ${m.cls} ${g ? 'on' : ''} ${u && u.bad ? 'bad' : ''}" data-act="settings" title="${esc(tip)}"><i class="dot ${!ready || (u && u.bad) ? 'f' : g ? 'g' : 'd'}"></i><b>${m.short}</b><span>${txt}${q ? ' · ' + q + ' na fila' : ''}</span>${u && u.pct != null ? `<i class="mbar ${lvl}"><i style="width:${u.pct}%"></i></i>` : ''}</button>`;
   }).join('');
+}
+let usageT = 0;
+function refreshUsage(force) {
+  if (!force && Date.now() - usageT < 15000) return;
+  usageT = Date.now();
+  api('/api/usage').then(u => { USAGE = u; renderMeters(); }).catch(() => {});
 }
 
 function dotsOf(r) {
@@ -161,7 +198,8 @@ function rowHTML(r) {
   const unseen = done.filter(x => !x.it.seen).length;
   const mos = r.media === 'audio' ? `<span class="mglyph m-sfx">${ic('wave')}</span>`
     : show.length ? show.map(x => `<img src="${SRC(x.it.file)}" alt="" loading="lazy">`).join('') : '<i class="shim"></i>';
-  return `<button class="req ${S.sel === r.id ? 'on' : ''}" data-act="sel" data-id="${r.id}">
+  return `<button class="req ${S.sel === r.id ? 'on' : ''} ${S.multi.has(r.id) ? 'marked' : ''}" data-act="sel" data-id="${r.id}" title="Ctrl+clique marca vários">
+    <span class="req-x" data-act="del-req" data-id="${r.id}" title="Apagar (Delete)">${ic('x')}</span>
     <span class="mosaic ${r.kind === 'batch' ? 'b4' : ''}">${mos}</span>
     <span class="req-t"><b>${esc(r.title)}</b><span>${ic('chat')}${esc(r.src)} · ${ago(r.created)}</span></span>
     <span class="req-s"><span class="dots">${dotsOf(r)}</span>${unseen ? `<span class="unseen">${unseen}</span>` : ''}</span>
@@ -173,9 +211,11 @@ function renderRail() {
   R.forEach(r => { if (!S.sess || r.src === S.sess) g[r.status].push(r); });
   const names = {wait:'Esperando você', gen:'Gerando', closed:'Fechados'};
   // o que está gerando fica no topo, à vista; depois o que espera a escolha dele; os fechados por último
-  $('#rail').innerHTML = R.length ? ['gen', 'wait', 'closed'].filter(k => g[k].length).map(k =>
+  for (const id of [...S.multi]) if (!req(id)) S.multi.delete(id);
+  const bar = S.multi.size ? `<div class="multibar"><b>${S.multi.size} ${S.multi.size === 1 ? 'marcado' : 'marcados'}</b><span class="sp"></span><button class="mini danger" data-act="del-multi">${ic('x')}Apagar</button><button class="mini" data-act="multi-clear">Desmarcar</button></div>` : '';
+  $('#rail').innerHTML = bar + (R.length ? ['gen', 'wait', 'closed'].filter(k => g[k].length).map(k =>
     `<div class="grp"><div class="grp-h"><span>${names[k]}</span><span>${g[k].length}</span></div>${g[k].map(rowHTML).join('')}</div>`).join('')
-    : `<div class="grp"><div class="grp-h"><span>Nenhum pedido ainda</span></div></div>`;
+    : `<div class="grp"><div class="grp-h"><span>Nenhum pedido ainda</span></div></div>`);
   const today = new Date().toDateString();
   const spent = everything().filter(x => x.it.st === 'd' && new Date(x.r.created).toDateString() === today).reduce((s, x) => s + (x.it.cost || 0), 0);
   const sess = [...new Set(R.map(r => r.src).filter(s => s && s !== 'Você'))];
@@ -550,6 +590,35 @@ function openBranch(fromK) {
   setTimeout(() => $('#bf-name').select(), 30);
 }
 
+/* Apagar: sai da lista; o segundo botão manda pra Lixeira só o que o pedido gerou (dá pra recuperar de lá).
+   Os aprovados em docs/aprovados ficam sempre. */
+function openDelete(ids) {
+  const list = ids.map(req).filter(Boolean); if (!list.length) return;
+  const one = list.length === 1;
+  const files = list.reduce((n, r) => n + allOf(r).filter(x => x.it.file).length, 0);
+  openOv('delete', `<form class="sheet" id="df">
+    <h2>${ic('x')}Apagar ${one ? `"${esc(list[0].title)}"` : list.length + ' pedidos'}</h2>
+    ${one ? '' : `<div class="del-list">${list.slice(0, 8).map(r => `<span class="chip">${esc(r.title)}</span>`).join('')}${list.length > 8 ? `<span class="dim">e mais ${list.length - 8}</span>` : ''}</div>`}
+    <div class="dim" style="margin:4px 0 14px">${files} ${files === 1 ? 'arquivo gerado' : 'arquivos gerados'}${list.some(r => r.approved) ? ' · os aprovados em docs/aprovados ficam' : ''}</div>
+    <div class="sheet-acts"><button type="button" class="ghost" data-act="close">Cancelar</button>
+      <button type="button" class="ghost" id="df-list">Só da lista</button>
+      <button type="submit" class="primary danger" id="df-files">Da lista e os arquivos pra Lixeira <kbd>Ctrl Enter</kbd></button></div>
+  </form>`);
+  const go = async filesToo => {
+    $('#df-files').disabled = $('#df-list').disabled = true;
+    try {
+      await api('/api/delete', {ids:list.map(r => r.id), files:filesToo});
+      list.forEach(r => S.multi.delete(r.id));
+      if (list.some(r => r.id === S.sel)) S.sel = null;
+      closeOv(); toast(`${one ? 'Pedido apagado' : list.length + ' pedidos apagados'}${filesToo ? ' · arquivos na Lixeira' : ''}`); load();
+    } catch { $('#df-files').disabled = $('#df-list').disabled = false; }
+  };
+  $('#df-list').onclick = () => go(false);
+  $('#df').addEventListener('submit', e => { e.preventDefault(); go(true); });
+  $('#df').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go(true); } });
+  setTimeout(() => $('#df-list').focus(), 30);
+}
+
 function openApprove() {
   const r = cur(); const picks = allOf(r).filter(x => x.it.pick && x.it.st === 'd'); if (!picks.length) return;
   openOv('approve', `<form class="sheet" id="af">
@@ -882,7 +951,19 @@ document.addEventListener('click', e => {
   }
   const a = t.dataset.act, k = t.dataset.k, r = cur();
   switch (a) {
-    case 'sel': select(t.dataset.id); break;
+    case 'sel': {
+      const id = t.dataset.id;
+      if (e.ctrlKey || e.metaKey) { S.multi.has(id) ? S.multi.delete(id) : S.multi.add(id); S.lastSel = id; renderRail(); break; }
+      if (e.shiftKey && S.lastSel) {
+        const order = [...document.querySelectorAll('#rail .req')].map(b => b.dataset.id);
+        const [a, z] = [order.indexOf(S.lastSel), order.indexOf(id)].sort((m, n) => m - n);
+        if (a >= 0) order.slice(a, z + 1).forEach(x => S.multi.add(x));
+        renderRail(); break;
+      }
+      S.multi.clear(); S.lastSel = id; select(id); break; }
+    case 'del-req': e.stopPropagation(); openDelete([t.dataset.id]); break;
+    case 'del-multi': openDelete([...S.multi]); break;
+    case 'multi-clear': S.multi.clear(); renderRail(); break;
     case 'new': openNew(); break;
     case 'settings': openSettings(); break;
     case 'palette': openPalette(); break;
@@ -985,7 +1066,7 @@ function navTiles(dir) {
 document.addEventListener('keydown', e => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '');
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
-  if (e.key === 'Escape') { if (S.ov) { closeOv(); return; } if (S.rail) { S.rail = false; render(); } return; }
+  if (e.key === 'Escape') { if (S.ov) { closeOv(); return; } if (S.multi.size) { S.multi.clear(); renderRail(); return; } if (S.rail) { S.rail = false; render(); } return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !typing && !String(getSelection())) {
     const f = S.ov === 'loupe' ? viewFile() : !S.ov ? viewFile() : null;
     if (f) { e.preventDefault(); copyImage(f); return; }
@@ -1019,6 +1100,7 @@ document.addEventListener('keydown', e => {
   const kk = e.key.toLowerCase();
   const map = {n:openNew, c:openCompare, p:() => togglePick(S.selK), x:() => toggleRej(S.selK), r:() => S.selK && regen(S.selK),
     b:() => openBranch(S.selK && byKey(S.selK)?.it.st === 'd' && byKey(S.selK)?.rm ? S.selK : null), a:() => S.selK && attachFrom(S.selK),
+    delete:() => openDelete(S.multi.size ? [...S.multi] : S.sel ? [S.sel] : []),
     enter:() => S.selK && openLoupe(S.selK), ' ':() => S.selK && isAudio(byKey(S.selK)) && togglePlay(S.selK), '/':() => { S.claude = true; render(); $('#cl-input').focus(); },
     arrowleft:() => navTiles('l'), arrowright:() => navTiles('r'), arrowup:() => navTiles('u'), arrowdown:() => navTiles('d')};
   if (map[kk]) { e.preventDefault(); map[kk](); }
@@ -1026,6 +1108,7 @@ document.addEventListener('keydown', e => {
 
 document.querySelectorAll('[data-ic]').forEach(el => el.insertAdjacentHTML('afterbegin', ic(el.dataset.ic)));
 setInterval(progress, 500);
+setInterval(() => refreshUsage(true), 60000);
 refreshHealth();
 // ?snapshot = uma leitura só, sem o canal de avisos (pras capturas de teste, que esperam a rede parar)
 const Q = new URLSearchParams(location.search);

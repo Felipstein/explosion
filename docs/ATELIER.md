@@ -147,3 +147,28 @@ Começou pelos **efeitos sonoros**; música e vozes vêm depois, uma coisa de ca
 - Sessões: `atelier_generate` com `kind: "sound"`, `variations`, `duration`, `loop`, `influence`.
 - A chave da ElevenLabs entra nas Configurações (Testar mostra o plano e os créditos do mês).
 - `core/providers.mjs`: `eleven` (a API) e `fakeaudio` (um estouro sintético em WAV, pros testes da tela).
+
+## Apagar pedidos (01/11)
+
+- **×** no pedido ao passar o mouse, a tecla **Delete**, ou **Ctrl+clique** (Shift+clique pega o
+  intervalo) pra marcar vários e apagar juntos pela barra que aparece no topo da lista.
+- A pergunta: **só da lista** (os arquivos ficam na pasta) ou **da lista e os arquivos pra Lixeira**.
+  Só vai pra Lixeira o que o próprio pedido gerou (as imagens/sons, as cópias dos anexos e o
+  `atelier.json`); nada mais da pasta; a pasta que fica vazia sai junto. Os aprovados em
+  `docs/aprovados/` nunca são tocados. O JSON do pedido também vai pra Lixeira, então dá pra recuperar.
+- `ATELIER_DATA` troca a pasta dos pedidos: os testes rodam numa cópia do serviço em outra porta
+  (`ATELIER_PORT`), sem tocar nos pedidos de verdade.
+
+## Uso de cada conta (01/11)
+
+Nos medidores do topo, quando nada está gerando, aparece quanto cada conta já usou (passando o mouse,
+o detalhe; `GET /api/usage`):
+- **ElevenLabs:** o uso de verdade, lido da conta (`/v1/user/subscription`, no máximo 1x por minuto):
+  "% do mês", com a barra (verde, amarela a partir de 70%, vermelha a partir de 90%), créditos usados
+  de quantos, o plano e o dia em que renova.
+- **Gemini:** o Google não informa a cota pela chave: o gasto contado pelo Atelier (hoje e no mês) e
+  o aviso "cota da chave batida" quando vem um 429.
+- **GPT:** pela conta do ChatGPT, o % não vem (o Codex não registra): as imagens de hoje e o aviso
+  "limite · volta em ..." quando bate; pela chave da API, o gasto contado.
+- O aviso de limite some sozinho no próximo acerto daquela conta (e ao religar, pela ordem das
+  falhas e acertos guardados).
