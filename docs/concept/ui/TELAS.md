@@ -189,6 +189,17 @@ interface, tremor, clarões, legendas). **Sem HEALTH BARS**: a vida só aparece 
 telas, o menu principal incluído: a seta no normal, o colchete âmbar em cima do que se clica, a barra nos campos de digitar e a mão
 segurando o dinheiro inicial ou os controles deslizantes das opções. No protótipo, 48 px (o 1080p) com o ponto do clique em (7, 4).
 
+**LAB e SCRIPT no menu, e as telas entrando no jogo (01/11, ele aprovou as telas com o pai pela rede):** no menu, um bloco à parte
+(DEVELOPMENT · NOT IN THE RELEASE, em ciano de ferramenta e borda tracejada, pra nunca parecer parte do jogo) com o **LAB** (o mundo de
+testes que já existia no jogo) e o **SCRIPT** (`script.html`): as 273 partidas de teste prontas do `Scenarios.json`, a mais nova
+primeiro, a busca por nome, mapa ou texto, a cena da linha de comando (`-RTSScenario`) armada no topo, e o RUN (Enter). Só aparecem
+no desenvolvimento: no jogo, o editor ou `-RTSLab`; no protótipo, aberto neste PC (na rede do pai, não). **No jogo**, as páginas
+aprovadas rodam idênticas no navegador embutido da Unreal (o CEF do módulo WebBrowser, o mesmo caminho do Gameface da Coherent, do
+cliente do League e do launcher da Epic), num plugin próprio (`RTSShell`, as páginas em `Resources/UI` servidas em `https://rts.ui/`),
+e o `RTSShellGame` liga os botões: o skirmish montado na sala (até 8 vagas com facção, cor, time e base; a dificuldade fica guardada,
+a IA de hoje tem um nível só), o LAB, o SCRIPT, a qualidade, o QUIT e a LAN (a sala da LAN ainda é a antiga). O teste automático
+(`-RTSAutoTest`) e o `-RTSOldMenu` continuam no menu antigo.
+
 ## 4. A primeira rodada, olhada com rigor
 
 - **Menu:** forte. O console desligado na borda de baixo é a assinatura que pedimos. Veio uma fileira com os 4 emblemas que não pedi: lê

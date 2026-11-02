@@ -49,6 +49,24 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
 .corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--ac),.45); pointer-events: none; }
 .c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
 .c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
+/* o LAB e o SCRIPT (só no desenvolvimento): o bloco de ferramenta, em ciano de planta e borda tracejada, fora da lista do jogo */
+.dev { margin-top: 30px; display: none; } .dev.on { display: block; }
+.devh { display: flex; align-items: center; gap: 12px; font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 6px; color: rgba(120,190,220,.85); }
+.devh::after { content: ''; flex: 1; height: 0; border-top: 1px dashed rgba(120,190,220,.35); }
+.devh span { font: 700 10px 'Barlow Semi Condensed'; letter-spacing: 2.5px; padding: 2px 7px; border: 1px dashed rgba(120,190,220,.55); color: rgba(120,190,220,.75); }
+.devrow { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dv { position: relative; height: 84px; padding: 14px 16px 0 66px; background: rgba(10,22,26,.55); border: 1px dashed rgba(120,190,220,.32); cursor: var(--curh); transition: border-color .15s, background .15s; overflow: hidden; }
+.dv::before { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(120,190,220,.05) 1px, transparent 1px) 0 0 / 100% 12px, linear-gradient(90deg, rgba(120,190,220,.05) 1px, transparent 1px) 0 0 / 12px 100%; pointer-events: none; }
+.dv:hover { border-color: rgba(120,190,220,.85); border-style: solid; background: rgba(14,34,40,.7); }
+.dv svg { position: absolute; left: 16px; top: 18px; width: 36px; height: 36px; color: rgba(120,190,220,.8); transition: transform .3s cubic-bezier(.2,.9,.3,1.2); }
+.dv:hover svg { transform: scale(1.12) rotate(-6deg); color: rgb(150,215,240); }
+.dv b { display: block; font: 800 30px/1 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.8); transition: color .15s, letter-spacing .25s; }
+.dv:hover b { color: #fff; letter-spacing: 5px; }
+.dv span { display: block; margin-top: 6px; font: 500 14px 'Barlow Semi Condensed'; letter-spacing: 1px; color: rgba(152,161,154,.95); white-space: nowrap; }
+.dv em { position: absolute; right: 10px; top: 10px; font: 600 11px 'IBM Plex Mono'; font-style: normal; color: rgba(216,173,78,.95); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv em.n { color: rgba(120,190,220,.7); }
+.dtoast { position: absolute; left: 110px; bottom: 120px; padding: 10px 16px; font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 3px; color: #fff; background: rgba(10,13,12,.95); border: 1px solid rgba(120,190,220,.6); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 8; }
+.dtoast.on { opacity: 1; }
 </style>
 </head>
 <body>
@@ -67,6 +85,13 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
       <li data-k="options"><span class="t">OPTIONS</span><span class="d">Quality · Sound · Controls</span></li>
       <li data-k="quit"><span class="t">QUIT</span><span class="d">Back to the desktop</span></li>
     </ul>
+    <div class="dev" id="dev">
+      <div class="devh">DEVELOPMENT<span>NOT IN THE RELEASE</span></div>
+      <div class="devrow">
+        <div class="dv" data-k="lab"><svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="28" height="28"/><path d="M4 13h28M4 23h28M13 4v28M23 4v28" opacity=".45"/><circle cx="18" cy="18" r="5.5"/><path d="M18 9v4M18 23v4M9 18h4M23 18h4"/></svg><b>LAB</b><span>Sandbox world · test live</span></div>
+        <div class="dv" data-k="script"><svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 5h16l6 6v20H7z"/><path d="M23 5v6h6"/><path d="M15 15l8 5-8 5z" fill="currentColor" stroke="none"/></svg><b>SCRIPT</b><span>Ready-made test match</span><em class="n" id="scn">273 SCENES</em></div>
+      </div>
+    </div>
   </div>
   <div class="ver">v0.5.2</div>
   <div class="dbg" id="dbg">DEBUG · ALL SCREENS ▸</div>
@@ -395,8 +420,10 @@ document.querySelectorAll('#menu li').forEach(li => {
   li.addEventListener('mouseenter', () => hover(li));
   li.addEventListener('mouseleave', () => hover(null));
   li.addEventListener('mousedown', () => { if (li.dataset.k === 'quit') { offT = 1; setTimeout(() => offT = 0, 1800); } });
-  li.addEventListener('click', () => { const go = { skirmish: 'skirmish.html', multi: 'multiplayer.html', options: 'screens.html?s=opt&from=menu' }[li.dataset.k]; if (go) setTimeout(() => location.href = go, 260); });   // cada item abre a sua tela
+  li.addEventListener('click', () => { const go = { skirmish: 'skirmish.html', multi: 'multiplayer.html', options: 'screens.html?s=opt&from=menu' }[li.dataset.k]; if (go) setTimeout(() => location.href = go, 260);
+    if (li.dataset.k === 'quit' && window.ue && window.ue.shell) setTimeout(() => window.ue.shell.quit(), 900); });   // no jogo o QUIT fecha (depois do monitor apagar)   // cada item abre a sua tela
 });
+if (window.ue && window.ue.shell) { document.getElementById('dbg').style.display = 'none'; }   // no jogo as telas da partida são as de verdade
 document.getElementById('dbg').onclick = () => document.getElementById('dbgp').classList.toggle('on');     // o painel de debug: todas as telas a um clique (F2 também)
 addEventListener('keydown', e => { if (e.key === 'F2') { e.preventDefault(); document.getElementById('dbgp').classList.toggle('on'); } if (e.key === 'Escape') document.getElementById('dbgp').classList.remove('on'); });
 // ---------- o som do site: a trilha do menu no primeiro clique, o clique da interface; a cascata ouve a trilha ----------
@@ -429,6 +456,21 @@ function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume
   track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
   if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
 addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+// ---------- o LAB e o SCRIPT: só no desenvolvimento. No jogo a ponte diz (o editor ou -RTSLab) e abre o laboratório; no protótipo,
+// aparecem neste PC (localhost) ou com ?dev=1, e não na rede (o pai vê o jogo como vai sair) ----------
+(async () => {
+  const UE = window.ue && window.ue.shell, dev = UE ? await UE.isdev() : (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) || Q.get('dev') === '1');
+  if (!dev) return; document.getElementById('dev').classList.add('on');
+  let armed = UE && UE.armedscenario ? await UE.armedscenario() : (Q.get('armed') || '');
+  const scn = document.getElementById('scn');
+  if (armed) { scn.textContent = '▸ ' + armed; scn.classList.remove('n'); }
+  else fetch(UE ? 'api/scenarios.json' : 'data/scenarios.json').then(r => r.json()).then(d => scn.textContent = d.scenarios.length + ' SCENES').catch(() => { });
+  const toast = t => { let e = document.querySelector('.dtoast'); if (!e) { e = document.createElement('div'); e.className = 'dtoast'; stage.appendChild(e); } e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1800); };
+  document.querySelectorAll('.dv').forEach(d => d.addEventListener('click', () => {
+    if (d.dataset.k === 'lab') { if (UE) setTimeout(() => UE.openlab(), 200); else toast('IN THE GAME THIS OPENS THE LAB WORLD'); }
+    else setTimeout(() => location.href = 'script.html' + (armed ? '?armed=' + encodeURIComponent(armed) : ''), 200);
+  }));
+})();
 // ---------- o laço (ou o passo a passo pra gravar) ----------
 window.__step = (dt, n = 1) => { for (let i = 0; i < n; i++) frame(dt); return T; };
 window.__hover = i => { document.querySelectorAll('#menu li').forEach(l => l.classList.remove('hv')); if (i) { const li = document.querySelector(`#menu li:nth-child(${i})`); li.classList.add('hv'); hover(li); } else hover(null); };

@@ -495,7 +495,10 @@ function slSet(e) { const sl = document.querySelector(`.sl[data-k="${slDrag}"]`)
   sl.querySelector('i').style.width = f + '%'; sl.querySelector('b').style.left = f + '%'; sl.nextElementSibling.textContent = OPT[slDrag] + (slDrag === 'uiscale' ? '%' : ''); }
 $('#otabs').onclick = e => { const t = e.target.closest('.tab'); if (!t) return; document.querySelectorAll('#otabs .tab').forEach(x => x.classList.toggle('on', x === t)); document.querySelectorAll('#opt .pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + t.dataset.p)); $('#omain').scrollTop = 0; card(null); $('#ometer').style.display = t.dataset.p === 'gfx' ? '' : 'none'; };   // os quadros só fazem sentido nos gráficos
 $('#oreset').onclick = () => { applyPreset(5); renderOpt(); };
-INIT.opt = () => { if (!INIT.opt.done) { applyPreset(5); INIT.opt.done = true; } renderOpt(); };
+INIT.opt = () => { if (!INIT.opt.done) { applyPreset(5); INIT.opt.done = true;
+    if (window.ue && window.ue.shell) Promise.resolve(window.ue.shell.getquality()).then(q => { applyPreset(Math.max(0, Math.min(4, +q))); renderOpt(); }).catch(() => { }); }
+  renderOpt(); };
+$('#oapply').onclick = () => { if (window.ue && window.ue.shell) window.ue.shell.setquality(custom ? 3 : pre); $('#oback').click(); };   // os outros itens ficam guardados pra quando o jogo tiver cada um
 const KEYS = [['SELECT ALL UNITS', 'Q'], ['ATTACK MOVE', 'A'], ['FORCE FIRE', 'CTRL'], ['STOP', 'S'], ['GUARD', 'G'], ['SCATTER', 'X'], ['CENTER ON BASE', 'H'], ['NEXT IDLE WORKER', '.'], ['CHAT', 'ENTER'], ['GENERAL POWERS', 'G']];
 function renderKeys() {
   const q = ($('#kq').value || '').toUpperCase(), cnt = {}; KEYS.forEach(([, k]) => cnt[k] = (cnt[k] || 0) + 1);

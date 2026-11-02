@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "RTS Shell",
+	"Description": "As telas do jogo fora da partida (menu, skirmish, multiplayer, opções, SCRIPT): as páginas HTML aprovadas (docs/concept/ui/menu) no navegador embutido da Unreal, com uma ponte pro jogo. O jogo liga as ações (RTSShellGame).",
+	"Category": "RTS",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "RTSShell",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Script</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* o cursor dos menus (aprovado 01/11; desenho e ponto do clique da sessão dos cursores, art/cursors/menu.html); 48 px no 1080p */
+:root { --cur: url(cur/48/menu_pointer.png) 7 4, default; --curh: url(cur/48/menu_hover.png) 7 4, pointer;
+  --curt: url(cur/48/menu_text.png) 24 24, text; --curd: url(cur/48/menu_drag.png) 24 24, grabbing; }
+html, body { cursor: var(--cur); } input, textarea { cursor: var(--curt); }
+/* O SCRIPT (só no desenvolvimento): as partidas de teste prontas do Scenarios.json, as que as sessões abrem com -RTSScenario.
+   A lista mais nova primeiro, a busca por nome, mapa ou texto, e à direita a escolhida com o que ela testa e o RUN. A que veio
+   pela linha de comando aparece armada no topo. */
+:root { --ink: #eef1f4; --mute: #98a19a; --ac: 216,173,78; --line: rgba(230,220,190,.10); --card: rgba(16,21,19,.62); --ok: 120,200,120; --bad: 240,110,90; --dev: 120,190,220; }
+html, body { margin: 0; height: 100%; background: #0a0d0b; overflow: hidden; color: var(--ink); font-family: 'Barlow Semi Condensed', sans-serif; user-select: none; }
+#wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center;
+  background-color: rgb(10,13,11);
+  background-image: radial-gradient(at 50% 0%, rgba(120,190,220,.06), rgba(0,0,0,0) 60%),
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px; }
+.corner { position: absolute; width: 22px; height: 22px; border: 2px solid rgba(var(--dev),.45); pointer-events: none; }
+.c1 { left: 40px; top: 40px; border-right: 0; border-bottom: 0; } .c2 { right: 40px; top: 40px; border-left: 0; border-bottom: 0; }
+.c3 { left: 40px; bottom: 40px; border-right: 0; border-top: 0; } .c4 { right: 40px; bottom: 40px; border-left: 0; border-top: 0; }
+.backbtn { position: absolute; left: 110px; top: 30px; z-index: 35; height: 42px; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 10px; cursor: var(--curh);
+  font: 800 19px 'Big Shoulders Display'; letter-spacing: 3px; color: rgba(238,241,244,.9); background: rgba(16,21,19,.85); border: 1px solid rgba(230,220,190,.32); transition: all .15s; }
+.backbtn:hover { color: rgb(216,173,78); border-color: rgba(216,173,78,.8); }
+.backbtn svg { width: 22px; height: 22px; } .backbtn kbd { font: 600 11px 'IBM Plex Mono'; letter-spacing: 1px; padding: 2px 6px; border: 1px solid currentColor; opacity: .7; }
+.kicker { font: 600 16px 'Barlow Semi Condensed'; letter-spacing: 8px; color: rgb(var(--dev)); display: flex; align-items: center; gap: 14px; }
+.kicker .tag { font: 700 11px 'Barlow Semi Condensed'; letter-spacing: 3px; padding: 3px 8px; border: 1px dashed rgba(var(--dev),.6); }
+h1 { margin: 12px 0 0; font: 900 62px/0.95 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.head { position: absolute; left: 110px; top: 88px; }
+.sub { margin-top: 10px; font: 500 17px 'Barlow Semi Condensed'; color: var(--mute); letter-spacing: 1px; }
+.sub code { font: 600 14px 'IBM Plex Mono'; color: rgba(var(--dev),.95); }
+
+/* a lista */
+.list { position: absolute; left: 110px; top: 250px; width: 1060px; bottom: 70px; display: flex; flex-direction: column; }
+.bar { display: flex; gap: 10px; align-items: center; }
+.search { flex: 1; display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; background: rgba(16,21,19,.8); border: 1px solid rgba(230,220,190,.2); }
+.search:focus-within { border-color: rgba(var(--dev),.7); }
+.search input { flex: 1; background: none; border: 0; outline: 0; color: #fff; font: 600 18px 'Barlow Semi Condensed'; letter-spacing: 1px; }
+.search input::placeholder { color: rgba(238,241,244,.35); }
+.search .n { font: 600 13px 'IBM Plex Mono'; color: rgba(230,220,190,.5); }
+.chip { height: 48px; display: flex; align-items: center; padding: 0 14px; font: 700 13px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgba(238,241,244,.6); border: 1px solid rgba(230,220,190,.14); cursor: var(--curh); white-space: nowrap; transition: all .12s; }
+.chip:hover { color: #fff; border-color: rgba(230,220,190,.3); }
+.chip.on { color: rgb(var(--dev)); border-color: rgba(var(--dev),.7); background: rgba(120,190,220,.07); }
+.armed { margin-top: 14px; display: none; align-items: center; gap: 16px; padding: 12px 16px; border: 1px dashed rgba(var(--ac),.7); background: rgba(216,173,78,.06); cursor: var(--curh); }
+.armed.on { display: flex; }
+.armed b { font: 800 22px 'Big Shoulders Display'; letter-spacing: 2px; color: #fff; }
+.armed span { font: 700 12px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgb(var(--ac)); }
+.armed em { margin-left: auto; font: 600 13px 'IBM Plex Mono'; font-style: normal; color: rgba(238,241,244,.6); }
+.th { margin-top: 14px; display: grid; grid-template-columns: 300px 1fr 190px 90px; padding: 0 16px; font: 600 11px 'Barlow Semi Condensed'; letter-spacing: 4px; color: rgba(230,220,190,.45); }
+.rows { flex: 1; min-height: 0; margin-top: 8px; overflow-y: auto; padding-right: 8px; }
+.rows::-webkit-scrollbar { width: 8px; } .rows::-webkit-scrollbar-thumb { background: rgba(230,220,190,.18); }
+.sc { display: grid; grid-template-columns: 300px 1fr 190px 90px; align-items: center; min-height: 56px; padding: 0 16px; margin-bottom: 4px; background: var(--card); border: 1px solid var(--line); cursor: var(--curh); transition: border-color .12s, background .12s; position: relative; }
+.sc:hover { border-color: rgba(230,220,190,.28); }
+.sc.on { border-color: rgba(var(--dev),.8); background: rgba(120,190,220,.06); }
+.sc.on::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 4px; background: rgb(var(--dev)); box-shadow: 0 0 12px rgba(var(--dev),.7); }
+.sc .nm { font: 700 17px 'IBM Plex Mono'; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 14px; }
+.sc .ab { font: 500 14px 'Barlow Semi Condensed'; color: rgba(238,241,244,.62); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 14px; }
+.sc .mp { font: 600 13px 'Barlow Semi Condensed'; letter-spacing: 1.5px; color: rgba(230,220,190,.7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc .tm { font: 600 13px 'IBM Plex Mono'; color: rgba(238,241,244,.55); text-align: right; }
+.empty { padding: 40px 0; text-align: center; font: 700 15px 'Barlow Semi Condensed'; letter-spacing: 4px; color: var(--mute); }
+mark { background: none; color: rgb(var(--dev)); }
+
+/* a escolhida */
+.det { position: absolute; right: 110px; top: 250px; width: 560px; bottom: 70px; display: flex; flex-direction: column; }
+.det .card { flex: 1; padding: 26px 28px; background: var(--card); border: 1px solid var(--line); overflow-y: auto; }
+.det .lab { font: 600 12px 'Barlow Semi Condensed'; letter-spacing: 5px; color: rgba(var(--dev),.8); }
+.det h2 { margin: 8px 0 0; font: 700 28px/1.1 'IBM Plex Mono'; color: #fff; word-break: break-all; }
+.det .facts { margin-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.det .facts div { padding: 10px 12px; border: 1px solid rgba(230,220,190,.12); }
+.det .facts b { display: block; font: 800 24px 'Big Shoulders Display'; letter-spacing: 1px; color: #fff; }
+.det .facts span { font: 600 11px 'Barlow Semi Condensed'; letter-spacing: 3px; color: var(--mute); }
+.det .map { margin-top: 14px; font: 700 15px 'Barlow Semi Condensed'; letter-spacing: 3px; color: rgba(230,220,190,.8); }
+.det .map small { font: 500 13px 'IBM Plex Mono'; letter-spacing: 0; color: var(--mute); margin-left: 8px; }
+.det p { margin: 18px 0 0; font: 500 17px/1.5 'Barlow Semi Condensed'; color: rgba(238,241,244,.82); }
+.det .tags { margin-top: 16px; display: flex; gap: 6px; flex-wrap: wrap; }
+.det .tags i { font: 700 11px 'Barlow Semi Condensed'; font-style: normal; letter-spacing: 2px; padding: 4px 8px; border: 1px solid rgba(230,220,190,.18); color: rgba(238,241,244,.7); }
+.det .cmd { margin-top: 18px; padding: 10px 12px; font: 500 13px 'IBM Plex Mono'; color: rgba(var(--dev),.9); background: rgba(0,0,0,.35); border: 1px solid rgba(var(--dev),.2); word-break: break-all; }
+.run { margin-top: 12px; height: 72px; display: flex; align-items: center; justify-content: center; gap: 14px; cursor: var(--curh); white-space: nowrap;
+  font: 900 30px 'Big Shoulders Display'; letter-spacing: 6px; color: #08100f; background: rgb(var(--dev)); box-shadow: 0 0 40px rgba(120,190,220,.25); transition: all .15s; }
+.run:hover { letter-spacing: 8px; box-shadow: 0 0 60px rgba(120,190,220,.45); }
+.run kbd { font: 600 12px 'IBM Plex Mono'; letter-spacing: 1px; padding: 3px 6px; border: 1px solid currentColor; opacity: .6; }
+.toast { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); padding: 12px 20px; font: 700 14px 'Barlow Semi Condensed'; letter-spacing: 3px; color: #fff; background: rgba(10,13,12,.95); border: 1px solid rgba(var(--dev),.6); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage">
+  <div class="corner c1"></div><div class="corner c2"></div><div class="corner c3"></div><div class="corner c4"></div>
+  <div class="backbtn" id="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 5l-7 7 7 7"/></svg><span>BACK</span><kbd>ESC</kbd></div>
+  <div class="head"><div class="kicker">DEVELOPMENT <span class="tag">NOT IN THE RELEASE</span></div><h1>SCRIPT · TEST SCENES</h1>
+    <div class="sub">Ready-made matches with a fixed seed, camera and orders. The same as <code>game.ps1 view -Scenario &lt;name&gt;</code>.</div></div>
+  <div class="list">
+    <div class="bar">
+      <div class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(230,220,190,.6)" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg><input id="q" placeholder="Search by name, map or what it tests" spellcheck="false"><span class="n" id="cnt"></span></div>
+      <div class="chip on" data-s="new">NEWEST</div><div class="chip" data-s="name">NAME</div><div class="chip" data-s="map">MAP</div><div class="chip" data-f="lab">LAB ONLY</div>
+    </div>
+    <div class="armed" id="armed"><span>FROM THE COMMAND LINE</span><b id="armedn"></b><em>ENTER RUNS IT</em></div>
+    <div class="th"><div>SCENE</div><div>WHAT IT TESTS</div><div>MAP</div><div style="text-align:right">LENGTH</div></div>
+    <div class="rows" id="rows"></div>
+  </div>
+  <div class="det"><div class="card" id="card"></div><div class="run" id="run">RUN SCENE<kbd>ENTER</kbd></div></div>
+  <div class="toast" id="toast"></div>
+</div></div>
+<script>
+const W = 1920, H = 1080, Q = new URLSearchParams(location.search), $ = s => document.querySelector(s), stage = $('#stage');
+function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+// no jogo a ponte (window.ue.shell) diz a cena da linha de comando e roda a escolhida; no protótipo, ?armed=<nome>
+const UE = window.ue && window.ue.shell;
+let ALL = [], sortK = 'new', labOnly = false, sel = null, armed = Q.get('armed') || '';
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const hi = (s, q) => { s = esc(s); if (!q) return s; const i = s.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? s : s.slice(0, i) + '<mark>' + s.slice(i, i + q.length) + '</mark>' + s.slice(i + q.length); };
+const firstLine = a => a.replace(/^\([^)]*\)\s*/, '');
+const dur = s => s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${(+s).toFixed(s < 10 ? 1 : 0)} s`;
+function list() {
+  const q = $('#q').value.trim().toLowerCase();
+  let L = ALL.filter(s => (!labOnly || s.lab) && (!q || (s.name + ' ' + s.map + ' ' + s.map_title + ' ' + s.about).toLowerCase().includes(q)));
+  if (sortK === 'name') L.sort((a, b) => a.name.localeCompare(b.name)); else if (sortK === 'map') L.sort((a, b) => a.map.localeCompare(b.map) || b.i - a.i); else L.sort((a, b) => b.i - a.i);
+  return L;
+}
+function render() {
+  const q = $('#q').value.trim(), L = list();
+  $('#cnt').textContent = `${L.length} / ${ALL.length}`;
+  $('#rows').innerHTML = L.length ? L.map(s => `<div class="sc ${sel && s.name === sel.name ? 'on' : ''}" data-n="${s.name}"><div class="nm">${hi(s.name, q)}</div><div class="ab">${hi(firstLine(s.about), q)}</div><div class="mp">${hi(s.map_title.toUpperCase(), q)}</div><div class="tm">${dur(s.end_s)}</div></div>`).join('') : '<div class="empty">NO SCENE MATCHES</div>';
+  $('#armed').classList.toggle('on', !!armed); $('#rows').classList.toggle('withArmed', !!armed); $('#armedn').textContent = armed;
+  card();
+}
+function card() {
+  const s = sel; if (!s) { $('#card').innerHTML = '<div class="lab">NO SCENE</div>'; return; }
+  const tags = [s.lab ? 'LAB' : null, s.hud ? 'HUD' : 'NO HUD', s.fog ? 'FOG ' + s.fog.toUpperCase() : null, s.name === armed ? 'ARMED' : null].filter(Boolean);
+  $('#card').innerHTML = `<div class="lab">SCENE</div><h2>${esc(s.name)}</h2>
+    <div class="map">${esc(s.map_title.toUpperCase())}<small>${esc(s.map)}</small></div>
+    <div class="facts"><div><b>${s.units}</b><span>UNITS</span></div><div><b>${s.structures}</b><span>BUILDINGS</span></div><div><b>${s.orders}</b><span>ORDERS</span></div><div><b>${dur(s.end_s)}</b><span>LENGTH</span></div></div>
+    <p>${esc(s.about)}</p><div class="tags">${tags.map(t => `<i>${t}</i>`).join('')}</div>
+    <div class="cmd">game.ps1 view -Scenario ${esc(s.name)}</div>`;
+}
+function pick(name) { sel = ALL.find(s => s.name === name) || sel; render(); const el = document.querySelector(`.sc[data-n="${CSS.escape(name)}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
+function toast(t) { const e = $('#toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove('on'), 1800); }
+function run() { if (!sel) return; if (UE) UE.runscenario(sel.name); else toast(`IN THE GAME THIS OPENS ${sel.name.toUpperCase()}`); }
+$('#rows').addEventListener('click', e => { const r = e.target.closest('.sc'); if (r) pick(r.dataset.n); });
+$('#rows').addEventListener('dblclick', e => { const r = e.target.closest('.sc'); if (r) { pick(r.dataset.n); run(); } });
+$('#armed').onclick = () => pick(armed);
+document.querySelectorAll('.chip').forEach(c => c.onclick = () => { if (c.dataset.s) { sortK = c.dataset.s; document.querySelectorAll('.chip[data-s]').forEach(x => x.classList.toggle('on', x === c)); } else { labOnly = !labOnly; c.classList.toggle('on', labOnly); } render(); });
+$('#q').oninput = () => { const L = list(); if (L.length && (!sel || !L.includes(sel))) sel = L[0]; render(); };
+$('#run').onclick = run;
+function goBack() { if (UE) UE.navigate('menu.html'); else location.href = 'menu.html'; }
+$('#back').onclick = goBack;
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if ($('#q').value) { $('#q').value = ''; render(); } else goBack(); }
+  else if (e.key === 'Enter') run();
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const L = list(), i = L.indexOf(sel), n = L[Math.max(0, Math.min(L.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]; if (n) pick(n.name); }
+  else if (e.key.length === 1 && document.activeElement !== $('#q') && !e.ctrlKey) $('#q').focus();
+});
+// ---------- o som (o aprovado): o clique em todo clique; a música continua de onde estava, mais baixa (é tela de trabalho)
+const MUSIC_VOL = .55 * .4, MUSIC_OK = () => true;
+const music = new Audio(); let track = 0; music.src = `snd/Main_Menu_1.mp3`; music.volume = MUSIC_VOL;
+music.addEventListener('ended', () => { track = (track + 1) % 3; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.play().catch(() => { }); });
+const actx = Q.get('mute') ? null : new AudioContext(); let clickBuf = null, musicOn = false;
+if (actx) fetch('snd/Menu_Click.wav').then(r => r.arrayBuffer()).then(b => actx.decodeAudioData(b)).then(b => clickBuf = b).catch(() => { });
+function clickable(el) { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (/^(BUTTON|A|SELECT|INPUT|LABEL)$/.test(e.tagName) || /(^|,\s*)pointer$/.test(getComputedStyle(e).cursor)) return true; } return false; }
+addEventListener('pointerdown', e => { if (!actx) return; actx.resume(); if (!musicOn && !Q.get('nomusic')) { musicOn = true; music.play().catch(() => { }); }
+  if (clickable(e.target) && clickBuf) { const s = actx.createBufferSource(), g = actx.createGain(); s.buffer = clickBuf; g.gain.value = .6; s.connect(g).connect(actx.destination); s.start(); } }, true);
+function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume, t0 = performance.now();
+  musicFade.t = setInterval(() => { const k = Math.min(1, (performance.now() - t0) / ms); music.volume = v0 + (to - v0) * k * k * (3 - 2 * k); if (k >= 1) clearInterval(musicFade.t); }, 30); }
+(() => { let m = null; try { m = JSON.parse(sessionStorage.getItem('menu_music')); } catch (e) { }
+  if (!m || Date.now() - m.at > 20000 || Q.get('mute') || Q.get('nomusic') || !MUSIC_OK()) return;
+  track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;
+  if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
+addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+// os dados: no jogo vêm do próprio Scenarios.json (api/scenarios.json); no protótipo, da cópia exportada
+(async () => {
+  await document.fonts.ready;
+  const d = await fetch(UE ? 'api/scenarios.json' : 'data/scenarios.json').then(r => r.json());
+  const cnt = v => Array.isArray(v) ? v.length : (+v || 0);
+  ALL = d.scenarios.map((s, i) => ({ name: s.name, about: s.about || '', map: s.map || '', map_title: s.map_title || s.map || '', units: cnt(s.units), structures: cnt(s.structures),
+    orders: cnt(s.orders), end_s: s.end_s || 0, lab: !!s.lab, hud: s.hud !== false, fog: typeof s.fog === 'string' ? s.fog : '', i }));
+  if (UE && UE.armedscenario) armed = await UE.armedscenario();
+  sel = (armed && ALL.find(s => s.name === armed)) || ALL[ALL.length - 1];
+  render(); if (sel) pick(sel.name);
+  setTimeout(() => window.__ready = true, 400);
+})();
+</script>
+</body>
+</html>

@@ -25,6 +25,8 @@ try {
   ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } else if (d.method === 'Runtime.consoleAPICalled' && d.params.type === 'error') console.error('[page]', d.params.args.map(a => a.value).join(' ')); else if (d.method === 'Runtime.exceptionThrown') console.error('[page]', d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text); };
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+  // UE_MOCK=1: a ponte do jogo de mentira (window.ue.shell), pra testar o modo do jogo das páginas sem abrir o jogo; as chamadas vão pra window.__calls
+  if (process.env.UE_MOCK) { await send('Page.enable'); await send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__calls = []; const rec = n => (...a) => { window.__calls.push([n, ...a]); return Promise.resolve(n === 'isdev' ? true : n === 'armedscenario' ? 'usa_quem_e_quem' : n === 'getquality' ? 3 : n === 'lan' ? true : undefined); }; window.ue = { shell: new Proxy({}, { get: (t, n) => rec(n) }) };` }); }
   await send('Page.navigate', { url });
   for (let i = 0; i < 200; i++) { if (await evalJs('window.__ready === true')) break; await sleep(150); }
   await evalJs('document.fonts.ready.then(() => true)'); await sleep(300);

@@ -255,7 +255,7 @@ async function renderDet(r) {
     const im = new Image(); im.onload = () => g.drawImage(im, a - 9, b - 9, 18, 18); im.src = `../../factions/small/glyph_${p.f}.png`; });
   if (!full && !bad && !r.game) $('#join').onclick = () => join(r);
 }
-function join(r) { if (r.pl.length >= r.max || r.ver !== '0.5.2' || r.game) return; location.href = `skirmish.html?mp=1&room=${encodeURIComponent(r.name)}&host=${encodeURIComponent(r.host)}&src=${src}`; }
+let join = function (r) { if (r.pl.length >= r.max || r.ver !== '0.5.2' || r.game) return; location.href = `skirmish.html?mp=1&room=${encodeURIComponent(r.name)}&host=${encodeURIComponent(r.host)}&src=${src}`; }
 $('#src').addEventListener('click', e => { const b = e.target.closest('.srcb'); if (b) { src = b.dataset.s; selI = 0; renderList(); } });
 $('#th').addEventListener('click', e => { const d = e.target.closest('[data-k]'); if (!d) return; if (sortK === d.dataset.k) sortUp = !sortUp; else { sortK = d.dataset.k; sortUp = true; } renderList(); });
 document.querySelectorAll('.chip').forEach(c => c.onclick = () => { F[c.dataset.f] = !F[c.dataset.f]; renderList(); });
@@ -285,6 +285,21 @@ function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume
   track = m.track; music.src = `snd/Main_Menu_${track + 1}.mp3`; music.currentTime = m.t + (Date.now() - m.at) / 1000; music.volume = 0;   // a troca de tela tem um respiro enquanto a faixa carrega: volta do silêncio
   if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
 addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
+// no jogo: a LAN de verdade (api/lan.json a cada segundo), CREATE e JOIN pelo jogo; a sala ainda é a antiga do jogo
+const UE = window.ue && window.ue.shell;
+if (UE) {
+  src = 'lan'; ROOMS.online = []; ROOMS.lan = [];
+  document.querySelectorAll('.srcb[data-s="online"], .srcb[data-s="ip"]').forEach(b => { b.style.opacity = '.35'; b.style.pointerEvents = 'none'; });
+  UE.lan('browse');
+  const poll = async () => { try { const d = await fetch('api/lan.json').then(r => r.json());
+    const key = JSON.stringify(d.games); if (key !== poll.k) { poll.k = key;
+      ROOMS.lan = d.games.map(g => ({ name: g.name.toUpperCase(), host: g.name.toUpperCase(), map: 0, mode: g.players + ' IN', pl: Array.from({ length: g.players }, (_, k) => P(k ? 'PLAYER' : g.name.toUpperCase(), 'usa', k)), max: 8, ping: 2, ver: g.open ? '0.5.2' : '?', game: !g.open, cash: 10000, sw: 'UNLIMITED', idx: g.index }));
+      renderList(); } } catch (e) { } };
+  setInterval(poll, 1000); poll();
+  join = r => { if (r.game) return; UE.lan('join:' + r.idx); };
+  $('#host').onclick = () => UE.lan('host');
+  $('#back').onclick = () => { UE.lan('stop'); location.href = 'menu.html'; };
+}
 (async () => { await document.fonts.ready; renderList(); setTimeout(() => window.__ready = true, 1500); })();
 </script>
 </body>
