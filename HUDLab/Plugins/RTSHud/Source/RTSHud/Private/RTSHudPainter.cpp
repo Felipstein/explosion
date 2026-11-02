@@ -174,9 +174,30 @@ void FRTSHudPainter::Line(FVector2D A, FVector2D B, float T, const FLinearColor&
 	Canvas->DrawItem(Item);
 }
 
+UTexture* FRTSHudPainter::FactionTex(FName Name) const
+{
+	// o ícone da facção (icon:<facção>/<nome>), quando ele existe; senão o da USA
+	if (!Lookup)
+	{
+		return nullptr;
+	}
+	if (Cur && !Cur->SkinFaction.IsNone())
+	{
+		FString Piece = Name.ToString();
+		if (Piece.RemoveFromStart(TEXT("icon:")))
+		{
+			if (UTexture* T = Lookup(FName(*FString::Printf(TEXT("icon:%s/%s"), *Cur->SkinFaction.ToString(), *Piece))))
+			{
+				return T;
+			}
+		}
+	}
+	return Lookup(Name);
+}
+
 void FRTSHudPainter::Image(FName Name, float X, float Y, float W, float H, const FLinearColor& Tint, bool bCover)
 {
-	UTexture* Tex = Lookup ? Lookup(Name) : nullptr;
+	UTexture* Tex = FactionTex(Name);
 	if (!Tex || !Tex->GetResource())
 	{
 		Rect(X, Y, W, H, FLinearColor(FColor(40, 34, 28)));
@@ -206,7 +227,7 @@ void FRTSHudPainter::Image(FName Name, float X, float Y, float W, float H, const
 
 void FRTSHudPainter::ImageInset(FName Name, float X, float Y, float W, float H, float Inset, const FLinearColor& Tint)
 {
-	UTexture* Tex = Lookup ? Lookup(Name) : nullptr;
+	UTexture* Tex = FactionTex(Name);
 	if (!Tex || !Tex->GetResource())
 	{
 		Rect(X, Y, W, H, FLinearColor(FColor(40, 34, 28)));
@@ -543,8 +564,9 @@ FLinearColor FRTSHudPainter::Accent() const
 {
 	// a cor do neon da pele: azul na USA, vermelho na China, âmbar no GLA
 	const FName F = Cur ? Cur->SkinFaction : NAME_None;
-	if (F == TEXT("china")) return FLinearColor(FColor(232, 60, 52));
-	if (F == TEXT("gla")) return FLinearColor(FColor(236, 168, 52));
+	if (F == TEXT("china")) return FLinearColor(FColor(232, 64, 42));
+	if (F == TEXT("gla")) return FLinearColor(FColor(255, 226, 160));
+	if (F == TEXT("russia")) return FLinearColor(FColor(230, 240, 255));
 	return KBlue;
 }
 
@@ -838,28 +860,85 @@ void FRTSHudPainter::DrawTop1v1(const FRTSHudState& State)
 	const float X = SX(651.5f, EAnchor::Center), Y = SY(0, false);
 	auto A = [&](float U, float V) { return FVector2D(X + U * K, Y + V * K); };
 
+	// onde o corpo da barra termina (em unidades da peça de 1087), medido no recorte de cada facção: a caixinha da superarma
+	// sai de baixo dele (a da USA termina em 128)
+	const FName F = Cur->SkinFaction;
+	const float Bottom = F == FName(TEXT("china")) ? 130.0f : F == FName(TEXT("gla")) ? 138.0f : F == FName(TEXT("russia")) ? 147.0f : 129.0f;
+	const float SwY = 73.0f + (Bottom - 128.0f) * 617.0f / 1087.0f;
 	for (int32 I = 0; I < 2; ++I)
 	{
 		const FRTSHudPlayer& Pl = I == 0 ? Me : Foe;
 		if (Pl.Superweapons.Num() > 0 && !Pl.bDead)
 		{
 			const bool bOne = Pl.Superweapons.Num() == 1;
-			DrawSuperweapons(Pl.Superweapons, SX(I == 0 ? 668.5f : 1019.5f, EAnchor::Center), SY(73, false), 232 * S, (bOne ? 26 : 22) * S, 3, 13.0f, I == 0);
+			DrawSuperweapons(Pl.Superweapons, SX(I == 0 ? 668.5f : 1019.5f, EAnchor::Center), SY(SwY, false), 232 * S, (bOne ? 26 : 22) * S, 3, 13.0f, I == 0);
 		}
 	}
-	Skin(SkTopBar, X, Y, 1087 * K, 140 * K);
+	// o azul e o vermelho são a cor de cada jogador (ele, 01/11): a peça vem em três (art/tools/cut_faction_frames.py --top): a base
+	// com o vidro neutro e as camadas do seu painel e do painel do adversário, pintadas aqui com a cor de cada um. A peça pode sair
+	// da caixa (o pano da GLA, as ripas da Rússia): a margem (MX dos lados, MB embaixo) vem do tamanho da textura. Sem as três, a
+	// peça antiga da USA (azul e vermelho fixos).
+	const FString Fac = F.IsNone() ? FString(TEXT("usa")) : F.ToString();
+	const FName Base(*FString::Printf(TEXT("skin:%s/top_bar_1v1"), *Fac));
+	const FName MeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_me"), *Fac)), FoeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_foe"), *Fac));
+	UTexture* BaseTex = Lookup ? Lookup(Base) : nullptr;
+	const bool bTint = BaseTex && Lookup(MeLayer) && Lookup(FoeLayer);
+	// a cor do jogador acende o vidro: a escura sobe até um mínimo de brilho, o tom fica
+	auto Glow = [](FLinearColor C)
+	{
+		const float M = FMath::Max3(C.R, C.G, C.B);
+		if (M > 0.001f && M < 0.7f)
+		{
+			C *= 0.7f / M;
+		}
+		C.A = 1.0f;
+		return C;
+	};
+	if (bTint)
+	{
+		const float MX = FMath::Max(0.0f, (BaseTex->GetSurfaceWidth() - 1087.0f) * 0.5f);
+		const float MB = FMath::Max(0.0f, BaseTex->GetSurfaceHeight() - 140.0f);
+		const float BX = X - MX * K, BW = (1087 + 2 * MX) * K, BH = (140 + MB) * K;
+		Image(Base, BX, Y, BW, BH, FLinearColor::White, false);
+		Image(MeLayer, BX, Y, BW, BH, Glow(Me.Color), false);
+		Image(FoeLayer, BX, Y, BW, BH, Glow(Foe.Color), false);
+	}
+	else
+	{
+		Skin(SkTopBar, X, Y, 1087 * K, 140 * K);
+	}
 	Bg(X, Y, 1087 * K, 140 * K);
 	for (int32 I = 0; I < 2; ++I)
 	{
 		const FRTSHudPlayer& Pl = I == 0 ? Me : Foe;
-		const FVector2D C = A(I == 0 ? 83.0f : 1006.0f, 65.0f);
-		const float R = 39 * K;
-		Image(Pl.Emblem, C.X - R, C.Y - R, 2 * R, 2 * R, Pl.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FLinearColor::White, false);
+		// o centro medido da face escura dos anéis (y 68 em todas; raio 45 a 49): o emblema no meio, com folga do aro
+		const FVector2D C = A(I == 0 ? 83.0f : 1006.0f, 68.0f);
+		float R = 37 * K;
+		// no topo apertado, o emblema pequeno feito pra ler em ponto pequeno (captures/concept/80_emblemas_pequenos_ficha_e_silhueta):
+		// a silhueta branca pintada na cor do jogador, ou a ficha nas cores da facção; o resto do HUD fica com o emblema inteiro
+		FName Emb = Pl.Emblem;
+		FLinearColor Tint = Pl.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FLinearColor::White;
+		FString Fac2 = Pl.Emblem.ToString();
+		Fac2.RemoveFromStart(TEXT("emblem:"));
+		if (State.TopEmblem == 1)
+		{
+			Emb = FName(*FString::Printf(TEXT("emblem:glyph_%s"), *Fac2));
+			Tint = Pl.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FMath::Lerp(Glow(Pl.Color), FLinearColor::White, 0.25f);
+			R *= 0.86f;
+		}
+		else if (State.TopEmblem == 2)
+		{
+			Emb = FName(*FString::Printf(TEXT("emblem:token_%s"), *Fac2));
+		}
+		Image(Emb, C.X - R, C.Y - R, 2 * R, 2 * R, Tint, false);
 	}
+	// o nome na cor do jogador, clareada pra ler em cima do vidro
+	const FLinearColor MeText = bTint ? FMath::Lerp(Glow(Me.Color), FLinearColor::White, 0.45f) : FLinearColor(FColor(170, 210, 255));
+	const FLinearColor FoeText = bTint ? FMath::Lerp(Glow(Foe.Color), FLinearColor::White, 0.45f) : FLinearColor(FColor(255, 120, 108));
 	const FVector2D MeC = A(272, 68), ClockC = A(542.5f, 68), FoeC = A(806, 68);
-	TextMid(Me.Name, MeC.X, MeC.Y, 26.0f, FLinearColor(FColor(170, 210, 255)), EWeight::Bold, EAlign::Center);
+	TextMid(Me.Name, MeC.X, MeC.Y, 26.0f, MeText, EWeight::Bold, EAlign::Center);
 	TextMid(State.Clock, ClockC.X, ClockC.Y, 36.0f, KTextMain, EWeight::Bold, EAlign::Center);
-	TextMid(Foe.Name, FoeC.X, FoeC.Y, 26.0f, FLinearColor(FColor(255, 120, 108)), EWeight::Bold, EAlign::Center);
+	TextMid(Foe.Name, FoeC.X, FoeC.Y, 26.0f, FoeText, EWeight::Bold, EAlign::Center);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1036,10 +1115,12 @@ void FRTSHudPainter::DrawMinimap(const FRTSHudState& State)
 	Skin(SkMinimapPod, X, Y, W, H);
 	Bg(X, Y, W, H);
 	// a bússola do clássico: uma letra dentro de cada ponta do losango
-	TextMid(TEXT("N"), C.X, C.Y - 226 * K, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
-	TextMid(TEXT("S"), C.X, C.Y + 226 * K, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
-	TextMid(TEXT("W"), C.X - 222 * K, C.Y, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
-	TextMid(TEXT("E"), C.X + 222 * K, C.Y, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
+	// nas outras facções a moldura tem ornamento nas pontas (a engrenagem, o pano, as ripas): as letras entram um pouco, pra não sentar nele
+	const float In = (Cur && !Cur->SkinFaction.IsNone()) ? 26.0f : 0.0f;
+	TextMid(TEXT("N"), C.X, C.Y - (226 - In) * K, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
+	TextMid(TEXT("S"), C.X, C.Y + (226 - In) * K, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
+	TextMid(TEXT("W"), C.X - (222 - In) * K, C.Y, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
+	TextMid(TEXT("E"), C.X + (222 - In) * K, C.Y, 14.0f, KTextMain, EWeight::Bold, EAlign::Center);
 
 	// os botões nos encaixes da coluna (sem a moldura do ícone: o encaixe já é a moldura)
 	const float Rows[4][2] = { { 176, 243 }, { 266, 332 }, { 355, 422 }, { 445, 511 } };
@@ -1101,8 +1182,10 @@ void FRTSHudPainter::DrawCommandPanel(const FRTSHudState& State)
 	// a peça comprida da pele: as pontas entram por baixo do minimapa e do cartão (encosta nos dois)
 	const float PH = CommandPanelHeight(State), PTop = 1072.0f - PH;
 	const float X0 = SX(378, EAnchor::Left), X1 = SX(1520, EAnchor::Right), Y = SY(PTop, true) + PanelDrop(State), H = PH * S;
-	Skin(SkPanelLong, X0, Y, X1 - X0, H, SkMPanelLong, 0.22f * S);
-	Bg(X0, Y, X1 - X0, H);
+	// a moldura das outras facções é mais grossa: o painel desce até a beira da tela (os 8 px de baixo), pra borda não passar por trás das casas
+	const float Foot = (Cur && !Cur->SkinFaction.IsNone()) ? 8.0f * S : 0.0f;
+	Skin(SkPanelLong, X0, Y, X1 - X0, H + Foot, SkMPanelLong, 0.22f * S);
+	Bg(X0, Y, X1 - X0, H + Foot);
 	// as casas: a grade principal (MC colunas) e a de ações (3), com 6 px de vão e um sulco entre as duas
 	const int32 MC = FMath::Clamp(State.MainColumns, 5, 9);
 	const float Left = 408, Right = 1492, Sep = 10, Gap = 6, PadY = 10, GapY = 8;

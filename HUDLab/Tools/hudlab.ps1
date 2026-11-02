@@ -1,10 +1,10 @@
-# HUDLab: o laboratório do HUD do jogo (sessão de arte), separado do Game/.
+﻿# HUDLab: o laboratório do HUD do jogo (sessão de arte), separado do Game/.
 #
 #   hudlab.ps1 compile               # compila o C++ (o plugin RTSHud e o laboratório)
 #   hudlab.ps1 assets                # prepara HUDLab\LabAssets\ (fundo, minimapa, emblemas) com o Python
 #   hudlab.ps1 video [-State 2] [-NoQueue]       # 3 s em movimento: captures\hudlab\video_state_N.mp4
 #   hudlab.ps1 view [-State 2]       # abre o laboratório numa janela (teclas 1 a 6 trocam o estado)
-#   hudlab.ps1 shot [-State 1..6|all] [-Res 2560x1080] [-Faction china|gla] [-NoQueue] # foto 1920×1080 sem tomar a tela: captures\hudlab\state_N.png
+#   hudlab.ps1 shot [-State 1..6|all] [-Res 2560x1080] [-Faction china|gla] [-NoQueue] # foto 1920×1080 sem tomar a tela: captures\hudlab\state_N.png; -Colors E6C629,3CB043 troca a cor de você e do adversário
 #                                    (-NoQueue: sem a fila da placa; a foto do HUD é leve, só Canvas, sem cena 3D)
 #
 # O HUD lê o kit direto de docs\concept\hud\kit\ (ícones e fotos) e as fontes de HUDLab\Fonts\.
@@ -15,7 +15,10 @@ param(
   [string]$Suffix = '',
   [string]$Res = '1920x1080',
   [string]$Faction = 'usa',
+  [string]$Colors = '',
   [switch]$NoQueue,
+  [switch]$Bg,
+  [int]$TopEmblem = 0,
   [switch]$Measure
 )
 $ErrorActionPreference = 'Stop'
@@ -68,7 +71,7 @@ switch ($Command) {
       foreach ($s in $states) {
         $file = Join-Path $out "state_$s$Suffix.png"
         if (Test-Path $file) { Remove-Item $file }
-        $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=$($Res.Split('x')[0]) -ResY=$($Res.Split('x')[1]) -ForceRes -RenderOffScreen -nosplash -unattended -State=$s -Cols=$Cols -Res=$Res -Faction=$Faction $(if ($Measure) { '-Measure' }) -Shot=`"$file`""
+        $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=$($Res.Split('x')[0]) -ResY=$($Res.Split('x')[1]) -ForceRes -RenderOffScreen -nosplash -unattended -State=$s -Cols=$Cols -Res=$Res -Faction=$Faction $(if ($Colors) { "-Colors=$Colors" }) $(if ($Bg) { '-Bg' }) -TopEmblem=$TopEmblem $(if ($Measure) { '-Measure' }) -Shot=`"$file`""
         if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force; Write-Host "estado ${s}: passou do tempo" }
         if (Test-Path $file) { Write-Host "ok $file" } else { Write-Host "FALHOU estado $s (sem foto)" }
       }

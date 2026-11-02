@@ -120,6 +120,47 @@ void AHudLabHUD::DrawHUD()
 	}
 	State.Time = SimTime;
 	State.SkinFaction = SkinFaction;
+	// -Bg: a foto de fundo do protótipo do console (captures/concept/hud/recursos2/bg_*): sem o painel do dinheiro antigo, sem as
+	// abas dos grupos e sem a dica, que o protótipo desenha por cima do jeito novo
+	if (FParse::Param(FCommandLine::Get(), TEXT("Bg")))
+	{
+		State.Money.Empty();
+		State.Groups.Empty();
+		State.TooltipFor = NAME_None;
+		State.HoverId = NAME_None;
+	}
+	// -TopEmblem=1|2: o emblema pequeno no topo (1 a silhueta na cor do jogador, 2 a ficha nas cores da facção)
+	{
+		int32 TE = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("TopEmblem="), TE);
+		State.TopEmblem = uint8(FMath::Clamp(TE, 0, 2));
+	}
+	// -Colors=RRGGBB,RRGGBB: a cor de você e do adversário na foto (a prova de que o topo segue a cor de cada jogador)
+	FString ColorsArg;
+	if (FParse::Value(FCommandLine::Get(), TEXT("Colors="), ColorsArg, false))   // false: a vírgula separa as duas cores, não corta a opção
+	{
+		TArray<FString> Hex;
+		ColorsArg.ParseIntoArray(Hex, TEXT(","));
+		for (int32 I = 0; I < Hex.Num() && I < State.Players.Num(); ++I)
+		{
+			State.Players[I].Color = FLinearColor(FColor::FromHex(Hex[I]));
+		}
+	}
+	if (!SkinFaction.IsNone())
+	{
+		// os estados do laboratório são montados como USA: a placa e o seu emblema passam pra facção da foto
+		const FString F = SkinFaction.ToString();
+		const FName Emb(*FString::Printf(TEXT("emblem:%s"), *F));
+		State.Card.FactionEmblem = Emb;
+		State.Card.FactionName = F == TEXT("china") ? TEXT("CHINA") : F == TEXT("gla") ? TEXT("GLA") : F == TEXT("russia") ? TEXT("RUSSIA") : F.ToUpper();
+		for (FRTSHudPlayer& P : State.Players)
+		{
+			if (P.bMe)
+			{
+				P.Emblem = Emb;
+			}
+		}
+	}
 	if (bSeq)
 	{
 		// o vídeo: o painel sobe e o aviso entra no começo; a casa da dica é apertada em 1,2 s; o carregamento anda

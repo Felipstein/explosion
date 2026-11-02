@@ -57,3 +57,20 @@ Cada ícone já vem com o próprio quadrado do botão (metal escuro com rebites)
 ## Fonte
 
 Proposta: **Barlow** (grátis, licença livre SIL OFL), parecida com a do HUD aprovado. A Bahnschrift das imagens é do Windows e não pode ir no jogo. Baixar quando formos montar.
+
+## Peças da economia, da patente e da tela do general (01/11)
+
+Das folhas do GPT `captures/concept/hud/kit/skin_sheet_3_gpt.webp` (molduras) e `skin_sheet_4_gpt.webp` (fichas e medalhas), aprovadas.
+Recorte: `python art/tools/cut_hud_sheets_economy.py <folha_3> <folha_4>` (o verde sai, cada peça pela mancha opaca).
+
+| Arquivo | Onde vai | Como estica / o que vai por cima |
+|---|---|---|
+| `crest_money.png` | o brasão do contador (meio da fileira) | inteira; os números rolam por cima dos 5 tambores (janela em x 160–730, y 60–205 da peça) |
+| `hub_general.png` | o cubo do general (encontro da fileira com o cartão) | inteira; as estrelas e o aro dourado do "ponto pra gastar" por cima (miolo no centro 173,173, raio ~125) |
+| `rank_tube.png` | o tubo da patente (emenda do painel com o cartão) | 3 fatias na vertical (pontas 45 e 54 px); os 5 compartimentos enchem por dentro |
+| `power_conduit.png` | a fileira de energia | 3 fatias na horizontal (pontas de 72 px); as células acendem no canal |
+| `plate_red/amber/gold.png` | **não usadas** (01/11: reprovadas, "sujas"; as plaquetas ficaram no desenho antigo, limpo) | em 4 fatias (esquerda com o quadrado do ícone, meio liso que estica, a ponta, direita): a ponta fica sempre no meio |
+| `token_gold/dark/green.png` | a ficha de ponto (custo, carteira, comprado) | inteira; o número ou o ✓ por cima |
+| `medal_first_strike/tank_killer/hold_the_line/logistics.png` | as medalhas das comendas | inteira; ainda não ganha = cinza e escura. A fita da First Strike foi trocada pela americana (a original lembrava a França; a original guardada em `captures/concept/hud/kit/medal_first_strike_fita_franca.png`) |
+| `rank_usa_1..5.png` | os ícones das patentes da USA (BG ★ prata → GA ★★★★★ ouro com águia): no miolo do cubo do general, no cabeçalho e na fileira das patentes da tela do general | inteira; no cubo vai recortado num círculo (o aro próprio do ícone fica de fora). Da folha `captures/concept/hud/kit/rank_icons_gpt.webp` (a do Gemini, `rank_icons_gemini.webp`, perdeu: menor e com aro de rebite que duplicava o do cubo). Os ranks 4 e 5 saem da segunda folha, simples (só estrelas, aro de ouro): `rank_icons_45_gpt.webp` (os detalhados, com águia e louro, foram reprovados por "muito detalhe em pouco espaço"). Comando: `python art/tools/cut_rank_icons.py <folha> <folha_4_e_5>` |
+

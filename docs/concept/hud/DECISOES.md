@@ -160,7 +160,7 @@ Algumas trazem junto algo que **não** foi aprovado; a coluna da direita avisa.
   - Pesquisando mostra o carregamento do C&C.
 - **Carregando (unidade, melhoria):** o fundo escuro do C&C sumindo no sentido do relógio, **com a % em número.**
 - **Vender (`Sell`):** um ícone novo, nem as moedas da v7 nem as da v8. O da v9 (um prédio com cifrão) ainda não foi julgado.
-- **Melhoria em 2 casas:** o Felipe achou "uma possibilidade". A recomendação da arte é **1 casa**, pra manter as teclas e a grade alinhadas. Ainda falta a decisão dele.
+- **Melhoria em 1 casa (decidido 01/11):** ele tinha achado 2 casas "uma possibilidade"; ficou a recomendação da arte, **1 casa**, pra manter as teclas e a grade alinhadas ("e o botão de melhoria 1 casa mesmo").
 
 ### Dica (`Tooltip`)
 - **Aparece no mouse,** em cima do botão apontado. Não fica fixa em cima das abas de grupo.
@@ -255,3 +255,123 @@ O Felipe: "pra que ficar insistindo numa imagem coringa, a gente já tem tudo de
   - o verde continua sendo a ação em todas, por isso o GLA não é verde;
   - o topo 1x1 não muda, porque o azul ali é "você".
   - Folha: `captures/hudlab/faccoes.jpg`. Peças: `kit/skin/china/`, `kit/skin/gla/` (`art/tools/make_faction_skins.py`).
+
+## 7. Dinheiro, energia e patente: o console que vive da energia da base (31/10)
+
+O Felipe: o painel do canto de cima à direita fica longe da vista; ele mal percebe quase sem energia, sem energia e dinheiro baixo.
+Mudar a caixa de lugar foi reprovado ("só pegou e tacou ali"). O rumo aprovado ("agora sim porra! tudo maravilhoso"):
+
+- **A energia é a luz do console.** Uma fileira de células na borda de cima do painel do meio, do minimapa até o cartão,
+  **uma célula por ponto de energia** (reator USA = 5, Patriot = −3). Acesa forte = consumo; acesa fraca = sobra; o comprimento
+  aceso é a produção; o que falta aparece em vermelho depois do fim. Número pequeno na ponta esquerda (`4 / 10`).
+  - Quase sem energia: sobra menor que 3 (o maior consumidor): âmbar, a sobra pisca.
+  - Colocando um prédio: as células que ele vai comer aparecem riscadas; se estoura, a ponta pisca em vermelho e a mão diz OVERLOAD.
+  - Sem energia: o HUD dá um tranco forte uma vez e fica escurecido (a batalha não escurece); um tranquinho de lembrete a cada ~12 s;
+    o botão em produção ganha o raio de "mais lento".
+  - O ZH (código): a tira de energia ficava em cima da grade de compra, amarela com menos de 5 de sobra (`W3DControlBar.cpp`).
+- **O dinheiro é um contador mecânico** (tambores que giram, com o vai-um) num brasão no meio da fileira (o lugar do dinheiro no ZH).
+  O +$ do avião de carga voa do mapa até o contador; a compra rola pra baixo. Pouco dinheiro: os tambores acendem em vermelho e os
+  preços que não dá pra pagar ficam vermelhos.
+- **As abas de grupo** ficam dos dois lados do brasão (1–5 e 6–0), na mesma fileira. Sem nada selecionado, a fileira inteira desce pra borda.
+- **As plaquetas** sobem do brasão com o efeito de mola: LOW POWER (o que parou), INSUFFICIENT FUNDS (quanto falta e quando chega o
+  avião), PROMOTE. O efeito e os tipos foram aprovados ("top").
+- **01/11, aprovado (v3, "o resto tá aprovado"):**
+  - o brasão menor (tambores 22×36, números de 28 px), **sem estrelas**;
+  - **o hover de todos os botões:** sobe 3 px e cresce 5%, acende por dentro na cor do tipo (azul; verde na ação; dourado na melhoria e no
+    poder pronto), a luz corre no metal uma vez (0,55 s), sombra embaixo; apertado afunda e pisca o aro branco; bloqueado não sobe, só treme;
+    casa vazia só clareia. A dica é a do limpo; nos botões da grade ela sobe **acima da fileira**, pra nunca tampar o dinheiro e a energia na compra.
+    O contador, a energia e a patente mostram o detalhe no mouse (renda por minuto, o que gasta energia, o XP). O de antes ("só uma corzinha em volta")
+    era um véu branco de 7% e uma linha acesa (`RTSHudPainter::HoverPress`);
+  - **o chat:** as linhas perto do minimapa, à direita da coluna de poderes, empilhando pra cima; cada uma numa placa escura com a cor do jogador
+    na borda, letra de 17 px, o nome na cor do jogador, ALLIES num selo verde, sistema em cinza; entram com o tranco das plaquetas e somem em 12 s;
+    o botão do chat no minimapa pisca quando chega mensagem; Enter abre a caixa com as abas ALL / ALLIES e a dica das teclas.
+    O de antes: letras de 11 px sem fundo no canto de cima, onde ficam os avisos (`ARTSHUD::DrawChat`).
+- **A patente: em aberto.** Reprovados: as estrelas no brasão e o selo + barrinha na ponta direita da fileira ("ali tá ruim, quero outra opinião").
+- **01/11, a patente escolhida: a escada (B)** na emenda do painel do meio com o cartão: 5 degraus, um por patente, o atual enchendo com o XP.
+  Pedidos junto: mais grossa e visível; dar pra entender **em que patente estou**; **um botão que abre uma tela** (o sistema de patentes e poderes
+  vai evoluir muito além do ZH). Base do ZH conferida no código: a barra de XP dele era vertical e sempre à vista, a estrela piscava 1 s quando
+  sobrava ponto e uma seta caía até ela (`ControlBar.cpp`, `W3DControlBar.cpp`).
+- **O aro do XP em volta do emblema** fica **só nos aliados** (os cartões do topo); no nosso emblema, não.
+- **Depois de aprovado:** as peças novas vão pra arte no gerador de imagem, como o HUD de hoje foi feito.
+- Protótipo animado: `captures/concept/hud/recursos2/console_vivo.html` (servidor local `hud-concept` na porta 8133).
+- **01/11, a escada v2 (no protótipo, falta ele ver):** tubo de 22 px com o número de cada degrau (1 a 5), a seta "você está aqui", e em cima a
+  placa-botão com as estrelas e a sigla da patente real dos generais dos EUA (BG ★, MG ★★, LTG ★★★, GEN ★★★★, GA ★★★★★) e a faixa GENERAL ▸,
+  que abre a tela do general. O aro do aliado: em volta do emblema dele no topo de 8, com o nível num selo dourado.
+- **01/11, o sistema de patentes e poderes (proposta, em discussão):** a "escada de escolhas". A cada patente, 1 de 2 doutrinas (cada uma = 1 poder
+  + 1 bônus); a outra fica trancada na partida. A XP vem do combate e de **comendas** (feitos medidos pela simulação: abater, segurar a base, entregar
+  carga). A tela do general (a placa GENERAL abre, a batalha não para): a escada grande à esquerda, as duas doutrinas do degrau no meio, as comendas e
+  o que o inimigo já revelou à direita. Generais depois trocam o par de 1 ou 2 degraus (o jeito do ZH: cada general é a mesma árvore com poderes
+  trocados). O estudo: ZH conferido no código e no `Rank.ini`/`Science.ini` do jogo instalado (XP 0/800/1500/2500/5000 só por abate, pontos
+  1/1/1/1/3, todo poder custa 1, pré-requisito patente 1, 3 ou 5); comparados CoH3 (battlegroups), RA3 (protocols), AoE IV (2 landmarks), Halo Wars 2,
+  Tempest Rising (doutrinas) e SC2 co-op. O nosso de hoje (`Units.json`, `rank`): XP pelo dano dado e recebido, 0/600/1500/3000/5000, sem pontos.
+- **01/11, v6 (falta ele ver):** o tubo sem os números. O botão virou **o cubo do general**: um medalhão de metal no encontro da fileira de energia
+  com o cartão, que junta as três peças (sem seleção ele fica embaixo, onde a fileira desce); as estrelas da patente dentro; o aro acende dourado
+  e o PROMOTE sobe dele quando há ponto. O aliado: **o próprio aro de metal do emblema dele** com o XP correndo no sulco (um brilho passa só na parte
+  cheia) e as estrelas da patente ao lado do nome; subiu, o aro estala e ganha a estrela. A tela do general ganhou a visão **ALL RANKS** (as 5
+  patentes lado a lado, as duas doutrinas de cada uma, a linha dourada ligando as escolhidas, as comendas embaixo); a ONE RANK continua.
+  "ENEMY INTEL" virou **ENEMY DOCTRINES SPOTTED**: as doutrinas do general inimigo que você já viu ele usar (nunca o que ele não mostrou).
+- **A doutrina trancada:** em cada patente você escolhe uma das duas; a outra daquela patente não pode mais ser escolhida naquela partida (não há
+  troca nem reembolso). Na partida seguinte, escolhe de novo do zero.
+- **01/11, aprovados:** as estrelas do aliado no fundo do aro do emblema (5 casas; o XP por cima, 210°) e o cubo do general no topo também
+  sem seleção. **O que se viu do inimigo:** só aparece quando há algo descoberto (nada visto = nem o título); não mostra "outros X inimigos".
+- **01/11, o sistema repensado (proposta v8, falta ele ver): o cardápio do general, sem trava.** Ele ficou com o pé atrás da trava 1 de 2. O estudo
+  (fontes conferidas): quase nenhum RTS grande tranca 1 de 2 por degrau; onde trava (AoE IV, CoH3) os jogadores reclamam de "sempre o mesmo";
+  a árvore do Halo Wars 2 confundiu no beta e foi simplificada; o patch comunitário 1.06 do ZH passou a cobrar 1 a 4 pontos por poder porque
+  "todos a 1 ponto não fazia sentido". A proposta: cada patente dá pontos (1, 1, 2, 2, 3); cada poder custa de 1 a 3 pela força; compra o que
+  quiser, na ordem que quiser; não dá pra ter todos; alguns poderes têm níveis I a III (como o Paradrop do ZH). As faixas abrem nas patentes 1, 3
+  e 5. A tela: os poderes em 3 faixas, 4 estados só (comprado, dá pra comprar, falta ponto, falta patente), o detalhe do apontado com o botão de
+  comprar, as comendas embaixo e os poderes que você já viu o inimigo usar. Protótipo: `console_vivo.html` (as versões com trava: `console_vivo_v7.html`).
+- **01/11, v9 (falta ele ver):**
+  - **O espionado:** o que se vê do inimigo vem só da espionagem (o estado "espionado" do topo, aprovado em 13/10: moldura âmbar, selo do olho com
+    o aro escurecendo). Enquanto dura, o card mostra o general espionado (nome na cor dele, estrelas, os poderes que ele tem); acabou, some. Nada fica
+    anotado (é da cabeça do jogador). A vaga do card fica sempre no lugar, vazia quando não há espionagem.
+  - **A ficha de ponto:** um hexágono dourado com o número, o mesmo no custo de cada poder, no botão BUY e na carteira (POINTS to spend, em cima à
+    direita, logo acima do detalhe: o olho vai da carteira ao botão de comprar). Dourada = dá pra pagar; escura = falta ponto; cadeado = falta patente;
+    ✓ = comprado. Saíram as bolinhas. Em cima à esquerda, o comandante: o cubo com as estrelas, a patente, a barra de XP e quantos pontos a próxima dá.
+  - **A trilha das patentes** (proposta no lugar das 3 faixas do ZH): colunas = as 5 patentes (cada uma diz quantos pontos dá; a atual marcada
+    "you are here"), linhas = o tipo de poder (ar, tropas, fogo, apoio). Toda patente libera algo (no ZH as patentes 2 e 4 só davam ponto); os níveis
+    de um poder são nós ligados na mesma linha (Paradrop I → II → III). As 3 faixas continuam numa aba pra comparar.
+- **01/11, a tela do general (pedidos dele):** o quadro da direita é só o detalhe do poder no mouse, **sem botão BUY**; compra clicando no próprio
+  poder; sem mouse em cima, o quadro fica vazio (o espaço segura o layout). O card do inimigo é a lista de antes, só enquanto espiona, com a dica
+  em cada poder; sem espionagem não aparece nada. A fileira de baixo alinha com as colunas de cima. As dicas ficam por cima da tela.
+- **01/11, o aviso do PROMOTE (pedido dele):** a plaqueta deixou de "voar": é uma placa escura com aro dourado presa ao cubo por uma ponta,
+  com a ficha da estrela, PROMOTED e "General ★★★★ · 2 points to spend"; nasce do cubo com o mesmo tranco das plaquetas aprovadas e respira.
+  **Some quando você abre a tela do general** (já viu); **o brilho do cubo e o número de pontos continuam enquanto sobrar ponto.**
+- **01/11, protótipo:** a barra de cima escolhe a patente (0 a 5) e a tela (trilha ou faixas); a tela do general ficou 25% maior e pode ficar
+  por cima do HUD de baixo (pedido dele). **Decidido (01/11): a partida começa com 1 estrela e 1 ponto, como o ZH**; o primeiro poder só fica pronto depois de
+  carregar uma vez desde o início (e depende do Command Center); no começo a plaqueta diz FIRST POWER (não é promoção). Sem a patente 0.
+- **01/11, a trilha escolhida (v14, o que confundia):** só parece clicável o que dá pra comprar (aro dourado parado; nada pisca na grade, só a
+  carteira); o que não dá fica apagado, sem subir no mouse e sem a mão (ficha escura = falta ponto; ⛓ = falta o nível antes; 🔒 = falta patente);
+  clicar nele só treme, e o detalhe diz o porquê em texto. **As melhorias (II, III) são nós pequenos e redondos presos ao poder pela linha** (não
+  parecem outro poder), com o que muda ("8 Rangers"). A frase longa virou uma legenda curta com as cores.
+- **01/11, v15 (pedidos dele):** **sem legenda nenhuma** (nem a de cima, nem as duas de rodapé, nem "you are here"): a tela se explica pela forma,
+  pela cor e pelo que reage ao mouse. **A melhoria mora no próprio card do poder:** um card por poder; os níveis numa barrinha de segmentos embaixo
+  do nome (verde = seu; dourado = o próximo que dá pra comprar); o card fica no lugar do nível I; com o nível I comprado ele ganha o ✓ e o aro verde,
+  e se o próximo nível dá pra comprar o aro é dourado com a ficha do custo; clicar compra o próximo nível. O detalhe no mouse lista os níveis.
+- **01/11, v16 (a v15 regrediu):** com os níveis dentro de um card só, sumiram as linhas e a regra de patente de cada nível ficou invisível
+  (parecia que dava pra subir a qualquer hora). Voltou: **cada nível na coluna da patente que o libera, ligado ao anterior pela linha**
+  (verde = comprado; dourada tracejada = o próximo dá pra comprar agora; cinza = ainda não), **no mesmo card do poder** (o número do nível ao lado
+  do nome), sem o nó redondo e sem legenda. **Comprado:** a ficha verde com o ✓ no canto do custo (a mesma ficha, outra cor) e o card sólido,
+  sem neon.
+- **01/11, a estrutura está boa (ele: "acho que tá bom").** Os poderes da tela são exemplo: **o conteúdo (quais poderes, custos, recargas, a patente
+  de cada nível) e o ritmo da XP ficam pra uma sessão própria de balanceamento e ideias**, depois.
+- **01/11, pedidos dele:** o "Click to open General's Command" só aparece na dica do cubo (o botão); a dica do tubo mostra o resto igual
+  (patente, XP, pontos). A plaqueta PROMOTED fica só com o essencial: PROMOTED + a patente nova ("General"); no começo da partida, FIRST POWER.
+  Os pontos já estão na moeda ao lado do cubo e as estrelas no próprio cubo, então saíram da plaqueta.
+- **01/11, os ícones das patentes (pedido dele; falta ele ver no protótipo):** um ícone por patente (folha do GPT; o rank 4 consertado pra 4 estrelas).
+  Entram no miolo do cubo (no lugar das estrelas desenhadas), no cabeçalho da tela do general e na fileira das patentes (o ícone à esquerda do
+  nome; as estrelas em texto saíram, o ícone já diz). A plaqueta PROMOTED aprovada ficou como está (a ficha com a estrela).
+
+## 8. O HUD das outras facções (01/11)
+
+O plano e o estudo do ZH (pelos dados do jogo instalado) em `docs/concept/hud/FACCOES.md`. A proposta de 13/10 (o neon girado de cor) foi
+reprovada: "tem que mudar tudo, texturas, cores, tudo". Fica igual: o lugar das peças e as cores de significado. Muda: todo o material.
+Primeiro a folha do visual de cada facção (China e GLA); a Rússia depois da paleta dela.
+
+## 9. A energia é significado, igual nas 4 facções (01/11, noite)
+
+- **Verde = energia boa, amarelo = quase acabando, vermelho = faltando**, em todas as facções. A luz da facção fica na moldura e nunca
+  pinta a energia (ele: "nenhum tem que ficar laranja, vermelho, por conta da cor da facção").
+- **GLA sem usina: a barra de energia não existe.** A GLA não tem energia própria; só constrói usina roubando a tecnologia de outra facção.
+  Sem nenhuma energia construída, a barra some. As outras facções começam em zero mas já mostram a barra (podem construir desde o início).
+  No `RTSHudPainter::DrawCommander` hoje a energia some com `PowerMade == 0` em todas: no jogo, só a GLA some.

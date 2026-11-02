@@ -68,6 +68,7 @@ private:
 	float Pulse(float Hz) const;
 	/** A cor do neon da pele da facção (o mouse em cima acende nela). */
 	FLinearColor Accent() const;
+	UTexture* FactionTex(FName Name) const;
 	/** Quanto o painel central ainda está abaixo do lugar (a subida do PanelIn), em pixels da tela. */
 	float PanelDrop(const FRTSHudState& State) const;
 	/** A caixa das superarmas (mini tecla azul no seu time, escura no inimigo, vermelha quando falta pouco). */

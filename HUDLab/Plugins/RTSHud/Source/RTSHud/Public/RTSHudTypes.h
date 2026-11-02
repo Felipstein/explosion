@@ -149,6 +149,7 @@ struct FRTSHudState
 
 	// dica (no mouse, em cima do botão apontado)
 	FName TooltipFor;                // id da casa apontada
+	uint8 TopEmblem = 0;             // o emblema no topo: 0 o inteiro, 1 a silhueta na cor do jogador, 2 a ficha nas cores da facção (01/11, o teste dele)
 	FString TooltipTitle;
 	FString TooltipKey;
 	FString TooltipCost;
