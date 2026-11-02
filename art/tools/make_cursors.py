@@ -2,6 +2,7 @@
 # quadro a quadro pelo Edge headless (o modo #export&t=..), vira um .cur (parado) ou um .ani (animado, o Windows anima
 # sozinho) em Game/Content/Cursors/<px>/. Os quadros vão em PNG dentro do arquivo (o Windows aceita desde o Vista) e cada
 # arquivo é conferido no próprio Windows (LoadImage). O 1º quadro de cada um também sai em PNG em captures/ (pra prova).
+# (01/11) Também as variantes da fila do Alt (q_<ordem>_<1-9|plus>): a ordem com a ficha do número da vez, paradas.
 # Uso: python art/tools/make_cursors.py
 import ctypes, html, io, json, os, re, struct, subprocess, sys
 from PIL import Image
@@ -62,8 +63,8 @@ def main():
     os.makedirs(os.path.join(WORK, "frames"), exist_ok=True)
     man = manifest()
     bands, cursors = man["bands"], man["cursors"]
-    width = cursors[-1]["x"] + 112 + 8
-    height = max(b["top"] + b["px"] for b in bands) + 16
+    width = man.get("cols", len(cursors)) * 112 + 16
+    height = man.get("rows", 1) * man.get("rowh", 264) + 16
     times = sorted({round(k / c["fps"], 4) for c in cursors for k in range(c["frames"])})
     print(f"{len(cursors)} cursores, {len(times)} instantes")
     sheets = {t: shot(t, width, height) for t in times}
@@ -76,7 +77,8 @@ def main():
             hot = (min(px - 1, round(c["hot"][0] * px / 64)), min(px - 1, round(c["hot"][1] * px / 64)))
             curs = []
             for k in range(c["frames"]):
-                im = sheets[round(k / c["fps"], 4)].crop((c["x"], b["top"], c["x"] + px, b["top"] + px))
+                y0 = c.get("y", 0) + b["top"]
+                im = sheets[round(k / c["fps"], 4)].crop((c["x"], y0, c["x"] + px, y0 + px))
                 if k == 0:
                     im.save(os.path.join(WORK, str(px), c["name"] + ".png"))
                 buf = io.BytesIO()

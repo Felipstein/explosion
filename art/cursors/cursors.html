@@ -467,15 +467,22 @@ if (EX) {
   const st = document.createElement("style");
   st.textContent = `* { animation-play-state: paused !important; animation-delay: -${EX[1] || 0}s !important; }`;
   document.head.appendChild(st);
+  // (01/11, aprovada) a fila do Alt: cada ordem que entra na fila com a ficha do número da vez (1 a 9 e "+"), parada (um quadro: no
+  // planejamento o cursor fica quieto, e os arquivos ficam leves)
+  const QIDS = ["move", "amove", "attack", "force", "ground", "guard", "escort", "patrol", "enter", "repair", "resume", "salvage", "gather", "build"];
+  QIDS.forEach(id => ["1", "2", "3", "4", "5", "6", "7", "8", "9", "+"].forEach(n => GAME.push([`q_${id}_${n === "+" ? "plus" : n}`, id, 0, n])));
+  const COLS = 32, ROWH = 264, pos = k => [(k % COLS) * 112 + 8, Math.floor(k / COLS) * ROWH];
   const manifest = [];
-  GAME.forEach(([name, id = name, rot = 0], k) => {
+  GAME.forEach(([name, id = name, rot = 0, qn = null], k) => {
     const src = tpl.querySelector(`svg[data-id="${id}"]`);
+    const [cx, cy] = pos(k);
     let svgs = [];
     BANDS.forEach(([px, top, shadow]) => {
       const s = src.cloneNode(true);
       if (rot) s.dataset.rot = rot;
-      const svg = build(s, (px <= 64 ? 2 : 3) * 64 / px);
-      svg.style.cssText = `position:absolute;left:${k * 112 + 8}px;top:${top}px;width:${px}px;height:${px}px;filter:drop-shadow(${shadow} rgba(0,0,0,.55))`;
+      const svg = build(s, (px <= 64 ? 2 : 3) * 64 / px, qn ? { n: qn, style: "token" } : null);
+      if (qn) svg.querySelectorAll("*").forEach(n => n.style.animation = "none");
+      svg.style.cssText = `position:absolute;left:${cx}px;top:${cy + top}px;width:${px}px;height:${px}px;filter:drop-shadow(${shadow} rgba(0,0,0,.55))`;
       document.body.appendChild(svg);
       svgs.push(svg);
     });
@@ -492,11 +499,11 @@ if (EX) {
       const a = rot * Math.PI / 180, dx = hx - 32, dy = hy - 32;
       [hx, hy] = [32 + dx * Math.cos(a) - dy * Math.sin(a), 32 + dx * Math.sin(a) + dy * Math.cos(a)];
     }
-    manifest.push({ name, x: k * 112 + 8, hot: [f(hx), f(hy)], loop, fps, frames: loop ? Math.round(loop * fps) : 1 });
+    manifest.push({ name, x: cx, y: cy, hot: [f(hx), f(hy)], loop, fps, frames: loop ? Math.round(loop * fps) : 1 });
   });
   const pre = document.createElement("pre");
   pre.id = "manifest"; pre.style.display = "none";
-  pre.textContent = JSON.stringify({ bands: BANDS.map(([px, top]) => ({ px, top })), cursors: manifest });
+  pre.textContent = JSON.stringify({ bands: BANDS.map(([px, top]) => ({ px, top })), rows: Math.ceil(GAME.length / COLS), rowh: ROWH, cols: COLS, cursors: manifest });
   document.body.appendChild(pre);
 }
 // #fila: a proposta do cursor da fila do Alt (01/11): cada ordem que entra na fila, hoje e nas duas propostas, e o plano no chão

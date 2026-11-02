@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cursor dos menus v1</title>
+<style>
+  :root { --AM: #E8B04A; --AMd: #9A6E22; --INK: #F2EEE6; --BG: #0F1112; --D: #070809; }
+  body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1960px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; color: #9a968c; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; }
+  .sub { color: #9a968c; margin: 0 0 6px; max-width: 1500px; }
+  .row { display: flex; gap: 14px; align-items: flex-start; }
+  .cell { width: 150px; height: 150px; position: relative; background: #0d0f10 url(../../docs/aprovados/ui/2026-11-01_menu_painel_radar_APROVADO.jpg) -1180px -330px / 1920px 1080px; border-radius: 6px; }
+  .cell svg { position: absolute; left: 15px; top: 15px; width: 120px; height: 120px; }
+  .cell .lab { position: absolute; left: 8px; bottom: 6px; font: 600 11px "Segoe UI"; color: #c9c4b8; text-transform: uppercase; letter-spacing: 1px; }
+  .frame { position: relative; width: 1920px; height: 1080px; background: url(../../docs/aprovados/ui/2026-11-01_menu_painel_radar_APROVADO.jpg) 0 0 / 1920px 1080px; }
+  .frame svg { position: absolute; width: 48px; height: 48px; }
+  svg { overflow: visible; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Cursor dos menus — v1, três direções</h1>
+  <p class="sub">Na língua do menu aprovado (o terminal do radar: âmbar de fósforo, linha fina, os colchetes dos cantos, o losango do objetivo). Em cada direção: o normal e em cima de um item (o hover). Embaixo, as três no menu de verdade, no tamanho real (48 px em 1080p).</p>
+  <div id="dirs"></div>
+  <h2>No menu, tamanho real</h2>
+  <div class="frame" id="frame"></div>
+</div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+// cada cursor: [hotspot x, y] e o SVG na grade de 64
+const DIRS = [
+  { name: "1 — O ponteiro de instrumento", note: "a seta fina escura com o fio âmbar (o avesso da seta da batalha, que é clara); no item ela acende em âmbar", glyphs: {
+    normal: [[9, 6], `<polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--D)" stroke="var(--D)" stroke-width="6" stroke-linejoin="round"/>
+                      <polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="#15181B" stroke="var(--AM)" stroke-width="2.2" stroke-linejoin="round"/>
+                      <line x1="12.5" y1="14" x2="12.5" y2="38" stroke="var(--AM)" stroke-opacity=".35" stroke-width="1.2"/>`],
+    hover: [[9, 6], `<polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--D)" stroke="var(--D)" stroke-width="6" stroke-linejoin="round"/>
+                     <polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--AM)" stroke="#FFD98A" stroke-width="1.6" stroke-linejoin="round"/>
+                     <polygon points="9,6 19.5,37.5 26.5,34.5 41,34.5" fill="var(--AMd)" opacity=".55"/>`] } },
+  { name: "2 — A retícula do operador", note: "a mira fina do operador de radar: quatro traços âmbar e o ponto no centro; no item, os colchetes dos cantos fecham em volta e o centro vira o losango do objetivo (o OBJ ALPHA do fundo)", glyphs: {
+    normal: [[32, 32], `<g stroke="var(--D)" stroke-width="5.2" stroke-linecap="round"><path d="M32 10V24M32 40V54M10 32H24M40 32H54"/></g>
+                        <g stroke="var(--AM)" stroke-width="2.2" stroke-linecap="round"><path d="M32 10V24M32 40V54M10 32H24M40 32H54"/></g>
+                        <circle cx="32" cy="32" r="3.2" fill="var(--D)"/><circle cx="32" cy="32" r="1.9" fill="#FFD98A"/>`],
+    hover: [[32, 32], `<g stroke="var(--D)" stroke-width="5.2" stroke-linecap="round" fill="none"><path d="M32 14V24M32 40V50M14 32H24M40 32H50"/><path d="M12 20V12H20M44 12H52V20M52 44V52H44M20 52H12V44"/></g>
+                       <g stroke="var(--AM)" stroke-width="2.2" stroke-linecap="round" fill="none"><path d="M32 14V24M32 40V50M14 32H24M40 32H50"/><path d="M12 20V12H20M44 12H52V20M52 44V52H44M20 52H12V44"/></g>
+                       <polygon points="32,26 38,32 32,38 26,32" fill="var(--D)" stroke="var(--D)" stroke-width="3"/><polygon points="32,27.5 36.5,32 32,36.5 27.5,32" fill="none" stroke="#FFD98A" stroke-width="1.8"/>`] } },
+  { name: "3 — A seta do jogo, em versão de menu", note: "a mesma seta clara aprovada da batalha (o jogo e o menu falam a mesma língua), com o fio âmbar na borda de sombra; no item, ganha o colchete âmbar na ponta", glyphs: {
+    normal: [[9, 6], `<polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--D)" stroke="var(--D)" stroke-width="5.4" stroke-linejoin="round"/>
+                      <polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--INK)"/>
+                      <polygon points="9,6 19.5,37.5 26.5,34.5 41,34.5" fill="#CFC9BD"/>
+                      <polyline points="10.5,10 10.5,43" fill="none" stroke="var(--AM)" stroke-width="2"/>`],
+    hover: [[9, 6], `<polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--D)" stroke="var(--D)" stroke-width="5.4" stroke-linejoin="round"/>
+                     <polygon points="9,6 9,47 19.5,37.5 27,54 34,50.8 26.5,34.5 41,34.5" fill="var(--INK)"/>
+                     <polygon points="9,6 19.5,37.5 26.5,34.5 41,34.5" fill="#CFC9BD"/>
+                     <polyline points="10.5,10 10.5,43" fill="none" stroke="var(--AM)" stroke-width="2"/>
+                     <path d="M2 10V2H10" fill="none" stroke="var(--D)" stroke-width="5" stroke-linecap="square"/><path d="M2 10V2H10" fill="none" stroke="var(--AM)" stroke-width="2.2" stroke-linecap="square"/>`] } },
+];
+const mk = (svgInner, size) => {
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", "0 0 64 64");
+  s.innerHTML = svgInner;
+  s.style.filter = "drop-shadow(0 1px 1.4px rgba(0,0,0,.7))";
+  return s;
+};
+const dirs = document.getElementById("dirs");
+DIRS.forEach(d => {
+  dirs.insertAdjacentHTML("beforeend", `<h2>${d.name}</h2><p class="sub">${d.note}</p>`);
+  const row = document.createElement("div"); row.className = "row";
+  for (const [k, lab] of [["normal", "normal"], ["hover", "em cima do item"]]) {
+    const cell = document.createElement("div"); cell.className = "cell";
+    cell.appendChild(mk(d.glyphs[k][1]));
+    cell.insertAdjacentHTML("beforeend", `<div class="lab">${lab}</div>`);
+    row.appendChild(cell);
+  }
+  dirs.appendChild(row);
+});
+// no menu: um quadro por direção (o hover no MULTIPLAYER e o normal no vazio), recortado no pedaço dos itens
+const frameHost = document.getElementById("frame");
+frameHost.className = ""; frameHost.style.cssText = "display:flex;flex-direction:column;gap:10px";
+DIRS.forEach(d => {
+  const fr = document.createElement("div");
+  fr.style.cssText = "position:relative;width:820px;height:340px;overflow:hidden;border-radius:6px;background:url(../../docs/aprovados/ui/2026-11-01_menu_painel_radar_APROVADO.jpg) -90px -420px / 1920px 1080px";
+  const place = (inner, hot, x, y) => { const sv = mk(inner); sv.style.cssText += `;position:absolute;width:48px;height:48px;left:${x - 90 - hot[0] * 48 / 64}px;top:${y - 420 - hot[1] * 48 / 64}px`; fr.appendChild(sv); };
+  place(d.glyphs.hover[1], d.glyphs.hover[0], 330, 560);
+  place(d.glyphs.normal[1], d.glyphs.normal[0], 640, 700);
+  fr.insertAdjacentHTML("beforeend", `<div style="position:absolute;right:10px;top:8px;font:700 13px Segoe UI;color:#E8B04A">${d.name}</div>`);
+  frameHost.appendChild(fr);
+});
+</script>
+</body>
+</html>

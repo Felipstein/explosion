@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Ponto de encontro na gameplay</title>
+<style>
+  html, body { margin: 0; background: #000; }
+  .fr { position: relative; width: 1600px; height: 900px; background: url(../../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) 0 0 / 1600px 900px; }
+  svg { position: absolute; left: 0; top: 0; }
+</style>
+</head>
+<body>
+<div class="fr"><svg id="s" width="1600" height="900" viewBox="0 0 1600 900"></svg></div>
+<script>
+// (v3 da rota, ele: "a reta no chão [...] tá bem invisível, difícil de ler") a reta inteira e mais grossa (o miolo de 3,5 px no
+// azul do time puxado pro claro, o contorno escuro de 1,5 px), as setas maiores a cada ~90 px; a bandeira 3D (a direção 2)
+// #team=59B2FF: a cor do jogador (a que o jogo mostra na tela); o miolo da reta é ela clareada, as setas quase brancas nela
+const TH = (/#team=([0-9A-Fa-f]{6})/.exec(location.hash) || [0, "4A8EFF"])[1];
+const rgbOf = h => [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+const hex = c => "#" + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+const mixc = (c, t, w) => c.map((v, i) => v + (t[i] - v) * w);
+const T0 = rgbOf(TH);
+const TEAM = hex(T0), TEAMd = hex(T0.map(v => v * 0.42)), CORE = hex(mixc(T0, [255, 255, 255], 0.35)), CHEV = hex(mixc(T0, [255, 255, 255], 0.8));
+const DOOR = { x: 392, y: 452 }, PT = { x: 1410, y: 190 };
+let s = "";
+// a barra de vida da fábrica selecionada (a A, cheia, com a marquinha do time)
+const bx = 288, by = 330, bw = 104, bh = 6;
+s += `<rect x="${bx - 1}" y="${by - 1}" width="${bw + 2}" height="${bh + 2}" fill="#163C19" opacity=".95"/><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="#4FD65A"/>`
+  + `<rect x="${bx}" y="${by}" width="${bw}" height="1" fill="#96E99D"/>` + Array.from({ length: 19 }, (_, k) => `<rect x="${bx + Math.round(bw * (k + 1) / 20)}" y="${by + 1}" width="1" height="${bh - 1}" fill="rgba(0,0,0,.35)"/>`).join("")
+  + `<rect x="${bx - 5}" y="${by - 1}" width="4" height="${bh + 2}" fill="#1D3866"/><rect x="${bx - 4}" y="${by}" width="2" height="${bh}" fill="${TEAM}"/>`;
+// a reta
+const ang = Math.atan2(PT.y - DOOR.y, PT.x - DOOR.x) * 180 / Math.PI, len = Math.hypot(PT.x - DOOR.x, PT.y - DOOR.y);
+s += `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="rgba(6,10,18,.72)" stroke-width="6.5" stroke-linecap="round"/>`
+  + `<line x1="${DOOR.x}" y1="${DOOR.y}" x2="${PT.x}" y2="${PT.y}" stroke="${CORE}" stroke-width="3.5" stroke-linecap="round"/>`;
+const n = Math.floor(len / 90);
+for (let k = 1; k < n; k++) {
+  const t = k / n, x = DOOR.x + (PT.x - DOOR.x) * t, y = DOOR.y + (PT.y - DOOR.y) * t;
+  s += `<g transform="translate(${x} ${y}) rotate(${ang})"><polyline points="-6,-7 2,0 -6,7" fill="none" stroke="rgba(6,10,18,.75)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>`
+    + `<polyline points="-6,-7 2,0 -6,7" fill="none" stroke="${CHEV}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
+// a bandeira 3D no ponto (um pouco maior que na prancha: 56 px de mastro)
+const P = PT, K = 1.2;
+s += `<ellipse cx="${P.x + 19}" cy="${P.y + 7}" rx="29" ry="6" fill="rgba(20,12,4,.4)" transform="rotate(-14 ${P.x + 19} ${P.y + 7})"/>
+  <ellipse cx="${P.x}" cy="${P.y}" rx="13" ry="5.5" fill="#3A3F45" stroke="rgba(0,0,0,.65)" stroke-width="1.4"/><ellipse cx="${P.x}" cy="${P.y - 1}" rx="10.5" ry="4.2" fill="${TEAMd}"/><ellipse cx="${P.x}" cy="${P.y - 1.6}" rx="7" ry="2.6" fill="${TEAM}"/>
+  <rect x="${P.x - 1.9}" y="${P.y - 57}" width="3.8" height="56" fill="#C9CED2" stroke="rgba(0,0,0,.6)" stroke-width=".9"/>
+  <circle cx="${P.x}" cy="${P.y - 58}" r="2.6" fill="#E9ECEE" stroke="rgba(0,0,0,.6)" stroke-width=".9"/>
+  <g transform="translate(${P.x} ${P.y}) scale(${K}) translate(${-P.x} ${-P.y})">
+  <path d="M${P.x + 1.6} ${P.y - 46}C${P.x + 10} ${P.y - 49} ${P.x + 16} ${P.y - 41} ${P.x + 30} ${P.y - 44}C${P.x + 29} ${P.y - 38} ${P.x + 31} ${P.y - 34} ${P.x + 30} ${P.y - 29}C${P.x + 16} ${P.y - 26} ${P.x + 10} ${P.y - 34} ${P.x + 1.6} ${P.y - 31}Z" fill="${TEAM}" stroke="rgba(0,0,0,.55)" stroke-width="1" paint-order="stroke"/>
+  <path d="M${P.x + 12} ${P.y - 44}C${P.x + 13} ${P.y - 40} ${P.x + 12} ${P.y - 35} ${P.x + 12} ${P.y - 31}" fill="none" stroke="rgba(10,20,50,.35)" stroke-width="1.6"/></g>`;
+document.getElementById("s").innerHTML = s;
+</script>
+</body>
+</html>

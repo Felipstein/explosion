@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Ponto de encontro: longe</title>
+<style>
+  body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .grid { display: grid; grid-template-columns: 800px 800px; gap: 12px 14px; padding: 16px; }
+  .cap { color: #e9e6df; font: 700 14px "Segoe UI"; margin: 4px 0 4px; }
+  .fr { position: relative; width: 1600px; height: 900px; transform: scale(.5); transform-origin: 0 0; background: url(../../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) 0 0 / 1600px 900px; }
+  .box { width: 800px; height: 450px; overflow: hidden; border-radius: 6px; }
+  svg { position: absolute; left: 0; top: 0; overflow: visible; }
+</style>
+</head>
+<body>
+<div class="grid" id="grid"></div>
+<script>
+const TEAM = "#4A8EFF", TEAMd = "#1F4FA8", TEAMl = "#9CC4FF";
+// a fábrica (a porta) e os pontos de cada caso, em coordenadas do quadro (1600 × 900)
+const DOOR = { x: 300, y: 470 };
+const CASES = {
+  perto: { x: 520, y: 560 },
+  longe: { x: 1430, y: 170 },
+  fora: { x: 2300, y: -380 },   // além da borda de cima à direita
+};
+// a bandeira 3D (a direção 2), em pé no ponto P
+function flag(P) {
+  return `<ellipse cx="${P.x + 16}" cy="${P.y + 6}" rx="24" ry="5" fill="rgba(20,12,4,.38)" transform="rotate(-14 ${P.x + 16} ${P.y + 6})"/>
+    <ellipse cx="${P.x}" cy="${P.y}" rx="11" ry="4.6" fill="#3A3F45" stroke="rgba(0,0,0,.65)" stroke-width="1.4"/><ellipse cx="${P.x}" cy="${P.y - .8}" rx="9" ry="3.6" fill="${TEAMd}"/><ellipse cx="${P.x}" cy="${P.y - 1.4}" rx="6" ry="2.2" fill="${TEAM}"/>
+    <rect x="${P.x - 1.6}" y="${P.y - 48}" width="3.2" height="47" fill="#C9CED2" stroke="rgba(0,0,0,.6)" stroke-width=".8"/>
+    <circle cx="${P.x}" cy="${P.y - 49}" r="2.2" fill="#E9ECEE" stroke="rgba(0,0,0,.6)" stroke-width=".8"/>
+    <path d="M${P.x + 1.6} ${P.y - 46}C${P.x + 10} ${P.y - 49} ${P.x + 16} ${P.y - 41} ${P.x + 30} ${P.y - 44}C${P.x + 29} ${P.y - 38} ${P.x + 31} ${P.y - 34} ${P.x + 30} ${P.y - 29}C${P.x + 16} ${P.y - 26} ${P.x + 10} ${P.y - 34} ${P.x + 1.6} ${P.y - 31}Z" fill="${TEAM}" stroke="rgba(0,0,0,.55)" stroke-width="1" paint-order="stroke"/>`;
+}
+const chevron = (x, y, ang) => `<g transform="translate(${x} ${y}) rotate(${ang})"><polyline points="-4,-4.5 1.5,0 -4,4.5" fill="none" stroke="rgba(0,0,0,.6)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>`
+  + `<polyline points="-4,-4.5 1.5,0 -4,4.5" fill="none" stroke="${TEAMl}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+// v1: a curva (a mesma conta da prancha anterior)
+function curve(a, b) {
+  const c = { x: (a.x + b.x) / 2 + 10, y: Math.min(a.y, b.y) - 4 };
+  const d = `M${a.x} ${a.y} Q${c.x} ${c.y} ${b.x} ${b.y}`;
+  let s = `<path d="${d}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="4.5" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${TEAM}" stroke-width="2.2" stroke-linecap="round"/>`;
+  for (let t = 0.22; t < 0.85; t += 0.2) {
+    const x = (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y = (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y;
+    const dx = 2 * (1 - t) * (c.x - a.x) + 2 * t * (b.x - c.x), dy = 2 * (1 - t) * (c.y - a.y) + 2 * t * (b.y - c.y);
+    s += chevron(x, y, Math.atan2(dy, dx) * 180 / Math.PI);
+  }
+  return s;
+}
+// v2: a reta rente ao chão (no jogo, amostrada no relevo como a linha da fila), tracejada longa, uma seta a cada ~140 px;
+// se o ponto sai da tela, a reta vai até a borda e lá fica o aviso: a ficha com a bandeirinha e a seta apontando pra ele
+function straight(a, b) {
+  const W = 1600, H = 900, M = 28;
+  let end = b, off = false;
+  if (b.x < 0 || b.y < 0 || b.x > W || b.y > H) {
+    // corta na borda (com margem)
+    const ts = [];
+    if (b.x > W - M) ts.push((W - M - a.x) / (b.x - a.x));
+    if (b.x < M) ts.push((M - a.x) / (b.x - a.x));
+    if (b.y < M) ts.push((M - a.y) / (b.y - a.y));
+    if (b.y > H - M) ts.push((H - M - a.y) / (b.y - a.y));
+    const t = Math.min(...ts.filter(v => v > 0));
+    end = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    off = true;
+  }
+  const ang = Math.atan2(end.y - a.y, end.x - a.x) * 180 / Math.PI;
+  let s = `<line x1="${a.x}" y1="${a.y}" x2="${end.x}" y2="${end.y}" stroke="rgba(0,0,0,.55)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="14 9"/>`
+    + `<line x1="${a.x}" y1="${a.y}" x2="${end.x}" y2="${end.y}" stroke="${TEAM}" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="14 9"/>`;
+  const len = Math.hypot(end.x - a.x, end.y - a.y), n = Math.max(1, Math.floor(len / 140));
+  for (let k = 1; k <= n; k++) {
+    const t = k / (n + 1);
+    s += chevron(a.x + (end.x - a.x) * t, a.y + (end.y - a.y) * t, ang);
+  }
+  if (off) {
+    // o aviso na borda: a ficha redonda do time com a bandeirinha, e a seta pra fora
+    const ex = end.x, ey = end.y;
+    s += `<g transform="translate(${ex} ${ey})"><circle r="13" fill="rgba(0,0,0,.7)"/><circle r="11.5" fill="${TEAMd}" stroke="${TEAM}" stroke-width="1.6"/>
+      <line x1="-3" y1="6" x2="-3" y2="-7" stroke="#F3F1EC" stroke-width="1.8"/><path d="M-2.2 -7L7 -4.2L-2.2 -1.4Z" fill="#F3F1EC"/>
+      <g transform="rotate(${ang})"><path d="M15 -5.5L23 0L15 5.5Z" fill="${TEAMl}" stroke="rgba(0,0,0,.7)" stroke-width="1.4" paint-order="stroke"/></g></g>`;
+  } else {
+    s += flag(b);
+  }
+  return s;
+}
+const ROWS = [
+  ["v1 · a curva — perto", a => curve(a, CASES.perto) + flag(CASES.perto)],
+  ["v2 · a reta no chão — perto", a => straight(a, CASES.perto)],
+  ["v1 · a curva — do outro lado da tela", a => curve(a, CASES.longe) + flag(CASES.longe)],
+  ["v2 · a reta no chão — do outro lado da tela", a => straight(a, CASES.longe)],
+  ["v1 · a curva — fora da tela (some no meio do caminho)", a => curve(a, CASES.fora)],
+  ["v2 · a reta no chão — fora da tela (o aviso na borda)", a => straight(a, CASES.fora)],
+];
+const grid = document.getElementById("grid");
+// #one=5: só esse caso, no tamanho real (1600 × 900)
+const ONE = /#one=(\d)/.exec(location.hash);
+if (ONE) { const st = document.createElement('style'); st.textContent = '.grid{display:block;padding:0} .fr{transform:none} .box{width:1600px;height:900px;border-radius:0} .cap{display:none}'; document.head.appendChild(st); }
+ROWS.filter((r, k) => !ONE || k === +ONE[1]).forEach(([cap, art]) => {
+  const cell = document.createElement("div");
+  cell.innerHTML = `<div class="cap">${cap}</div><div class="box"><div class="fr"><svg width="1600" height="900" viewBox="0 0 1600 900">
+    <rect x="${DOOR.x - 60}" y="${DOOR.y - 70}" width="120" height="70" fill="none" stroke="${TEAM}" stroke-width="2" stroke-dasharray="6 4" opacity=".7"/>
+    <text x="${DOOR.x}" y="${DOOR.y - 78}" text-anchor="middle" fill="#fff" font-size="13" font-family="Segoe UI" font-weight="700" stroke="#000" stroke-width="3" paint-order="stroke">a fábrica (selecionada)</text>
+    ${art(DOOR)}</svg></div></div>`;
+  grid.appendChild(cell);
+});
+</script>
+</body>
+</html>

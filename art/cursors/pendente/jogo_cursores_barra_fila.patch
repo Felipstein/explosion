@@ -1,0 +1,523 @@
+--- a/Game/Source/RTSGame/Private/RTSPlayerController.cpp
++++ b/Game/Source/RTSGame/Private/RTSPlayerController.cpp
+@@ -137,6 +137,10 @@
+ 	Super::PlayerTick(DeltaTime);
+ 	if (bMenu)
+ 	{
++		// (01/11) a nossa seta já no menu (ela fica no lugar da do Windows em toda a tela)
++		int32 ViewW = 0, ViewH = 0;
++		GetViewportSize(ViewW, ViewH);
++		CurrentMouseCursor = Cursors.Apply(ERTSCursor::Pointer, ViewH);
+ 		TickMenu();
+ 	}
+ 	else
+@@ -1035,55 +1039,162 @@
+ 	}
+ 	HandleGroups();
+ 
+-	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH)
++	// o que está sob o mouse: o anel acende; o cursor diz o que o clique vai fazer (ZH). Os cursores são os nossos (01/11,
++	// docs/CURSORES.md): a mesma ordem de decisão do clique (HandleLeftClick e HandleEconomyClick), pra nunca mentir
+ 	const bool bMinimapMouse = bOverMinimap || MinimapGesture != EMinimapGesture::None;
+ 	const bool bLineChord = LineChord == ELineChord::Active || LineChord == ELineChord::Releasing;
+ 	HoverId = (bHasMouse && !bLeftDown && !bMinimapMouse && LineChord == ELineChord::None) ? PickUnit(Mouse) : 0;
+-	EMouseCursor::Type Cursor = EMouseCursor::Default;
++	const bool bCtrlHeld = IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl);
++	const bool bShiftHeld = IsInputKeyDown(EKeys::LeftShift) || IsInputKeyDown(EKeys::RightShift);
++	const ERTSCursor Walk = bAttackMoveArmed ? ERTSCursor::AttackMove : ERTSCursor::Move;   // o clique de andar (com o Alt, ganha a ficha da fila abaixo)
++	int32 ViewW = 0, ViewH = 0;
++	GetViewportSize(ViewW, ViewH);
++	const float EdgeX = !bHasMouse || ViewW <= 0 ? 0.0f : (Mouse.X <= EdgeScrollPx ? -1.0f : (Mouse.X >= ViewW - 1 - EdgeScrollPx ? 1.0f : 0.0f));
++	const float EdgeY = !bHasMouse || ViewH <= 0 ? 0.0f : (Mouse.Y <= EdgeScrollPx ? 1.0f : (Mouse.Y >= ViewH - 1 - EdgeScrollPx ? -1.0f : 0.0f));
++	ERTSCursor Cursor = ERTSCursor::Pointer;
+ 	FRTSUnitState Hovered;
+-	if (bLineChord)
+-	{
+-		// (v4) puxando a linha dos dois botões: o "andar" (a mira com o ataque andando armado)
+-		Cursor = bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross;
++	const bool bHovered = HoverId != 0 && M->GetUnit(HoverId, Hovered);
++	TArray<uint32> Dozers;
++	SelectedWith(true, Dozers);
++	if (bRightScrolling || bMiddleDown)
++	{
++		Cursor = ERTSCursor::Pan;   // arrastando a vista
++	}
++	else if (bEdgeScroll && (EdgeX != 0.0f || EdgeY != 0.0f) && !bMinimapMouse && !bLineChord)
++	{
++		// rolando pela borda (a mesma regra do TickCamera): a seta na direção, com a ponta encostada na borda
++		static const ERTSCursor Dirs[3][3] = {   // [linha: em cima, meio, embaixo][coluna: esquerda, meio, direita]
++			{ ERTSCursor::ScrollNW, ERTSCursor::ScrollN, ERTSCursor::ScrollNE },
++			{ ERTSCursor::ScrollW, ERTSCursor::Pointer, ERTSCursor::ScrollE },
++			{ ERTSCursor::ScrollSW, ERTSCursor::ScrollS, ERTSCursor::ScrollSE } };
++		Cursor = Dirs[EdgeY > 0.0f ? 0 : (EdgeY < 0.0f ? 2 : 1)][EdgeX < 0.0f ? 0 : (EdgeX > 0.0f ? 2 : 1)];
++	}
++	else if (bLineChord)
++	{
++		Cursor = bAttackMoveArmed ? ERTSCursor::AttackMove : ERTSCursor::Move;   // (v4) puxando a linha dos dois botões
+ 	}
+ 	else if (bMinimapMouse)
+ 	{
+-		// sobre o minimapa: seta sem seleção, "andar" com seleção, mira com o ataque andando armado
+-		Cursor = Selected.IsEmpty() ? EMouseCursor::Default : (bAttackMoveArmed ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross);
++		// sobre o minimapa: a seta sem seleção, o "andar" com seleção (o ataque andando, se armado)
++		Cursor = Selected.IsEmpty() ? ERTSCursor::Pointer : Walk;
++	}
++	else if (bPlacing)
++	{
++		FVector Ground;
++		FVector2D Center, Half;
++		const bool bFits = GroundUnderCursor(Mouse, Ground)
++			&& M->CanPlace(uint16(PlacingDef), PlacingDir, FVector2D(Ground.X, Ground.Y), Center, Half) == ERTSPlace::Ok;
++		Cursor = bFits ? ERTSCursor::Build : ERTSCursor::NoBuild;   // o fantasma verde ou vermelho faz o resto
+ 	}
+ 	else if (bLabTool)
+ 	{
+-		Cursor = EMouseCursor::Crosshairs;   // (v5) a ferramenta do laboratório armada
+-	}
+-	else if (TargetingPower >= 0 || bAttackMoveArmed || bPatrolArmed || bGuardArmed || (!Selected.IsEmpty() && (IsInputKeyDown(EKeys::LeftControl) || IsInputKeyDown(EKeys::RightControl))))
+-	{
+-		Cursor = EMouseCursor::Crosshairs;   // (com o Ctrl: o tiro forçado, em qualquer coisa ou no chão; v4: a mira do poder)
+-	}
+-	else if (HoverId != 0 && M->GetUnit(HoverId, Hovered))
++		Cursor = ERTSCursor::Strike;   // (v5) a ferramenta do laboratório armada
++	}
++	else if (TargetingPower >= 0)
++	{
++		// (v4) a mira do poder: a de ataque se ele lança mísseis, a de apoio se não (o paraquedas, o drone)
++		URTSMatchSubsystem::FPowerInfo Info;
++		Cursor = M->GetPowerInfo(TargetingPower, Info) && Info.Missiles == 0 ? ERTSCursor::Support : ERTSCursor::Strike;
++	}
++	else if (bGuardArmed)
++	{
++		Cursor = bHovered && !M->IsEnemyOfLocal(Hovered.Owner) ? ERTSCursor::Escort : ERTSCursor::Guard;   // (v5) a escolta ou a área
++	}
++	else if (bPatrolArmed)
++	{
++		Cursor = ERTSCursor::Patrol;
++	}
++	else if (bAttackMoveArmed)
++	{
++		Cursor = ERTSCursor::AttackMove;
++	}
++	else if (bCtrlHeld && !Selected.IsEmpty())
++	{
++		// o tiro forçado (Ctrl): na unidade, ou no chão (a sua única selecionada vira tiro no chão, como no clique)
++		const bool bOnUnit = bHovered && !(Selected.Num() == 1 && Selected.Contains(HoverId));
++		Cursor = bOnUnit ? ERTSCursor::Force : ERTSCursor::Ground;
++	}
++	else if (bHovered)
+ 	{
+ 		const bool bEnemy = M->IsEnemyOfLocal(Hovered.Owner);
+-		Cursor = bEnemy ? (Selected.IsEmpty() ? EMouseCursor::Default : (M->CanAnyTarget(Selected, HoverId) ? EMouseCursor::Crosshairs : EMouseCursor::CardinalCross)) : EMouseCursor::Hand;
+-		// (v4, 23/10) o Dozer selecionado sobre o prédio avariado (dele ou do aliado): a chave do conserto, como no ZH; o clique manda
+-		TArray<uint32> Dozers;
+-		SelectedWith(true, Dozers);
+-		if (!bEnemy && Hovered.bStructure && !Dozers.IsEmpty() && M->CanRepair(HoverId) && EnsureRepairCursor())
+-		{
+-			Cursor = EMouseCursor::Custom;
++		const bool bMine = Hovered.Owner == M->LocalPlayer();
++		if (bEnemy)
++		{
++			// o inimigo que ninguém da seleção acerta (o tanque e o avião no ar): o clique continua sendo andar
++			Cursor = Selected.IsEmpty() ? ERTSCursor::Pointer : (M->CanAnyTarget(Selected, HoverId) ? ERTSCursor::Attack : ERTSCursor::Cant);
++		}
++		else if (!Dozers.IsEmpty() && bMine && Hovered.bStructure && Hovered.BuildFraction < 1.0f)
++		{
++			Cursor = ERTSCursor::Resume;   // a obra parada
++		}
++		else if (!Dozers.IsEmpty() && Hovered.bStructure && M->CanRepair(HoverId))
++		{
++			Cursor = ERTSCursor::Repair;   // (v4, 23/10) o prédio avariado, dele ou do aliado
++		}
++		else if (bMine && !bShiftHeld && !Selected.Contains(HoverId) && M->CanEnter(Selected, HoverId))
++		{
++			Cursor = ERTSCursor::Enter;   // (simulação 35) o soldado no transporte com vaga
++		}
++		else
++		{
++			Cursor = bMine ? ERTSCursor::Select : (Selected.IsEmpty() ? ERTSCursor::Pointer : Walk);   // o do aliado: o clique anda
+ 		}
+ 	}
+ 	else if (!Selected.IsEmpty())
+ 	{
+-		// (simulação 30) o Dozer selecionado sobre a carcaça ou o entulho: a chave (o clique recolhe a sucata)
+-		TArray<uint32> Dozers;
+-		SelectedWith(true, Dozers);
+ 		FVector Ground;
+-		if (!Dozers.IsEmpty() && GroundUnderCursor(Mouse, Ground) && M->SalvageAt(FVector2D(Ground.X, Ground.Y)) != 0 && EnsureRepairCursor())
+-		{
+-			Cursor = EMouseCursor::Custom;
+-		}
+-	}
+-	bRepairCursor = Cursor == EMouseCursor::Custom;
+-	CurrentMouseCursor = Cursor;
++		if (!GroundUnderCursor(Mouse, Ground))
++		{
++			Cursor = ERTSCursor::Invalid;   // sem chão debaixo (a vista no céu)
++		}
++		else
++		{
++			TArray<uint32> Trucks;
++			SelectedWith(false, Trucks);
++			bool bOnlyStructures = true;
++			for (const uint32 Id : Selected)
++			{
++				FRTSUnitState U;
++				bOnlyStructures &= M->GetUnit(Id, U) && U.bStructure && U.Owner == M->LocalPlayer();
++			}
++			if (!Dozers.IsEmpty() && M->SalvageAt(FVector2D(Ground.X, Ground.Y)) != 0)
++			{
++				Cursor = ERTSCursor::Salvage;   // (simulação 30) a carcaça ou o entulho
++			}
++			else if (!Trucks.IsEmpty() && DockAt(Ground) >= 0)
++			{
++				Cursor = ERTSCursor::Gather;
++			}
++			else
++			{
++				Cursor = bOnlyStructures ? ERTSCursor::Rally : Walk;   // prédio não anda: o clique marca o ponto de encontro
++			}
++		}
++	}
++	bRepairCursor = Cursor == ERTSCursor::Repair || Cursor == ERTSCursor::Salvage;
++	// (01/11, aprovado) a fila do Alt: a ordem ganha a ficha com o número da vez (a fila mais longa da seleção, mais 1)
++	int32 QueueN = 0;
++	if (bAltHeld && !Selected.IsEmpty() && FRTSCursors::IsQueueable(Cursor))
++	{
++		TArray<URTSMatchSubsystem::FRTSOrderStep> Steps;
++		for (const uint32 Id : Selected)
++		{
++			QueueN = FMath::Max(QueueN, M->GetOrderPath(Id, Steps) ? Steps.Num() : 0);
++		}
++		QueueN += 1;
++	}
++	const ERTSCursor Before = Cursors.GetShown();
++	CurrentMouseCursor = Cursors.Apply(Cursor, ViewH, QueueN);
++	// -RTSCursorLog: cada troca no log, com o mouse (a prova dos testes: o cursor do Windows não sai na captura do jogo)
++	static const bool bCursorLog = FParse::Param(FCommandLine::Get(), TEXT("RTSCursorLog"));
++	if (bCursorLog && Cursors.GetShown() != Before)
++	{
++		UE_LOG(LogTemp, Display, TEXT("RTS cursor: %s (fila %d) em (%.0f, %.0f), tela %dx%d"), FRTSCursors::Name(Cursor), QueueN, Mouse.X, Mouse.Y, ViewW, ViewH);
++	}
++	if (!Cursors.IsReady() && bRepairCursor && EnsureRepairCursor())
++	{
++		CurrentMouseCursor = EMouseCursor::Custom;   // sem os arquivos: a chave antiga
++	}
+ 
+ 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+ 	{
+--- a/Game/Source/RTSGame/Public/RTSPlayerController.h
++++ b/Game/Source/RTSGame/Public/RTSPlayerController.h
+@@ -6,11 +6,11 @@
+ //    dois cliques = todos iguais na tela;
+ //  - botão direito: clique rápido desseleciona, arrastar rola a câmera; os dois juntos arrastando = a linha (v4, ELineChord);
+ //  - A = próxima ordem é ataque andando; S = parar; Ctrl+número grava grupo,
+-//    número chama, dois toques centralizam; Esc = pausa.
+-// Também cuida dos botões do menu e das telas de pausa e de fim.
++//    número chama, dois toques centralizam; Esc = pausa. Também cuida dos botões do menu e das telas de pausa e de fim.
+ 
+ #include "CoreMinimal.h"
+ #include "GameFramework/PlayerController.h"
++#include "RTSCursors.h"
+ #include "RTSPlayerController.generated.h"
+ 
+ class UStaticMeshComponent;
+@@ -203,6 +203,8 @@
+ 	void* RepairCursorHandle = nullptr;
+ 	int8 RepairCursorState = 0;   // 0 ainda não tentou, 1 pronto, −1 não deu
+ 	bool bRepairCursor = false;
++	/** (01/11) Os cursores do jogo (docs/CURSORES.md); sem os arquivos, os do Windows e a chave acima. */
++	FRTSCursors Cursors;
+ 	bool bTestMouse = false;
+ 	FVector2D TestMouse = FVector2D::ZeroVector;
+ 	UPROPERTY() TObjectPtr<AActor> Ghost;
+--- a/Game/Source/RTSGame/Private/RTSHUD.cpp
++++ b/Game/Source/RTSGame/Private/RTSHUD.cpp
+@@ -27,6 +27,8 @@
+ #include "RTSMapBaker.h"
+ #include "RTSMatchSubsystem.h"
+ #include "RTSPlayerController.h"
++#include "RTSUnitActor.h"
++#include "Components/StaticMeshComponent.h"
+ #include "Misc/CommandLine.h"
+ #include "Misc/Parse.h"
+ 
+@@ -54,14 +56,6 @@
+ 	/** Cores da caixa da câmera do ZH (W3DRadar: topo 225,225,0 e o resto 158,158,0). */
+ 	const FLinearColor ViewBoxTop(FColor(225, 225, 0));
+ 	const FLinearColor ViewBoxRest(FColor(158, 158, 0));
+-
+-	FLinearColor HealthColor(float Ratio)
+-	{
+-		// verde → amarelo → vermelho, nos limiares do ZH (danificado 70%, muito danificado 35%)
+-		if (Ratio > 0.7f) { return FLinearColor(0.25f, 0.9f, 0.3f); }
+-		if (Ratio > 0.35f) { return FLinearColor(0.95f, 0.8f, 0.15f); }
+-		return FLinearColor(0.95f, 0.2f, 0.15f);
+-	}
+ 
+ 	FLinearColor Brighten(const FLinearColor& C, float T)
+ 	{
+@@ -853,6 +847,8 @@
+ 			bPrev = bOk;
+ 		}
+ 	};
++	struct FQueueToken { FVector Sum; int32 Count; int32 Index; uint8 Kind; };
++	TArray<FQueueToken> Tokens;
+ 	int32 Drawn = 0;
+ 	for (const uint32 Id : PC->GetSelection())
+ 	{
+@@ -864,24 +860,129 @@
+ 		}
+ 		++Drawn;
+ 		FVector From(P0->X, P0->Y, GroundAt(*P0));
+-		for (const URTSMatchSubsystem::FRTSOrderStep& St : Steps)
+-		{
++		for (int32 K = 0; K < Steps.Num(); ++K)
++		{
++			const URTSMatchSubsystem::FRTSOrderStep& St = Steps[K];
+ 			const FLinearColor Col = St.Kind == 0 ? MoveGreen : (St.Kind == 1 ? AttackRed : WorkAmber);
+ 			Segment(From, St.Cm, Col);
+-			if (St.Kind == 0)
++			// (01/11, aprovado: "agora sim, tá massa") o ponto vira a ficha numerada, desenhada depois de todas as linhas; as vagas do
++			// mesmo passo do grupo (até 30 m umas das outras) viram uma ficha só, no meio delas
++			FQueueToken* Same = Tokens.FindByPredicate([&](const FQueueToken& T)
+ 			{
+-				DrawGroundRing(St.Cm, 90.0f, Col, 2.0f, 16);
+-			}
+-			else if (St.Kind == 1)
++				return T.Index == K && T.Kind == St.Kind && FVector::Dist2D(T.Sum / float(T.Count), St.Cm) < 3000.0f;
++			});
++			if (Same)
+ 			{
+-				DrawGroundRing(St.Cm, 260.0f, Col, 2.0f, 24);
++				Same->Sum += St.Cm;
++				++Same->Count;
+ 			}
+ 			else
+ 			{
+-				DrawGroundRing(St.Cm, 200.0f, Col, 2.0f, 4);   // o quadrado da obra
++				Tokens.Add({ St.Cm, 1, K, St.Kind });
+ 			}
+ 			From = St.Cm;
+ 		}
++	}
++	// a ficha (a mesma do cursor da fila): a sombrinha no chão, o disco na cor da linha e o número da vez
++	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;
++	static const FLinearColor TokenColor[3] = { FLinearColor(FColor(79, 224, 90)), FLinearColor(FColor(255, 59, 48)), FLinearColor(FColor(255, 178, 31)) };
++	for (const FQueueToken& T : Tokens)
++	{
++		const FVector At = T.Sum / float(T.Count);
++		FVector2D P;
++		if (!PlayerOwner->ProjectWorldLocationToScreen(FVector(At.X, At.Y, GroundAt(FVector2D(At.X, At.Y))), P))
++		{
++			continue;
++		}
++		const auto Disc = [this](const FVector2D& C, const FVector2D& R, const FLinearColor& Color)
++		{
++			FCanvasNGonItem Item(C, R, 24, Color);
++			Item.BlendMode = SE_BLEND_Translucent;
++			Canvas->DrawItem(Item);
++		};
++		Disc(P + FVector2D(0.0f, 6.0f * S), FVector2D(9.0f, 3.2f) * S, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
++		Disc(P, FVector2D(10.5f, 10.5f) * S, FLinearColor(0.004f, 0.005f, 0.006f, 1.0f));
++		Disc(P, FVector2D(9.0f, 9.0f) * S, TokenColor[FMath::Min<int32>(T.Kind, 2)]);
++		const FString Num = T.Index < 9 ? FString::FromInt(T.Index + 1) : FString(TEXT("+"));
++		const int32 Size = FMath::RoundToInt(10.0f * S);
++		const FVector2D Text = MeasureLabel(Num, Size, true);
++		DrawLabel(Num, P.X, P.Y - Text.Y * 0.5f, Size, FLinearColor::White, true, true);
++	}
++}
++
++void ARTSHUD::DrawHealthBar(float X, float Y, float W, float H, float S, float Ratio, float ChipFrom, float ChipFade, bool bBuild, int32 MaxHp, int32 Vet,
++	const FLinearColor& Team)
++{
++	// (01/11, a barra A escolhida: docs/APROVADOS.md e captures/concept/barras/board.html) a cor corre contínua do verde ao vermelho (a
++	// do ZH, Drawable::drawHealthBar), o contorno no mesmo tom escurecido, o brilho de cima, um risco a cada 100 de vida, o pedaço perdido
++	// no tiro em branco; a obra é a própria barra, azul → ciano (o ZH). As cores em sRGB, como no quadro aprovado
++	const auto Mix = [](const FColor& A, const FColor& B, float T)
++	{
++		return FColor(uint8(FMath::RoundToInt(FMath::Lerp(float(A.R), float(B.R), T))), uint8(FMath::RoundToInt(FMath::Lerp(float(A.G), float(B.G), T))),
++			uint8(FMath::RoundToInt(FMath::Lerp(float(A.B), float(B.B), T))));
++	};
++	static const FColor Green(79, 214, 90), Yellow(242, 204, 58), Red(240, 74, 51), Blue(46, 125, 255), Cyan(63, 224, 240), Gold(236, 196, 92);
++	const float R = FMath::Clamp(Ratio, 0.0f, 1.0f);
++	const FColor Fill = bBuild ? Mix(Blue, Cyan, R) : (R >= 0.5f ? Mix(Yellow, Green, (R - 0.5f) / 0.5f) : Mix(Red, Yellow, R / 0.5f));
++	const FColor Edge(uint8(Fill.R * 0.28f), uint8(Fill.G * 0.28f), uint8(Fill.B * 0.28f));
++	DrawPanel(X - 1.0f, Y - 1.0f, W + 2.0f, H + 2.0f, FLinearColor(Edge).CopyWithNewOpacity(0.95f));
++	DrawPanel(X, Y, W, H, FLinearColor(FColor(20, 24, 29)).CopyWithNewOpacity(0.82f));
++	const float FillW = FMath::RoundToFloat(W * R);
++	DrawPanel(X, Y, FillW, H, FLinearColor(Fill));
++	DrawPanel(X, Y, FillW, 1.0f, FLinearColor(Mix(Fill, FColor::White, 0.35f)));
++	if (!bBuild && ChipFade > 0.0f && ChipFrom > R)
++	{
++		const float ChipW = FMath::RoundToFloat(W * FMath::Min(ChipFrom, 1.0f)) - FillW;
++		if (ChipW > 0.0f)
++		{
++			DrawPanel(X + FillW, Y, ChipW, H, FLinearColor(1.0f, 1.0f, 1.0f, 0.92f * ChipFade));
++		}
++	}
++	if (!bBuild && MaxHp > 100)
++	{
++		for (int32 Hp = 100; Hp < MaxHp; Hp += 100)
++		{
++			const float TickX = X + FMath::RoundToFloat(W * float(Hp) / float(MaxHp));
++			if (TickX < X + FillW)
++			{
++				DrawPanel(TickX, Y + 1.0f, 1.0f, H - 1.0f, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
++			}
++		}
++	}
++	if (Vet <= 0)
++	{
++		// a marquinha do time, à esquerda
++		DrawPanel(X - FMath::RoundToFloat(5.0f * S), Y - 1.0f, FMath::RoundToFloat(4.0f * S), H + 2.0f, FLinearColor(Team.R * 0.4f, Team.G * 0.4f, Team.B * 0.4f, 1.0f));
++		DrawPanel(X - FMath::RoundToFloat(4.0f * S), Y, FMath::RoundToFloat(2.0f * S), H, Team);
++		return;
++	}
++	// a insígnia da patente no lugar da marquinha, afastada 3 px da barra (ele: "não precisa deixar colada na barra"): a plaquinha escura
++	// com a borda na cor do time e as divisas douradas grossas (o contraste ~12:1 na areia); 1 divisa, 2 divisas, a estrela
++	const float IS = FMath::RoundToFloat(15.0f * S);
++	const float PX = X - IS - FMath::RoundToFloat(5.0f * S), PY = FMath::RoundToFloat(Y + H * 0.5f - IS * 0.5f);
++	DrawPanel(PX - 1.0f, PY - 1.0f, IS + 2.0f, IS + 2.0f, FLinearColor(0.002f, 0.002f, 0.003f, 0.95f));
++	DrawPanel(PX, PY, IS, IS, Team);
++	DrawPanel(PX + 1.0f, PY + 1.0f, IS - 2.0f, IS - 2.0f, FLinearColor(FColor(14, 17, 21)));
++	const FLinearColor Gilt(Gold);
++	const float CX = PX + IS * 0.5f, Thick = 2.2f * S;
++	if (Vet >= 3)
++	{
++		// a estrela do heroico: o pentagrama de traço grosso
++		const float Rad = IS * 0.36f, CY = PY + IS * 0.5f + 0.5f;
++		for (int32 K = 0; K < 5; ++K)
++		{
++			const float A0 = -HALF_PI + K * TWO_PI / 5.0f, A1 = A0 + 2.0f * TWO_PI / 5.0f;   // de ponta em ponta, pulando uma
++			DrawLine(CX + FMath::Cos(A0) * Rad, CY + FMath::Sin(A0) * Rad, CX + FMath::Cos(A1) * Rad, CY + FMath::Sin(A1) * Rad, Gilt, Thick * 0.8f);
++		}
++		return;
++	}
++	const float Half = IS * 0.30f, Rise = IS * 0.22f, Gap = IS * 0.27f;
++	const float Top0 = PY + IS * 0.5f - (Vet - 1) * Gap * 0.5f - Rise * 0.5f;
++	for (int32 K = 0; K < Vet; ++K)
++	{
++		const float YY = Top0 + K * Gap;
++		DrawLine(CX - Half, YY + Rise, CX, YY, Gilt, Thick);
++		DrawLine(CX, YY, CX + Half, YY + Rise, Gilt, Thick);
+ 	}
+ }
+ 
+@@ -891,6 +992,13 @@
+ 	TArray<FRTSUnitState> Units;
+ 	Match->GetUnits(Units);
+ 	const TArray<uint32>& Selected = PC->GetSelection();
++	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
++	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;   // a escala da barra: 1 em 900 linhas
++	if (BarLastRatio.Num() > 4096)
++	{
++		BarLastRatio.Reset();   // (os mortos não saem um a um; de vez em quando, tudo)
++		BarChips.Reset();
++	}
+ 	for (const FRTSUnitState& U : Units)
+ 	{
+ 		if (!Match->IsUnitShown(U.Id))
+@@ -931,30 +1039,70 @@
+ 			}
+ 		}
+ 		const float Ratio = float(U.Hp) / float(U.MaxHp);
++		// (01/11) o pedaço perdido no tiro: a vida de antes fica branca e some em 0,6 s (tiros seguidos somam no mesmo pedaço)
++		float& LastRatio = BarLastRatio.FindOrAdd(U.Id, Ratio);
++		if (Ratio < LastRatio - 0.001f)
++		{
++			FBarChip& Chip = BarChips.FindOrAdd(U.Id);
++			Chip.From = (Chip.At >= 0.0 && Now - Chip.At < 0.6) ? FMath::Max(Chip.From, LastRatio) : LastRatio;
++			Chip.At = Now;
++		}
++		LastRatio = Ratio;
+ 		// a obra própria mostra o progresso o tempo todo (o ZH escreve "% em construção")
+ 		const bool bBuilding = U.bStructure && U.BuildFraction < 1.0f && U.Owner == Match->LocalPlayer();
+ 		if (!bSelected && !bHover && Ratio >= 1.0f && !bBuilding)
+ 		{
+ 			continue;
+ 		}
+-		// prédio: a barra mais alta (acima do telhado) e mais larga
+-		FVector2D Top;
+-		if (!PlayerOwner->ProjectWorldLocationToScreen(Ground + FVector(0, 0, U.bStructure ? 1300.0f : 430.0f + (U.bAir ? U.AltCm : 0.0f)), Top))
++		// (01/11, a barra A escolhida) encostada no topo do modelo e da largura dele na tela, como o ZH (computeHealthRegion: o raio
++		// maior + o menor, acompanhando o zoom). Na unidade, o topo e a largura saem das peças de malha visíveis (o casco, a torre);
++		// peça maior que 50 m não conta. No prédio, da planta e do casco (abaixo). Sem o modelo, as alturas de antes
++		FVector TopWorld = Ground + FVector(0, 0, U.bStructure ? 1300.0f : 430.0f + (U.bAir ? U.AltCm : 0.0f));
++		float HalfCm = U.bStructure ? 900.0f : 300.0f;
++		const ARTSUnitActor* View = Match->ViewOf(U.Id);
++		if (View && U.bStructure)
++		{
++			// o prédio: a planta e a altura do casco, com o teto em metade da planta (a torre, a antena e os fios não levantam a barra:
++			// na usina ela voava no topo da torre de transmissão)
++			const FBox2D Foot = View->GetFootprintCm();
++			const FVector Scale = View->GetActorScale3D();
++			const float SizeX = float(Foot.GetSize().X * Scale.X), SizeY = float(Foot.GetSize().Y * Scale.Y);
++			HalfCm = FMath::Max(300.0f, 0.25f * (SizeX + SizeY));
++			const FVector Center = View->GetActorTransform().TransformPosition(FVector(Foot.GetCenter().X, Foot.GetCenter().Y, 0.0));
++			TopWorld = FVector(Center.X, Center.Y, Ground.Z - 25.0f + FMath::Min(View->GetHeightCm() * float(Scale.Z), HalfCm));
++		}
++		else if (View)
++		{
++			FBox Box(ForceInit);
++			View->ForEachComponent<UStaticMeshComponent>(false, [&Box](const UStaticMeshComponent* Part)
++			{
++				if (Part->IsVisible() && Part->GetStaticMesh() && Part->Bounds.BoxExtent.GetMax() < 5000.0f)
++				{
++					Box += Part->Bounds.GetBox();
++				}
++			});
++			if (Box.IsValid)
++			{
++				TopWorld = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Max.Z);
++				HalfCm = 0.5f * float(Box.GetExtent().X + Box.GetExtent().Y);
++			}
++		}
++		FVector2D Top, Side;
++		if (!PlayerOwner->ProjectWorldLocationToScreen(TopWorld, Top))
+ 		{
+ 			continue;
+ 		}
+-		const float BarW = U.bStructure ? 110.0f : 54.0f;
+-		const float BarH = U.bStructure ? 7.0f : 5.0f;
+-		const float X = Top.X - BarW * 0.5f;
+-		const float Y = Top.Y - 12.0f;
+-		DrawPanel(X - 1.0f, Y - 1.0f, BarW + 2.0f, BarH + 2.0f, WithAlpha(Team, 0.95f));
+-		DrawPanel(X, Y, BarW, BarH, FLinearColor(0, 0, 0, 0.75f));
+-		DrawPanel(X, Y, BarW * FMath::Clamp(Ratio, 0.0f, 1.0f), BarH, HealthColor(Ratio));
+-		if (bBuilding)
+-		{
+-			DrawPanel(X, Y + BarH + 3.0f, BarW, 4.0f, FLinearColor(0, 0, 0, 0.75f));
+-			DrawPanel(X, Y + BarH + 3.0f, BarW * U.BuildFraction, 4.0f, FLinearColor(0.98f, 0.80f, 0.20f));
+-		}
++		const FVector CamRight = PlayerOwner->PlayerCameraManager ? PlayerOwner->PlayerCameraManager->GetCameraRotation().RotateVector(FVector::RightVector) : FVector::RightVector;
++		const float RadiusPx = PlayerOwner->ProjectWorldLocationToScreen(TopWorld + CamRight * HalfCm, Side) ? float(FVector2D::Distance(Top, Side)) : 26.0f * S;
++		// a régua do quadro aprovado (1600 × 900): o tanque 52 px, o prédio 104, o soldado 26
++		const float BarW = FMath::RoundToFloat(FMath::Clamp(RadiusPx * (U.bStructure ? 1.2f : 2.0f), 24.0f * S, 150.0f * S));
++		const float BarH = FMath::RoundToFloat((U.bStructure ? 6.0f : 5.0f) * S);
++		const float X = FMath::RoundToFloat(Top.X - BarW * 0.5f);
++		const float Y = FMath::RoundToFloat(Top.Y - 6.0f * S - BarH);
++		const FBarChip* Chip = BarChips.Find(U.Id);
++		const float ChipFade = Chip && Chip->At >= 0.0 ? 1.0f - FMath::Clamp(float(Now - Chip->At - 0.15) / 0.45f, 0.0f, 1.0f) : 0.0f;
++		const int32 Vet = 0;   // a patente da unidade: a simulação ainda não tem (o ZH: sobe com as baixas); o desenho já está pronto
++		DrawHealthBar(X, Y, BarW, BarH, S, bBuilding ? U.BuildFraction : Ratio, Chip ? Chip->From : 0.0f, ChipFade, bBuilding, U.MaxHp, Vet, Team);
+ 		// (simulação 35; 01/11, ele: "ficou só quadradinhos mal feitos, mal pensados") a lotação do transporte: a plaquinha presa embaixo
+ 		// da barra de vida, com a mesma moldura do time (as duas leem como uma peça só), e dentro um bonequinho por vaga (a cabeça e os
+ 		// ombros): aceso quem está dentro, apagado a vaga livre. A forma de gente diz "a tropa lá dentro" sem legenda (o garrison dos RTS de
+--- a/Game/Source/RTSGame/Public/RTSHUD.h
++++ b/Game/Source/RTSGame/Public/RTSHUD.h
+@@ -125,6 +125,14 @@
+ 	void DrawPanel(float X, float Y, float W, float H, const FLinearColor& Color);
+ 	/** (01/11) A lotação do transporte embaixo da barra de vida: a plaquinha da largura da barra com um bonequinho por vaga. */
+ 	void DrawSeats(float X, float Y, float W, int32 Slots, int32 Filled, const FLinearColor& Team);
++	/** (01/11, a barra A escolhida) A barra de vida em (X, Y) de W × H px; S = a escala da tela (1 em 900 linhas); ChipFrom/ChipFade = o
++	 *  pedaço perdido no tiro; bBuild = a obra (azul → ciano); Vet = a patente (0 = a marquinha do time, 1 a 3 = a insígnia). */
++	void DrawHealthBar(float X, float Y, float W, float H, float S, float Ratio, float ChipFrom, float ChipFade, bool bBuild, int32 MaxHp, int32 Vet,
++		const FLinearColor& Team);
++	/** O pedaço perdido no tiro de cada unidade (a vida de antes e a hora) e a última vida vista. */
++	struct FBarChip { float From = 0.0f; double At = -1.0; };
++	TMap<uint32, FBarChip> BarChips;
++	TMap<uint32, float> BarLastRatio;
+ 	/** Texto com sombra; Size em pontos do Slate. Devolve o tamanho desenhado (px). */
+ 	FVector2D DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter = false, bool bBold = false);
+ 	FVector2D MeasureLabel(const FString& Text, int32 Size, bool bBold) const;

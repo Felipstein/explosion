@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Ponto de encontro v1</title>
+<style>
+  body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.4 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1880px; padding: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 22px 0 6px; color: #9a968c; font-weight: 600; text-transform: uppercase; letter-spacing: 1.2px; }
+  .sub { color: #9a968c; margin: 0 0 6px; max-width: 1700px; }
+  .row { display: flex; gap: 14px; align-items: flex-start; }
+  .fr { position: relative; width: 900px; height: 430px; overflow: hidden; border-radius: 6px; background: url(../../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) -420px -380px / 1600px 900px; }
+  .zoom { position: relative; width: 900px; height: 430px; overflow: hidden; border-radius: 6px; }
+  .zoom .in { position: absolute; left: 0; top: 0; width: 900px; height: 430px; transform-origin: 0 0; transform: scale(2.2) translate(-352px, -150px); background: url(../../../docs/aprovados/look/2026-10-13_luz_v2_desert_golden_dust_no_jogo.jpg) -420px -380px / 1600px 900px; }
+  svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  @keyframes wave { 0%,100% { transform: skewY(0deg) scaleX(1); } 50% { transform: skewY(-4deg) scaleX(.94); } }
+  .wave { animation: wave 1.3s ease-in-out infinite; transform-box: view-box; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Ponto de encontro — v1, três direções</h1>
+  <p class="sub">A fábrica selecionada (aqui o prédio de baixo, com as caixas d'água, faz o papel dela) e o ponto de encontro na rua. Nas três, a rota sai da porta, segue o chão e tem as setinhas no sentido da ida; só aparece com a fábrica selecionada (como no ZH). À esquerda no tamanho real (1600 × 900); à direita, o mesmo pedaço ampliado 2,2×.</p>
+  <div id="dirs"></div>
+</div>
+<script>
+// a cena, em coordenadas do quadro inteiro (1600 × 900): a porta da fábrica e o ponto
+const DOOR = { x: 868, y: 604 }, PT = { x: 1090, y: 650 };
+const TEAM = "#4A8EFF", TEAMd = "#1F4FA8", TEAMl = "#9CC4FF";
+const OX = 420, OY = 380;   // o recorte do quadro
+// a rota: uma curva suave rente ao chão, com setinhas a cada ~40 px, na cor do time com o contorno escuro
+function route(dashed) {
+  const a = { x: DOOR.x - OX, y: DOOR.y - OY }, b = { x: PT.x - OX, y: PT.y - OY };
+  const c = { x: (a.x + b.x) / 2 + 10, y: Math.min(a.y, b.y) - 4 };
+  const d = `M${a.x} ${a.y} Q${c.x} ${c.y} ${b.x} ${b.y}`;
+  let s = `<path d="${d}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="4.5" stroke-linecap="round" ${dashed ? 'stroke-dasharray="1 9"' : ""}/>`
+    + `<path d="${d}" fill="none" stroke="${TEAM}" stroke-width="2.2" stroke-linecap="round" ${dashed ? 'stroke-dasharray="1 9"' : ""} opacity=".95"/>`;
+  // as setinhas (chevrons) no sentido da ida
+  for (let t = 0.22; t < 0.85; t += 0.2) {
+    const x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * c.y + t * t * b.y;
+    const dx = 2 * (1 - t) * (c.x - a.x) + 2 * t * (b.x - c.x), dy = 2 * (1 - t) * (c.y - a.y) + 2 * t * (b.y - c.y);
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    s += `<g transform="translate(${x} ${y}) rotate(${ang})"><polyline points="-4,-4.5 1.5,0 -4,4.5" fill="none" stroke="rgba(0,0,0,.6)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>`
+      + `<polyline points="-4,-4.5 1.5,0 -4,4.5" fill="none" stroke="${TEAMl}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  }
+  return s;
+}
+const P = { x: PT.x - OX, y: PT.y - OY };
+const DIRS = [
+  { name: "1 — A bandeira do cursor no chão", note: "o desenho aprovado do cursor de encontro em pé no ponto (o mastro claro, a bandeira na cor do time tremulando), com a sombrinha no chão; a rota pontilhada", art: () => route(true)
+    + `<ellipse cx="${P.x}" cy="${P.y + 1}" rx="10" ry="4" fill="rgba(0,0,0,.35)"/>
+       <ellipse cx="${P.x}" cy="${P.y}" rx="8" ry="3.4" fill="none" stroke="rgba(0,0,0,.6)" stroke-width="4"/><ellipse cx="${P.x}" cy="${P.y}" rx="8" ry="3.4" fill="none" stroke="#F3F1EC" stroke-width="1.8"/>
+       <line x1="${P.x}" y1="${P.y}" x2="${P.x}" y2="${P.y - 40}" stroke="rgba(0,0,0,.65)" stroke-width="4.4" stroke-linecap="square"/><line x1="${P.x}" y1="${P.y}" x2="${P.x}" y2="${P.y - 40}" stroke="#F3F1EC" stroke-width="2.2"/>
+       <g class="wave" style="transform-origin:${P.x}px ${P.y - 36}px"><path d="M${P.x + 1} ${P.y - 40}C${P.x + 8} ${P.y - 42} ${P.x + 12} ${P.y - 36} ${P.x + 25} ${P.y - 38}V${P.y - 25}C${P.x + 12} ${P.y - 23} ${P.x + 8} ${P.y - 29} ${P.x + 1} ${P.y - 27}Z" fill="${TEAM}" stroke="rgba(0,0,0,.65)" stroke-width="1.6" paint-order="stroke"/></g>` },
+  { name: "2 — A bandeira de verdade (o ZH)", note: "como o RallyPointMarker do ZH: um mastro de metal com o pano na cor do time, iluminado pelo sol do mapa e com a sombra no chão, virado pro lado do vento e tremulando; na base, a placa redonda pregada no chão. No jogo seria um modelo 3D de verdade (o pano da bandeira da Technical, que já foi aprovado); a rota com as setas", art: () => route(false)
+    + `<ellipse cx="${P.x + 16}" cy="${P.y + 6}" rx="24" ry="5" fill="rgba(20,12,4,.38)" transform="rotate(-14 ${P.x + 16} ${P.y + 6})"/>
+       <ellipse cx="${P.x}" cy="${P.y}" rx="11" ry="4.6" fill="#3A3F45" stroke="rgba(0,0,0,.65)" stroke-width="1.4"/><ellipse cx="${P.x}" cy="${P.y - 0.8}" rx="9" ry="3.6" fill="${TEAMd}"/><ellipse cx="${P.x}" cy="${P.y - 1.4}" rx="6" ry="2.2" fill="${TEAM}"/>
+       <defs><linearGradient id="pole" x1="0" x2="1"><stop offset="0" stop-color="#5E646B"/><stop offset=".45" stop-color="#E9ECEE"/><stop offset="1" stop-color="#7C838A"/></linearGradient>
+       <linearGradient id="cloth" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${TEAMl}"/><stop offset=".35" stop-color="${TEAM}"/><stop offset=".7" stop-color="${TEAMd}"/><stop offset="1" stop-color="${TEAM}"/></linearGradient></defs>
+       <rect x="${P.x - 1.6}" y="${P.y - 48}" width="3.2" height="47" fill="url(#pole)" stroke="rgba(0,0,0,.6)" stroke-width=".8"/>
+       <circle cx="${P.x}" cy="${P.y - 49}" r="2.2" fill="#E9ECEE" stroke="rgba(0,0,0,.6)" stroke-width=".8"/>
+       <g class="wave" style="transform-origin:${P.x}px ${P.y - 40}px"><path d="M${P.x + 1.6} ${P.y - 46}C${P.x + 10} ${P.y - 49} ${P.x + 16} ${P.y - 41} ${P.x + 30} ${P.y - 44}C${P.x + 29} ${P.y - 38} ${P.x + 31} ${P.y - 34} ${P.x + 30} ${P.y - 29}C${P.x + 16} ${P.y - 26} ${P.x + 10} ${P.y - 34} ${P.x + 1.6} ${P.y - 31}Z" fill="url(#cloth)" stroke="rgba(0,0,0,.55)" stroke-width="1" paint-order="stroke"/>
+       <path d="M${P.x + 12} ${P.y - 44}C${P.x + 13} ${P.y - 40} ${P.x + 12} ${P.y - 35} ${P.x + 12} ${P.y - 31}" fill="none" stroke="rgba(10,20,50,.35)" stroke-width="1.6"/></g>` },
+  { name: "3 — O marco no chão", note: "um círculo na cor do time deitado no chão (na perspectiva do chão), com quatro setas fechando no ponto (a gramática do mover) e a bandeirinha no meio; a rota cheia com as setas. Lê bem de cima e não cobre unidade", art: () => route(false)
+    + `<ellipse cx="${P.x}" cy="${P.y}" rx="22" ry="10" fill="rgba(74,142,255,.10)" stroke="rgba(0,0,0,.55)" stroke-width="4.4"/><ellipse cx="${P.x}" cy="${P.y}" rx="22" ry="10" fill="none" stroke="${TEAM}" stroke-width="2.2"/>`
+    + [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + Math.PI / 4, rx = 30, ry = 14, x = P.x + Math.cos(a) * rx, y = P.y + Math.sin(a) * ry, ang = Math.atan2(P.y - y, P.x - x) * 180 / Math.PI;
+        return `<g transform="translate(${x} ${y}) rotate(${ang}) scale(1 .7)"><polyline points="-5,-6 2,0 -5,6" fill="none" stroke="rgba(0,0,0,.6)" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/><polyline points="-5,-6 2,0 -5,6" fill="none" stroke="${TEAMl}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>`; }).join("")
+    + `<line x1="${P.x}" y1="${P.y}" x2="${P.x}" y2="${P.y - 20}" stroke="rgba(0,0,0,.65)" stroke-width="3.6"/><line x1="${P.x}" y1="${P.y}" x2="${P.x}" y2="${P.y - 20}" stroke="#F3F1EC" stroke-width="1.6"/>
+       <path d="M${P.x + 0.8} ${P.y - 20}L${P.x + 13} ${P.y - 16.5}L${P.x + 0.8} ${P.y - 13}Z" fill="${TEAM}" stroke="rgba(0,0,0,.65)" stroke-width="1.2" paint-order="stroke"/>` },
+];
+const host = document.getElementById("dirs");
+DIRS.forEach(d => {
+  host.insertAdjacentHTML("beforeend", `<h2>${d.name}</h2><p class="sub">${d.note}</p>`);
+  const row = document.createElement("div"); row.className = "row";
+  const fr = document.createElement("div"); fr.className = "fr";
+  fr.innerHTML = `<svg width="900" height="430" viewBox="0 0 900 430">${d.art()}</svg>`;
+  const zm = document.createElement("div"); zm.className = "zoom";
+  zm.innerHTML = `<div class="in"><svg width="900" height="430" viewBox="0 0 900 430">${d.art()}</svg></div>`;
+  row.appendChild(fr); row.appendChild(zm);
+  host.appendChild(row);
+});
+if (location.hash === "#still") { const st = document.createElement("style"); st.textContent = "* { animation: none !important; }"; document.head.appendChild(st); }
+</script>
+</body>
+</html>
