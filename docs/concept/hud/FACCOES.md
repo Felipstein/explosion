@@ -120,3 +120,17 @@ Os prompts: `captures/concept/hud/recursos2/PROMPTS_ARTE.md` (folhas E e F).
 - **O emblema do topo: a silhueta na cor do jogador (ESCOLHIDA 02/11)** (a outra sessão gerou em `80_emblemas_pequenos_ficha_e_silhueta`, versão 4;
   guardadas em `docs/concept/hud/kit/emblems/glyph_<facção>.png`): o padrão do `DrawTop1v1` (`TopEmblem` 1); o resto do HUD fica com o emblema inteiro.
   `-TopEmblem=0` mostra o inteiro e `=2` a ficha nas cores da facção, pra comparar.
+
+## 8. As peças que faltavam (02/11)
+
+- **O topo de 3 a 8 jogadores v1 (REPROVADO 02/11: "bem sujo, bem ruim de ver, bem mal feito")** (`RTSHudPainter::DrawTopMany`): montado com as peças do topo 1x1 aprovado da facção (cortes da mesma
+  textura por UV: a ponta, o anel, o começo e a ponta do painel, o relógio). Cada jogador ganha o anel com a silhueta na cor dele e um painel
+  curto na cor dele (a camada do painel pintada pela cor); o relógio no meio; as pontas da facção só nas extremidades. A metade da esquerda usa
+  o lado "você" da arte, a da direita o do adversário. Escala 0,46 (0,8 da do 1x1): com 8 a barra tem ~1150 px e não chega nos avisos.
+  Aliado ou espionado: o dinheiro e a energia embaixo do nome; o derrotado cinza com o X; as superarmas embaixo de cada jogador.
+- **Os 16 ícones da China na laca** (`104_china_laca_icones`, recortados por `cut_faction_frames.icons`).
+- **As patentes e as medalhas de cada exército (APROVADAS 02/11)** (`art/tools/cut_faction_ranks.py`, `rank_<facção>_1..5.png` e `medal_*.png` em
+  `kit/skin/<facção>/`): China (as estrelas douradas com o louro do Exército Popular; a de marechal com o disco vermelho; fitas vermelhas com
+  listras amarelas), Rússia (o ziguezague dos generais, 1 a 3 estrelas, a estrela grande e a de marechal com louro; a fita tricolor), GLA
+  (do punhal ao escorpião dourado; medalhas de bronze batido com fita de pano). No protótipo, o cubo, a tela de poderes e as medalhas usam as
+  da facção (`rankIcon`, `medalsSet`).
