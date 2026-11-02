@@ -209,10 +209,47 @@ def harden(o, width):
 
 
 
+# (02/11) O DEFEITO DO EXPORTADOR glTF do Blender 5.2 (achado pelo agente do kit civil v3; io_scene_gltf2/blender/exp/primitive_extract.py):
+# com export_vertex_color='ACTIVE', só o 1º material da malha recebe o COLOR_0; nos outros o mapa material → cor guarda o nome do
+# atributo e o exportador preenche a cor com 1,0 (branco = sem quina, sem fresta, sem oclusão). Medido: o casco do tanque USA só tinha
+# máscara na tinta (a lona, a cor do time, o metal, o escuro saíam lisos, "plástico"). A correção (todo material usa a 'Col') fica
+# atrás de RTS_VC_FIX=1 até o A/B no jogo: ligar muda a cara dos modelos aprovados (o desgaste aparece nos materiais de fora da tinta).
+_VC_ALL = {'on': os.environ.get('RTS_VC_FIX', '') == '1'}
+
+
+class _VCMapAll(dict):
+    def __setitem__(self, k, v):
+        if _VC_ALL['on'] and isinstance(v, str) and not v.startswith('COLOR_'):
+            v = 'COLOR_0'
+        super().__setitem__(k, v)
+
+
+def _install_vc_all():
+    if not _VC_ALL['on']:
+        return
+    try:
+        from io_scene_gltf2.blender.exp import primitive_extract as pe
+    except Exception as e:
+        print('VCFIX indisponível:', e)
+        return
+    cls = pe.PrimitiveCreator
+    if getattr(cls, '_vc_all_fix', False):
+        return
+    _init = cls.__init__
+
+    def __init__(self, *a, **k):
+        _init(self, *a, **k)
+        self.material_idxs_using_vc = _VCMapAll(self.material_idxs_using_vc)
+    cls.__init__ = __init__
+    cls._vc_all_fix = True
+    print('VCFIX ligado: a máscara em todos os materiais')
+
+
 def _mask_export(objs):
     """(31/10) Com as máscaras do model_detail.py (o atributo 'Col'), a cor de vértice e o UV (UV0 em metros, UV1.x a semente da
     peça) vão no GLB; sem elas, como sempre (sem UV, sem cor)."""
     if all(o.type == 'MESH' and o.data.color_attributes.get('Col') is not None for o in objs):
+        _install_vc_all()
         return {'export_texcoords': True, 'export_vertex_color': 'ACTIVE', 'export_all_vertex_colors': False}
     return {'export_texcoords': False}
 

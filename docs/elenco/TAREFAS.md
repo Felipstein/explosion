@@ -156,6 +156,12 @@ no jogo (16), o canto do para-lama do tanque B mal encaixado (39, achado dele à
     o rebaixo do lote dele no MESMO caderno do chão (como a cratera), sem máscara e sem desligar o Nanite; conferir a fundura máxima do
     deslocamento (a das crateras) contra a rampa do túnel do Arms Dealer e subir se precisar. O dono do caderno é a sessão do jogo/Look:
     a interface dele, com cuidado. ⏳ Na ordem, depois do que está rodando.
+    🔄 (02/11 13h) O estudo (`docs/elenco/CAVAR_O_CHAO.md`, lido no fonte da 5.8): o que se vê no buraco é o modelo (a rampa, os muros,
+    o túnel); o chão do mapa só precisa SAIR da frente: o buraco pela máscara, num mecanismo só, nos 4 presets. A máscara não abriu em
+    01/11 porque o Landscape Nanite só a tira quando ela é a única razão do raster programável (`LandscapeRender.cpp`); com um Pixel
+    Depth Offset zerado vindo de um nó Custom ela fica. O rebaixo no caderno vira o plano B (precisa de −3,3 m: a magnitude do chão
+    inteiro subiria, o culling piora, e no Baixa/Média não há deslocamento). ⏳ O 1º teste (T0): o 2º erro (o buraco também não abriu sem
+    Nanite: o modo mascarado não chega ao desenho); isolado num mestre de teste, pra não sumir com o chão dos testes das outras sessões.
 23. ✅ Bandeiras com física em tudo, num sistema só e na placa (`M_FlagCloth`, `SM_FlagCloth`, `visual.flags`; a Technical migrou): ✅ vistas ondulando no jogo (as 3 do Shtab, quadro a quadro, 01/11) e a da Technical andando (o pano esticado pra trás no vento do
     carro, `captures/game/elenco_prova_tecnica`). A pintura da Technical (a camuflagem urbana do atlas) é a dele no Blender: "a cor depois a gente vê".
 24. ✅ Cada coisa já nasce pensada e otimizada (a regra; ver a memória `feedback-pensar-o-todo-nao-reagir`).
@@ -409,6 +415,9 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     com o campo de treino; o Palace = o palácio aberto no pódio em cruz; o Stinger Site = o ninho em trevo sob a rede; o Supply Stash =
     o mercado sob a rede de camuflagem. (22h05) Um agente modelando os 4 (v2).
     (22h15) O Propaganda v3 pronto (o item 46): no jogo pelo `chain49`.
+    (23h50) Os 4 da GLA prontos (`model_gla_*_v2.py`, a folha `captures/game/models/gla_v2_folha.jpg`): a tenda (a lona de pelo de
+    cabra no slot novo `GlaTent`), o palácio no pódio em cruz com as 5 cúpulas, o trevo das redes, o mercado sob a rede. A minha crítica:
+    o Stinger Site e o Supply Stash podem ler como moita verde de cima (a rede esconde o que tem embaixo). No jogo pelo `chain50`.
 53. ⏳ **Rússia, Kazarma (NO RUMO):** "mude algumas coisas, parece um prédio normal".
 54. ⏳ **Rússia, BMPT e T-14 (REFAZER):** "muito parecido com o outro tanque": a mesma regra do item 41 (cada blindado com a silhueta
     própria de cima, no casco também), contra o T-90M.
@@ -426,7 +435,7 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     pneu também não está posicionado na diagonal como no game shot [...] parece que foi feito naquela versão antiga mal feita; precisa de
     uma modelagem nova, bem top, como você fez tudo até agora, nada de quinas, nada de jogo de lego, detalhes top, texturas top". O alvo:
     o game shot r1 (os tanques da GLA à esquerda) e a ficha `docs/concept/units/gla_mbt_sheet.webp`; os sacos de areia de verdade (a
-    trama, a costura, o peso deitando), o pneu na diagonal na frente. Um agente quando vagar.
+    trama, a costura, o peso deitando), o pneu na diagonal na frente. (23h50) Um agente modelando a v2 (`model_gla_tank_v2.py`).
 59. 🔄 (19h40, o Felipe: "o que é isso na frente do tanque da USA?") o glacis do tanque B: a sombra em cunha da torre facetada + 2 juntas
     em V desenhadas na chapa (riscos tortos). As juntas em V saíram; a chapa lisa com a junta reta no deck (como o M1). Refazendo.
 
@@ -448,6 +457,33 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
 formas próprias: o salão com o teto em serra e a sala de operações em balanço, o pavilhão de chapas com o portão e o disco da estrela,
 o mastro estaiado com o radar retangular que gira, o bloco de rádio). A crítica minha antes de ele ver: o radar lê pequeno e o mastro
 fino na câmera do jogo; o pavilhão branco de duas águas pode ler como celeiro. No jogo pelo `chain48` (depois da tinta).
+
+**(02/11 ~12h, depois da queda de energia da madrugada) As decisões dele:**
+- ❌ REPROVADOS o Propaganda v3, o quartel v2, o Stinger Site v2 e o Supply Stash v2 ("quero ideias do 0, diferente, novas, bonitas,
+  bem feitas, criativas"); o Palace v2 fica. As ideias novas em `docs/elenco/IDEIAS_NOVAS_02_11.md`: o Propaganda = O HERÓI DO
+  MEGAFONE (a estátua monumental sobre o estúdio), o quartel = O CEMITÉRIO DE ÔNIBUS, o Stinger = A CAIXA D'ÁGUA tomada, o Supply
+  Stash = O FERRO-VELHO DO GUINDASTE. Os agentes quando vagarem (os dois rodando: o civil e o tanque da GLA).
+- Item 40, a tinta: "achei válida a ideia da areia na textura, mas por enquanto não vamos fazer isso, segue a textura bem detalhada
+  [...] mas sem areia, depois eu tenho uma ideia nova pra areia": o `DustCoat` saiu da tinta e da parede da USA (ficam a lavagem, o
+  tom por chapa e as lascas). "A areia da lagarta e do pneu deixa como está, a outra sessão vai trabalhar nisso": o pó da rodagem fica.
+- (12h40) Um agente modelando as 4 ideias novas (`model_china_propaganda_center_v4.py`, `model_gla_barracks_v3.py`,
+  `model_gla_stinger_site_v3.py`, `model_gla_supply_stash_v3.py`).
+- Item 47, o kit civil v3 (o agente terminou): a forma melhorou (a lataria redonda com o vinco, os amassados, o interior; a mureta
+  comida, o reboco caído com o adobe, as janelas velhas), mas na câmera do jogo a diferença pra v2 é pequena e ainda longe do alvo
+  (as folhas `captures/game/models/civ_v3/folha_carros.jpg` e `folha_casas.jpg`). Não entrou no jogo. O que falta é do material: o
+  escorrido escuro (o `Wash` no `CivPlaster`), o tijolo de adobe, a madeira gasta cinza, as cores de carro (o vermelho desbotado, o azul).
+- **O defeito do exportador (achado pelo agente do civil):** o glTF do Blender 5.2 só grava a máscara (quina, fresta, oclusão) no 1º
+  material de cada malha; nos outros sai branco (sem desgaste). Vale pro elenco inteiro (o tanque da USA só tinha máscara na tinta: a
+  lona, a cor do time, o metal saíam lisos, "plástico"). A correção está no `model_lib.py` atrás de `RTS_VC_FIX=1`; o A/B no tanque
+  pelo `chain52` (depois da retomada). Se melhorar, refazer todos (muda a cara dos aprovados: mostrar antes).
+- A retomada do que a queda cortou: o `chain51` (os 20 modelos da estrela e da esteira, o destrutor, a China sem o Propaganda, a
+  Rússia v2, o Strategy Center, o CC v5, só o Palace da GLA, os materiais com a bandeira e a tinta sem areia, as fotos A/B e os tours).
+
+**Item 40, o que a volta do tanque mostrou (02/11 00h, `captures/game/tanque_usa_volta/folha.jpg`, mandada pra ele):** as manchas
+marrons grandes na chapa da frente e no deck são o pó de cima da tinta de campanha (o `DustCoat` nas faces que olham pra cima): a cor
+do pó (0,40; 0,31; 0,21) é mais ESCURA que a tinta clara da USA, então lê mancha suja em vez de véu de areia; e a esteira e as rodas
+cor de areia (o pó do baixo cheio). Ele (23h15): "não vai voltar a rodagem [...] deixa que eu resolvo com o responsável". Não mexer
+até ele dizer; a correção proposta: o pó mais claro que a tinta e só nas frestas e no pé.
 
 **Item 40, a 2ª volta nos prédios (21h40):** a parede e o concreto da USA só dela (`UsBody`, `UsConcrete`; o `Body` e o `Concrete` são
 do avião de carga e do canteiro também), com a MESMA luz medida em 29/10 contra o alvo (a parede ~0,28; subir pra 0,40 seria chute:

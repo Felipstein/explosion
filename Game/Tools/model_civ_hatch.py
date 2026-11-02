@@ -14,7 +14,7 @@ Saída: SM_civ_hatch.glb e, com 'burnt', SM_civ_hatch_burnt.glb (a frente em +Y,
 v3 (01/11 noite, a galeria: "parece jogo de lego de novo, muitas quinas, sem detalhes"; KIT_CIVIL_V2 §6: "o sedã e o hatch têm a
 mesma cara"): a FRENTE PRÓPRIA do Golf Mk2 (os faróis redondos com o aro cromado e a grade preta estreita de 2 frisos entre eles); a
 lataria mais redonda (o vinco, o para-lama que salta, a borda do arco), 3 amassados (a quina de trás direita, a porta esquerda, o
-capô), o capô de primer cinza (o de ferro-velho), a ferrugem, a janela do motorista aberta com o interior aparecendo, o pó e o vidro
+capô), o capô branco (o de ferro-velho, de outro carro), a ferrugem, a janela do motorista aberta com o interior aparecendo, o pó e o vidro
 sujo na cor de vértice.
 """
 import os
@@ -55,7 +55,7 @@ SPEC = {
         # (v3) a frente do Golf: os faróis redondos (r 9 cm) e a grade preta de 2 frisos entre eles
         'front': 'round', 'head_round': 0.09, 'head_in': 0.02,
         'head': (0.54, 0.645, 0.30, 0.14), 'sig': (0.74, 0.52), 'grille': (0.80, 0.12, 0.645, 2), 'tail': (0.68, 0.72, 0.16, 0.22),
-        'hood_swap': 'Metal',
+        'hood_swap': 'Paint',
         'hood': (0.78, 1.82, 0.735),
         'door_v': [(0.685, 0.34, 0.89), (-0.30, 0.32, 0.90)],
         'door_lines': [[(-1.06, 0.905), (-1.06, 0.77), (-0.97, 0.68), (-0.91, 0.55), (-0.92, 0.32)],
@@ -74,7 +74,7 @@ def extra(car, p):
     if not burnt:
         # a carga: a trouxa de lona amarrada, o tapete enrolado atravessado e as cordas até as longarinas
         vp.tarp_bundle(p, (-0.80, 0.04, zr), (1.05, 0.86, 0.30), yaw=2, m='Cloth#load', strap_m='Wood#rope', buckle_m='Dark',
-                       straps=2, layers=3, seed=2.0, n=14, k=14)
+                       straps=2, layers=2, seed=2.0, n=10, k=10)
         cp.carpet_roll(p, (-0.05, 0.0, zr + 0.11), 'y', 1.35, 0.11)
         for x in (-0.55, -1.05):
             cp.rope_over(p, (x, -0.60, zr - 0.01), (x + 0.04, 0.60, zr - 0.01), zr + 0.33)

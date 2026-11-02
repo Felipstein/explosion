@@ -159,6 +159,11 @@ def build():
         zmax = ZR if f in ('-x', '-y') else 1.0
         hp.pockmarks(p, F, u0, u1 if f in ('-x', '-y') else -0.6, 0.3, zmax + 1.0 if f in ('+y', '+x') else zmax, 24, seed=20 + k,
                      holes=holes[f])
+        if f in ('+y', '+x'):
+            # (v3, a revisão: a ruína vista da câmera era a v2 de novo, as faces que caíram lisas) o reboco caído e os remendos no que
+            # ficou de pé das faces quebradas (longe do canto: a parede ali está inteira)
+            hp.wall_spalls(p, F, u0 + T, -1.0, 0.25, ZR - 0.45, 3, seed=90 + k, holes=holes[f])
+            hp.wall_patches(p, F, u0 + T, -1.0, 0.3, ZR - 0.3, 2, seed=95 + k, holes=holes[f], mud=0.6)
     # ---- a laje: a metade de trás no lugar (a quebra na diagonal, serrilhada), o ferro saindo da quebra
     xa, xb, ya, yb = X0 + T - 0.03, X1 - T + 0.03, Y0 + T - 0.03, Y1 - T + 0.03
     brk = []

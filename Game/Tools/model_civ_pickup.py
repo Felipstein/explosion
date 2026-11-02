@@ -130,7 +130,7 @@ def bed(car, p):
     vp.jerrycan(p, (-1.38, 0.36, z), yaw=95, m='Crate#can', cap_m='Dark')
     sp = Part('spare')
     vp.tyre(sp, (-1.95, -0.30, z + 0.105), 0.355, 0.205, 1, rim_r=0.19, rubber='Rubber', rim='Metal#rim', hub='Metal#hub',
-            nut_m='Metal#hub', seg=26, lugs=True, lug_h=0.016, nuts=5, dish=0.03, axis='z', style='at')
+            nut_m='Metal#hub', seg=20, lugs=True, lug_h=0.016, nuts=5, dish=0.03, axis='z', style='at')
     car.hang_objs.append(sp.finish())
     cp.carpet_roll(p, (-1.75, 0.38, z + 0.12), 'x', 1.10, 0.12)
     # (v3) a tralha de quem trabalha (a caçamba do alvo é cheia e bagunçada): o botijão deitado, as tábuas atravessadas por cima dos
@@ -146,7 +146,7 @@ def bed(car, p):
     for dz in (-0.1, 0.1):
         vp.rbox(p, 'Wood#slat', (-0.80, 0.62, z + 0.17 + dz), (0.492, 0.352, 0.05), yaw=4.0, r=0.008, k=1)
     vp.tarp_bundle(p, (-2.05, -0.36, z + 0.21), (0.55, 0.62, 0.24), yaw=20, m='Cloth#tarp', strap_m='Wood#rope', buckle_m='Dark',
-                   straps=1, layers=2, seed=5.0, n=10, k=10)
+                   straps=1, layers=2, seed=5.0, n=8, k=8)
     vp.lathe(p, 'Dark#bucket', (-0.62, -0.22, z + 0.36), 'z', [(0.0, 0.0), (0.11, 0.0), (0.14, 0.26), (0.13, 0.26), (0.10, 0.02),
                                                              (0.0, 0.02)], seg=12)
     cp.rope_over(p, (-0.62, -0.80, TOP - 0.03), (-0.62, 0.80, TOP - 0.03), z + 0.62)

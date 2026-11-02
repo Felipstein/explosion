@@ -280,7 +280,7 @@ def car_dirt(spec, p, n, mat):
         d *= 0.2                                     # o interior (o banco, o painel, o piso): o pó de fora não entra
 
     if spec.get('burnt'):
-        d *= 0.5
+        d *= 0.15                                    # o carvão e a ferrugem com areia por cima liam marrom, ferrugem em tudo
     return max(0.0, min(1.0, d * spec.get('dust', 0.85)))
 
 
@@ -678,19 +678,12 @@ class Car:
         # a fuligem que subiu pelas janelas e manchou o alto (o preto por cima da ferrugem, em manchas de ~40 cm)
         # (01/11) miúda, ~20 cm: a mancha de 40 cm por cima da ferrugem era o que mais lia como camuflagem
         soot = (lambda c: fbm3(c.x * 5.0 + 20, c.y * 5.0, c.z * 5.0, sd + 11), 0.68, 'Char#burnt')
-        # (v3, o alvo: a carcaça do 16_beauty_pass/b_gpt é CINZA no alto, o aço oxidado pelo fogo, com a ferrugem só em manchas; a v2 era
-        # ferrugem inteira em cima) o cinza largo no que olha pra cima, a ferrugem fica entre as manchas dele
-        belt = self.s['gh'][0][1]
-        ash_top = (lambda c: fbm3(c.x * 2.5 + 7, c.y * 2.5, c.z * 2.5, sd + 5) - 0.42 - (0.0 if c.z > belt - 0.04 else 1.0), 0.0,
-                   'Metal#burnt')
-        return [rust, ash_top, soot, ash, paint] if not roof else [rust, ash_top, soot, ash]
+        # (v3: o cinza largo no alto foi tentado e saiu camuflagem de novo, o cinza claro contra a ferrugem escura; volta o da v2)
+        return [rust, soot, ash, paint] if not roof else [rust, soot, ash]
 
     def burn_mat(self, c, low=0.0):
         """O material de uma peça pequena inteira da carcaça (a coluna, o para-choque): pelo campo da ferrugem no centro dela."""
-        if self.burn_field(c) < 0.0:
-            return 'Char#burnt'
-        # (v3) no alto, o cinza do aço oxidado ou a ferrugem (as colunas da carcaça do alvo são cinza)
-        return 'Metal#burnt' if fbm3(c.x * 2.5 + 7, c.y * 2.5, c.z * 2.5, self.seed + 5) > 0.45 else 'Rust#burnt'
+        return 'Rust#burnt' if self.burn_field(c) >= 0.0 else 'Char#burnt'
 
     def mat_body(self, c):
         return self.paint + '#body'
@@ -698,24 +691,23 @@ class Car:
     # -------------------------------------------------------------- (v3) a tinta de guerra do carro inteiro
     def paint_layers(self, key='#body'):
         """As camadas da lataria do carro inteiro (v3, 01/11, a crítica: "carro de concessionária, branco limpo"): a PORTA DE OUTRA COR
-        e o CAPÔ trocado (o painel de ferro-velho: o recorte cai exatamente na junta, x e y retos), as LASCAS de tinta no que olha pra
-        cima (o primer cinza, Metal) e a FERRUGEM (o pé da lataria, a volta dos arcos, a borda de baixo das portas e manchas no capô e
-        no teto: o sol de anos), recortadas pela isolinha do ruído (a borda corta a face: mancha orgânica, não pixel). O pó e a sujeira
-        não são camada: vão na cor de vértice (apply_dirt)."""
+        e o CAPÔ trocado (o painel de ferro-velho: o recorte cai exatamente na junta, x e y retos) e a FERRUGEM onde a lata apodrece (o
+        pé da lataria e a volta dos arcos), recortada pela isolinha do ruído (a borda corta a face: mancha orgânica, não pixel). O pó e a
+        sujeira não são camada: vão na cor de vértice (apply_dirt)."""
         s, d = self.s, self.s['details']
         sd = self.seed
         out = []
+        z_roof = self.gh.keys[-1][1] - 0.03
         for (side, xa, xb, m) in d.get('door_swap', ()):
-            out.append((lambda c, side=side, xa=xa, xb=xb: min(c.x - xa, xb - c.x, c.y * side - 0.30), 0.0, m + '#door'))
+            # (na estufa a porta pega só o quadro da janela, não o teto)
+            out.append((lambda c, side=side, xa=xa, xb=xb: min(c.x - xa, xb - c.x, c.y * side - 0.30,
+                                                                (z_roof - c.z) if key == '#gh' else 1.0), 0.0, m + '#door'))
         hs = d.get('hood_swap')
         if hs and d.get('hood'):
             hx0, hx1, hy = d['hood']
             out.append((lambda c: min(c.x - hx0, hx1 - c.x, hy - abs(c.y), c.z - self.top_z(c.x, c.y) + 0.035), 0.0, hs + '#hood'))
         zb = s['zb']
         rust = s.get('rust', 0.5)
-
-        def is_top(c):
-            return c.z > self.top_z(c.x, c.y) - 0.035 if c.x > self.xr + 0.05 else False
 
         def arch_near(c):
             best = 9.0
@@ -724,25 +716,16 @@ class Car:
             return 1.0 - smooth01(best / 0.10)
 
         # (v3, 2ª volta: a 1ª, manchas de ferrugem de 20–40 cm espalhadas pela lata inteira, leu CAMUFLAGEM, o defeito que a carcaça da v2
-        # já tinha) o carro velho do deserto: o verniz que descasca em placas largas SÓ no que o sol bate de cima (o teto, o capô, a
-        # tampa: o primer cinza, Metal) e a ferrugem SÓ onde a lata apodrece (a faixa de baixo das portas e da soleira, de borda
+        # já tinha) o carro velho do deserto: a ferrugem SÓ onde a lata apodrece (a faixa de baixo das portas e da soleira, de borda
         # irregular, e a volta dos arcos). O resto é a tinta com o pó (cor de vértice).
-        def chip(c):
-            if key == '#gh':
-                up = c.z > self.gh.keys[-1][1] - 0.03
-            else:
-                up = is_top(c)
-            if not up:
-                return -1.0
-            return fbm3(c.x * 2.2 + 3.0, c.y * 2.2, c.z * 2.2, sd + 21) - (0.68 - 0.06 * rust)
-
         def rust_f(c):
             if key == '#gh':
                 return -1.0
             n = fbm3(c.x * 4.0, c.y * 4.0, c.z * 4.0, sd + 31)
             low = 1.0 - smooth01((c.z - zb - 0.05) / 0.11)
             return (n - 0.5) * 0.6 + rust * (0.9 * low + 0.7 * arch_near(c)) - 0.36
-        out.append((chip, 0.0, 'Metal#chip'))
+        # (3ª volta: o verniz descascado no Metal saía brilhante e estufado na borda do teto, lia como bolha; tirado: o sol de anos fica
+        # pro material, o tom por peça, e o que olha pra cima já leva o pó grosso na cor de vértice)
         out.append((rust_f, 0.0, 'Rust#paint'))
         return out
 
@@ -870,7 +853,7 @@ class Car:
                     mid = gh.point((sa + sb) / 2, seg, (ta + tb) / 2)
                     m = self.paint + '#gh'
                     for (side, xa, xb, mm) in door:
-                        if xa < mid.x < xb and mid.y * side > 0.3:
+                        if seg in (2, 6) and xa < mid.x < xb and mid.y * side > 0.3:
                             m = mm + '#door'
                     surf_slab(p, m, fn, sa, sb, ta, tb, max(1, int(round((sb - sa) * 6))), max(1, int(round((tb - ta) * nseg))),
                               off=-0.03, th=0.03, inward=c)
@@ -1027,7 +1010,7 @@ class Car:
             return
         # o pneu de passeio: o flanco abaulado e o ombro redondo; a banda lisa (o friso não lê a 3 cm/px: 'style' None). O de carga
         # leva os blocos ('at')
-        vp.tyre(p, (x, y, R), R, tw, side, rim_r=rim_r, rubber='Rubber', rim=rim_m, hub='Metal#hub', nut_m='Metal#hub', seg=30,
+        vp.tyre(p, (x, y, R), R, tw, side, rim_r=rim_r, rubber='Rubber', rim=rim_m, hub='Metal#hub', nut_m='Metal#hub', seg=24,
                 lugs=style is not None, lug_h=0.016, nuts=4 if not hubcap else 0, holes_m=None, dish=0.03, style=style or 'at',
                 n_lugs=None)
         if hubcap:

@@ -14,7 +14,7 @@ Saída: SM_civ_van.glb e, com 'burnt', SM_civ_van_burnt.glb (a frente em +Y, ori
 
 v3 (01/11 noite, a galeria: "parece jogo de lego de novo, muitas quinas, sem detalhes"): a van da linha de terra. O teto e as
 quinas mais redondos, o vinco e a borda dos arcos, 3 amassados (a lateral esquerda, a quina de trás direita, a frente direita), a porta
-de correr bege (a de ferro-velho), a ferrugem no pé, a janela do motorista aberta e uma de trás quebrada (o banco aparecendo), os 3
+de correr bege (a de ferro-velho), a ferrugem no pé, a janela do motorista aberta e uma de trás quebrada (o banco aparecendo), os
 bancos por dentro; o pó grosso subindo até a cintura e o vidro sujo com o arco dos limpadores na cor de vértice.
 """
 import os
@@ -56,7 +56,7 @@ SPEC = {
         'door_v': [(2.10, 0.36, 1.0), (1.22, 0.36, 1.0)],
         'door_lines': [[(2.10, 0.37), (1.66, 0.37), (1.22, 0.37)]],
         'trim': [(1.0, -2.2, 0.62)], 'handles': [(1.36, 0.92)], 'mirror': (2.15, 1.12),
-        'fuel': (-1.95, 0.85), 'interior': (2.05, -2.0, 0.42, 3),
+        'fuel': (-1.95, 0.85), 'interior': (2.05, -2.0, 0.42, 2),
         'under': (2.0, -1.9, 0.17, 0.36),
         'door_swap': [(1, -0.05, 1.18, 'GlaPaint')], 'seat_cover': 'Rust#cover',
     },
@@ -85,8 +85,9 @@ def extra(car, p):
     zr = ROOF + 0.10 + 0.02
     if burnt:
         return
+    # (v3, o orçamento: a trouxa era ~1/6 dos triângulos da van) a mesma forma com menos anéis
     vp.tarp_bundle(p, (-1.30, -0.05, zr), (1.25, 1.10, 0.38), yaw=1, m='Cloth#load', strap_m='Wood#rope', buckle_m='Dark',
-                   straps=2, layers=3, seed=4.0, n=14, k=14)
+                   straps=2, layers=2, seed=4.0, n=9, k=9)
     cp.bag(p, (-0.35, -0.38, zr), (0.80, 0.50, 0.26), yaw=84, m='Cloth#bag', seed=4)
     cp.bag(p, (-0.30, 0.22, zr), (0.78, 0.48, 0.26), yaw=92, m='Cloth#bag2', seed=5)
     cp.bag(p, (-0.34, -0.05, zr + 0.20), (0.74, 0.46, 0.24), yaw=96, m='Cloth#bag', seed=6)

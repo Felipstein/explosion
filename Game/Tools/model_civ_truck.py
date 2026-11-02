@@ -145,7 +145,7 @@ def extra(car, p):
         return
     # ---- a carga: os sacos de cimento empilhados na frente, as caixas atrás, a lona dobrada e as cordas
     z0 = FLOOR + 0.005
-    for lay in range(3):
+    for lay in range(2):                                 # (v3, o orçamento: 2 camadas de sacos, era 3)
         for i in range(3):
             for j in range(2):
                 x = 0.70 - j * 0.48 - (0.04 if lay % 2 else 0.0)
@@ -158,9 +158,9 @@ def extra(car, p):
         for dz in (-0.17, 0.0, 0.17):
             vp.rbox(p, 'Wood#slat', tuple(c + Vector((0, 0, dz))), (w + 0.012, 0.632, 0.06), yaw=3 * (x + y), r=0.01, k=1)
     vp.tarp_bundle(p, (-2.15, 0.0, z0), (1.20, 1.60, 0.34), yaw=90, m='Cloth#load', strap_m='Wood#rope', buckle_m='Dark',
-                   straps=2, layers=3, seed=6.0, n=14, k=14)
+                   straps=2, layers=2, seed=6.0, n=9, k=9)
     for x in (0.45, -0.70, -1.95):
-        cp.rope_over(p, (x, -BHW, FLOOR + SIDE_H), (x - 0.05, BHW, FLOOR + SIDE_H), z0 + (0.62 if x > 0 else 0.95 if x > -1 else 0.42))
+        cp.rope_over(p, (x, -BHW, FLOOR + SIDE_H), (x - 0.05, BHW, FLOOR + SIDE_H), z0 + (0.45 if x > 0 else 0.95 if x > -1 else 0.42))
 
 
 clear_scene()

@@ -31689,6 +31689,55 @@
           }
         ]
       }
+    },
+    {
+      "name": "t0_corte",
+      "about": "(02/11, item 22 T0, docs/elenco/CAVAR_O_CHAO.md §6) o recorte do chão isolado num mapa de teste: o chão some?",
+      "map": "World_TestHills",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          0.0,
+          0.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 45.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 5.0,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 3.1,
+            "op": "shot",
+            "name": "chao"
+          }
+        ]
+      }
     }
   ]
 }

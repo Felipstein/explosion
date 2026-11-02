@@ -85,6 +85,15 @@ SLOTS = {
     # de suprimento e do canteiro também): a MESMA luz medida em 29/10 contra o alvo (~0,28 de luminância; a ficha lê ~1,1× a areia),
     # o tom mais quente (o alvo R/B 1,21; o nosso saía 1,08 e 1,11 na 1ª volta)
     'UsBody': ((0.300, 0.282, 0.262), 0.6, 0.0, {'Grime': 0.25, 'Weather': 0.5}),
+    # (01/11, itens 48–51) a lona de pelo de cabra da tenda beduína do quartel da GLA (o Rubber, quase preto, saía chapado)
+    'GlaTent': ((0.034, 0.026, 0.020), 0.95, 0.0, {'Grime': 0.2}),
+    # (02/11, item 58) o tanque da GLA v2 (model_gla_tank_v2.py) no material do detalhe: as cores do import_gla.py (medidas em 29/10
+    # contra a ficha e o r1) em instâncias com as máscaras (o import_gla.py dava só a sujeira, sem quina nem fresta)
+    'GlaTankPaint': ((0.402, 0.314, 0.178), 0.6, 0.0, {'Grime': 0.75}),
+    'GlaBag': ((0.456, 0.371, 0.235), 0.92, 0.0, {'Grime': 0.6}),
+    'GlaPatch': ((0.122, 0.172, 0.150), 0.6, 0.2, {'Grime': 0.6}),
+    'GlaRust': ((0.195, 0.076, 0.030), 0.85, 0.2, {'Grime': 0.6}),
+    'GlaWood': ((0.181, 0.138, 0.064), 0.8, 0.0, {'Grime': 0.2}),
     'UsConcrete': ((0.262, 0.243, 0.218), 0.92, 0.0, {'ConcreteMask': 1.0, 'Weather': 0.5}),
     # o kit civil da vila (as casas de adobe do Look, look_houses.py: as cores dele em linear) até o
     # M_Plaster do plugin RTSLook chegar
@@ -149,7 +158,7 @@ MASK_PARAMS['RuPaint'] = {'Wear': 0.4, 'CavityDirt': 0.6, 'PanelTone': 0.45, 'Ca
                           'CamoColor': (0.022, 0.024, 0.026), 'CamoColor2': (0.30, 0.32, 0.32)}
 for _k in ('RuMetal', 'RuSteel', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite', 'RuBlue'):
     MASK_PARAMS[_k] = {'Wear': 0.4, 'CavityDirt': 0.7, 'PanelTone': 0.6}
-for _k in ('GlaEarth', 'GlaNet', 'GlaTile'):
+for _k in ('GlaEarth', 'GlaNet', 'GlaTile', 'GlaTent', 'GlaTankPaint', 'GlaBag', 'GlaPatch', 'GlaRust', 'GlaWood'):
     MASK_PARAMS[_k] = {'Wear': 0.5, 'CavityDirt': 0.8, 'PanelTone': 0.5}
 for _k in ('Body', 'Trim', 'Dark', 'Yellow', 'Player', 'Concrete', 'Hazard', 'Crate', 'Rubber', 'Paint', 'TankPaint', 'TankTeam',
            'TankCloth', 'TankMetal', 'TankTrack', 'TankTrackRun', 'CivPlaster', 'CivWood', 'CivMetal', 'CivCloth', 'CivRust'):
@@ -158,18 +167,22 @@ for _k in ('Body', 'Trim', 'Dark', 'Yellow', 'Player', 'Concrete', 'Hazard', 'Cr
 # cima, a lavagem escura na fresta funda, pouca lasca; a areia na fresta quase some (a tinta clara tem o valor dela). A cor do jogador
 # fica forte (o Felipe, 25/10: "até a do game shot é fraca"): o TankTeam e a lona não levam poeira. A tinta da terra é a UsPaint
 # (a TankPaint segue nos aéreos, sem a poeira de baixo)
-MASK_PARAMS['UsPaint'] = {'Wear': 0.35, 'CavityDirt': 0.15, 'PanelTone': 0.8, 'DustCoat': 0.7, 'Wash': 0.8, 'Chip': 0.6}
-MASK_PARAMS['UsMetal'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 0.6, 'DustCoat': 0.8, 'Wash': 0.4}
+# (02/11, o Felipe: "achei válida a ideia da areia na textura, mas por enquanto não vamos fazer isso, segue a textura bem detalhada [...]
+# mas sem areia, depois eu tenho uma ideia nova pra areia") a tinta da USA sem o DustCoat (o pó cor de duna: na tinta clara lia mancha
+# suja marrom na chapa da frente); ficam a lavagem escura na junta, o tom por chapa e as lascas. A esteira e o pneu ficam com o pó
+# ("deixa ainda como está, a outra sessão vai trabalhar nisso")
+MASK_PARAMS['UsPaint'] = {'Wear': 0.35, 'CavityDirt': 0.15, 'PanelTone': 0.8, 'Wash': 0.8, 'Chip': 0.6}
+MASK_PARAMS['UsMetal'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 0.6, 'Wash': 0.4}
 MASK_PARAMS['UsTrackRun'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.6, 'DustCoat': 0.9}
 MASK_PARAMS['UsRubber'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.6, 'DustCoat': 0.8}
 # (01/11 17h, item 40 nos prédios: a War Factory B no jogo contra a do r1_raid_slabs, a única aprovada da base: o alvo bege-quente,
 # R/B 1,21 e a variação 0,59 (escorrido, junta escura, lasca, pó); o nosso cinza-frio, 1,08 e 0,34) a parede da USA (o Body, só dela)
 # na mesma campanha dos veículos: o véu e o pó no pé, a lavagem escura nas juntas e o escorrido, poucas lascas
-MASK_PARAMS['Body'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 0.8, 'DustCoat': 0.5, 'Wash': 0.8, 'Chip': 0.5}
+MASK_PARAMS['Body'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 0.8, 'Wash': 0.8, 'Chip': 0.5}   # (02/11) sem a areia
 # (01/11, 2ª volta) a parede e o concreto da USA: o pó mais forte (o véu quente e o pé), a lavagem e o tom por placa no máximo (a
 # variação do alvo 0,59 contra 0,34)
-MASK_PARAMS['UsBody'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 1.0, 'DustCoat': 0.65, 'Wash': 1.0, 'Chip': 0.5}
-MASK_PARAMS['UsConcrete'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.8, 'DustCoat': 0.8, 'Wash': 0.6}
+MASK_PARAMS['UsBody'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 1.0, 'Wash': 1.0, 'Chip': 0.5}   # (02/11) sem a areia
+MASK_PARAMS['UsConcrete'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.8, 'Wash': 0.6}   # (02/11) sem a areia
 MASK_PARAMS['Glass'] = {'CavityDirt': 0.4, 'GlassMask': 1.0}
 for _k, _v in MASK_PARAMS.items():
     SLOTS[_k][3].update(_v)
@@ -206,6 +219,9 @@ DOZER_SLOTS = dict(TANK_SLOTS, **{'Yellow': 'Yellow', 'Beacon': 'Beacon', 'Light
 USA_VEHICLE_SLOTS = dict(DOZER_SLOTS, Paint='UsPaint', Metal='UsMetal', Track='UsTrackRun', Rubber='UsRubber')
 # (01/11, item 40) os prédios da USA em campanha: a parede, o concreto e a tinta dos detalhes só dela
 USA_BUILDING_SLOTS = {'Body': 'UsBody', 'Concrete': 'UsConcrete', 'Paint': 'UsPaint'}
+# (02/11, item 58) o tanque da GLA v2: os slots do import_gla.py nas instâncias do detalhe; a esteira que anda
+GLA_TANK_SLOTS = {'Paint': 'GlaTankPaint', 'Bag': 'GlaBag', 'Patch': 'GlaPatch', 'Rust': 'GlaRust', 'Wood': 'GlaWood', 'Team': 'TankTeam',
+                  'Metal': 'TankMetal', 'Dark': 'Dark', 'Rubber': 'Rubber', 'Track': 'TankTrackRun', 'Lens': 'Glass'}
 # o caminhão de suprimento novo (Modelos 3D, 14/10, aprovado pelo Felipe): o casco, as 6 rodas e a caixa pequena da carga,
 # com a mesma tabela de slots do Dozer
 TRUCK_SRC = os.path.join(REPO, 'captures', 'game', 'models', 'usa_supply_truck')
@@ -320,6 +336,14 @@ FACTION_MODELS = [
     ('usa_command_center_v5', 'SM_USA_CommandCenter_*.glb', '/Game/Structures/usa_command_center_v5', USA_BUILDING_SLOTS),
     # (01/11, item 46) o Propaganda Center v3: a emissora no laço da CCTV com o telão aceso (docs/elenco/CHINA_PROPAGANDA.md)
     ('china_propaganda_center_v3', 'SM_China_PropagandaCenter_*.glb', '/Game/Structures/china_propaganda_center_v3', CHINA_BUILDING_SLOTS),
+    # (01/11, itens 48–51) os 4 prédios da GLA sem muro (docs/elenco/GLA_PREDIOS.md): a tenda beduína, o palácio aberto, o ninho em trevo,
+    # o mercado sob a rede
+    ('gla_barracks_v2', 'SM_GLA_Barracks_*.glb', '/Game/Structures/gla_barracks_v2', dict(GLA_BUILDING_SLOTS, Rubber='GlaTent')),
+    ('gla_palace_v2', 'SM_GLA_Palace_*.glb', '/Game/Structures/gla_palace_v2', GLA_BUILDING_SLOTS),
+    # (02/11, item 58) o tanque da GLA do zero (sacos de pano, o pneu na diagonal, a esteira que anda)
+    ('gla_tank_v2', 'SM_GLA_MBT_*.glb', '/Game/Units/gla_tank_v2', GLA_TANK_SLOTS),
+    ('gla_stinger_site_v2', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v2', GLA_BUILDING_SLOTS),
+    ('gla_supply_stash_v2', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v2', GLA_BUILDING_SLOTS),
     # (01/11, itens 53, 54, 55) a Rússia refeita: o BMPT e o T-14 com a silhueta própria (longe do T-90M), o Shtab da torre em degraus
     # com a agulha (não a "prisão") e a Kazarma com o plaç pintado e o KPP
     ('russia_bmpt_v2', 'SM_Russia_BMPT_*.glb', '/Game/Units/russia_bmpt_v2', RUSSIA_VEHICLE_SLOTS),
@@ -1417,7 +1441,8 @@ def main():
     if os.environ.get('PROV_FACTION_ONLY'):
         # (31/10, o elenco das 3 facções) as instâncias dos slots novos e os modelos do FACTION_MODELS que existirem;
         # PROV_KEYS=china_type99,gla_palace: só essas pastas
-        faction_instances(['UsCore', 'PowerLine', 'UsBody', 'UsConcrete', 'UsPaint', 'RuBlue', 'RuPaint', 'RuSteel', 'RuMetal', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite',
+        faction_instances(['UsCore', 'PowerLine', 'UsBody', 'UsConcrete', 'UsPaint', 'GlaTent', 'GlaTankPaint', 'GlaBag', 'GlaPatch',
+                           'GlaRust', 'GlaWood', 'RuBlue', 'RuPaint', 'RuSteel', 'RuMetal', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite',
                            'CnConcrete', 'CnPlinth', 'CnRoof', 'CnMetal', 'CnGold', 'Fire', 'CnTankPaint', 'CnTankCamo', 'CnTankMetal',
                            'GlaEarth', 'GlaNet', 'GlaPaint', 'GlaStripe', 'GlaTile', 'Broken', 'BrokenAdobe'])
         opaque = existing_instances()
