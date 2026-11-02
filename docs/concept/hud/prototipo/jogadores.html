@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jogadores no HUD v2</title>
+<style>
+/* 02/11, v2 (a v1 reprovada: o placar sujo e sem respiro, a lista lateral, as caixinhas das superarmas, o relógio recortado). Regras do
+   estudo (docs/concept/hud/JOGADORES.md): corpo >= 20 px, números 22 px com dígitos de largura igual, rótulos 15 px uma vez só, linha de
+   36 px, times separados por respiro de 26 px (sem traço nem caixa), no máximo 7 colunas, informação escondida = vazio com um olho só,
+   na tela de jogo nada de caixa (texto com sombra). */
+@font-face { font-family: Barlow; src: url(a/BarlowSemiCondensed-Medium.ttf); font-weight: 500; }
+@font-face { font-family: Barlow; src: url(a/BarlowSemiCondensed-SemiBold.ttf); font-weight: 600; }
+@font-face { font-family: Barlow; src: url(a/BarlowSemiCondensed-Bold.ttf); font-weight: 700; }
+html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; font-family: Barlow, sans-serif; color: #e9eef4; }
+#wrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; overflow: hidden; transform-origin: center; }
+#scene { position: absolute; inset: 0; background: url(a/scene_teams.jpg) 0 0 / 1920px 1080px; }
+.f-china #scene { background-image: url(a/china/scene_teams.jpg); }
+.f-gla #scene { background-image: url(a/gla/scene_teams.jpg); }
+.f-russia #scene { background-image: url(a/russia/scene_teams.jpg); }
+
+/* a barra de cima do protótipo (não é HUD) */
+#bar { position: absolute; left: 0; right: 0; top: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  background: rgba(4,6,8,.92); border-bottom: 1px solid #1d2733; z-index: 100; font: 600 14px Barlow; }
+#bar b { color: #8fa3b8; font-weight: 600; margin: 0 6px 0 10px; }
+#bar button { font: 700 13px Barlow; color: #cfd8e2; background: #121a24; border: 1px solid #2a3644; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+#bar button.on { background: #1d4f80; color: #fff; border-color: #49aaff; }
+#bar .hint { margin-left: auto; color: #8fa3b8; font-weight: 500; }
+
+/* ---- a barra do topo: a do duelo; com mais jogadores, os painéis alongam (estica só a faixa lisa do meio deles) ---- */
+#top { position: absolute; left: 0; top: 44px; width: 1920px; height: 114px; z-index: 10; }
+#top canvas { position: absolute; top: 0; }
+.ov { position: absolute; transform: translate(-50%, -50%); }
+.clock { font: 700 34px Barlow; letter-spacing: .5px; color: #e9eef4; text-shadow: 0 1px 2px #000; }
+.pname { font: 700 22px Barlow; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.ringnum { font: 700 30px Barlow; color: #ff7c6c; text-shadow: 0 1px 2px #000; }
+.more { position: absolute; transform: translateY(-50%); font: 700 16px Barlow; color: #cfd8e2; text-shadow: 0 1px 2px #000; }
+
+/* a ficha: o encaixe escuro, o aro na cor do jogador e a silhueta na cor dele (clareada pra ler no escuro) */
+.chip { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; background: #0b0f14; box-shadow: 0 0 0 2px var(--c), 0 0 5px rgba(0,0,0,.85); cursor: default; }
+.chip i { position: absolute; inset: 16%; background: var(--g); -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+.chip.dead { box-shadow: 0 0 0 2px #3a3f45; }
+.chip.dead i { background: #4a5058; }
+.chip.dead::after { content: ''; position: absolute; inset: 22%; background: url(a/defeated_x.png) center / contain no-repeat; opacity: .9; }
+.tip { position: absolute; z-index: 60; pointer-events: none; padding: 7px 11px; background: rgba(6,9,12,.94); border-radius: 4px; font: 600 16px Barlow; white-space: nowrap; display: none; }
+.tip small { display: block; font: 600 14px Barlow; color: #f2d16b; margin-top: 2px; }
+
+/* ---- as superarmas: o timer do Zero Hour modernizado. Sem caixa: o nome na cor do dono e o tempo, com sombra, os dois-pontos numa
+   coluna; uma linha por jogador (a mais próxima dele), no máximo 4, no canto de cima à direita ---- */
+#sw { position: absolute; right: 26px; top: 64px; z-index: 9; display: grid; grid-template-columns: auto 64px; column-gap: 12px; row-gap: 4px; align-items: baseline; }
+#sw .n { justify-self: end; font: 600 18px Barlow; text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 1px #000; white-space: nowrap; }
+#sw .t { font: 700 22px Barlow; font-variant-numeric: tabular-nums; color: #f1f4f7; text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 1px #000; }
+#sw .t.soon { color: #ff8070; }
+#sw .t.ready { color: #ff5a48; animation: blink .5s steps(2) 6; }
+@keyframes blink { 50% { opacity: .25; } }
+#sw .more { position: static; transform: none; grid-column: 1 / 3; justify-self: end; font: 600 15px Barlow; color: #aab6c3; }
+
+/* ---- o placar (Tab): a janela da tela de poderes de cada facção, por dentro limpo ---- */
+#back { position: absolute; inset: 0; background: rgba(2,4,7,.6); opacity: 0; pointer-events: none; z-index: 45; transition: opacity .12s; }
+#score { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -48%); width: 1180px; box-sizing: border-box; z-index: 50; display: none;
+  padding: 34px 44px 36px; border: 0; background: url(a/gen_bg.png) repeat; }
+#score::before { content: ''; position: absolute; pointer-events: none; z-index: 1; inset: calc(-1 * var(--ft)) calc(-1 * var(--fr)) calc(-1 * var(--fb)) calc(-1 * var(--fl));
+  background: url(a/gen_frame.png) 0 0 / 100% 100% no-repeat; }
+#score::after { content: ''; position: absolute; inset: 0; background: rgba(4,6,9,.45); pointer-events: none; }
+#score > * { position: relative; z-index: 2; }
+.f-usa #score { --ft: 14.7px; --fb: 11.5px; --fl: 14.1px; --fr: 12.8px; }
+.f-china #score { --ft: 20.5px; --fb: 20.5px; --fl: 29.4px; --fr: 29.4px; background-image: url(a/china/gen_bg.png); }
+.f-china #score::before { background-image: url(a/china/gen_frame.png); }
+.f-gla #score { --ft: 22.4px; --fb: 20.5px; --fl: 25px; --fr: 24.3px; background-image: url(a/gla/gen_bg.png); }
+.f-gla #score::before { background-image: url(a/gla/gen_frame.png); }
+.f-russia #score { --ft: 20.5px; --fb: 19.2px; --fl: 17.9px; --fr: 17.9px; background-image: url(a/russia/gen_bg.png); }
+.f-russia #score::before { background-image: url(a/russia/gen_frame.png); }
+.tabon #score { display: block; }
+.tabon #back { opacity: 1; }
+#score .hd { display: flex; align-items: baseline; gap: 18px; margin-bottom: 22px; }
+#score h2 { margin: 0; font: 700 28px Barlow; letter-spacing: 3px; }
+#score .sub { font: 600 17px Barlow; color: #9aa9b8; }
+#score .sub b { color: #e9eef4; }
+.grid { display: grid; grid-template-columns: 34px minmax(0, 1fr) 104px 118px 132px 118px 128px 66px; column-gap: 14px; align-items: center; }
+.lab { font: 600 15px Barlow; letter-spacing: 1.5px; color: rgba(200,212,224,.6); text-transform: uppercase; padding-bottom: 8px; }
+.lab.r, .num { text-align: right; }
+.row { height: 36px; }
+.row > div { white-space: nowrap; }
+.gap { height: 26px; grid-column: 1 / -1; }
+.tn { font: 700 24px Barlow; color: rgba(200,212,224,.28); text-align: center; }
+.tn.mine { color: rgba(143,198,255,.75); }
+.pl { display: flex; align-items: center; gap: 10px; position: relative; height: 36px; }
+.pl .chip { position: relative; transform: none; flex: none; width: 26px; height: 26px; }
+.pl img { width: 24px; height: 24px; flex: none; }
+.pl b { font: 600 20px Barlow; overflow: hidden; text-overflow: ellipsis; }
+.pl .you { font: 700 13px Barlow; letter-spacing: 1px; color: #8fc6ff; margin-left: 2px; }
+.num { font: 600 22px Barlow; font-variant-numeric: tabular-nums; color: #eef2f6; }
+.num small { font-size: 16px; color: #8a97a5; }
+.num.spy { color: #f0b464; }
+.hidden { grid-column: span 3; display: flex; justify-content: center; opacity: .45; }
+.hidden svg { width: 22px; height: 22px; }
+.pw { display: flex; justify-content: flex-end; }
+.pw svg { width: 16px; height: 20px; }
+.pl.dead { opacity: .45; }
+.gone { grid-column: span 6; font: 600 17px Barlow; color: #7f8c99; text-align: right; letter-spacing: 1.5px; }
+.grid > div { min-height: 36px; display: flex; align-items: center; }
+.grid > .num, .grid > .lab.r, .grid > .pw, .grid > .gone { justify-content: flex-end; }
+.grid > .tn { justify-content: center; }
+.grid > .hidden { justify-content: center; }
+.grid > .gap { min-height: 26px; }
+.grid > .lab { min-height: 0; }
+</style>
+</head>
+<body>
+<div id="wrap"><div id="stage" class="f-usa">
+  <div id="scene"></div>
+  <div id="bar">
+    <b>FORMATO</b>
+    <button data-s="duel">1 × 1</button><button data-s="2v2">2 × 2</button><button data-s="3v5">3 × 5</button><button data-s="8v8">8 × 8</button>
+    <button data-s="ffa6">Todos × todos (6)</button><button data-s="ffa16">Todos × todos (16)</button><button data-s="4x4">4 times de 4</button><button data-s="3v5v8">3 × 5 × 8</button>
+    <b>FACÇÃO</b>
+    <button data-f="usa">USA</button><button data-f="china">China</button><button data-f="gla">GLA</button><button data-f="russia">Rússia</button>
+    <span class="hint">segure TAB: o placar · mouse nas fichas: o nome</span>
+  </div>
+  <div id="top"><canvas id="cv" width="1920" height="114"></canvas><div id="ovs"></div></div>
+  <div id="sw"></div>
+  <div id="back"></div>
+  <div id="score"><div class="hd"><h2>SCOREBOARD</h2><span class="sub"></span></div><div class="grid"></div></div>
+  <div class="tip" id="tip"></div>
+</div></div>
+<script>
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+function fit() { const k = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+
+const COLORS = ['#4d8fe0', '#e0443a', '#3cb043', '#e6c629', '#f08a24', '#a46ce0', '#25b8c8', '#e65aa6', '#d9dde3', '#b07a44', '#1f9e86', '#9ad13a', '#c43fd1', '#5b7fd6', '#c9a24a', '#8a96a2'];
+const FACS = ['usa', 'china', 'gla', 'russia'];
+const NAMES = ['Felipe', 'Bruno', 'Caio', 'Davi', 'Edu', 'Fabio', 'Gui', 'Hugo', 'Igor', 'Joao', 'Kaue', 'Leo', 'Marco', 'Nina', 'Otto', 'Paulo'];
+const SWN = { usa: 'Orbital Lance', china: 'Nuclear Missile', gla: 'Plague Storm', russia: 'Thermobaric Strike' };
+const SCEN = { duel: [1, 1], '2v2': [2, 2], '3v5': [3, 5], '8v8': [8, 8], ffa6: [1, 1, 1, 1, 1, 1], ffa16: Array(16).fill(1), '4x4': [4, 4, 4, 4], '3v5v8': [3, 5, 8] };
+const LABEL = { duel: '1 vs 1', '2v2': '2 vs 2', '3v5': '3 vs 5', '8v8': '8 vs 8', ffa6: 'Free for all', ffa16: 'Free for all', '4x4': '4 teams of 4', '3v5v8': '3 vs 5 vs 8' };
+let FAC = 'usa', SC = '3v5';
+function rnd(i, k) { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); }
+// a cor do jogador clareada pra texto e silhueta (o azul e o roxo puros não passam no contraste)
+function light(hex, k = 0.4) { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * k)); return `rgb(${c})`; }
+const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const kfmt = v => v >= 10000 ? (v / 1000).toFixed(1).replace('.0', '') + 'k' : v.toLocaleString('en-US');
+
+function makePlayers(sizes) {
+  const P = []; let n = 0;
+  sizes.forEach((sz, t) => { for (let j = 0; j < sz; j++, n++) {
+    const p = { i: n, team: t, name: n === 0 ? 'Felipe' : (rnd(n, 2) < 0.3 ? `Hard AI ${n}` : NAMES[n % 16]), fac: n === 0 ? FAC : FACS[Math.floor(rnd(n, 1) * 4)],
+      col: COLORS[n % 16], me: n === 0, ally: t === 0 && n > 0, dead: n > 0 && rnd(n, 3) < 0.12, spied: t !== 0 && rnd(n, 4) < 0.18,
+      rank: 1 + Math.floor(rnd(n, 5) * 5), score: Math.round(800 + rnd(n, 6) * 5200), money: Math.round(300 + rnd(n, 8) * 9000),
+      income: Math.round(200 + rnd(n, 9) * 1300), army: Math.round(1000 + rnd(n, 10) * 22000), lost: Math.floor(rnd(n, 11) * 40),
+      kills: Math.floor(rnd(n, 12) * 60), sw: rnd(n, 13) < 0.55 ? Math.round(rnd(n, 14) < 0.15 ? 0 : 20 + rnd(n, 14) * 420) : null };
+    p.pm = 60 + Math.round(rnd(n, 15) * 100); p.pu = Math.round(p.pm * (0.6 + rnd(n, 16) * 0.55));
+    if (p.dead) p.sw = null;
+    P.push(p);
+  } });
+  return P;
+}
+const dir = () => FAC === 'usa' ? '' : FAC + '/';
+const chipHTML = (p, x, y, d) => `<span class="chip ${p.dead ? 'dead' : ''}" data-i="${p.i}" style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;--c:${p.col};--g:${light(p.col, .25)};--m:url(a/glyph_${p.fac}.png)"><i></i></span>`;
+
+// ---- a barra do topo, composta no canvas a partir da arte do duelo (1307 × 200 com as margens) ----
+const BAR = new Image(); let barFac = '';
+const K = 742 / 1307;                      // a escala do topo 1x1 aprovado
+const u = v => (110 + v);                  // unidade da peça (0..1087) -> coluna da imagem com a margem
+// os cortes: a ponta esquerda com o anel e o começo do painel | a faixa lisa do painel (estica) | o fim do painel | o relógio | ...
+const CUT = { lfix: [-110, 170], lmid: [240, 244], ltip: [370, 430], clock: [430, 657], rtip: [657, 717], rmid: [843, 847], rfix: [917, 1197] };
+const W = k => (CUT[k][1] - CUT[k][0]) * K;
+
+let P = [];
+function drawTop() {
+  const cv = $('#cv'), g = cv.getContext('2d'); g.clearRect(0, 0, 1920, 114);
+  const ov = []; const teams = SCEN[SC].length;
+  const cy = 68 * K;
+  const me = P[0], allies = P.filter(p => p.ally), enemies = P.filter(p => !p.me && !p.ally);
+  // o conteúdo de cada painel define o comprimento dele (fichas de 28 px, 6 px entre fichas, 16 px entre times)
+  const D = 28, GAP = 6, TGAP = 16;
+  const groups = []; for (let t = 1; t < teams; t++) groups.push(enemies.filter(p => p.team === t));
+  const span = list => list.length * D + Math.max(0, list.length - 1) * GAP;
+  const duel = SC === 'duel', ffa = SC.startsWith('ffa');
+  const leftNeed = duel || ffa ? 0 : span(allies);
+  const rightNeed = duel ? 0 : groups.reduce((a, gr) => a + span(gr), 0) + Math.max(0, groups.length - 1) * TGAP;
+  const baseL = (CUT.lmid[0] - CUT.lfix[1] + CUT.ltip[0] - CUT.lmid[1]) * K;   // o painel sem esticar
+  const lStretch = Math.max(0, leftNeed + 40 - (baseL + W('lmid') + 60 * K)) + (CUT.lmid[1] - CUT.lmid[0]) * K;
+  const rStretch = Math.max(0, rightNeed + 40 - (baseL + W('rmid') + 60 * K)) + (CUT.rmid[1] - CUT.rmid[0]) * K;
+  const segs = [['lfix'], ['lmidA'], ['lmid', lStretch], ['lmidB'], ['ltip'], ['clock'], ['rtip'], ['rmidA'], ['rmid', rStretch], ['rmidB'], ['rfix']];
+  CUT.lmidA = [CUT.lfix[1], CUT.lmid[0]]; CUT.lmidB = [CUT.lmid[1], CUT.ltip[0]];
+  CUT.rmidA = [CUT.rtip[1], CUT.rmid[0]]; CUT.rmidB = [CUT.rmid[1], CUT.rfix[0]];
+  const widths = segs.map(([k, w]) => w !== undefined ? w : W(k));
+  const leftW = widths.slice(0, 5).reduce((a, b) => a + b, 0);
+  let x = 960 - W('clock') / 2 - leftW; const x0 = x;
+  const pos = {};
+  segs.forEach(([k], i) => { const [a, b] = CUT[k]; pos[k] = x;
+    g.drawImage(BAR, u(a), 0, b - a, 200, x, 0, widths[i] + 0.6, 114); x += widths[i]; });
+  // as posições: o anel esquerdo (você), o painel esquerdo, o relógio, o painel direito, o anel direito
+  const ringL = pos.lfix + (u(83) - u(-110)) * K, ringR = pos.rfix + (1006 - 917) * K;
+  const pL0 = pos.lfix + (150 + 110) * K, pL1 = pos.ltip + 30 * K, pR0 = pos.rtip + 30 * K, pR1 = pos.rfix + (937 - 917) * K;
+  ov.push(chipHTML(me, ringL, cy, 40));
+  ov.push(`<div class="ov clock" style="left:960px;top:${cy}px">12:34</div>`);
+  if (duel || ffa) ov.push(`<div class="ov pname" style="left:${(pL0 + pL1) / 2}px;top:${cy}px;color:${light(me.col)}">${me.name}</div>`);
+  else { let cx = (pL0 + pL1) / 2 - leftNeed / 2 + D / 2; allies.forEach(p => { ov.push(chipHTML(p, cx, cy, D)); cx += D + GAP; }); }
+  if (duel) {
+    const foe = P[1];
+    ov.push(`<div class="ov pname" style="left:${(pR0 + pR1) / 2}px;top:${cy}px;color:${light(foe.col)}">${foe.name}</div>`);
+    ov.push(chipHTML(foe, ringR, cy, 40));
+  } else {
+    let cx = (pR0 + pR1) / 2 - rightNeed / 2 + D / 2;
+    groups.forEach(gr => { gr.forEach(p => { ov.push(chipHTML(p, cx, cy, D)); cx += D + GAP; }); cx += TGAP - GAP; });
+    ov.push(`<div class="ov ringnum" style="left:${ringR}px;top:${cy}px">${enemies.filter(p => !p.dead).length}</div>`);
+  }
+  $('#ovs').innerHTML = ov.join('');
+}
+
+function render() {
+  stage.className = 'f-' + FAC;
+  P = makePlayers(SCEN[SC]);
+  const src = `a/${dir()}bar_duel.png`;
+  if (barFac !== FAC) { barFac = FAC; BAR.onload = drawTop; BAR.src = src; } else drawTop();
+
+  // as superarmas: a mais próxima de cada jogador, em ordem de tempo, no máximo 4
+  const sw = P.filter(p => p.sw !== null && !p.me).sort((a, b) => a.sw - b.sw);
+  const show = sw.slice(0, SC === 'duel' ? 1 : 4);
+  $('#sw').innerHTML = show.map(p => `<span class="n" style="color:${light(p.col, .35)}" data-i="${p.i}">${SWN[p.fac]}</span><span class="t ${p.sw === 0 ? 'ready' : p.sw < 60 ? 'soon' : ''}">${p.sw === 0 ? 'READY' : fmt(p.sw)}</span>`).join('')
+    + (sw.length > show.length ? `<span class="more">+${sw.length - show.length} more · TAB</span>` : '');
+
+  // o placar: o seu time primeiro, os outros pela pontuação; um bloco por time, separado por respiro
+  const teams = SCEN[SC].length;
+  const rankIcon = p => p.fac === 'usa' ? `rank_usa_${p.rank}.png` : `${p.fac}/rank_${p.fac}_${p.rank}.png`;
+  const eye = `<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" fill="none" stroke="#c8d4e0" stroke-width="1.8"/><path d="M4 20 20 4" stroke="#c8d4e0" stroke-width="1.8"/></svg>`;
+  const bolt = c => `<svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 6-8H6l1-4z" fill="${c}"/></svg>`;
+  let s = `<div class="lab"></div><div class="lab">Player</div><div class="lab r">Score</div><div class="lab r">Destroyed / Lost</div><div class="lab r">Army</div><div class="lab r">Money</div><div class="lab r">Income / min</div><div class="lab r">Power</div>`;
+  const order = [0, ...[...Array(teams).keys()].slice(1).sort((a, b) => P.filter(p => p.team === b).reduce((x, p) => x + p.score, 0) - P.filter(p => p.team === a).reduce((x, p) => x + p.score, 0))];
+  order.forEach((t, bi) => {
+    const list = P.filter(p => p.team === t).sort((a, b) => (b.me - a.me) || (a.dead - b.dead) || (b.score - a.score));
+    if (bi > 0 && (list.length > 1 || P.filter(p => p.team === order[bi - 1]).length > 1)) s += `<div class="gap"></div>`;
+    list.forEach((p, j) => {
+      const open = p.me || p.ally, spied = p.spied && !p.dead, dc = p.dead ? ' dead' : '';
+      const team = j === 0 && teams > 1 && !SC.startsWith('ffa') ? `<div class="tn ${t === 0 ? 'mine' : ''}">${t + 1}</div>` : '<div></div>';
+      const ch = `<span class="chip ${p.dead ? 'dead' : ''}" data-i="${p.i}" style="--c:${p.col};--g:${light(p.col, .25)};--m:url(a/glyph_${p.fac}.png)"><i></i></span>`;
+      const name = `<div class="pl${dc}">${ch}<img src="a/${rankIcon(p)}" alt=""><b style="color:${p.dead ? '#8a96a2' : light(p.col, .35)}">${p.name}</b>${p.me ? '<span class="you">YOU</span>' : ''}</div>`;
+      if (p.dead) { s += team + name + `<div class="gone dead">DEFEATED</div>`; return; }
+      const kd = `<div class="num">${p.kills} <small>/ ${p.lost}</small></div>`;
+      const powc = p.pu > p.pm ? '#ff3b2c' : p.pm - p.pu < p.pm * 0.1 ? '#ffd23a' : '#4fd36a';
+      const eco = open || spied
+        ? `<div class="num ${spied ? 'spy' : ''}">${kfmt(p.army)}</div><div class="num ${spied ? 'spy' : ''}">$${kfmt(p.money)}</div><div class="num ${spied ? 'spy' : ''}">+${kfmt(p.income)}</div><div class="pw">${bolt(powc)}</div>`
+        : `<div class="hidden">${eye}</div><div></div>`;
+      s += team + name + `<div class="num">${p.score.toLocaleString('en-US')}</div>` + kd + eco;
+    });
+  });
+  $('#score .grid').innerHTML = s;
+  $('#score .sub').innerHTML = `${LABEL[SC]} · <b>${P.length} players</b> · <b>12:34</b>`;
+  document.querySelectorAll('#bar [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === SC));
+  document.querySelectorAll('#bar [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === FAC));
+}
+document.querySelectorAll('#bar [data-s]').forEach(b => b.addEventListener('click', () => { SC = b.dataset.s; render(); }));
+document.querySelectorAll('#bar [data-f]').forEach(b => b.addEventListener('click', () => { FAC = b.dataset.f; render(); }));
+addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); stage.classList.add('tabon'); } });
+addEventListener('keyup', e => { if (e.key === 'Tab') stage.classList.remove('tabon'); });
+// o mouse na ficha: o nome; nos aliados, o dinheiro e a energia
+const tip = $('#tip');
+stage.addEventListener('mousemove', e => {
+  const c = e.target.closest('[data-i]'); if (!c || stage.classList.contains('tabon')) { tip.style.display = 'none'; return; }
+  const p = P[+c.dataset.i], r = stage.getBoundingClientRect(), k = r.width / 1920;
+  tip.innerHTML = `<span style="color:${light(p.col, .35)}">${p.name}</span>${p.me ? ' (you)' : ''}${p.dead ? ' · defeated' : ''}${p.ally && !p.dead ? `<small>$${p.money.toLocaleString('en-US')} · power ${p.pu}/${p.pm}</small>` : ''}`;
+  tip.style.display = 'block'; tip.style.left = ((e.clientX - r.left) / k + 14) + 'px'; tip.style.top = ((e.clientY - r.top) / k + 18) + 'px';
+});
+const q = new URLSearchParams(location.search);
+if (q.get('s')) SC = q.get('s'); if (q.get('fac')) FAC = q.get('fac');
+render();
+if (q.get('tab')) stage.classList.add('tabon');
+</script>
+</body>
+</html>
