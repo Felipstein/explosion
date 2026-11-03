@@ -25,7 +25,11 @@ Sessão do HUD. Ao retomar: ler isto, `FACCOES.md` (§5–8), `DECISOES.md` (§7
   - O placar (Tab): 7 colunas, linhas de 36 px, o seu time primeiro, os outros por pontuação e os derrotados por último; respiro entre times;
     a economia escondida = um olho fechado; o espionado com o olho ao lado do nome e os números em laranja; o exército sempre em "k".
   - As imagens da revisão: `captures/concept/hud/faccoes/jogadores_v2_*.jpg`.
-- **Próximo passo:** ele revisar a v2. Aprovada, levar pro HUD (`RTSHudPainter`: trocar o `DrawTopMany` v1 pela barra alongada, a lista
+- **03/11, a v3 (revisão dele da v2):** a barra sempre simétrica (dois times: os dois painéis do comprimento do maior; 3+ times e todos
+  contra todos: vidro neutro e as fichas divididas por igual nos dois lados, o seu time colado em você com o traço azul); as superarmas em
+  medalhões (o desenho da arma, o anel na cor do dono que enche, o tempo numa plaquinha; pronta = vermelha pulsando); o placar com cada
+  linha na cor do jogador (faixas arredondadas, "como as pastas do Mac"). A v2 da barra desigual e da lista em texto: reprovadas (APROVADOS 03/11).
+- **Próximo passo:** ele revisar a v3. Aprovada, levar pro HUD (`RTSHudPainter`: trocar o `DrawTopMany` v1 pela barra alongada, a lista
   das superarmas e o placar), registrar em `APROVADOS.md` e commitar.
 
 ## Depois disso
