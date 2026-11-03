@@ -173,16 +173,30 @@ de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
 2. Os cursores que nascem com as unidades e os sistemas novos (guarnecer, capturar, o sinalizador, os especiais) entram
    no mestre na mesma gramática, e o gerador refaz tudo.
 
-## Onde parou (02/11, pausa pelo limite da conta)
+## Onde parou (03/11, retomado na outra conta; esperando a revisão dele)
 
-- **Ponto de encontro: APROVADO no jogo e commitado** (cf34cc0, `RTSRallyMarker.h/.cpp`). Sem commit: o ajuste do pano em
-  `RTSRallyMarker.cpp` (a cor `Dye = Pow(V, 1.3)` sem o 0,62 e o pano esticado no mínimo 0,85). A prova dele estava rodando na fila:
-  `captures/game/rally_ponto_v3/` (comparar com `rally_ponto_v2/` e com `docs/aprovados/ui/2026-11-02_ponto_de_encontro_previa_x_jogo.jpg`;
-  se o pano ficou mais vivo e quase na horizontal, commitar; senão, voltar o trecho pro commitado).
-- **Próximo pedido dele: a marca da ordem no chão** ("quando a gente aperta a unidade pra andar [...] o pointer efeito que mostra onde
-  vai andar, não tem hoje né? o ZH tinha"). Hoje existe só `ARTSHUD::DrawMarkers`: um anel fino de 2 px que encolhe em 0,7 s (ninguém
-  vê). O ZH: `InGameUI::createMoveHint` + `W3DInGameUI::drawMoveHints` (um modelo animado deitado no relevo, 40 quadros ≈ 1,3 s, um por
-  ordem, só pra quem anda; o ataque não tem marca). A prancha com as 3 direções animadas: `art/cursors/marca_ordem.html` (A as setas do
-  mover deitadas que fecham no ponto, a recomendada; B o anel cortado que fecha; C o pino que cai com a onda). Faltava: o GIF
-  (`captures/concept/cursores/gif_marca/`, 40 quadros) e mostrar pra ele escolher; depois fazer no jogo com o traço liso do
-  `RTSRallyMarker` (a textura do perfil), substituindo o `DrawMarkers`.
+- **Ponto de encontro:** aprovado no jogo (cf34cc0). O pano novo (995d0ee, `Dye = Pow(V, 1.3)`, esticado no mínimo 0,85) mede
+  (102, 193, 231) contra o 59B2FF da prévia (o aprovado v2: (72, 159, 213)); A/B em `captures/concept/cursores/pano_antes_agora.jpg`.
+  Se ele preferir o v2, voltar o trecho do `Dye` e do `Lift` pro cf34cc0.
+- **Marca da ordem no chão (a A, no jogo, sem commit):** `RTSOrderMarker.h/.cpp` no lugar do anel fino do `ARTSHUD::DrawMarkers`; a
+  marca dura 1 s (`MarkerSeconds`). Prova: a cena `rally_ponto` com `-RTSMarkerAt=-262,-318` (`captures/game/rally_ponto_v4/`,
+  `captures/concept/cursores/marca_no_jogo.gif`); as três direções em `art/cursors/marca_ordem.html` e no GIF
+  `captures/concept/cursores/marca_ordem_movimento.gif`. Falta ele escolher (A, B ou C).
+- **Os traços lisos num lugar só:** `RTSSoftDraw.h/.cpp` (a faixa com a textura do perfil, o disco, o polígono com a borda lisa e o
+  contorno de cantos redondos), usado pelo ponto de encontro, pela marca e pela fila.
+- **A fila do Alt no jogo refeita como a prancha aprovada (sem commit):** `ARTSHUD::DrawOrderQueues`; o mesmo passo das unidades
+  vira uma ficha no meio delas, as linhas saem de cada unidade até a 1ª ficha e depois de ficha em ficha, a prévia tracejada até o
+  mouse (antes: cada tanque até a vaga dele, um novelo de linhas de 2 px serrilhadas, números repetidos). Prova:
+  `captures/game/cursores_fila_v4/`, antes × agora em `captures/concept/cursores/fila_jogo_antes_agora.jpg`.
+- **O cursor depois das telas novas (sem commit):** `FRTSCursors::Invalidate()`, chamado no BeginPlay da partida (o navegador do
+  RTSShell troca o Custom da aplicação; pedido da sessão das Telas).
+- **(03/11) Pedidos novos dele, em proposta (sem nada no jogo ainda):** os alertas (o "sob ataque" do minimapa refeito, a seta da
+  borda decidida no HUD e nunca feita, o catálogo dos outros alertas do radar, na língua dos cursores):
+  `captures/concept/cursores/alertas.html`; e o minimapa inteiro ("tudo feito às pressas"): a prévia em 3 jeitos e os indicadores
+  (a planta dos prédios, o losango dos veículos, a caixa âmbar da doca, a câmera em branco): `captures/concept/cursores/minimapa_board.py`
+  → `minimapa_v1.png`. A marca B (escolhida: "gostei mais do B") está no jogo sem commit, a prova esperando a fila da placa.
+- **(03/11, fim da conta) Onde parou:** aprovados e registrados o minimapa v4 e os alertas (seta B + brilho C; sem alerta pra obra e
+  unidade prontas). Feitos no jogo, sem commit e sem prova (compilam no espelho): `RTSAlerts.h/.cpp` (o minimapa, o calor, o radar
+  fora do ar, a seta da borda; teste `-RTSAlertTest` e `-RTSAlertTest=radar` na cena `rally_ponto`), a marca B (`RTSOrderMarker`),
+  a fila do Alt refeita, `RTSSoftDraw`, o v4 no `DrawMinimap`, o `Invalidate` dos cursores. Falta: compilar pela fila, provar
+  ampliado (o v4 e a marca B: `captures/game/marca_b_v2/`; os alertas), mostrar e commitar só o aprovado.
