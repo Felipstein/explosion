@@ -1,6 +1,6 @@
 # A receita das imagens: Superarmas
 
-Gerado por `Atelier/tools/export_recipes.py --src Superarmas` em 03/11/2026 18:46, a partir dos pedidos do Atelier
+Gerado por `Atelier/tools/export_recipes.py --src Superarmas` em 03/11/2026 19:06, a partir dos pedidos do Atelier
 (`captures/atelier/requests/`, fora do git). Cada pedido traz o prompt inteiro de cada rodada, os modelos, os anexos na ordem em
 que foram mandados e o que foi escolhido (✓) ou reprovado (✗). Os anexos que não estavam no repositório foram copiados pra
 `docs/superarmas/RECEITAS_DAS_IMAGENS_anexos/`. As imagens geradas ficam em `captures/concept/` (rascunho); as aprovadas
@@ -1834,3 +1834,71 @@ Right icon, SEEN FROM ABOVE: the same compact outpost seen straight from above, 
 No text, no letters, no numbers, no labels, no watermark.
 ```
 - **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/168_usa_o_posto_avancado_mais_bonito/raiz_r1_gpt.png`; Gemini Pro: `captures/concept/168_usa_o_posto_avancado_mais_bonito/raiz_r1_pro.jpg`
+
+---
+
+## 169_superarma_da_usa_o_botao_de_construir: Superarma da USA, o botão de construir
+
+- **Data:** 2026-11-03 22:01 (UTC) · **proporção:** 1:1 · **pedido:** `mw18g9xivpe`
+- **Anexos, na ordem:**
+  1. 2026-11-02_usa_fechada_APROVADA: `docs/aprovados/superarmas/2026-11-02_usa_fechada_APROVADA.jpg`
+  2. usa_war_factory: `docs/concept/hud/kit/photos/buttons/usa_war_factory.png`
+
+**Prompt (a raiz):**
+
+```text
+Make a build-button portrait of the building in image 1 (the approved superweapon building of the USA in this real-time strategy game), in the exact style of image 2 (the approved build button of the War Factory): the building alone, isolated on the same dark charcoal studio gradient background, seen from the same high three-quarter angle, with soft studio light and a subtle shadow under it, filling the square nicely with a small margin.
+```
+
+**Prompt (a raiz):**
+
+```text
+Keep the building EXACTLY as in image 1: the round launch arena sunk into the ground with its sloped concrete blast walls, the closed armored segmented hatch with the yellow-black hazard bands, the red beacons, the low assembly building with its blast doors and the blue stripe, and the tall tower with the big satellite dish. Same materials, same colors, same wear. Remove everything that is not the building: no tanks, no desert, no sand, no dust; only a thin edge of concrete ground right under the building.
+```
+
+**Prompt (a raiz):**
+
+```text
+Square image. No text, no letters, no numbers, no labels, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/169_superarma_da_usa_o_botao_de_construir/raiz_r1_gpt.png`; Gemini Pro: `captures/concept/169_superarma_da_usa_o_botao_de_construir/raiz_r1_pro.jpg`
+
+---
+
+## 170_superarma_da_usa_o_icone_do_poder: Superarma da USA, o ícone do poder
+
+- **Data:** 2026-11-03 22:03 (UTC) · **proporção:** 16:9 · **pedido:** `mw18iqa9if7`
+- **Anexos, na ordem:**
+  1. 2026-11-03_usa_disparo_GEMINI_APROVADO: `docs/aprovados/superarmas/2026-11-03_usa_disparo_GEMINI_APROVADO.jpg`
+  2. usa_a10_esc: `docs/poderes/tela/icones/usa_a10_esc.png`
+
+**Prompt (a raiz):**
+
+```text
+Two square ability icons side by side for the USA superweapon of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality, realistic rendering. Each icon is a square filling its own cell edge to edge, no frame, no border. The two squares are centered on a flat pure chroma green (#00FF00) background with a clear gap of green between them and around them. Same icon rule as image 2 (an approved icon of the same set): one single subject, big, cut out against a simple uncluttered background, readable instantly at 46 pixels, warm fire light because it is a strike.
+```
+
+**Prompt (a raiz):**
+
+```text
+The superweapon is GLOBAL STRIKE: one big missile is launched, flies to space and comes back down; high above the target it splits into five glowing warheads that strike five points at the same time.
+```
+
+**Prompt (a raiz):**
+
+```text
+Left icon, THE SPLIT: high in a dark dusk sky, one bright white-blue flash where the missile just broke apart, and from it five glowing orange-white re-entry streaks with plasma trails fanning out downward toward five points on the dark ground far below, where the first impacts glow. The fan of five streaks from one flash is the main shape and must read even tiny.
+```
+
+**Prompt (a raiz):**
+
+```text
+Right icon, THE LAUNCH: the same missile as in image 1 (white, black nose) rising straight up out of the round launch well of its arena on a blinding white-yellow pillar of fire, the ring of smoke rolling out, seen closer than in image 1 so the missile and the fire fill the square; simple dark background above.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/170_superarma_da_usa_o_icone_do_poder/raiz_r1_gpt.png`; Gemini Pro: `captures/concept/170_superarma_da_usa_o_icone_do_poder/raiz_r1_pro.jpg`

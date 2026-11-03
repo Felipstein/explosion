@@ -1,0 +1,1969 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<base href="../../concept/hud/prototipo/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poderes: USA</title>
+<style>
+@font-face { font-family: Barlow; font-weight: 500; src: url(a/BarlowSemiCondensed-Medium.ttf); }
+@font-face { font-family: Barlow; font-weight: 600; src: url(a/BarlowSemiCondensed-SemiBold.ttf); }
+@font-face { font-family: Barlow; font-weight: 700; src: url(a/BarlowSemiCondensed-Bold.ttf); }
+:root {
+  --neon: #49aaff; --neon-core: #cfe9ff; --amber: #ffab2e; --red: #ff3b2c; --gold: #f6c850;
+  --bg: #07090c; --ink: #e9edf2; --mute: #8d97a5;
+}
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: Barlow, sans-serif; overflow: hidden; }
+#bar { height: 46px; display: flex; align-items: center; gap: 6px; padding: 0 12px; background: #0d1116; border-bottom: 1px solid #222a33; }
+#bar b { font-weight: 700; margin-right: 8px; letter-spacing: .5px; }
+#bar button { font: 600 15px Barlow; color: var(--ink); background: #18202a; border: 1px solid #2c3743; border-radius: 4px; padding: 6px 11px; cursor: pointer; }
+#bar button.on { background: #1d4f80; border-color: #49aaff; }
+#bar .sep { width: 1px; height: 26px; background: #2c3743; margin: 0 6px; }
+#note { margin-left: auto; color: var(--mute); font-size: 15px; }
+#wrap { position: absolute; top: 46px; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; transform-origin: center center; flex: none; overflow: hidden; }
+#bg { position: absolute; inset: 0; background: url(bg_sel.jpg) 0 0 / 1920px 1080px; }
+.none #bg { background-image: url(bg_none.jpg); }
+
+/* ---- a fileira (desce inteira sem seleção) ---- */
+#row { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+.none #row { transform: translateY(199px); }
+
+/* a espinha de energia */
+#spine { position: absolute; left: 392px; top: 857px; width: 1116px; height: 18px; border-radius: 3px;
+  background: linear-gradient(#020304, #0b1016 50%, #020304); box-shadow: 0 0 0 1px #3a4552, 0 0 0 3px #11171e, inset 0 2px 4px #000; }
+#spine::before, #spine::after { content: ''; position: absolute; top: -4px; width: 10px; height: 26px; border-radius: 2px;
+  background: linear-gradient(90deg, #4a5562, #1c232b 60%, #39434f); box-shadow: 0 0 0 1px #0a0d11; }
+#spine::before { left: -12px; } #spine::after { right: -12px; }
+/* uma célula por ponto de energia: o comprimento aceso é a sua produção */
+#cells { position: absolute; left: 3px; top: 3px; bottom: 3px; right: 3px; display: flex; gap: 4px; }
+.cell { flex: none; height: 100%; border-radius: 1px; transition: background .25s, box-shadow .25s; }
+.cell.used { background: linear-gradient(#bfe2ff, var(--neon) 40%, #1f6fc0); box-shadow: 0 0 8px 1px rgba(73,170,255,.7), 0 0 18px rgba(73,170,255,.3); }
+.cell.free { background: rgba(73,170,255,.16); box-shadow: inset 0 0 0 1px rgba(73,170,255,.35); }
+.cell.ghost { background: repeating-linear-gradient(135deg, rgba(255,171,46,.95) 0 4px, rgba(255,171,46,.2) 4px 8px); }
+.cell.ghost.past { background: repeating-linear-gradient(135deg, rgba(255,59,44,1) 0 4px, rgba(255,59,44,.25) 4px 8px); animation: blink .55s steps(2) infinite; }
+.cell.over { background: linear-gradient(#ffb3a8, var(--red) 40%, #a0160d); box-shadow: 0 0 10px 2px rgba(255,59,44,.85); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+.near .cell.used { background: linear-gradient(#ffe0a8, var(--amber) 40%, #b06a0c); box-shadow: 0 0 8px 1px rgba(255,171,46,.65); }
+.near .cell.free { background: rgba(255,171,46,.6); box-shadow: 0 0 8px rgba(255,171,46,.6); animation: blink 1s steps(2) infinite; }
+.brown .cell.used { background: linear-gradient(#ff9e8f, #c8281b 45%, #6a0e08); box-shadow: 0 0 6px rgba(255,59,44,.5); }
+#glint { position: absolute; top: 0; bottom: 0; width: 90px; left: -100px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation: glint 7s linear infinite; }
+@keyframes glint { 0% { left: -100px; } 30%, 100% { left: var(--lit, 300px); } }
+.near #glint, .brown #glint { display: none; }
+#pnum { position: absolute; left: 396px; top: 828px; font: 700 19px Barlow; color: var(--ink); text-shadow: 0 1px 2px #000, 0 0 6px #000; display: flex; align-items: center; gap: 5px; }
+#pnum svg { width: 15px; height: 19px; }
+#pnum .lbl { font-weight: 600; font-size: 14px; color: var(--mute); letter-spacing: 1px; }
+
+/* as abas dos grupos, partidas 1–5 | 6–0 */
+.tabs { position: absolute; top: 806px; display: flex; gap: 7px; }
+/* 01/11 (ele: "tudo apertado, saindo pra fora"): a moldura mais fina na casa, e o número, a quantidade e a vida dentro do miolo */
+.tab { width: 48px; height: 46px; box-sizing: border-box; border-style: solid; border-width: 9px 10px; border-image: url(a/group_off.png) 30 34 fill / 9px 10px stretch;
+  position: relative; display: flex; align-items: center; justify-content: center; }
+.tab span { position: absolute; inset: -9px -10px; display: flex; align-items: center; justify-content: center; font: 700 23px Barlow; color: #8995a3; }
+.tab.on { border-image-source: url(a/group_on.png); }
+.tab.on span { color: #fff; justify-content: flex-start; padding-left: 13px; padding-bottom: 3px; }
+.tab.on i { position: absolute; right: 0; top: 0; font: 700 10px Barlow; font-style: normal; color: #cfd9e4; line-height: 1; }
+.tab.on u { position: absolute; left: 1px; right: 1px; bottom: 1px; height: 3px; background: #4fd36a; border-radius: 1px; }
+.tab.on.hurt u { background: linear-gradient(90deg, #ff9a2e 0 55%, rgba(255,255,255,.12) 55%); }
+
+/* o brasão do contador */
+#crest { position: absolute; left: 835px; top: 800px; width: 250px; height: 60px; transition: transform .1s; }
+#crest svg.body { position: absolute; inset: 0; overflow: visible; }
+#odo { position: absolute; left: 50%; top: 13px; transform: translateX(-50%); height: 36px; display: flex; align-items: stretch; padding: 0 6px;
+  background: #020406; border-radius: 4px; box-shadow: inset 0 0 0 1px #000, 0 0 0 2px #39444f, 0 0 0 3px #10151b; }
+#odo .cur { font: 700 25px Barlow; color: var(--gold); display: flex; align-items: center; padding: 0 5px 0 2px; transition: color .3s; }
+#odo .comma { font: 700 25px Barlow; color: var(--gold); width: 7px; display: flex; align-items: flex-end; padding-bottom: 3px; transition: color .3s; }
+.drum { width: 22px; height: 36px; overflow: hidden; position: relative; margin: 0 1px;
+  background: linear-gradient(#000 0%, #1b2632 30%, #24323f 50%, #1b2632 70%, #000 100%); }
+.drum .strip { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.drum .strip div { height: 36px; font: 700 28px/36px Barlow; text-align: center; color: var(--gold); }
+.drum.lead .strip div, #odo .comma.lead { color: #232a32; }
+.drum::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(rgba(0,0,0,.75), transparent 28%, rgba(255,255,255,.07) 48%, transparent 60%, rgba(0,0,0,.75)); }
+#odo::after { content: ''; position: absolute; inset: 0; border-radius: 4px; pointer-events: none; background: linear-gradient(rgba(255,255,255,.10), transparent 45%); }
+.poor #odo .cur, .poor #odo .comma, .poor .drum:not(.lead) .strip div { color: var(--red); }
+.poor .drum.lead .strip div, .poor #odo .comma.lead { color: #2a1414; }
+.poor .drum { background: linear-gradient(#000 0%, #2a0f0f 30%, #3a1512 50%, #2a0f0f 70%, #000 100%); }
+.shake { animation: shake .45s; }
+@keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-7px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(2px); } }
+
+/* as plaquetas que saem do brasão */
+.tag { position: absolute; left: 960px; top: 758px; transform: translate(-50%, 18px) scaleY(.4); opacity: 0; transform-origin: bottom center;
+  transition: transform .25s cubic-bezier(.2,1.4,.4,1), opacity .2s; display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  padding: 0 16px; height: 34px; border-radius: 4px; font: 700 18px Barlow; letter-spacing: .6px; }
+.tag.show { transform: translate(-50%, 0) scaleY(1); opacity: 1; }
+.tag small { font: 600 15px Barlow; letter-spacing: 0; opacity: .9; }
+#tagPower { background: linear-gradient(#3a0b08, #1b0605); color: #ff7b66; box-shadow: 0 0 0 1px #000, 0 0 0 2px #a8281d, 0 0 18px rgba(255,59,44,.55); }
+#tagPower.amber { background: linear-gradient(#3a2508, #1b1105); color: #ffc066; box-shadow: 0 0 0 1px #000, 0 0 0 2px #b8781b, 0 0 18px rgba(255,171,46,.5); }
+#tagMoney { background: linear-gradient(#3a0b08, #1b0605); color: #ff7b66; box-shadow: 0 0 0 1px #000, 0 0 0 2px #a8281d, 0 0 18px rgba(255,59,44,.55); }
+#tagPromote { background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08, 0 0 22px rgba(255,200,60,.75); pointer-events: auto; cursor: pointer; }
+#tagPromote.show { animation: bob 1.1s ease-in-out infinite; }
+@keyframes bob { 0%,100% { transform: translate(-50%, 0); box-shadow: 0 0 0 1px #5a3f08, 0 0 12px rgba(255,200,60,.5); } 50% { transform: translate(-50%, -3px); box-shadow: 0 0 0 1px #5a3f08, 0 0 28px rgba(255,200,60,.95); } }
+.tag img { width: 22px; height: 19px; }
+
+/* fichas de dinheiro entrando/saindo */
+.chip { position: absolute; font: 700 24px Barlow; text-shadow: 0 2px 3px #000, 0 0 8px #000; pointer-events: none; }
+.chip.in { color: #6fe08a; font-size: 28px; offset-path: path('M 0 0 C -60 120, -200 280, -332 382'); offset-rotate: 0deg; animation: chipFly 1.3s cubic-bezier(.5,0,.6,1) forwards; }
+@keyframes chipFly { 0% { offset-distance: 0%; opacity: 0; transform: scale(1.2); } 12% { opacity: 1; } 80% { opacity: 1; transform: scale(1); } 100% { offset-distance: 100%; opacity: 0; transform: scale(.6); } }
+.chip.out { color: #ff6a55; animation: chipOut 1.1s ease-in forwards; }
+@keyframes chipIn { 0% { transform: translate(120px, -6px); opacity: 0; } 25% { opacity: 1; } 75% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(-10px, 0) scale(.6); opacity: 0; } }
+@keyframes chipOut { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(-90px, 40px); opacity: 0; } }
+
+/* o apagão do console (só o HUD, nunca a batalha) */
+.dim { position: absolute; pointer-events: none; opacity: 0; backdrop-filter: brightness(.42) saturate(.35); -webkit-backdrop-filter: brightness(.42) saturate(.35); }
+/* o tranco forte quando cai, depois firme; um tranquinho de lembrete a cada 12 s */
+.brown .dim { animation: brown 12s infinite; }
+@keyframes brown {
+  0% { opacity: 1; } 2% { opacity: .1; } 4% { opacity: 1; } 7% { opacity: .25; } 9% { opacity: 1; } 12% { opacity: .7; }
+  97% { opacity: .7; } 98% { opacity: .15; } 99% { opacity: .8; } 100% { opacity: .7; } }
+.brown #cells { animation: tube 12s infinite; }
+@keyframes tube { 0%,100% { opacity: 1; } 2% { opacity: .1; } 4% { opacity: 1; } 7% { opacity: .25; } 9% { opacity: 1; } }
+@keyframes blink { 50% { opacity: .15; } }
+.slow { position: absolute; left: 470px; top: 930px; width: 30px; height: 30px; border-radius: 50%; background: #170606; box-shadow: 0 0 0 2px var(--red), 0 0 10px rgba(255,59,44,.8);
+  display: none; align-items: center; justify-content: center; }
+.brown .slow { display: flex; }
+.none .slow { display: none !important; }
+
+/* preços vermelhos sem dinheiro + clique sem ter */
+.price { position: absolute; width: 66px; height: 24px; display: none; align-items: center; justify-content: center; font: 700 19px Barlow; color: var(--red); background: #10151b; }
+.poor .price { display: flex; }
+.none .price, .none .clickflash { display: none !important; }
+.clickflash { position: absolute; left: 733px; top: 879px; width: 98px; height: 86px; border-radius: 4px; box-shadow: inset 0 0 0 3px var(--red), 0 0 16px rgba(255,59,44,.8); opacity: 0; }
+.clickflash.go { animation: cf .9s; }
+@keyframes cf { 0%, 60% { opacity: 1; } 30% { opacity: .2; } 100% { opacity: 0; } }
+
+/* a prévia na mão: colocando um prédio */
+#place { position: absolute; left: 1150px; top: 520px; display: none; }
+.near #place { display: block; }
+.none #place { display: none !important; }
+#place .foot { width: 150px; height: 90px; transform: skewX(-18deg); border: 2px dashed rgba(120,220,140,.9); background: rgba(80,200,110,.16); }
+#place .bub { position: absolute; left: 150px; top: -46px; padding: 6px 12px; border-radius: 4px; background: rgba(9,13,18,.92); box-shadow: 0 0 0 1px #000, 0 0 0 2px #3a4552;
+  font: 700 17px Barlow; white-space: nowrap; display: flex; gap: 12px; align-items: center; }
+#place .bub .c { color: var(--gold); } #place .bub .p { color: #ff7b66; } #place .bub .w { color: #ff7b66; font-size: 14px; letter-spacing: .5px; }
+#place svg.cur { position: absolute; left: 68px; top: 30px; width: 26px; height: 32px; }
+#legend { position: absolute; left: 24px; top: 150px; width: 420px; padding: 14px 18px; background: rgba(7,9,12,.86); border-radius: 6px; box-shadow: 0 0 0 1px #222a33;
+  font: 500 18px/1.35 Barlow; color: #cfd6de; display: none; }
+#legend b { color: #fff; font-weight: 700; }
+.legend #legend { display: block; }
+
+/* ---- a patente: selo do nível + barra de XP ---- */
+#rank { position: absolute; left: 1366px; top: 819px; width: 142px; height: 34px; display: flex; align-items: center; gap: 7px; pointer-events: auto; cursor: pointer; }
+#rank .badge { position: relative; width: 30px; height: 34px; flex: none; transition: filter .13s; }
+#rank .badge svg { position: absolute; inset: 0; width: 30px; height: 34px; overflow: visible; }
+#rank .badge b { position: absolute; inset: 3px 0 0; display: flex; align-items: center; justify-content: center; font: 700 17px Barlow; color: #ffe6a0; text-shadow: 0 1px 2px #000; }
+#rank .rcol { flex: 1; }
+#rank .rtop { display: flex; justify-content: space-between; font: 600 11px Barlow; color: var(--mute); letter-spacing: .8px; margin-bottom: 3px; text-shadow: 0 1px 2px #000; }
+#rank #rxp { letter-spacing: 0; color: #c9d1db; }
+#rank .rbar { height: 6px; background: #05080b; box-shadow: 0 0 0 1px #3a4552; border-radius: 1px; overflow: hidden; }
+#rank .rbar i { display: block; height: 100%; width: 62%; background: linear-gradient(#ffe7a3, #e2a93a 60%, #9a6a14); box-shadow: 0 0 6px rgba(246,200,80,.6); transition: width .6s; }
+.ready #rank .badge { animation: rglow 1s ease-in-out infinite; }
+@keyframes rglow { 50% { filter: brightness(1.35) drop-shadow(0 0 8px rgba(255,205,70,.95)); } }
+#rank .burst { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 50%; opacity: 0; pointer-events: none; }
+#rank .burst.go { animation: burst .7s ease-out; }
+@keyframes burst { 0% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,215,90,.95); } 100% { opacity: 0; box-shadow: 0 0 0 34px rgba(255,215,90,0); } }
+
+/* ---- hover: o botão sobe, acende por dentro e a luz corre no metal ---- */
+#hot { position: absolute; inset: 0; }
+.hs { position: absolute; border-radius: 5px; background: url(bg_sel.jpg) 0 0 / 1920px 1080px no-repeat; cursor: pointer;
+  transition: transform .13s cubic-bezier(.2,.9,.3,1.3), filter .13s, box-shadow .13s; --rim: rgba(73,170,255,.95); --rim2: rgba(73,170,255,.35); }
+.none .hs { background-image: url(bg_none.jpg); }
+.none .hs.sel { display: none; }
+.hs::before { content: ''; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .13s; pointer-events: none;
+  box-shadow: inset 0 -18px 22px -12px var(--rim), inset 0 0 0 1px var(--rim2), 0 0 12px var(--rim2); }
+.hs::after { content: ''; position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 38%, rgba(255,255,255,.38) 50%, transparent 62%) no-repeat; background-size: 260% 100%; background-position: 130% 0; }
+.hs:hover { transform: translateY(-3px) scale(1.05); filter: brightness(1.2) contrast(1.06) saturate(1.1); box-shadow: 0 10px 18px rgba(0,0,0,.7); z-index: 5; }
+.hs:hover::before { opacity: 1; }
+.hs:hover::after { opacity: 1; animation: sweep .55s ease-out forwards; }
+@keyframes sweep { to { background-position: -30% 0; } }
+.hs:active { transform: translateY(1px) scale(.97); filter: brightness(.8); transition-duration: .04s; }
+.hs:active::before { box-shadow: inset 0 0 0 2px rgba(255,255,255,.9), inset 0 0 16px rgba(255,255,255,.35); }
+.hs.act { --rim: rgba(90,225,120,.95); --rim2: rgba(90,225,120,.35); }
+.hs.gold { --rim: rgba(246,200,80,.95); --rim2: rgba(246,200,80,.35); }
+.hs.locked { --rim: rgba(150,160,175,.6); --rim2: rgba(150,160,175,.25); cursor: not-allowed; }
+.hs.locked:hover { transform: none; filter: brightness(1.06); box-shadow: none; animation: nudge .28s; }
+.hs.locked:hover::after { display: none; }
+.hs.empty { cursor: default; }
+.hs.empty:hover { transform: none; filter: brightness(1.15); box-shadow: none; }
+.hs.empty:hover::after { display: none; }
+.poor .hs.cost { --rim: rgba(255,59,44,.95); --rim2: rgba(255,59,44,.4); }
+@keyframes nudge { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+.hs em { font-style: normal; position: absolute; display: none; pointer-events: none; }
+.hs em.pr { left: 17px; top: 59px; width: 66px; height: 24px; align-items: center; justify-content: center; font: 700 19px Barlow; color: var(--red); background: #10151b; }
+.poor .hs em.pr { display: flex; }
+.hs em.sl { left: 60px; top: 51px; width: 30px; height: 30px; border-radius: 50%; background: #170606; box-shadow: 0 0 0 2px var(--red), 0 0 10px rgba(255,59,44,.8); align-items: center; justify-content: center; }
+.brown .hs em.sl { display: flex; }
+.hs.flash { animation: hflash .9s; }
+@keyframes hflash { 0%, 60% { box-shadow: inset 0 0 0 3px var(--red), 0 0 16px rgba(255,59,44,.8); } 30% { box-shadow: inset 0 0 0 3px rgba(255,59,44,.2); } 100% { box-shadow: none; } }
+
+/* o tooltip, no desenho do limpo */
+#tip { position: absolute; z-index: 20; pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .12s, transform .12s;
+  padding: 8px 13px 9px; border-radius: 4px; background: linear-gradient(#111a24, #0a0f15); white-space: nowrap;
+  box-shadow: 0 0 0 1px #000, 0 0 0 2px #3a4757, inset 0 1px 0 rgba(120,170,220,.25), 0 8px 18px rgba(0,0,0,.6); }
+#tip.show { opacity: 1; transform: none; }
+#tip .h { font: 700 18px Barlow; color: #fff; display: flex; gap: 9px; align-items: baseline; }
+#tip .k { color: #f6c850; } #tip .c { color: #f6c850; font-weight: 600; font-size: 16px; } #tip .t { color: #aeb8c4; font-weight: 600; font-size: 16px; }
+#tip .l { font: 500 14px Barlow; color: #aeb8c4; margin-top: 3px; }
+#tip .r { font: 600 14px Barlow; color: #ff7b66; margin-top: 3px; }
+.poor #tip .c { color: #ff6a55; }
+
+/* as abas, o contador e a energia também respondem */
+.tab { pointer-events: auto; cursor: pointer; transition: transform .13s cubic-bezier(.2,.9,.3,1.3), filter .13s; }
+.tab:hover { transform: translateY(-3px); filter: brightness(1.3) drop-shadow(0 6px 6px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(73,170,255,.55)); }
+.tab:hover span { color: #fff; }
+.tab:active { transform: translateY(1px); filter: brightness(.85); transition-duration: .04s; }
+#crest, #spine { pointer-events: auto; }
+#crest:hover #odo { box-shadow: inset 0 0 0 1px #000, 0 0 0 2px #6b7d90, 0 0 0 3px #10151b, 0 0 14px rgba(246,200,80,.4); }
+#spine:hover { box-shadow: 0 0 0 1px #6b7d90, 0 0 0 3px #11171e, inset 0 2px 4px #000, 0 0 14px rgba(73,170,255,.45); }
+#rank:hover .badge { filter: brightness(1.3) drop-shadow(0 0 6px rgba(246,200,80,.75)); }
+
+/* ---- o chat: linhas com placa, perto do minimapa ---- */
+#chat { position: absolute; left: 112px; bottom: 336px; width: 600px; display: flex; flex-direction: column; gap: 5px; pointer-events: none; z-index: 6; }
+.cl { align-self: flex-start; max-width: 600px; display: flex; align-items: center; gap: 8px; padding: 5px 22px 6px 13px; border-radius: 3px;
+  background: linear-gradient(90deg, rgba(6,10,14,.92), rgba(6,10,14,.8) 70%, rgba(6,10,14,0)); box-shadow: inset 3px 0 0 var(--pc);
+  font: 500 17px Barlow; color: #eef2f6; text-shadow: 0 1px 2px #000; animation: clIn .3s cubic-bezier(.2,1.2,.4,1); transition: opacity 1.2s, transform 1.2s; }
+.cl b { font-weight: 700; color: var(--pc); }
+.cl .tg { font: 700 12px Barlow; letter-spacing: 1px; color: #7fe39a; border: 1px solid rgba(127,227,154,.5); border-radius: 2px; padding: 0 4px; }
+.cl.sys { color: #aab4c0; font-style: italic; --pc: #6b7684; }
+.cl.old { opacity: 0; transform: translateX(-14px); }
+@keyframes clIn { 0% { opacity: 0; transform: translateX(-26px); filter: brightness(2.2); } 60% { filter: brightness(1.3); } 100% { opacity: 1; transform: none; filter: none; } }
+#chatIn { display: none; order: 99; align-items: center; height: 36px; margin-top: 4px; border-radius: 4px; background: linear-gradient(#0f1720, #0a0f15);
+  box-shadow: 0 0 0 1px #000, 0 0 0 2px #3a4757, 0 0 16px rgba(73,170,255,.25); align-self: stretch; overflow: hidden; }
+#chatIn.show { display: flex; animation: clIn .25s; }
+#chatIn .seg { display: flex; height: 100%; }
+#chatIn .seg span { display: flex; align-items: center; padding: 0 12px; font: 700 14px Barlow; letter-spacing: 1px; color: #6f7b88; border-right: 1px solid #222c37; }
+#chatIn .seg span.on { color: #fff; background: linear-gradient(#1d4f80, #143a5f); }
+#chatIn .seg span.on.al { background: linear-gradient(#1f6b3a, #154c29); }
+#chatIn .txt { flex: 1; padding: 0 12px; font: 500 17px Barlow; color: #eef2f6; white-space: nowrap; }
+#chatIn .txt i { display: inline-block; width: 2px; height: 18px; background: #cfe9ff; vertical-align: -3px; margin-left: 1px; animation: blink 1s steps(2) infinite; }
+#chatIn .hint { padding: 0 12px; font: 500 13px Barlow; color: #6f7b88; white-space: nowrap; }
+.hs.ping::before { opacity: 1; animation: ping 1s ease-out 2; }
+@keyframes ping { 0% { box-shadow: inset 0 0 0 2px rgba(73,170,255,1), 0 0 0 0 rgba(73,170,255,.8); } 100% { box-shadow: inset 0 0 0 1px rgba(73,170,255,.3), 0 0 0 14px rgba(73,170,255,0); } }
+
+/* ---- a patente em três lugares (a da ponta direita saiu) ---- */
+#rank, #tagPromote { display: none !important; }
+.rk { position: absolute; display: none; pointer-events: none; }
+.rkA #rkA, .rkB #rkB, .rkC #rkC { display: block; }
+.chev { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.chev i { display: block; width: 24px; height: 7px; background: linear-gradient(#ffe8a6, #d9a33a 60%, #8d5f12);
+  clip-path: polygon(0 100%, 50% 15%, 100% 100%, 100% 55%, 50% -30%, 0 55%); filter: drop-shadow(0 1px 1px #000); }
+/* A: a coluna do general */
+#rkA .rail { position: absolute; left: 101px; top: 456px; width: 7px; height: 340px; border-radius: 2px; background: #05080b;
+  box-shadow: 0 0 0 1px #4a5562, 0 0 0 3px #10151b, inset 0 1px 3px #000; overflow: hidden; pointer-events: auto; cursor: pointer; }
+#rkA .rail i { position: absolute; left: 1px; right: 1px; bottom: 1px; height: 62%; border-radius: 1px; transition: height .6s;
+  background: linear-gradient(90deg, #9a6a14, #ffe39a 50%, #c58e25); box-shadow: 0 0 8px rgba(246,200,80,.7); }
+#rkA .ins { position: absolute; left: 33px; top: 805px; width: 64px; height: 54px; pointer-events: auto; cursor: pointer;
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%, 0 8px);
+  background: linear-gradient(#2a3440, #121921 55%, #0b1016); box-shadow: inset 0 0 0 1px #5a6573, inset 0 2px 0 rgba(255,255,255,.12); }
+#rkA .ins .chev { position: absolute; left: 0; right: 0; top: 6px; }
+#rkA .ins b { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 700 12px Barlow; letter-spacing: 1px; color: #f6c850; text-shadow: 0 1px 2px #000; }
+#rkA .slot { position: absolute; left: 34px; top: 386px; width: 62px; height: 60px; border-radius: 4px; display: none; flex-direction: column; align-items: center; justify-content: center;
+  background: linear-gradient(#2b2208, #120e05); box-shadow: inset 0 0 0 2px #f6c850, 0 0 14px rgba(255,200,60,.7); pointer-events: auto; cursor: pointer; }
+#rkA .slot span { font: 700 26px Barlow; color: #ffe08a; line-height: 1; text-shadow: 0 0 8px rgba(255,200,60,.8); }
+#rkA .slot small { font: 700 10px Barlow; letter-spacing: 1px; color: #f6c850; margin-top: 3px; }
+.ready #rkA .slot { display: flex; animation: slotIn .35s cubic-bezier(.2,1.4,.4,1), slotPulse 1s ease-in-out .35s infinite; }
+@keyframes slotIn { from { transform: scale(.3); opacity: 0; } }
+@keyframes slotPulse { 50% { box-shadow: inset 0 0 0 2px #fff0b0, 0 0 26px rgba(255,210,70,1); } }
+.ready #rkA .ins { animation: rglow 1s ease-in-out infinite; }
+#rkA .arrow { position: absolute; left: 47px; top: -60px; width: 36px; height: 44px; opacity: 0;
+  background: linear-gradient(#fff3c0, #f6c850 60%, #b07a14); clip-path: polygon(30% 0, 70% 0, 70% 50%, 100% 50%, 50% 100%, 0 50%, 30% 50%); filter: drop-shadow(0 0 6px rgba(255,200,60,.9)); }
+.lvup #rkA .arrow { animation: zhArrow 1.1s cubic-bezier(.4,0,.6,1); }
+@keyframes zhArrow { 0% { opacity: 0; top: -60px; } 15% { opacity: 1; } 80% { opacity: 1; top: 330px; } 100% { opacity: 0; top: 336px; } }
+.lvup #rkA .rail i { animation: railFlash .6s; }
+@keyframes railFlash { 0%, 100% { filter: none; } 30% { filter: brightness(2.2); } }
+.lvup #rkA .ins { animation: clank .45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes clank { 0% { transform: scale(1); } 30% { transform: scale(1.18); filter: brightness(1.8); } 100% { transform: scale(1); } }
+/* B: a escada na emenda do cartão */
+#rkB { left: 1503px; top: 884px; width: 14px; height: 174px; pointer-events: auto; cursor: pointer; }
+.none #rkB { top: 842px; height: 224px; }
+#rkB .tube { position: absolute; inset: 0; display: flex; flex-direction: column-reverse; gap: 3px; padding: 2px; border-radius: 3px; background: #05080b;
+  box-shadow: 0 0 0 1px #4a5562, 0 0 0 3px #10151b; }
+#rkB .seg { flex: 1; position: relative; border-radius: 1px; background: rgba(246,200,80,.08); box-shadow: inset 0 0 0 1px rgba(246,200,80,.25); overflow: hidden; }
+#rkB .seg i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(90deg, #9a6a14, #ffe39a 50%, #c58e25); box-shadow: 0 0 6px rgba(246,200,80,.7); transition: height .6s; }
+.ready #rkB .seg.next { animation: blink 1s steps(2) infinite; box-shadow: inset 0 0 0 1px #ffe08a, 0 0 8px rgba(255,200,60,.9); }
+#rkB .tagB { position: absolute; right: -6px; top: -40px; display: none; white-space: nowrap; padding: 0 12px; height: 30px; align-items: center; border-radius: 4px;
+  font: 700 16px Barlow; letter-spacing: .6px; background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08, 0 0 18px rgba(255,200,60,.7); }
+.ready #rkB .tagB { display: flex; animation: bob 1.1s ease-in-out infinite; }
+/* C: o aro do seu emblema, no topo */
+#rkC .ring { position: absolute; left: 660px; top: -4px; width: 80px; height: 80px; overflow: visible; pointer-events: auto; cursor: pointer; }
+.none #rkC .ring { left: 367px; top: 10px; width: 46px; height: 46px; }
+#rkC .ring .fg { transition: stroke-dashoffset .6s; filter: drop-shadow(0 0 3px rgba(246,200,80,.9)); }
+.ready #rkC .ring { animation: rglow 1s ease-in-out infinite; }
+.lvup #rkC .ring { animation: clank .45s cubic-bezier(.2,1.6,.4,1); }
+#rkC .cbox { position: absolute; left: 682px; top: 66px; width: 36px; height: 22px; padding-top: 3px; box-sizing: border-box; border-radius: 0 0 5px 5px;
+  background: linear-gradient(#1a222c, #0b1016); box-shadow: inset 0 0 0 1px #5a6573; }
+.none #rkC .cbox { left: 376px; top: 50px; transform: scale(.75); transform-origin: top center; }
+#rkC .cbox .chev i { width: 18px; height: 5px; }
+#rkC .cbox .chev { gap: 1px; }
+#rkC .tagC { position: absolute; left: 700px; top: 96px; transform: translateX(-50%); display: none; white-space: nowrap; padding: 0 12px; height: 30px; align-items: center; border-radius: 4px;
+  font: 700 16px Barlow; letter-spacing: .6px; background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08, 0 0 18px rgba(255,200,60,.7); pointer-events: auto; cursor: pointer; }
+.none #rkC .tagC { left: 390px; top: 74px; }
+.ready #rkC .tagC { display: flex; animation: bobC 1.1s ease-in-out infinite; }
+@keyframes bobC { 50% { transform: translate(-50%, 3px); box-shadow: 0 0 0 1px #5a3f08, 0 0 28px rgba(255,200,60,.95); } }
+#bar .rkb.on { background: #6b4e12; border-color: #f6c850; }
+
+/* ---- v5: a escada do general (B) ---- */
+#rkB { left: 1486px; top: 806px; width: 52px; height: 254px; pointer-events: none; }
+.none #rkB { top: 774px; height: 300px; }
+#rkB .tube { position: absolute; left: 15px; top: 64px; width: 22px; height: 190px; display: flex; flex-direction: column-reverse; gap: 3px; padding: 3px;
+  box-sizing: border-box; border-radius: 4px; background: #05080b; box-shadow: 0 0 0 1px #5a6573, 0 0 0 3px #10151b, 0 0 0 4px #39434f, inset 0 1px 4px #000;
+  pointer-events: auto; cursor: pointer; }
+.none #rkB .tube { height: 232px; }
+#rkB .seg { flex: 1; position: relative; border-radius: 2px; background: rgba(246,200,80,.06); box-shadow: inset 0 0 0 1px rgba(246,200,80,.28); overflow: hidden; }
+#rkB .seg i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; transition: height .6s;
+  background: linear-gradient(90deg, #8d5f12, #ffe39a 50%, #c58e25); box-shadow: 0 0 8px rgba(246,200,80,.7); }
+#rkB .seg span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 13px Barlow; color: #6b5a33; z-index: 1; }
+#rkB .seg.done span { color: #2a1d05; }
+#rkB .seg.cur { box-shadow: inset 0 0 0 1px #ffe08a, 0 0 8px rgba(255,200,60,.55); }
+#rkB .seg.cur span { color: #fff; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+#rkB .seg.cur i { background: linear-gradient(90deg, #8d5f12, #ffe39a 50%, #c58e25); opacity: .85; }
+#rkB .here { position: absolute; left: -14px; width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 8px solid #f6c850;
+  filter: drop-shadow(0 0 4px rgba(255,200,60,.9)); transition: bottom .4s; }
+.ready #rkB .seg.next { animation: blink 1s steps(2) infinite; box-shadow: inset 0 0 0 1px #ffe08a, 0 0 10px rgba(255,200,60,.95); }
+.lvup #rkB .seg i { animation: railFlash .6s; }
+/* a placa-botão em cima: as estrelas da patente, a sigla e GENERAL ▸ */
+#rkB .head { position: absolute; left: 0; top: 0; width: 52px; height: 58px; pointer-events: auto; cursor: pointer; transition: transform .13s cubic-bezier(.2,.9,.3,1.3), filter .13s;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%, 0 7px);
+  background: linear-gradient(#2a3440, #121921 55%, #0b1016); box-shadow: inset 0 0 0 1px #6a7684, inset 0 2px 0 rgba(255,255,255,.14); }
+#rkB .head .st { position: absolute; left: 0; right: 0; top: 7px; display: flex; justify-content: center; gap: 1px; }
+#rkB .head .st i { display: block; width: 10px; height: 10px; background: linear-gradient(#fff0b8, #f6c850 55%, #b07a14);
+  clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+#rkB .head b { position: absolute; left: 0; right: 0; top: 19px; text-align: center; font: 700 17px Barlow; letter-spacing: .5px; color: #ffe6a0; text-shadow: 0 1px 2px #000; }
+#rkB .head u { position: absolute; left: 3px; right: 3px; bottom: 3px; height: 14px; display: flex; align-items: center; justify-content: center; text-decoration: none;
+  font: 700 9px Barlow; letter-spacing: .3px; color: #cfe3f5; background: linear-gradient(#1d4f80, #143a5f); border-radius: 1px; white-space: nowrap; }
+#rkB .head:hover { transform: translateY(-3px) scale(1.06); filter: brightness(1.25) drop-shadow(0 8px 10px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(73,170,255,.6)); }
+#rkB .head:active { transform: translateY(1px) scale(.97); filter: brightness(.85); transition-duration: .04s; }
+.ready #rkB .head { animation: rglow 1s ease-in-out infinite; }
+.ready #rkB .head u { background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; }
+.lvup #rkB .head { animation: clank .45s cubic-bezier(.2,1.6,.4,1); }
+#rkB .pts { position: absolute; left: 40px; top: -7px; width: 18px; height: 18px; border-radius: 50%; display: none; align-items: center; justify-content: center;
+  font: 700 12px Barlow; color: #2a1d05; background: radial-gradient(#fff0b0, #f6c850 60%, #b07a14); box-shadow: 0 0 0 1px #5a3f08, 0 0 10px rgba(255,200,60,.9); z-index: 2; }
+.ready #rkB .pts { display: flex; }
+#rkB .tagB { right: auto; left: 26px; top: -42px; transform: translateX(-50%); }
+.ready #rkB .tagB { animation: bobC 1.1s ease-in-out infinite; }
+/* o aro do XP só no emblema do aliado (topo de 8) */
+#allyRing { position: absolute; left: 502px; top: 9px; width: 46px; height: 46px; display: none; pointer-events: auto; cursor: default; }
+.none #allyRing { display: block; }
+#allyRing svg { width: 46px; height: 46px; overflow: visible; }
+#allyRing .fg { filter: drop-shadow(0 0 2px rgba(246,200,80,.9)); }
+#allyRing b { position: absolute; right: -4px; bottom: -3px; width: 15px; height: 15px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 10px Barlow; color: #2a1d05; background: radial-gradient(#fff0b0, #f6c850 60%, #b07a14); box-shadow: 0 0 0 1px #000; }
+#allyRing.lvl svg { animation: clank .45s cubic-bezier(.2,1.6,.4,1); }
+
+/* ---- a tela do general (abre pela placa GENERAL da escada; a batalha não para) ---- */
+#genBack { position: absolute; left: 0; top: 0; width: 1920px; height: 800px; background: rgba(2,4,7,.5); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; }
+#gen { position: absolute; left: 330px; top: 92px; width: 1260px; height: 680px; z-index: 31; opacity: 0; pointer-events: none;
+  transform: scale(.6); transform-origin: 1180px 720px; transition: transform .28s cubic-bezier(.2,1.1,.3,1), opacity .2s;
+  border-style: solid; border-width: 22px 26px; border-image: url(a/panel_wide.png) 40 50 fill / 22px 26px stretch; box-sizing: border-box;
+  filter: drop-shadow(0 18px 30px rgba(0,0,0,.7)); }
+.genon #genBack { opacity: 1; pointer-events: auto; }
+.genon #gen { opacity: 1; transform: none; pointer-events: auto; }
+#gen .hd { position: absolute; left: 0; right: 0; top: 0; height: 58px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #2a3540; }
+#gen .hd h2 { margin: 0; font: 700 26px Barlow; letter-spacing: 3px; color: #fff; }
+#gen .hd .sub { font: 600 16px Barlow; color: #9fb0c2; }
+#gen .hd .sub em { font-style: normal; color: #f6c850; letter-spacing: 1px; }
+#gen .hd .ready { margin-left: auto; display: none; align-items: center; height: 32px; padding: 0 14px; border-radius: 4px; font: 700 15px Barlow; letter-spacing: 1px;
+  background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 16px rgba(255,200,60,.6); }
+.ready #gen .hd .ready { display: flex; }
+#gen .hd .x { margin-left: auto; width: 34px; height: 34px; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+  font: 700 18px Barlow; color: #cfd6de; background: #141c25; box-shadow: inset 0 0 0 1px #3a4757; transition: transform .13s, filter .13s; }
+.ready #gen .hd .x { margin-left: auto; }
+#gen .hd .x:hover { transform: translateY(-2px); filter: brightness(1.4); }
+#gen .bd { position: absolute; left: 0; right: 0; top: 70px; bottom: 30px; display: flex; gap: 18px; }
+#gen .ft { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; font: 500 13px Barlow; color: #6f7b88; display: flex; justify-content: space-between; }
+/* a escada grande */
+#gen .lad { width: 270px; display: flex; flex-direction: column-reverse; gap: 6px; }
+#gen .rung { position: relative; flex: 1; border-radius: 4px; padding: 9px 12px 9px 52px; background: #0d141b; box-shadow: inset 0 0 0 1px #26313c; cursor: pointer;
+  transition: transform .13s, filter .13s, box-shadow .13s; }
+#gen .rung:hover { transform: translateX(3px); filter: brightness(1.2); }
+#gen .rung .n { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font: 700 17px Barlow; color: #6b5a33; box-shadow: inset 0 0 0 1px rgba(246,200,80,.3); }
+#gen .rung .t { font: 700 16px Barlow; color: #cfd6de; display: flex; gap: 8px; align-items: baseline; }
+#gen .rung .t i { font-style: normal; color: #f6c850; font-size: 12px; letter-spacing: 1px; }
+#gen .rung .s { font: 500 13px Barlow; color: #8492a1; margin-top: 3px; }
+#gen .rung .bar { height: 5px; margin-top: 6px; background: #05080b; box-shadow: 0 0 0 1px #3a4552; }
+#gen .rung .bar b { display: block; height: 100%; background: linear-gradient(90deg, #8d5f12, #ffe39a 50%, #c58e25); }
+#gen .rung.done .n { background: linear-gradient(#ffe39a, #c58e25); color: #2a1d05; }
+#gen .rung.done .s { color: #b9c7d6; }
+#gen .rung.cur { box-shadow: inset 0 0 0 1px #8a7440; }
+#gen .rung.cur .n { color: #fff; box-shadow: inset 0 0 0 2px #f6c850; }
+#gen .rung.pick { box-shadow: inset 0 0 0 2px #f6c850, 0 0 14px rgba(255,200,60,.35); animation: rpulse 1.1s ease-in-out infinite; }
+@keyframes rpulse { 50% { box-shadow: inset 0 0 0 2px #fff0b0, 0 0 22px rgba(255,200,60,.6); } }
+#gen .rung.sel { background: #132030; }
+#gen .rung.lock { opacity: .55; }
+/* a escolha do degrau: duas doutrinas */
+#gen .mid { flex: 1; display: flex; flex-direction: column; }
+#gen .mid h3 { margin: 2px 0 12px; font: 700 18px Barlow; letter-spacing: 1.5px; color: #fff; }
+#gen .mid h3 small { font: 600 14px Barlow; letter-spacing: 0; color: #8fa3b8; margin-left: 10px; }
+#gen .cards { flex: 1; display: flex; gap: 18px; }
+#gen .card { flex: 1; position: relative; border-radius: 6px; background: linear-gradient(#141e29, #0b1118); box-shadow: inset 0 0 0 1px #33414f, 0 6px 14px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; overflow: hidden; transition: transform .14s cubic-bezier(.2,.9,.3,1.3), filter .14s, box-shadow .14s; }
+#gen .card .art { height: 150px; position: relative; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 60%, rgba(73,170,255,.28), transparent 65%), linear-gradient(#1b2a3a, #0e1620); border-bottom: 1px solid #2a3846; }
+#gen .card .art img { width: 112px; height: 112px; border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,.6); }
+#gen .card .art .kind { position: absolute; left: 12px; top: 10px; font: 700 12px Barlow; letter-spacing: 2px; color: #8fc6ff; }
+#gen .card .nm { padding: 12px 16px 2px; font: 700 22px Barlow; letter-spacing: 1px; color: #fff; }
+#gen .card .ln { padding: 6px 16px 0; font: 500 15px/1.35 Barlow; color: #b9c7d6; display: flex; gap: 8px; }
+#gen .card .ln b { flex: none; width: 58px; font: 700 12px/20px Barlow; letter-spacing: 1.5px; color: #f6c850; }
+#gen .card .ds { padding: 10px 16px 0; font: 500 14px/1.4 Barlow; color: #8492a1; }
+#gen .card .go { margin: auto 16px 16px; height: 40px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 700 16px Barlow; letter-spacing: 2px;
+  color: #2a1d05; background: linear-gradient(#f7cf55, #c9971f); box-shadow: 0 0 0 1px #5a3f08; cursor: pointer; transition: filter .13s, transform .13s; }
+#gen .card.can:hover { transform: translateY(-4px) scale(1.015); box-shadow: inset 0 0 0 1px #f6c850, 0 12px 22px rgba(0,0,0,.6), 0 0 18px rgba(255,200,60,.3); filter: brightness(1.1); }
+#gen .card .go:hover { filter: brightness(1.15); }
+#gen .card .go:active { transform: translateY(1px); filter: brightness(.85); }
+#gen .card:not(.can) .go { background: #18212b; color: #6f7b88; box-shadow: inset 0 0 0 1px #2a3540; cursor: default; }
+#gen .card.chosen { box-shadow: inset 0 0 0 2px #6fd36a, 0 6px 14px rgba(0,0,0,.5); }
+#gen .card.chosen .go { background: linear-gradient(#2f7a3d, #1d5228); color: #e7ffe9; box-shadow: none; }
+#gen .card.out { filter: grayscale(.8) brightness(.55); }
+#gen .card.just { animation: chooseIn .5s cubic-bezier(.2,1.5,.4,1); }
+@keyframes chooseIn { 30% { transform: scale(1.04); filter: brightness(1.6); } }
+/* comendas e o que o inimigo revelou */
+#gen .side { width: 300px; display: flex; flex-direction: column; gap: 8px; }
+#gen .side h4 { margin: 2px 0 2px; font: 700 14px Barlow; letter-spacing: 2px; color: #8fa3b8; }
+#gen .med { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 4px; background: #0d141b; box-shadow: inset 0 0 0 1px #26313c; }
+#gen .med .ic { flex: none; width: 34px; height: 40px; position: relative; }
+#gen .med .ic::before { content: ''; position: absolute; left: 9px; top: 0; width: 16px; height: 14px; background: linear-gradient(90deg, #1d4f80 0 33%, #d8dde3 33% 66%, #b3262a 66%); }
+#gen .med .ic::after { content: ''; position: absolute; left: 4px; top: 12px; width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(#fff0b8, #d9a33a 60%, #7a520e); box-shadow: 0 0 0 1px #000; }
+#gen .med.no .ic::after { background: radial-gradient(#5b6470, #2c333c); }
+#gen .med .tx { flex: 1; }
+#gen .med .tx b { display: block; font: 700 14px Barlow; color: #e6ecf3; }
+#gen .med .tx span { font: 500 12px Barlow; color: #8492a1; }
+#gen .med .xp { font: 700 13px Barlow; color: #f6c850; white-space: nowrap; }
+#gen .med .pb { height: 4px; margin-top: 4px; background: #05080b; }
+#gen .med .pb i { display: block; height: 100%; background: #8fc6ff; }
+#gen .intel { padding: 9px 10px; border-radius: 4px; background: #1a0f0f; box-shadow: inset 0 0 0 1px #4a2525; font: 500 13px/1.4 Barlow; color: #d9b4ae; }
+#gen .intel b { color: #ff8a7a; }
+/* pra foto sem janela: as transições não andam nela */
+.still, .still * { transition: none !important; }
+
+/* ---- v6: o cubo do general (junta a energia, o tubo da patente e o cartão), o tubo sem números ---- */
+#rkB .head, #rkB .pts, #rkB .tagB, #allyRing { display: none !important; }
+#rkB .seg span { display: none; }
+#rkB { top: 806px; }
+#rkB .tube { top: 90px; height: 166px; }
+.none #rkB .tube { top: 66px; height: 190px; }
+#hub { position: absolute; left: 1486px; top: 840px; width: 52px; height: 52px; z-index: 4; cursor: pointer; display: none;
+  transition: transform .13s cubic-bezier(.2,.9,.3,1.3), filter .13s; }
+.rkB #hub { display: block; }
+.none #hub { top: 1030px; }
+#hub svg { width: 52px; height: 52px; overflow: visible; filter: drop-shadow(0 3px 4px rgba(0,0,0,.7)); }
+#hub .neck { position: absolute; left: 18px; top: 48px; width: 16px; height: 8px; background: linear-gradient(90deg, #4a5562, #1c232b 60%, #39434f); box-shadow: 0 0 0 1px #0a0d11; z-index: -1; }
+.none #hub .neck { top: -4px; }
+#hub:hover { transform: scale(1.08); filter: brightness(1.25) drop-shadow(0 0 8px rgba(73,170,255,.7)); }
+#hub:active { transform: scale(.95); filter: brightness(.85); transition-duration: .04s; }
+#hub #hubRing { transition: stroke .3s; }
+.ready #hub { animation: rglow 1s ease-in-out infinite; }
+.ready #hub #hubRing { stroke: #f6c850; }
+.lvup #hub { animation: clank .45s cubic-bezier(.2,1.6,.4,1); }
+#hub .pts { position: absolute; left: 38px; top: -6px; width: 18px; height: 18px; border-radius: 50%; display: none; align-items: center; justify-content: center;
+  font: 700 12px Barlow; color: #2a1d05; background: radial-gradient(#fff0b0, #f6c850 60%, #b07a14); box-shadow: 0 0 0 1px #5a3f08, 0 0 10px rgba(255,200,60,.9); }
+.ready #hub .pts { display: flex; }
+#hubTag { position: absolute; left: 1512px; top: 796px; transform: translateX(-50%); display: none; white-space: nowrap; padding: 0 14px; height: 32px; align-items: center; gap: 6px;
+  border-radius: 4px; font: 700 16px Barlow; letter-spacing: .6px; background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08, 0 0 18px rgba(255,200,60,.7); cursor: pointer; z-index: 4; }
+.none #hubTag { left: 1478px; top: 1040px; transform: translateX(-100%); }
+.none.ready #hubTag { animation: bobL 1.1s ease-in-out infinite; }
+@keyframes bobL { 50% { transform: translate(calc(-100% - 3px), 0); box-shadow: 0 0 0 1px #5a3f08, 0 0 28px rgba(255,200,60,.95); } }
+.ready #hubTag { display: flex; animation: bobC 1.1s ease-in-out infinite; }
+#hubTag small { font: 600 13px Barlow; }
+
+/* ---- o emblema do aliado: o aro de metal dele vira o XP, as estrelas ao lado do nome ---- */
+#allyEmb { position: absolute; left: 504px; top: 11.5px; width: 42px; height: 42px; display: none; }
+.none #allyEmb { display: block; }
+#allyEmb .em { position: absolute; left: 5px; top: 5px; width: 32px; height: 32px; border-radius: 50%; background: url(bg_none.jpg) -509px -16.5px / 1920px 1080px no-repeat; }
+#allyEmb svg { position: absolute; inset: 0; width: 42px; height: 42px; overflow: visible; }
+#allyEmb .spin { transform-origin: 21px 21px; animation: spin 4.5s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#allyEmb .fg { transition: stroke-dashoffset .8s; }
+#allyEmb.lvl svg { animation: clank .5s cubic-bezier(.2,1.6,.4,1); }
+#allyStars { position: absolute; left: 590px; top: 13px; display: none; font: 700 11px Barlow; letter-spacing: 1px; color: #f6c850; text-shadow: 0 1px 2px #000, 0 0 4px rgba(0,0,0,.8); }
+.none #allyStars { display: block; }
+#allyStars.lvl { animation: clank .5s cubic-bezier(.2,1.6,.4,1); }
+
+/* ---- a tela do general: "tudo ao mesmo tempo" ---- */
+#gen .vw { display: flex; margin-left: auto; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #3a4757; }
+#gen .vw i { font-style: normal; padding: 0 12px; height: 30px; display: flex; align-items: center; font: 700 13px Barlow; letter-spacing: 1.5px; color: #8492a1; cursor: pointer; }
+#gen .vw i.on { color: #fff; background: linear-gradient(#1d4f80, #143a5f); }
+#gen .hd .ready { margin-left: 12px; }
+#gen .hd .x { margin-left: 12px; }
+#gen .bdAll { position: absolute; left: 0; right: 0; top: 70px; bottom: 30px; display: none; flex-direction: column; gap: 12px; }
+#gen.vall .bdAll { display: flex; }
+#gen.vall .bd { display: none; }
+#gen .tree { position: relative; flex: 1; display: flex; gap: 14px; }
+#gen .tree svg.path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+#gen .col { flex: 1; display: flex; flex-direction: column; gap: 6px; position: relative; z-index: 1; }
+#gen .ch { height: 50px; box-sizing: border-box; border-radius: 4px; background: #0d141b; box-shadow: inset 0 0 0 1px #26313c; padding: 6px 10px; position: relative; }
+#gen .ch .st { font: 700 11px Barlow; letter-spacing: 1px; color: #f6c850; }
+#gen .ch b { display: block; font: 700 15px Barlow; color: #e6ecf3; }
+#gen .ch span { position: absolute; right: 10px; top: 7px; font: 600 11px Barlow; letter-spacing: .5px; color: #8492a1; }
+#gen .ch.done span { color: #7fe39a; }
+#gen .ch.pick { box-shadow: inset 0 0 0 2px #f6c850, 0 0 14px rgba(255,200,60,.35); animation: rpulse 1.1s ease-in-out infinite; }
+#gen .ch.pick span { color: #f6c850; }
+#gen .ch.lock { opacity: .55; }
+#gen .tc { flex: 1; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 5px; background: linear-gradient(#141e29, #0b1118);
+  box-shadow: inset 0 0 0 1px #33414f, 0 4px 10px rgba(0,0,0,.45); transition: transform .14s cubic-bezier(.2,.9,.3,1.3), filter .14s, box-shadow .14s; }
+#gen .tc .top { display: flex; gap: 10px; align-items: center; }
+#gen .tc img { width: 54px; height: 54px; border-radius: 4px; box-shadow: 0 3px 8px rgba(0,0,0,.6); flex: none; }
+#gen .tc small { display: block; font: 700 10px Barlow; letter-spacing: 2px; color: #8fc6ff; }
+#gen .tc b { display: block; font: 700 16px Barlow; letter-spacing: .5px; color: #fff; line-height: 1.1; }
+#gen .tc .ln { font: 500 13px/1.3 Barlow; color: #b9c7d6; }
+#gen .tc .ln em { font-style: normal; font: 700 10px Barlow; letter-spacing: 1.5px; color: #f6c850; margin-right: 6px; }
+#gen .tc .go { margin-top: auto; height: 28px; border-radius: 3px; display: flex; align-items: center; justify-content: center; gap: 6px; font: 700 12px Barlow; letter-spacing: 1.2px;
+  background: #18212b; color: #6f7b88; box-shadow: inset 0 0 0 1px #2a3540; }
+#gen .tc.can .go { background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08; cursor: pointer; }
+#gen .tc.can:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px #f6c850, 0 10px 18px rgba(0,0,0,.6), 0 0 16px rgba(255,200,60,.3); filter: brightness(1.1); }
+#gen .tc.chosen { box-shadow: inset 0 0 0 2px #6fd36a, 0 4px 10px rgba(0,0,0,.45); }
+#gen .tc.chosen .go { background: linear-gradient(#2f7a3d, #1d5228); color: #e7ffe9; box-shadow: none; }
+#gen .tc.out { filter: grayscale(.85) brightness(.5); }
+#gen .tc.fut { opacity: .62; }
+#gen .tc.just { animation: chooseIn .5s cubic-bezier(.2,1.5,.4,1); }
+#gen .or { text-align: center; font: 700 10px/10px Barlow; letter-spacing: 3px; color: #56616e; }
+#gen .strip { height: 78px; display: flex; gap: 10px; }
+#gen .strip .med { flex: 1; }
+#gen .strip .intel { width: 290px; flex: none; }
+#gen .intel h5 { margin: 0 0 3px; font: 700 11px Barlow; letter-spacing: 2px; color: #ff8a7a; }
+
+/* ---- v7 ---- */
+#allyStars { display: none !important; }
+#allyEmb .slot { transition: fill .3s; }
+.none #hub { top: 806px; }
+.none #hub .neck { top: 48px; }
+.none #rkB .tube { top: 82px; height: 196px; }
+.none #hubTag { left: 1512px; top: 762px; transform: translateX(-50%); }
+.none.ready #hubTag { animation: bobC 1.1s ease-in-out infinite; }
+/* o que se viu de cada inimigo */
+#gen .ir { display: flex; align-items: center; gap: 6px; height: 19px; font: 600 12px Barlow; color: #b9c7d6; }
+#gen .ir > i { width: 4px; height: 14px; border-radius: 1px; flex: none; }
+#gen .ir b { font: 700 12.5px Barlow; white-space: nowrap; }
+#gen .ir em { font-style: normal; color: #f6c850; font-size: 10px; letter-spacing: .5px; }
+#gen .ir .sp { margin-left: auto; display: flex; gap: 3px; }
+#gen .ir .sp img, #gen .ir .sp u { width: 17px; height: 17px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
+#gen .ir .sp u { display: flex; align-items: center; justify-content: center; text-decoration: none; font: 700 11px Barlow; color: #56616e; background: #10161d; }
+#gen .ir.dead { opacity: .45; }
+#gen .ir.more { color: #7d8794; font-weight: 500; }
+#gen .intel .none { color: #8f99a6; font: 500 12.5px/1.35 Barlow; }
+#gen .side .intel { max-height: 150px; }
+
+/* ---- v8: o cardápio do general (sem trava: pontos por patente, poder custa de 1 a 3, compra o que quiser) ---- */
+#gen .vw { display: none !important; }
+#gen.vmenu .bd, #gen.vmenu .bdAll { display: none !important; }
+#gen .bdMenu { position: absolute; left: 0; right: 0; top: 66px; bottom: 30px; display: none; flex-direction: column; gap: 10px; }
+#gen.vmenu .bdMenu { display: flex; }
+#gen .hd .pts2 { margin-left: auto; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 12px; border-radius: 4px; background: #120e05;
+  box-shadow: inset 0 0 0 1px #6b5418; }
+#gen .hd .pts2 span { font: 700 12px Barlow; letter-spacing: 2px; color: #c9a85a; }
+#gen .hd .pts2 b { font: 700 28px Barlow; color: #f6c850; text-shadow: 0 0 10px rgba(255,200,60,.5); min-width: 16px; text-align: center; }
+.ready #gen .hd .pts2 { box-shadow: inset 0 0 0 2px #f6c850, 0 0 16px rgba(255,200,60,.45); }
+#gen.vmenu .hd .ready { display: none !important; }
+#gen .hint { font: 500 14px Barlow; color: #9fb0c2; }
+#gen .hint b { color: #f6c850; font-weight: 700; }
+#gen .main { flex: 1; display: flex; gap: 16px; min-height: 0; }
+#gen .bands { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+#gen .band { flex: 1; display: flex; gap: 12px; align-items: stretch; position: relative; border-radius: 5px; padding: 8px; background: #0b1117; box-shadow: inset 0 0 0 1px #1f2a35; }
+#gen .band .lb { width: 128px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-left: 6px; border-right: 1px solid #1f2a35; }
+#gen .band .lb small { font: 700 11px Barlow; letter-spacing: 2px; color: #8fa3b8; }
+#gen .band .lb b { font: 700 15px Barlow; color: #e6ecf3; }
+#gen .band .lb i { font-style: normal; font: 700 12px Barlow; color: #f6c850; letter-spacing: 1px; }
+#gen .band .tiles { flex: 1; display: flex; gap: 10px; align-items: stretch; }
+#gen .band.lock .tiles { filter: grayscale(.9) brightness(.45); }
+#gen .band.lock .lb b { color: #7d8794; }
+#gen .band .lockmsg { position: absolute; left: 150px; right: 10px; top: 50%; transform: translateY(-50%); display: none; justify-content: center; align-items: center; gap: 8px;
+  font: 700 15px Barlow; letter-spacing: 1px; color: #cfd6de; text-shadow: 0 1px 3px #000; pointer-events: none; }
+#gen .band.lock .lockmsg { display: flex; }
+#gen .pw { width: 108px; flex: none; position: relative; border-radius: 5px; padding: 6px 6px 7px; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: linear-gradient(#17222e, #0d141b); box-shadow: inset 0 0 0 1px #33414f; transition: transform .13s cubic-bezier(.2,.9,.3,1.3), filter .13s, box-shadow .13s; }
+#gen .pw img { width: 64px; height: 64px; border-radius: 4px; box-shadow: 0 3px 8px rgba(0,0,0,.6); }
+#gen .pw .nm { font: 700 12.5px/1.1 Barlow; color: #e6ecf3; text-align: center; min-height: 28px; display: flex; align-items: center; }
+#gen .pw .cost { position: absolute; right: 5px; top: 5px; display: flex; gap: 2px; }
+#gen .pw .cost i { width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(#fff0b0, #f6c850 60%, #9a6a14); box-shadow: 0 0 0 1px #000; }
+#gen .pw .lvp { display: flex; gap: 3px; }
+#gen .pw .lvp i { font-style: normal; font: 700 9px/12px Barlow; padding: 0 3px; border-radius: 2px; color: #56616e; background: #10161d; box-shadow: inset 0 0 0 1px #2a3540; }
+#gen .pw .lvp i.on { color: #0d2410; background: #6fd36a; box-shadow: none; }
+#gen .pw.own { box-shadow: inset 0 0 0 2px #6fd36a; }
+#gen .pw.own::after { content: '✓'; position: absolute; left: 6px; top: 4px; font: 700 15px Barlow; color: #6fd36a; text-shadow: 0 1px 2px #000; }
+#gen .pw.buy { box-shadow: inset 0 0 0 2px #f6c850, 0 0 12px rgba(255,200,60,.35); animation: rpulse 1.1s ease-in-out infinite; }
+#gen .pw.poor .cost i { background: radial-gradient(#ffb0a6, #e5483a 60%, #7a1a12); }
+#gen .pw.poor img { filter: saturate(.5) brightness(.8); }
+#gen .pw:hover { transform: translateY(-3px); filter: brightness(1.18); }
+#gen .pw.sel { background: linear-gradient(#1d3046, #101a26); }
+#gen .band.lock .pw { cursor: default; }
+#gen .band.lock .pw:hover { transform: none; filter: none; }
+/* o detalhe do poder apontado */
+#gen .det { width: 300px; flex: none; border-radius: 6px; padding: 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
+  background: linear-gradient(#141e29, #0b1118); box-shadow: inset 0 0 0 1px #33414f; }
+#gen .det .top { display: flex; gap: 12px; align-items: center; }
+#gen .det img { width: 76px; height: 76px; border-radius: 5px; box-shadow: 0 4px 10px rgba(0,0,0,.6); }
+#gen .det h3 { margin: 0; font: 700 21px/1.1 Barlow; color: #fff; }
+#gen .det .meta { font: 600 13px Barlow; color: #9fb0c2; margin-top: 4px; }
+#gen .det .meta b { color: #f6c850; }
+#gen .det p { margin: 0; font: 500 14px/1.45 Barlow; color: #b9c7d6; }
+#gen .det .levels { display: flex; flex-direction: column; gap: 3px; font: 500 13px Barlow; color: #8492a1; }
+#gen .det .levels .on { color: #7fe39a; }
+#gen .det .act { margin-top: auto; height: 42px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font: 700 15px Barlow; letter-spacing: 1.5px;
+  background: #18212b; color: #7d8794; box-shadow: inset 0 0 0 1px #2a3540; }
+#gen .det .act.go { background: linear-gradient(#f7cf55, #c9971f); color: #2a1d05; box-shadow: 0 0 0 1px #5a3f08; cursor: pointer; transition: filter .13s, transform .13s; }
+#gen .det .act.go:hover { filter: brightness(1.15); transform: translateY(-1px); }
+#gen .det .act.go:active { transform: translateY(1px); filter: brightness(.85); }
+#gen .det .act.ok { background: linear-gradient(#2f7a3d, #1d5228); color: #e7ffe9; box-shadow: none; }
+#gen .pw.just { animation: chooseIn .5s cubic-bezier(.2,1.5,.4,1); }
+
+#gen .intel:empty { display: none; }
+
+/* ---- v9: a ficha de ponto (a mesma no custo, no botão e na carteira), o comandante no topo, a trilha das patentes, o espionado ---- */
+#gen .hd .pts2, #gen .hd .sub { display: none !important; }
+.tok { display: inline-flex; align-items: center; justify-content: center; flex: none; position: relative; font-family: Barlow; font-weight: 700; color: #2a1d05;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); background: linear-gradient(#8a5f14, #5a3c08); }
+.tok::before { content: ''; position: absolute; inset: 1.5px; clip-path: inherit; background: linear-gradient(160deg, #fff1b8, #f6c850 45%, #c58e25 80%, #9a6a14); }
+.tok b { position: relative; font: inherit; }
+.tok.s { width: 27px; height: 24px; font-size: 14px; }
+.tok.m { width: 21px; height: 18px; font-size: 11.5px; vertical-align: -4px; }
+.tok.l { width: 56px; height: 49px; font-size: 28px; }
+.tok.no { background: linear-gradient(#4a5562, #222a33); color: #c9d1db; }
+.tok.no::before { background: linear-gradient(160deg, #3a4552, #1a2129); }
+/* o comandante e a carteira no topo */
+#gen .cmdr { display: flex; align-items: center; gap: 10px; margin-left: 22px; padding-left: 18px; border-left: 1px solid #2a3540; }
+#gen .cmdr svg { width: 40px; height: 40px; overflow: visible; }
+#gen .cmdr b { display: block; font: 700 16px Barlow; color: #fff; }
+#gen .cmdr b em { font-style: normal; color: #f6c850; font-size: 12px; margin-left: 6px; letter-spacing: 1px; }
+#gen .cmdr .xb { width: 210px; height: 5px; margin: 4px 0 3px; background: #05080b; box-shadow: 0 0 0 1px #3a4552; }
+#gen .cmdr .xb i { display: block; height: 100%; background: linear-gradient(90deg, #8d5f12, #ffe39a 50%, #c58e25); }
+#gen .cmdr small { font: 500 12px Barlow; color: #8fa3b8; }
+#gen .wallet { margin-left: auto; display: flex; align-items: center; gap: 10px; padding-right: 6px; }
+#gen .wallet .wt b { display: block; font: 700 13px Barlow; letter-spacing: 2px; color: #f6c850; }
+#gen .wallet .wt small { font: 500 12px Barlow; color: #8fa3b8; }
+.ready #gen .wallet .tok.l { animation: rglow 1s ease-in-out infinite; }
+#gen .lay { display: flex; margin-left: 16px; border-radius: 4px; overflow: hidden; box-shadow: inset 0 0 0 1px #3a4757; }
+#gen .lay i { font-style: normal; padding: 0 11px; height: 28px; display: flex; align-items: center; font: 700 12px Barlow; letter-spacing: 1.2px; color: #8492a1; cursor: pointer; }
+#gen .lay i.on { color: #fff; background: linear-gradient(#1d4f80, #143a5f); }
+#gen .hint .tok { margin: 0 3px; }
+/* o poder: ficha de custo no canto; ✓ comprado; cadeado = patente; ficha escura = falta ponto */
+#gen .pw .cost { display: none !important; }
+#gen .pw .tok.s { position: absolute; right: 4px; top: 4px; }
+#gen .pw .lk { position: absolute; right: 6px; top: 4px; font-size: 14px; }
+#gen .pw.own .tok, #gen .pw.lock .tok { display: none; }
+#gen .pw.poor img { filter: none; }
+#gen .pw .lvn { position: absolute; left: 5px; bottom: 5px; font: 700 10px Barlow; padding: 0 4px; border-radius: 2px; color: #cfe3f5; background: #1d4f80; }
+/* a trilha das patentes: colunas = patente, linhas = tipo de poder */
+#gen .trk { flex: 1; position: relative; display: grid; grid-template-columns: 116px repeat(5, 1fr); grid-template-rows: 58px repeat(4, 1fr); gap: 6px; }
+#gen .trk svg.lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+#gen .rh { position: relative; border-radius: 4px; padding: 5px 8px; background: #0d141b; box-shadow: inset 0 0 0 1px #26313c; z-index: 1; }
+#gen .rh .st { font: 700 11px Barlow; letter-spacing: 1px; color: #f6c850; }
+#gen .rh b { display: block; font: 700 13px/1.15 Barlow; color: #e6ecf3; }
+#gen .rh .gv { position: absolute; right: 7px; top: 5px; font: 700 11px Barlow; color: #c9a85a; display: flex; align-items: center; gap: 3px; }
+#gen .rh.cur { box-shadow: inset 0 0 0 2px #f6c850, 0 0 12px rgba(255,200,60,.3); }
+#gen .rh.cur::after { content: 'YOU ARE HERE'; position: absolute; left: 8px; bottom: 4px; font: 700 9px Barlow; letter-spacing: 1.5px; color: #f6c850; }
+#gen .rh.fut { opacity: .5; }
+#gen .rh .xp { position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; background: #05080b; }
+#gen .rh .xp i { display: block; height: 100%; background: #f6c850; }
+#gen .rl { display: flex; flex-direction: column; justify-content: center; padding-left: 8px; border-radius: 4px; background: #0b1117; box-shadow: inset 0 0 0 1px #1f2a35; z-index: 1; }
+#gen .rl b { font: 700 13px Barlow; letter-spacing: 2px; color: #8fc6ff; }
+#gen .rl small { font: 500 11px Barlow; color: #6f7b88; }
+#gen .cell { position: relative; display: flex; align-items: center; justify-content: center; border-radius: 4px; z-index: 1; }
+#gen .cell.fut { background: repeating-linear-gradient(135deg, rgba(255,255,255,.015) 0 6px, transparent 6px 12px); }
+#gen .trk .pw { width: 100%; max-width: 148px; height: 100%; max-height: 86px; flex-direction: row; justify-content: flex-start; gap: 7px; padding: 6px 30px 6px 6px; }
+#gen .trk .pw img { width: 46px; height: 46px; }
+#gen .trk .pw .nm { min-height: 0; text-align: left; font-size: 12px; }
+#gen .trk .pw.lock { filter: grayscale(.9) brightness(.5); cursor: default; }
+#gen .trk .pw.lock:hover { transform: none; filter: grayscale(.9) brightness(.5); }
+#gen.vtrack .bands { display: none !important; }
+#gen:not(.vtrack) .trk { display: none !important; }
+/* o espionado: a vaga fica sempre; só mostra enquanto espiona, no visual do espionado do topo */
+#gen .strip .intel { width: 300px; flex: none; position: relative; }
+#gen .strip .intel.spy { background: #1d1407; box-shadow: inset 0 0 0 1px #c47a1a, 0 0 12px rgba(230,150,40,.25); }
+#gen .spyc { display: flex; align-items: center; gap: 10px; height: 100%; }
+#gen .spyc .eye { position: relative; width: 40px; height: 40px; flex: none; }
+#gen .spyc .eye img { position: absolute; inset: 0; width: 40px; height: 40px; }
+#gen .spyc .eye .dark { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0,0,0,.75) var(--gone, 0%), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 13px, #000 14px); mask: radial-gradient(circle, transparent 13px, #000 14px); }
+#gen .spyc .who b { font: 700 13px Barlow; }
+#gen .spyc .who em { font-style: normal; color: #f6c850; font-size: 10px; margin-left: 4px; }
+#gen .spyc .who small { display: block; font: 700 10px Barlow; letter-spacing: 1.5px; color: #e9a447; }
+#gen .spyc .sp { margin-left: auto; display: flex; gap: 3px; flex-wrap: wrap; max-width: 110px; justify-content: flex-end; }
+#gen .spyc .sp img { width: 22px; height: 22px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
+
+#gen .bdMenu .strip .intel:empty { display: block; }
+#gen .tok b, .tok b { color: #2a1d05 !important; font-weight: 700; }
+#gen .tok.no b, .tok.no b { color: #c9d1db !important; }
+
+/* ---- v10 ---- */
+#gen .bdMenu .strip { gap: 16px; }
+#gen .bdMenu .strip .meds { flex: 1; display: flex; gap: 10px; min-width: 0; }
+#gen .bdMenu .strip .meds .med { flex: 1; min-width: 0; }
+#gen .bdMenu .strip .intel { width: 300px; flex: none; box-sizing: border-box; }
+#gen .bdMenu .strip .intel.empty { visibility: hidden; }
+#gen .ir .sp img { cursor: help; }
+/* a dica fica por cima da tela do general */
+#tip { z-index: 50; }
+
+/* ---- v12: a plaqueta do PROMOTE presa ao cubo (o mesmo nascer das plaquetas aprovadas), some quando a tela é aberta ---- */
+#stage #hubTag { display: none; animation: none; left: 1512px; top: 783px; transform: translateX(-50%); transform-origin: 50% 100%; height: auto; gap: 9px;
+  padding: 6px 15px 6px 8px; border-radius: 4px; color: inherit; background: linear-gradient(#231a07, #0f0b04);
+  box-shadow: 0 0 0 1px #000, 0 0 0 2px #c9971f, inset 0 1px 0 rgba(255,230,150,.22), 0 0 14px rgba(255,200,60,.3); }
+#stage.none #hubTag { top: 749px; }
+#stage #hubTag::after { content: ''; position: absolute; left: 50%; bottom: -10px; width: 16px; height: 9px; margin-left: -8px; background: #c9971f; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+#stage #hubTag::before { content: ''; position: absolute; left: 50%; bottom: -7px; width: 12px; height: 6px; margin-left: -6px; background: #120d05; clip-path: polygon(0 0, 100% 0, 50% 100%); z-index: 1; }
+#hubTag .tok { width: 30px; height: 27px; font-size: 15px; }
+#hubTag .tx b { display: block; font: 700 14px/1.1 Barlow; letter-spacing: 2.5px; color: #f6c850; }
+#hubTag .tx small { display: block; font: 600 12px/1.2 Barlow; color: #e6ecf3; margin-top: 2px; }
+#hubTag .tx small em { font-style: normal; color: #f6c850; letter-spacing: 1px; }
+#stage.promoNew #hubTag { display: flex; animation: promoIn .38s cubic-bezier(.2,1.4,.4,1), promoGlow 1.4s ease-in-out .38s infinite; }
+@keyframes promoIn { from { transform: translate(-50%, 20px) scaleY(.35); opacity: 0; } }
+@keyframes promoGlow { 50% { box-shadow: 0 0 0 1px #000, 0 0 0 2px #f6c850, inset 0 1px 0 rgba(255,230,150,.3), 0 0 26px rgba(255,200,60,.65); } }
+#stage #hubTag:hover { filter: brightness(1.15); }
+
+/* ---- v13 ---- */
+#gen .lay { display: none !important; }
+#genBack { height: 1080px; }
+#gen { zoom: 1.25; left: 138px; top: 60px; }
+#bar .rkp button { min-width: 30px; padding: 6px 8px; }
+#bar .rkp button.on, #bar .lyp button.on { background: #6b4e12; border-color: #f6c850; }
+#bar .lab { color: #8d97a5; font: 600 14px Barlow; margin: 0 2px 0 4px; }
+#hub .col { font: 700 11px Barlow; fill: #d9c48a; letter-spacing: .5px; }
+
+/* ---- v14: os estados ---- */
+/* dá pra comprar: aro dourado parado (sem piscar; quem pisca é só a carteira) */
+#gen .pw.buy { animation: none; box-shadow: inset 0 0 0 2px #f6c850, 0 0 10px rgba(255,200,60,.25); cursor: pointer; }
+/* não dá (falta ponto ou falta o nível antes): apagado, sem subir, sem a mão */
+#gen .pw.poor, #gen .pw.req { cursor: default; box-shadow: inset 0 0 0 1px #2a3540; background: linear-gradient(#121a23, #0b1118); }
+#gen .pw.poor img, #gen .pw.req img { filter: saturate(.35) brightness(.7); }
+#gen .pw.poor .nm, #gen .pw.req .nm { color: #8a95a2; }
+#gen .pw.poor:hover, #gen .pw.req:hover, #gen .trk .pw.lock:hover { transform: none; filter: none; }
+#gen .pw.req .chainreq { position: absolute; right: 5px; top: 5px; display: flex; align-items: center; gap: 3px; font: 700 10px Barlow; letter-spacing: .5px;
+  color: #8fa3b8; padding: 2px 5px; border-radius: 2px; background: #0b1118; box-shadow: inset 0 0 0 1px #2a3540; }
+#gen .pw.shake { animation: nudge .28s; }
+/* a melhoria é um nó pequeno, preso ao poder pela linha: não é outro poder */
+#gen .trk .pw.up { max-width: 150px; max-height: 58px; padding: 6px 36px 6px 6px; gap: 7px; border-radius: 29px 6px 6px 29px; }
+#gen .pw.up .lvh { width: 40px; height: 40px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 700 16px Barlow; color: #cfe3f5;
+  background: radial-gradient(#25507e, #142c47); box-shadow: inset 0 0 0 2px #4a7fb3, 0 2px 6px rgba(0,0,0,.6); }
+#gen .pw.up.own .lvh { background: radial-gradient(#2f7a3d, #1a4a24); box-shadow: inset 0 0 0 2px #6fd36a; color: #e7ffe9; }
+#gen .pw.up.poor .lvh, #gen .pw.up.req .lvh, #gen .pw.up.lock .lvh { background: #141b23; box-shadow: inset 0 0 0 2px #2f3a46; color: #6f7b88; }
+#gen .pw.up .ut small { display: block; font: 700 9px Barlow; letter-spacing: 1.5px; color: #8fc6ff; }
+#gen .pw.up .ut b { display: block; font: 700 12px/1.1 Barlow; color: #e6ecf3; }
+#gen .pw.up.poor .ut b, #gen .pw.up.req .ut b, #gen .pw.up.lock .ut b { color: #7d8794; }
+#gen .pw.up.own::after { left: auto; right: 7px; top: 5px; }
+#gen .pw.up .lvn { display: none; }
+/* a legenda curta */
+#gen .key { display: flex; align-items: center; gap: 16px; font: 600 13px Barlow; color: #9fb0c2; }
+#gen .key > span { display: flex; align-items: center; gap: 6px; }
+#gen .key i.sw { display: inline-block; width: 26px; height: 18px; border-radius: 3px; background: #121a23; }
+#gen .key i.sw.buy { box-shadow: inset 0 0 0 2px #f6c850; }
+#gen .key i.sw.own { box-shadow: inset 0 0 0 2px #6fd36a; }
+#gen .key i.sw.no { box-shadow: inset 0 0 0 1px #2a3540; }
+#gen .key .first { color: #e6ecf3; font-weight: 700; margin-right: 6px; }
+/* o porquê é só texto (o detalhe não tem botão) */
+#gen .det .why { font: 700 13px Barlow; letter-spacing: .5px; color: #9fb0c2; }
+#gen .det .why.buy { color: #f6c850; }
+#gen .det .why.own { color: #7fe39a; }
+
+/* ---- v16: os níveis de volta na trilha (cada um na coluna da patente, ligados pela linha), no mesmo card do poder; sem legenda ---- */
+#gen .rh.cur::after { content: none; }
+#gen .bdMenu { bottom: 4px; }
+#gen .pw .lvn { display: none !important; }
+#gen .pw .nm .lvi { display: inline-block; margin-left: 5px; padding: 0 5px; border-radius: 2px; font: 700 12px/16px Barlow; color: #cfe3f5;
+  background: #173554; box-shadow: inset 0 0 0 1px #3a6a9c; vertical-align: 1px; }
+#gen .pw.own .nm .lvi { background: #1d5228; box-shadow: inset 0 0 0 1px #6fd36a; color: #e7ffe9; }
+#gen .pw.poor .nm .lvi, #gen .pw.req .nm .lvi, #gen .pw.lock .nm .lvi { background: #141b23; box-shadow: inset 0 0 0 1px #2f3a46; color: #7d8794; }
+
+/* ---- comprado: a ficha verde com o ✓ no lugar do custo (a mesma ficha, outra cor); o card fica sólido, sem neon ---- */
+#gen .pw.own::after { content: none !important; }
+#gen .pw.own .tok.ok { display: inline-flex !important; }
+.tok.ok { background: linear-gradient(#2f7a3d, #164a22); }
+.tok.ok::before { background: linear-gradient(160deg, #d9fbd4, #7fdc78 45%, #3e9a48 85%); }
+.tok.ok svg { position: relative; width: 13px; height: 11px; }
+#gen .pw.own { cursor: default; background: linear-gradient(160deg, #142a1c, #0e1a14 45%, #0b1118);
+  box-shadow: inset 0 0 0 1px #4f9a59, inset 0 1px 0 rgba(170,240,170,.18), inset 0 0 18px rgba(111,211,106,.08); }
+#gen .pw.own img { filter: none; box-shadow: 0 0 0 1px rgba(111,211,106,.35), 0 3px 8px rgba(0,0,0,.6); }
+#gen .pw.own .nm { color: #e3f5e1; }
+#gen .pw.own:hover { transform: none; filter: brightness(1.08); }
+
+/* ==== v17: a arte de verdade (folhas do GPT, 01/11) ==== */
+/* o brasão: a moldura com a janela dos 5 tambores; os números rolam por cima de cada tambor */
+#crest { top: 789px; height: 71px; }
+#crest svg.body { display: none; }
+#crest .crimg { position: absolute; left: 0; top: 0; width: 250px; height: 71px; pointer-events: none; transition: filter .13s; }
+#crest:hover .crimg { filter: brightness(1.15); }
+#crest:hover #odo { box-shadow: none !important; }
+#odo { left: 46px !important; top: 17px !important; transform: none !important; width: 158px; height: 40px !important; padding: 0 !important; background: none !important; box-shadow: none !important; }
+#odo::after { display: none; }
+.drum { width: 31.6px !important; height: 40px !important; margin: 0 !important; background: none !important; }
+.drum::after { background: linear-gradient(rgba(0,0,0,.55), transparent 32%, transparent 68%, rgba(0,0,0,.55)) !important; }
+.drum .strip div { height: 40px !important; font: 700 27px/40px Barlow !important; text-shadow: 0 1px 2px #000, 0 0 6px rgba(0,0,0,.6); }
+#odo .cur { position: absolute; left: -22px; top: 0; height: 40px; padding: 0 !important; font: 700 25px Barlow !important; text-shadow: 0 1px 2px #000; }
+#odo .comma { position: absolute; left: 60px; bottom: 1px; width: 8px; font: 700 22px Barlow !important; text-shadow: 0 1px 2px #000; z-index: 2; }
+.poor .drum { background: rgba(140,14,14,.35) !important; }
+/* o cubo: o medalhão de verdade; as estrelas e o aro dourado (ponto pra gastar) por cima */
+#hub .neck { display: none; }
+#hub .hbimg { position: absolute; left: 0; top: 0; width: 52px; height: 57.5px; pointer-events: none; }
+#hub svg { position: absolute; left: 0; top: 0; filter: none !important; }
+#hub svg > circle { display: none; }
+#hub svg > #hubRing { display: block; stroke: transparent; }
+.ready #hub svg > #hubRing { stroke: #f6c850; }
+/* o tubo da patente: a moldura de verdade, os 5 compartimentos enchem por dentro */
+#rkB .tube { left: 9px !important; width: 34px !important; height: 166px !important; top: 90px !important; background: none !important; box-shadow: none !important; border-radius: 0 !important;
+  border-style: solid; border-width: 9px 0 11px 0; border-image: url(a/rank_tube.png) 45 0 54 0 fill / 9px 0 11px 0 stretch; padding: 1px 6.6px !important; gap: 2px !important; }
+.none #rkB .tube { top: 82px !important; height: 196px !important; gap: 2.4px !important; }
+#rkB .seg { background: none !important; box-shadow: none !important; border-radius: 1px; }
+#rkB .seg.cur { box-shadow: inset 0 0 0 1px rgba(255,224,138,.7), 0 0 8px rgba(255,200,60,.45) !important; }
+#rkB .seg i { opacity: .92; }
+#rkB .here { left: -12px !important; }
+/* a fileira de energia: o canal de vidro de verdade (as pontas não esticam), as células acendem dentro */
+#spine { top: 854px !important; height: 24px !important; background: none !important; box-shadow: none !important; border-radius: 0 !important;
+  border-style: solid; border-width: 0 22px; border-image: url(a/power_conduit.png) 0 72 fill / 0 22px stretch; }
+#spine::before, #spine::after { display: none !important; }
+#spine:hover { box-shadow: none !important; filter: brightness(1.15); }
+#cells { top: 7px !important; bottom: 7px !important; left: 0 !important; right: 0 !important; }
+#glint { top: 7px !important; bottom: 7px !important; }
+#pnum { top: 828px !important; }
+/* as plaquetas: a peça de verdade em fatias (a ponta fica no meio, o quadrado do ícone à esquerda) */
+.tag.plq, #stage #hubTag.plq { height: 60px; padding: 0 26px 0 58px !important; border-radius: 0; background: none !important; box-shadow: none !important;
+  flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; }
+.tag.plq { top: 722px; }
+#stage #hubTag.plq { top: 775px; }
+#stage.none #hubTag.plq { top: 741px; }
+#stage #hubTag.plq::before, #stage #hubTag.plq::after { content: none !important; }
+.pqbg { position: absolute; inset: 0; display: flex; z-index: -1; pointer-events: none; }
+.pqbg span { height: 100%; background-size: 100% 100%; background-repeat: no-repeat; flex: none; }
+.pqbg .pqL { width: 68px; } .pqbg .pqN { width: 34px; } .pqbg .pqR { width: 41px; } .pqbg .pqM { flex: 1; min-width: 4px; }
+.tag.plq > img { position: absolute; left: 14px; top: 14px; width: 28px; height: 25px; }
+.tag.plq > span { font: 700 16px Barlow; letter-spacing: .8px; }
+.tag.plq > small { font: 600 12.5px Barlow !important; color: #e6ecf3; opacity: 1; }
+#stage #hubTag.plq .tok { position: absolute; left: 12px; top: 13px; width: 32px; height: 28px; }
+#stage.promoNew #hubTag.plq { animation: promoIn .38s cubic-bezier(.2,1.4,.4,1), promoGlow2 1.4s ease-in-out .38s infinite; }
+@keyframes promoGlow2 { 50% { filter: brightness(1.15) drop-shadow(0 0 10px rgba(255,200,60,.7)); } }
+/* as fichas de ponto: as moedas de verdade */
+.tok { clip-path: none !important; background: url(a/token_gold.png) center / 100% 100% no-repeat !important; }
+.tok::before { content: none !important; }
+.tok.no { background-image: url(a/token_dark.png) !important; }
+.tok.ok { background-image: url(a/token_green.png) !important; }
+.tok.ok svg path { stroke: #f2fff0; }
+.tok.s { width: 30px !important; height: 26px !important; }
+.tok.m { width: 22px !important; height: 19px !important; }
+.tok.l { width: 58px !important; height: 50px !important; }
+#gen .tok.no b, .tok.no b { color: #e6ecf3 !important; }
+/* as medalhas das comendas */
+#gen .med .ic.img { width: 34px; height: 52px; background: center / contain no-repeat; }
+#gen .med .ic.img::before, #gen .med .ic.img::after { content: none; }
+#gen .med.no .ic.img { filter: grayscale(1) brightness(.55); }
+/* a ficha verde do comprado lê verde no tamanho pequeno */
+.tok.ok { filter: saturate(1.7) brightness(1.35); }
+
+/* ---- v18 ---- */
+/* o ✓ do comprado volta ao desenho nítido (hexágono verde vivo, ✓ escuro), sem a moeda borrada */
+.tok.ok { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%) !important; background: linear-gradient(#2f7a3d, #164a22) !important; filter: none !important; }
+.tok.ok::before { content: '' !important; position: absolute; inset: 1.5px; clip-path: inherit; background: linear-gradient(160deg, #d9fbd4, #7fdc78 45%, #3e9a48 85%) !important; }
+.tok.ok svg { width: 14px !important; height: 12px !important; position: relative; }
+.tok.ok svg path { stroke: #0d2a12 !important; stroke-width: 2.6 !important; }
+/* respiro no canto do cubo: a ponta da plaqueta não encosta no cubo; o número de pontos sai do caminho da ponta */
+#stage #hubTag.plq { top: 765px; }
+#hub .pts { left: -11px !important; top: 17px !important; }
+/* sem seleção: o cubo e o tubo descem pra fora da moldura da placa da facção, colados nela */
+.none #rkB { left: 1470px; }
+.none #hub { left: 1470px; }
+#stage.none #hubTag.plq { top: 731px; left: 1496px; }
+
+/* ---- v19 ---- */
+/* as plaquetas numa linha só, baixas e compridas (o que deixava a de antes bonita): título espaçado, texto com folga */
+.tag.plq, #stage #hubTag.plq { height: 46px; padding: 0 36px 0 50px !important; flex-direction: row; align-items: center; gap: 14px; white-space: nowrap; }
+.pqbg .pqL { width: 54px !important; } .pqbg .pqN { width: 26px !important; } .pqbg .pqR { width: 34px !important; }
+.tag.plq > img { left: 11px !important; top: 11px !important; width: 25px !important; height: 22px !important; }
+.tag.plq > span { font: 700 16px Barlow !important; letter-spacing: 1.5px !important; }
+.tag.plq > small { font: 600 13.5px Barlow !important; color: #dfe6ee !important; }
+.tag.plq { top: 735px !important; }
+#stage #hubTag.plq .tok { left: 10px !important; top: 9px !important; width: 31px !important; height: 27px !important; }
+#stage #hubTag.plq .tx { display: flex; align-items: baseline; gap: 12px; }
+#stage #hubTag.plq .tx b { font: 700 16px Barlow !important; letter-spacing: 2px !important; }
+#stage #hubTag.plq .tx small { font: 600 13.5px Barlow !important; margin: 0 !important; }
+#stage #hubTag.plq { top: 786px !important; }
+#stage.none #hubTag.plq { top: 752px !important; }
+/* o número de pontos no cubo: a ficha de ponto (a moeda dourada), grande e legível */
+#hub .pts { left: -27px !important; top: 13px !important; width: 31px !important; height: 27px !important; border-radius: 0 !important;
+  background: url(a/token_gold.png) center / 100% 100% no-repeat !important; box-shadow: none !important; filter: drop-shadow(0 0 6px rgba(255,200,60,.75));
+  font: 700 16px Barlow !important; color: #2a1d05 !important; }
+/* a fileira de energia termina embaixo do cubo (não sai mais em cima do retrato) */
+#spine { box-sizing: border-box !important; width: 1100px !important; }
+
+/* ---- v20: as plaquetas de volta ao desenho antigo (uma linha, contorno fino brilhando), com folga do brasão e do cubo ---- */
+.tag { top: 747px; }
+#stage #hubTag { top: 784px; padding: 6px 18px 6px 8px; }
+#stage.none #hubTag { top: 750px; left: 1496px; }
+#stage #hubTag .tx { display: flex; align-items: baseline; gap: 12px; }
+#stage #hubTag .tx b { letter-spacing: 2.5px; }
+#stage #hubTag .tx small { margin: 0; font-size: 13px; }
+#stage #hubTag .tx small { font: 600 14px Barlow !important; color: #e6ecf3 !important; }
+#stage #hubTag .tx small:empty { display: none; }
+
+/* ---- v22: os ícones das patentes ---- */
+#gen .rh { padding-left: 50px; }
+#gen .rh .ri { position: absolute; left: 7px; top: 50%; transform: translateY(-50%); width: 38px; height: 39px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+#gen .rh.fut .ri { filter: grayscale(.8) brightness(.6); }
+#gen .rh .st { font-size: 10px; }
+
+/* o cabeçalho das patentes: ícone, nome numa linha, os pontos que ela dá embaixo à direita (as estrelas de texto saem: o ícone já diz) */
+#gen .rh .st { display: none; }
+#gen .rh b { font: 700 13px/1.15 Barlow; margin-top: 3px; white-space: nowrap; }
+#gen .rh .gv { top: auto !important; bottom: 5px; right: 8px; }
+#gen .rh { display: flex; flex-direction: column; justify-content: flex-start; }
+
+/* ==== v18: a facção (USA, China, GLA, Rússia): o fundo, as peças, a luz, o hover e a tela do general ==== */
+#stage { --lt: 73,170,255; --lt2: 207,233,255; }
+#stage.f-china { --lt: 240,72,50; --lt2: 255,196,180; }   /* 01/11 noite: a China A, laca preta com o fio de vermelhão (a dourada parecia a GLA) */
+#stage.f-gla { --lt: 255,226,160; --lt2: 255,244,214; }
+#stage.f-russia { --lt: 230,240,255; --lt2: 255,255,255; }
+.f-china #bg, .f-china .hs { background-image: url(bg_sel_china.jpg); }
+.f-china.none #bg, .f-china.none .hs { background-image: url(bg_none_china.jpg); }
+.f-gla #bg, .f-gla .hs { background-image: url(bg_sel_gla.jpg); }
+.f-gla.none #bg, .f-gla.none .hs { background-image: url(bg_none_gla.jpg); }
+.f-russia #bg, .f-russia .hs { background-image: url(bg_sel_russia.jpg); }
+.f-russia.none #bg, .f-russia.none .hs { background-image: url(bg_none_russia.jpg); }
+.f-china #spine { border-image-source: url(a/china/power_conduit.png); }
+.f-gla #spine { border-image-source: url(a/gla/power_conduit.png); }
+.f-russia #spine { border-image-source: url(a/russia/power_conduit.png); }
+.f-china #rkB .tube { border-image-source: url(a/china/rank_tube.png); }
+.f-gla #rkB .tube { border-image-source: url(a/gla/rank_tube.png); }
+.f-russia #rkB .tube { border-image-source: url(a/russia/rank_tube.png); }
+
+/* a energia acende na luz da facção; na China a luz é vermelha (a cor do alarme), então as células dela acendem em ouro */
+/* 01/11 noite (ele): a energia é significado, igual nas 4 facções e nunca na cor delas: verde = boa, amarelo = quase acabando,
+   vermelho = faltando. A luz da facção fica só na moldura. */
+#stage:not(.near):not(.brown) .cell.used { background: linear-gradient(#c9f7cf, #4fd36a 40%, #1f8a34); box-shadow: 0 0 8px 1px rgba(79,211,106,.65), 0 0 18px rgba(79,211,106,.25); }
+#stage:not(.near):not(.brown) .cell.free { background: rgba(79,211,106,.13); box-shadow: inset 0 0 0 1px rgba(79,211,106,.32); }
+.near .cell.used { background: linear-gradient(#fff3b0, #ffd23a 40%, #b08a0c) !important; box-shadow: 0 0 8px 1px rgba(255,210,58,.65) !important; }
+.near .cell.free { background: rgba(255,210,58,.55) !important; box-shadow: 0 0 8px rgba(255,210,58,.55) !important; }
+/* a GLA não tem usina: sem nenhuma energia (só constrói roubando a tecnologia de outra facção), a barra de energia não existe */
+.nopower #spine, .nopower #pnum { display: none !important; }
+
+/* ---- o hover de cada facção (o da USA é o aprovado: sobe, acende por dentro em azul, a luz corre na diagonal) ---- */
+.hs { --rim: rgba(var(--lt),.95); --rim2: rgba(var(--lt),.35); }
+.hs.act { --rim: rgba(90,225,120,.95); --rim2: rgba(90,225,120,.35); }
+.hs.gold { --rim: rgba(246,200,80,.95); --rim2: rgba(246,200,80,.35); }
+.hs.locked { --rim: rgba(150,160,175,.6); --rim2: rgba(150,160,175,.25); }
+.poor .hs.cost { --rim: rgba(255,59,44,.95); --rim2: rgba(255,59,44,.4); }
+/* China: a luz de lanterna por dentro e um brilho de OURO correndo no friso */
+.f-china .hs::after { background: linear-gradient(110deg, transparent 36%, rgba(255,214,120,.55) 50%, transparent 64%) no-repeat; background-size: 260% 100%; background-position: 130% 0; }
+.f-china .hs:hover { filter: brightness(1.16) saturate(1.05); }
+.f-china .hs:hover::before { box-shadow: inset 0 -18px 22px -12px var(--rim), inset 0 0 0 1px rgba(246,200,80,.8), 0 0 12px var(--rim2); }
+/* GLA: a lâmpada acende (pisca duas vezes como incandescente e fica), sem a luz correndo */
+.f-gla .hs:hover::after { display: none; }
+.f-gla .hs:hover { animation: bulb .32s steps(1) 1; filter: brightness(1.18) sepia(.12); }
+@keyframes bulb { 0% { filter: brightness(1.32) sepia(.2); } 25% { filter: brightness(.95); } 50% { filter: brightness(1.28) sepia(.2); } 75% { filter: brightness(1.05); } 100% { filter: brightness(1.18) sepia(.12); } }
+.f-gla .hs:hover::before { box-shadow: inset 0 0 18px rgba(255,226,160,.45), inset 0 0 0 1px rgba(255,226,160,.7), 0 0 14px rgba(255,200,120,.35); }
+.f-gla .hs.act:hover::before { box-shadow: inset 0 0 18px rgba(90,225,120,.4), inset 0 0 0 1px rgba(90,225,120,.75), 0 0 12px rgba(90,225,120,.35); }
+/* Rússia: uma faixa de luz branca fria desce como um scanner */
+.f-russia .hs::after { background: linear-gradient(180deg, transparent 42%, rgba(235,245,255,.6) 50%, transparent 58%) no-repeat; background-size: 100% 300%; background-position: 0 -110%; }
+.f-russia .hs:hover::after { animation: scan .5s ease-out forwards; }
+@keyframes scan { to { background-position: 0 210%; } }
+.f-russia .hs:hover { filter: brightness(1.14) contrast(1.08) saturate(.9); }
+/* as abas: a mesma luz */
+.tab:hover { filter: brightness(1.3) drop-shadow(0 6px 6px rgba(0,0,0,.6)) drop-shadow(0 0 6px rgba(var(--lt),.55)); }
+.f-gla .tab:hover { animation: bulb .32s steps(1) 1; }
+
+/* ---- a tela do general na moldura e na cor de cada facção ---- */
+.f-china #gen { border-image-source: url(a/china/panel_wide.png); }
+.f-gla #gen { border-image-source: url(a/gla/panel_wide.png); }
+.f-russia #gen { border-image-source: url(a/russia/panel_wide.png); }
+#gen .pw, #gen .rl, #gen .rh, #gen .med, #gen .det { transition: background .2s; }
+.f-china #gen .pw:not(.own) { background: linear-gradient(#141010, #0a0808); box-shadow: inset 0 0 0 1px #4a1d18; }
+.f-china #gen .rl, .f-china #gen .rh, .f-china #gen .med { background: #0f0c0c; box-shadow: inset 0 0 0 1px #3e1814; }
+.f-china #gen .det { background: linear-gradient(#151111, #0a0808); box-shadow: inset 0 0 0 1px #4a1d18; }
+.f-china #gen .rl b { color: #f2b25a; }
+.f-gla #gen .pw:not(.own) { background: linear-gradient(#22261a, #14170f); box-shadow: inset 0 0 0 1px #4f5236; }
+.f-gla #gen .rl, .f-gla #gen .rh, .f-gla #gen .med { background: #171a11; box-shadow: inset 0 0 0 1px #3e4029; }
+.f-gla #gen .det { background: linear-gradient(#20231a, #12140e); box-shadow: inset 0 0 0 1px #4f5236; }
+.f-gla #gen .rl b { color: #e7cf8f; }
+.f-russia #gen .pw:not(.own) { background: linear-gradient(#1c2126, #101317); box-shadow: inset 0 0 0 1px #3c4652; }
+.f-russia #gen .rl, .f-russia #gen .rh, .f-russia #gen .med { background: #12161a; box-shadow: inset 0 0 0 1px #2e3640; }
+.f-russia #gen .det { background: linear-gradient(#1a1f24, #0f1215); box-shadow: inset 0 0 0 1px #3c4652; }
+.f-russia #gen .rl b { color: #dfe8f2; }
+#gen .pw.buy { box-shadow: inset 0 0 0 2px #f6c850, 0 0 10px rgba(255,200,60,.25) !important; }
+#gen .pw.own { box-shadow: inset 0 0 0 1px #4f9a59, inset 0 1px 0 rgba(170,240,170,.18) !important; }
+#bar .fcp button.on { background: #1d4f80; border-color: #49aaff; }
+
+/* as abas dos grupos e a moldura da tela do general (na China, a face mais escura: é uma área grande) */
+.f-china .tab { border-image-source: url(a/china/group_off.png); } .f-china .tab.on { border-image-source: url(a/china/group_on.png); }
+.f-gla .tab { border-image-source: url(a/gla/group_off.png); } .f-gla .tab.on { border-image-source: url(a/gla/group_on.png); }
+.f-russia .tab { border-image-source: url(a/russia/group_off.png); } .f-russia .tab.on { border-image-source: url(a/russia/group_on.png); }
+.f-china #gen { border-image-source: url(a/china/panel_wide.png); }
+
+/* 01/11 noite (ele: o dinheiro "mais top, mais fácil de ler"; APROVADO: "gostei ali da proposta"): o padrão (?money=a volta aos tambores). Um mostrador só de vidro escuro por cima da
+   janela dos tambores: o número inteiro, grande, em algarismos de largura igual, sem o zero na frente e sem as barras entre as casas */
+#odo .num { display: none; }
+.mflat .drum, .mflat #odo .comma, .mflat #odo .cur { display: none !important; }
+.mflat #odo .num { display: flex; position: absolute; inset: 0; align-items: center; justify-content: center; border-radius: 3px;
+  background: linear-gradient(#030507, #0b1118 48%, #05080b); box-shadow: inset 0 0 0 1px #000, inset 0 3px 7px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.06);
+  font: 700 33px Barlow; font-variant-numeric: tabular-nums; letter-spacing: .5px; color: #ffdc78; text-shadow: 0 0 10px rgba(255,196,70,.35), 0 1px 1px #000; }
+.mflat.poor #odo .num { color: var(--red); text-shadow: 0 0 10px rgba(255,60,50,.4), 0 1px 1px #000; }
+
+/* 01/11 noite, 2ª volta (ele: "os cantos estão ESTICADOS, as bordas, horroroso, e esse fundo, o que era pra ser isso?", e o detalhe por
+   cima da borda): a moldura de cada facção é montada no tamanho da janela por art/tools/make_gen_frame.py (os cantos inteiros no tamanho
+   natural, a borda lisa entre eles, o miolo vazado) e desenhada por cima, fora do conteúdo; a borda de verdade (a altura do canto em cima
+   e embaixo, a espessura do lado) empurra o conteúdo pra dentro, então nada passa por cima dela. O fundo é metal escovado gerado, sem
+   emenda e sem espelho. Em px de CSS = px da arte × 0,8 (o zoom 1,25 da janela). */
+/* 3ª volta (ele: "os títulos colados no canto esquerdo [...] não tem uma regra de design", e "cada um tem um tamanho diferente do título
+   até o topo"): a regra é a janela e o conteúdo IGUAIS nas quatro facções, com a mesma margem de respiro de 30 px por dentro da moldura em
+   todos os lados; a moldura de cada facção fica por fora e cresce pra fora a espessura dela (--ft, --fb, --fl, --fr, em px de CSS). */
+#gen { border-image: none !important; border: 30px solid transparent !important; box-shadow: none;
+  background: url(a/gen_bg.png) repeat; background-clip: border-box; }
+#gen::before { content: ''; position: absolute; pointer-events: none; z-index: 60;
+  inset: calc(-30px - var(--ft)) calc(-30px - var(--fr)) calc(-30px - var(--fb)) calc(-30px - var(--fl));
+  background: url(a/gen_frame.png) 0 0 / 100% 100% no-repeat; }
+.f-usa #gen { --ft: 18.4px; --fb: 14.4px; --fl: 17.6px; --fr: 16px; }
+.f-china #gen { --ft: 25.6px; --fb: 25.6px; --fl: 36.8px; --fr: 36.8px; background-image: url(a/china/gen_bg.png); }
+.f-china #gen::before { background-image: url(a/china/gen_frame.png); }
+.f-gla #gen { --ft: 28px; --fb: 25.6px; --fl: 31.2px; --fr: 30.4px; background-image: url(a/gla/gen_bg.png); }
+.f-gla #gen::before { background-image: url(a/gla/gen_frame.png); }
+.f-russia #gen { --ft: 25.6px; --fb: 24px; --fl: 22.4px; --fr: 22.4px; background-image: url(a/russia/gen_bg.png); }
+.f-russia #gen::before { background-image: url(a/russia/gen_frame.png); }
+.f-russia #gen { background-image: url(a/russia/gen_bg.png); }
+
+/* 01/11 noite (ele: a borda das abas da GLA "ficou muito pequena de detalhes [...] ruim de ver", e talvez nas outras): a aba é um
+   vetor de 48×46 desenhado pro tamanho dela (art/tools/make_group_tabs.py), no material de cada facção, com os enfeites em ponto grande;
+   a arte larga encolhida virava borrão */
+.tab, .tab.on { border: 0 !important; border-image: none !important; background: url(a/tab_off.svg) 0 0 / 100% 100% no-repeat; }
+.tab.on { background-image: url(a/tab_on.svg); }
+.f-china .tab { background-image: url(a/china/tab_off.svg); } .f-china .tab.on { background-image: url(a/china/tab_on.svg); }
+.f-gla .tab { background-image: url(a/gla/tab_off.svg); } .f-gla .tab.on { background-image: url(a/gla/tab_on.svg); }
+.f-russia .tab { background-image: url(a/russia/tab_off.svg); } .f-russia .tab.on { background-image: url(a/russia/tab_on.svg); }
+.tab span { inset: 0 !important; }
+.tab.on span { padding-left: 11px !important; padding-bottom: 3px; }
+.tab.on i { right: 7px !important; top: 6px !important; }
+.tab.on u { left: 7px !important; right: 7px !important; bottom: 6px !important; }
+</style>
+<style>
+.iw { position: relative; display: inline-block; flex: none; line-height: 0; }
+.iw img { display: block; }
+.f-cmd::after { content: ''; position: absolute; inset: 0; border-radius: 4px; pointer-events: none;
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,.38), inset -2px -2px 0 rgba(0,0,0,.65), inset 0 0 0 1px rgba(0,0,0,.8); }
+.f-cmd img { border-radius: 4px; }
+.f-pas img { border-radius: 1px; box-shadow: none !important; }
+.f-unl img { border-radius: 2px; box-shadow: 0 0 0 1px #9aa6b2, 0 2px 4px rgba(0,0,0,.6) !important; }
+#pcolx { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; }
+#pcolx .iw { position: absolute; }
+#pcolx .iw img { width: 100%; height: 100%; object-fit: cover; }
+</style>
+<style>#gen .trk { grid-template-columns: repeat(5, 1fr); grid-template-rows: 58px repeat(4, 1fr); } #gen .trk .rl, #gen .trk > svg + div { display: none; } #gen .trk .pw { max-width: 190px; }</style>
+</head>
+<body>
+<div id="bar">
+  <b>ECONOMIA NO HUD</b>
+  <button data-s="normal">1 Normal</button>
+  <button data-s="near">2 Quase sem energia</button>
+  <button data-s="brown">3 Sem energia</button>
+  <button data-s="poor">4 Pouco dinheiro</button>
+  <button data-s="promote">5 Patente</button>
+  <button data-s="chat">6 Chat</button>
+
+  <span class="sep"></span>
+  <span class="lab">Facção</span><span class="fcp" style="display:flex;gap:3px"><button data-fc="usa">USA</button><button data-fc="china">China</button><button data-fc="gla">GLA</button><button data-fc="russia">Rússia</button></span>
+  <span class="lab">Patente</span><span class="rkp" style="display:flex;gap:3px">
+    <button data-rk="1">1★</button><button data-rk="2">2★</button><button data-rk="3">3★</button><button data-rk="4">4★</button><button data-rk="5">5★</button></span>
+  <span class="lab">Tela</span><span class="lyp" style="display:flex;gap:3px"><button data-ly="track">Trilha</button><button data-ly="tiers">Faixas</button></span>
+  <span class="sep"></span>
+  <button id="sel" class="on">Com seleção</button>
+  <button id="leg">Explicação</button>
+  <span id="note">1–6 estados · S seleção · passe o mouse</span>
+</div>
+<div id="wrap"><div id="stage">
+  <div id="bg"></div>
+
+  <div id="hot"></div>
+  <div id="chat"><div id="chatIn"><div class="seg"><span>ALL</span><span class="on al">ALLIES</span></div><div class="txt"><i></i></div><div class="hint">Enter send · Tab all/allies · Esc cancel</div></div></div>
+
+  <!-- o apagão: só as peças do HUD -->
+  <div class="dim" id="dimPod" style="left:0;top:806px;width:388px;height:274px"></div>
+  <div class="dim" id="dimPod2" style="left:100px;top:742px;width:288px;height:64px"></div>
+  <div class="dim" id="dimPanel" style="left:383px;top:874px;width:1135px;height:206px"></div>
+  <div class="dim" id="dimCard" style="left:1515px;top:758px;width:405px;height:322px"></div>
+
+
+
+  <div id="place">
+    <div class="foot"></div>
+    <svg class="cur" viewBox="0 0 13 16"><path d="M0 0v13l3.5-3 2.5 6 2-1-2.5-5.5H10z" fill="#fff" stroke="#000" stroke-width=".8"/></svg>
+    <div class="bub"><span>Patriot</span><span class="c">$1,000</span><span class="p">⚡ −3</span><span class="w">OVERLOAD</span></div>
+  </div>
+
+  <div id="row">
+    <div class="tabs" style="left:561px">
+      <div class="tab on"><span>1</span><i>×4</i><u></u></div>
+      <div class="tab on hurt"><span>2</span><i>×2</i><u></u></div>
+      <div class="tab"><span>3</span></div><div class="tab"><span>4</span></div><div class="tab"><span>5</span></div>
+    </div>
+    <div class="tabs" style="left:1091px">
+      <div class="tab"><span>6</span></div><div class="tab"><span>7</span></div><div class="tab"><span>8</span></div><div class="tab"><span>9</span></div><div class="tab"><span>0</span></div>
+    </div>
+
+    <div id="crest"><img class="crimg" src="a/crest_money.png" alt="">
+      <svg class="body" viewBox="0 0 250 60">
+        <defs>
+          <pattern id="tex" patternUnits="userSpaceOnUse" width="928" height="223"><image href="a/panel_wide.png" width="928" height="223" x="-300" y="-60"/></pattern>
+          <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8794a3"/><stop offset=".5" stop-color="#3a4552"/><stop offset="1" stop-color="#232a33"/></linearGradient>
+          <filter id="glow" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2.5"/></filter>
+          <radialGradient id="rivet"><stop offset="0" stop-color="#c3ccd6"/><stop offset=".6" stop-color="#58636f"/><stop offset="1" stop-color="#1a2027"/></radialGradient>
+        </defs>
+        <polygon points="0,60 20,0 230,0 250,60" fill="url(#edge)"/>
+        <polygon points="4,60 23,3 227,3 246,60" fill="url(#tex)"/>
+        <polygon points="4,60 23,3 227,3 246,60" fill="#0b1118" opacity=".35"/>
+        <line id="crestNeon" x1="26" y1="5" x2="224" y2="5" stroke="#49aaff" stroke-width="2.6" filter="url(#glow)"/>
+        <line id="crestNeon2" x1="26" y1="5" x2="224" y2="5" stroke="#cfe9ff" stroke-width="1"/>
+        <circle cx="29" cy="31" r="3" fill="url(#rivet)"/><circle cx="221" cy="31" r="3" fill="url(#rivet)"/>
+      </svg>
+      <div id="odo"><div class="cur">$</div><div class="num">$4,250</div></div>
+    </div>
+
+    <div id="spine"><div id="cells"></div><div id="glint"></div></div>
+    <div id="pnum"><svg viewBox="0 0 10 12"><path id="bolt" d="M6 0 1 7h3l-1 5 6-8H6l1-4z" fill="#49aaff"/></svg><span id="pv">4 / 10</span></div>
+
+    <div class="tag" id="tagPower"><img src="a/alert_icon_red.png" alt=""><span id="tpT">LOW POWER</span><small id="tpS">Production 50% · Patriot offline</small></div>
+    <div class="tag" id="tagMoney"><img src="a/alert_icon_red.png" alt=""><span>INSUFFICIENT FUNDS</span><small>Need $1,050 more · airlift in 0:42</small></div>
+    <div class="tag" id="tagPromote" style="left:1437px;top:776px">★ PROMOTE <small>1 point</small></div>
+    <div id="rank">
+      <div class="badge"><svg viewBox="0 0 30 34"><defs><linearGradient id="rbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a3810"/><stop offset="1" stop-color="#161008"/></linearGradient></defs>
+        <polygon points="15,1 28.5,8.6 28.5,25.4 15,33 1.5,25.4 1.5,8.6" fill="url(#rbg)" stroke="#d9a93a" stroke-width="1.6"/>
+        <polyline points="8,9 15,5.5 22,9" fill="none" stroke="#f6c850" stroke-width="1.6"/></svg><b id="rlv">3</b><span class="burst"></span></div>
+      <div class="rcol"><div class="rtop"><span>RANK</span><span id="rxp">1,240 / 2,000</span></div><div class="rbar"><i id="rfill"></i></div></div>
+    </div>
+  </div>
+
+
+  <div class="rk" id="rkA"><div class="rail"><i></i></div><div class="ins"><div class="chev"></div><b>RANK 3</b></div><div class="slot"><span>★</span><small>PROMOTE</small></div><div class="arrow"></div></div>
+  <div class="rk" id="rkB">
+    <div class="head"><div class="st"></div><b>LTG</b><u>GENERAL ▸</u></div><span class="pts">1</span>
+    <div class="tube"><div class="seg"><i></i><span>1</span></div><div class="seg"><i></i><span>2</span></div><div class="seg"><i></i><span>3</span></div><div class="seg"><i></i><span>4</span></div><div class="seg"><i></i><span>5</span></div><div class="here"></div></div>
+    <div class="tagB">★ PROMOTE <small style="font:600 13px Barlow;margin-left:6px">1 point</small></div>
+  </div>
+  <div id="allyRing"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" fill="none" stroke="#0a0e13" stroke-width="4"/><circle class="fg" cx="23" cy="23" r="20" fill="none" stroke="#f6c850" stroke-width="2.6" stroke-linecap="round" transform="rotate(-90 23 23)" stroke-dasharray="125.7" stroke-dashoffset="75"/></svg><b>2</b></div>
+  <div class="rk" id="rkC"><svg class="ring" viewBox="0 0 80 80"><circle cx="40" cy="40" r="35" fill="none" stroke="#0a0e13" stroke-width="5"/><circle class="fg" cx="40" cy="40" r="35" fill="none" stroke="#f6c850" stroke-width="3.5" stroke-linecap="round" transform="rotate(-90 40 40)" stroke-dasharray="219.9" stroke-dashoffset="83.6"/></svg><div class="cbox"><div class="chev"></div></div><div class="tagC">★ PROMOTE</div></div>
+
+
+  <div id="hub"><div class="neck"></div><img class="hbimg" src="a/hub_general.png" alt=""><svg viewBox="0 0 52 52"><defs>
+    <radialGradient id="hubGold"><stop offset="0" stop-color="#fff3c4"/><stop offset=".6" stop-color="#f6c850"/><stop offset="1" stop-color="#b07a14"/></radialGradient>
+    <linearGradient id="hubEdge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9aa6b4"/><stop offset=".5" stop-color="#3a4552"/><stop offset="1" stop-color="#1e252d"/></linearGradient></defs>
+    <circle cx="26" cy="26" r="25" fill="url(#hubEdge)"/><circle cx="26" cy="26" r="21.6" fill="#05080b"/>
+    <circle cx="26" cy="26" r="20" fill="url(#tex)"/><circle cx="26" cy="26" r="20" fill="#0b1118" opacity=".55"/>
+    <circle id="hubRing" cx="26" cy="26" r="20.6" fill="none" stroke="#49aaff" stroke-width="1.6" filter="url(#glow)"/>
+    <circle cx="26" cy="26" r="20.6" fill="none" stroke="#cfe9ff" stroke-width=".6" opacity=".7"/>
+    <circle cx="9.5" cy="9.5" r="1.7" fill="url(#rivet)"/><circle cx="42.5" cy="9.5" r="1.7" fill="url(#rivet)"/><circle cx="9.5" cy="42.5" r="1.7" fill="url(#rivet)"/><circle cx="42.5" cy="42.5" r="1.7" fill="url(#rivet)"/>
+    <g id="hubStars"></g></svg><span class="pts">1</span></div>
+  <div id="hubTag"><span class="tok"><b>★</b></span><span class="tx"><b>PROMOTED</b><small></small></span></div>
+  <div id="allyEmb"><div class="em"></div><svg viewBox="0 0 42 42"><defs>
+    <linearGradient id="allyEdge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a3afbd"/><stop offset=".5" stop-color="#4a5562"/><stop offset="1" stop-color="#232a33"/></linearGradient>
+    <mask id="allyMask"><circle class="fgm" cx="21" cy="21" r="18" fill="none" stroke="#fff" stroke-width="2.6" transform="rotate(165 21 21)" stroke-dasharray="40 200"/></mask></defs>
+    <circle cx="21" cy="21" r="18" fill="none" stroke="url(#allyEdge)" stroke-width="5.2"/>
+    <circle cx="21" cy="21" r="18" fill="none" stroke="#05080b" stroke-width="2.4"/>
+    <circle class="fg" cx="21" cy="21" r="18" fill="none" stroke="#f6c850" stroke-width="2" stroke-linecap="round" transform="rotate(165 21 21)" stroke-dasharray="40 200"/>
+    <g class="slots"></g>
+    <g mask="url(#allyMask)"><g class="spin"><circle cx="21" cy="3" r="2.2" fill="#fffbe6"/></g></g>
+    <circle cx="21" cy="21" r="15.3" fill="none" stroke="#0a0d11" stroke-width="1"/><circle cx="21" cy="21" r="20.7" fill="none" stroke="#0a0d11" stroke-width=".8"/></svg></div>
+  <div id="allyStars">★★</div>
+  <div id="genBack"></div>
+  <div id="gen">
+    <div class="hd"><h2>GENERAL'S COMMAND</h2><span class="sub"></span><span class="vw"><i data-v="all">ALL RANKS</i><i data-v="one">ONE RANK</i></span><span class="cmdr"></span><span class="lay"><i data-l="track">RANK TRACK</i><i data-l="tiers">TIERS</i></span><span class="wallet"></span><span class="ready">★ 1 CHOICE READY</span><span class="x">✕</span></div>
+    <div class="bd">
+      <div class="lad"></div>
+      <div class="mid"><h3></h3><div class="cards"></div></div>
+      <div class="side">
+        <h4>COMMENDATIONS</h4>
+        <div class="med"><div class="ic"></div><div class="tx"><b>First Strike</b><span>Destroy the first enemy vehicle</span></div><div class="xp">✓ +150</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Tank Killer</b><span>Destroy 10 vehicles · 7 / 10</span><div class="pb"><i style="width:70%"></i></div></div><div class="xp">+300</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Hold the Line</b><span>Hold your base under attack · 2:10 / 3:00</span><div class="pb"><i style="width:72%"></i></div></div><div class="xp">+400</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Logistics</b><span>Deliver $10,000 in supplies · 6,450</span><div class="pb"><i style="width:64%"></i></div></div><div class="xp">+250</div></div>
+        <div class="intel"><b>Enemy AI</b> · Major General ★★<br><b>Airborne</b> (rank 1): seen when they dropped Rangers</div>
+      </div>
+    </div>
+    <div class="bdAll"><div class="tree"></div><div class="strip">
+      <div class="med"><div class="ic"></div><div class="tx"><b>First Strike</b><span>First enemy vehicle</span></div><div class="xp">✓ +150</div></div>
+      <div class="med no"><div class="ic"></div><div class="tx"><b>Tank Killer</b><span>10 vehicles · 7 / 10</span><div class="pb"><i style="width:70%"></i></div></div><div class="xp">+300</div></div>
+      <div class="med no"><div class="ic"></div><div class="tx"><b>Hold the Line</b><span>Base under attack · 2:10 / 3:00</span><div class="pb"><i style="width:72%"></i></div></div><div class="xp">+400</div></div>
+      <div class="med no"><div class="ic"></div><div class="tx"><b>Logistics</b><span>$10,000 delivered · 6,450</span><div class="pb"><i style="width:64%"></i></div></div><div class="xp">+250</div></div>
+      <div class="intel"><h5>ENEMY DOCTRINES SPOTTED</h5><b>Enemy AI</b> · Major General ★★<br><b>Airborne</b> (rank 1): seen when they dropped Rangers</div>
+    </div></div>
+    <div class="bdMenu">
+      <div class="main"><div class="trk"></div><div class="bands"></div><div class="det"></div></div>
+      <div class="strip">
+        <div class="meds">
+        <div class="med"><div class="ic"></div><div class="tx"><b>First Strike</b><span>First enemy vehicle</span></div><div class="xp">✓ +150</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Tank Killer</b><span>10 vehicles · 7 / 10</span><div class="pb"><i style="width:70%"></i></div></div><div class="xp">+300</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Hold the Line</b><span>Base under attack · 2:10 / 3:00</span><div class="pb"><i style="width:72%"></i></div></div><div class="xp">+400</div></div>
+        <div class="med no"><div class="ic"></div><div class="tx"><b>Logistics</b><span>$10,000 delivered · 6,450</span><div class="pb"><i style="width:64%"></i></div></div><div class="xp">+250</div></div>
+        </div>
+        <div class="intel empty"></div>
+      </div>
+    </div>
+  </div>
+  <div id="legend"></div>
+  <div id="tip"></div>
+</div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const stage = $('#stage');
+function fit() { const k = Math.min(innerWidth / 1920, (innerHeight - 46) / 1080); stage.style.transform = `scale(${k})`; }
+addEventListener('resize', fit); fit();
+
+// a patente: o nível no selo e a barra de XP
+function rank(lv, frac, txt) {
+  $('#rlv').textContent = lv; $('#rfill').style.width = (frac * 100) + '%'; $('#rxp').textContent = txt;
+  const chev = '<i></i>'.repeat(lv);
+  document.querySelectorAll('.rk .chev').forEach(c => c.innerHTML = chev);
+  $('#rkA .ins b').textContent = 'RANK ' + lv;
+  $('#rkA .rail i').style.height = (frac * 100) + '%';
+  document.querySelectorAll('#rkB .seg').forEach((sg, i) => {
+    sg.classList.toggle('done', i < lv - 1); sg.classList.toggle('cur', i === lv - 1); sg.classList.toggle('next', i === lv - 1 && frac === 0);
+    sg.querySelector('i').style.height = (i < lv - 1 ? 100 : i === lv - 1 ? frac * 100 : 0) + '%';
+  });
+  $('#rkB .head .st').innerHTML = '<i></i>'.repeat(lv);
+  $('#rkB .head b').textContent = rankOf(lv)[0];
+  $('#rkB .here').style.bottom = `calc(${(lv - 0.5) * 20}% - 6px)`; $('#rkB .here').style.display = lv ? '' : 'none';
+  $('#rkC .fg').setAttribute('stroke-dashoffset', 219.9 * (1 - frac));
+  hubUpdate(lv);
+  if (typeof hubPts === 'function') hubPts();
+}
+const RANK0 = ['COL', 'Colonel'];
+const rankOf = lv => lv > 0 ? RANKS[lv - 1] : RANK0;
+// 01/11 (ele: "cada facção tem um nome diferente pra cada nível, o USA é como é hoje"): a USA fica; a China com as patentes do Exército
+// Popular de Libertação em pinyin (as de 1955 em cima: Da Jiang e Yuan Shuai); a Rússia com as do exército russo transliteradas; a GLA,
+// que não tem patente formal, com os títulos de milícia (sem título religioso). Proposta: falta ele aprovar.
+const RANKS_BY = {
+  usa: [['BG', 'Brigadier General'], ['MG', 'Major General'], ['LTG', 'Lieutenant General'], ['GEN', 'General'], ['GA', 'General of the Army']],
+  china: [['SHJ', 'Shao Jiang'], ['ZHJ', 'Zhong Jiang'], ['SGJ', 'Shang Jiang'], ['DJ', 'Da Jiang'], ['YS', 'Yuan Shuai']],
+  russia: [['GM', 'General-Mayor'], ['GL', 'General-Leytenant'], ['GP', 'General-Polkovnik'], ['GA', 'General Armii'], ['MSL', 'Marshal']],
+  gla: [['CL', 'Cell Leader'], ['FC', 'Field Commander'], ['WL', 'Warlord'], ['HW', 'High Warlord'], ['SW', 'Supreme Warlord']] };
+let RANKS = RANKS_BY.usa;
+function rkSet(v) { stage.classList.remove('rkA', 'rkB', 'rkC'); stage.classList.add('rk' + v); document.querySelectorAll('.rkb').forEach(b => b.classList.toggle('on', b.dataset.rk === v)); }
+
+// o contador mecânico: 5 tambores (2 + 3) com o vai-um de verdade
+const odo = $('#odo'); const drums = [];
+for (let i = 4; i >= 0; i--) {
+  if (i === 2) { const c = document.createElement('div'); c.className = 'comma'; c.textContent = ','; odo.appendChild(c); }
+  const d = document.createElement('div'); d.className = 'drum';
+  const s = document.createElement('div'); s.className = 'strip';
+  s.innerHTML = [0,1,2,3,4,5,6,7,8,9,0].map(n => `<div>${n}</div>`).join('');
+  d.appendChild(s); odo.appendChild(d); drums[i] = { d, s };
+}
+let shown = 4250, target = 4250, from = 4250, t0 = 0, dur = 900;
+function setOdo(v) {
+  for (let i = 0; i < 5; i++) {
+    const p = Math.pow(10, i);
+    let pos;
+    if (i === 0) pos = v % 10;
+    else { const lower = v % p; pos = Math.floor(v / p) % 10 + Math.max(0, lower - (p - 1)); }
+    drums[i].s.style.transform = `translateY(${-pos * (DRUM_H || 40)}px)`;
+    drums[i].d.classList.toggle('lead', v < p && i > 0);
+  }
+  odo.querySelector('.comma').classList.toggle('lead', v < 1000);
+  odoNum.textContent = '$' + Math.round(v).toLocaleString('en-US');
+}
+const odoNum = odo.querySelector('.num');
+function moneyTo(v, ms = 900) { from = shown; target = v; t0 = performance.now(); dur = ms; }
+function tick(now) {
+  if (shown !== target) {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    shown = k >= 1 ? target : from + (target - from) * e;
+  }
+  setOdo(Math.max(0, shown));
+  requestAnimationFrame(tick);
+}
+setOdo(shown);
+requestAnimationFrame(tick);
+
+function chip(txt, cls) {
+  const c = document.createElement('div'); c.className = 'chip ' + cls; c.textContent = txt;
+  const r = $('#row');
+  if (cls === 'in') { c.style.left = '1300px'; c.style.top = '440px'; } else { c.style.left = '1050px'; c.style.top = '818px'; }
+  r.appendChild(c);
+  setTimeout(() => c.remove(), 1400);
+}
+
+// energia: uma célula por ponto; acesa forte = consumo, acesa fraca = sobra, vermelha depois do fim = o que falta
+function power(used, prod, ghost = 0) {
+  // a GLA sem usina (?nopow=1 mostra): sem energia nenhuma, a barra some; as outras facções começam em 0 mas já podem construir
+  if (curFac === 'gla' && new URLSearchParams(location.search).get('nopow')) { used = 0; prod = 0; ghost = 0; }
+  stage.classList.toggle('nopower', curFac === 'gla' && prod === 0 && used === 0);
+  const n = Math.max(prod, used + ghost), W = 1056;
+  const cw = Math.min(44, (W - 4 * (n - 1)) / n);
+  let h = '';
+  for (let i = 0; i < n; i++) {
+    let c = 'free';
+    if (i < Math.min(used, prod)) c = 'used';
+    else if (i >= prod && i < used) c = 'over';
+    else if (i >= used && i < used + ghost) c = i >= prod ? 'ghost past' : 'ghost';
+    h += `<div class="cell ${c}" style="width:${cw}px"></div>`;
+  }
+  $('#cells').innerHTML = h;
+  $('#spine').style.setProperty('--lit', (Math.min(used, prod) * (cw + 4)) + 'px');
+  const pv = $('#pv'); pv.textContent = `${used} / ${prod}`;
+  const col = used > prod ? '#ff3b2c' : (prod - used < 3 ? '#ffd23a' : '#4fd36a');
+  $('#bolt').setAttribute('fill', col); pv.style.color = used > prod ? '#ff7b66' : (prod - used < 3 ? '#ffe27a' : '#e9edf2');
+  $('#crestNeon').setAttribute('stroke', col);
+}
+
+
+// ---- os botões de hoje com o hover novo e a dica do limpo ----
+const tip = $('#tip');
+function showTip(el, html) {
+  if (!html) return;
+  tip.innerHTML = html; tip.classList.add('show');
+  const sr = stage.getBoundingClientRect(), k = sr.width / 1920, r = el.getBoundingClientRect();
+  const x = (r.left - sr.left) / k, y = (r.top - sr.top) / k, w = r.width / k, h = r.height / k;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  const left = Math.max(8, Math.min(1912 - tw, x + w / 2 - tw / 2));
+  let top = y - th - 12; if (top < 8) top = y + h + 12;
+  // a dica dos botões da grade sobe acima da fileira: nunca tampa o dinheiro e a energia na hora da compra
+  if (el.classList.contains('sel') && x < 1515 && y > 860) top = Math.min(top, (document.querySelector('.tag.show') ? 748 : 798) - th - 8);
+  tip.style.left = left + 'px'; tip.style.top = top + 'px';
+}
+function bindTip(el, fn) { el.addEventListener('mouseenter', () => showTip(el, fn())); el.addEventListener('mouseleave', () => tip.classList.remove('show')); }
+const TT = (h, k, c, t, l, r) => `<div class="h">${h}${k ? `<span class="k">[${k}]</span>` : ''}${c ? `<span class="c">${c}</span>` : ''}${t ? `<span class="t">${t}</span>` : ''}</div>${l ? `<div class="l">${l}</div>` : ''}${r ? `<div class="r">${r}</div>` : ''}`;
+const CLICKS = 'Left-click +1 · Shift-click +5 · Right-click −1';
+const GX = [410, 518, 626, 734, 842, 950, 1058, 1176, 1284, 1392];
+const G = (c, r) => ({ x: GX[c], y: r ? 975 : 879, w: 98, h: 86 });
+const HS = [
+  { ...G(0, 0), id: 'hsQ', cls: 'sel cost', slow: 1, tip: () => TT('Battle Tank', 'Q', '$900', '· 0:12', CLICKS) },
+  { ...G(1, 0), cls: 'sel locked', p: '$1,100', tip: () => TT('Locked', 'W', '$1,100', '', '', 'Requires a higher tech building') },
+  { ...G(2, 0), cls: 'sel cost', p: '$700', tip: () => TT('Stryker', 'E', '$700', '· 0:10', CLICKS) },
+  { ...G(3, 0), id: 'hsR', cls: 'sel cost', p: '$1,200', tip: () => TT('Tomahawk Launcher', 'R', '$1,200', '', CLICKS) },
+  { ...G(4, 0), cls: 'sel cost', p: '$600', tip: () => TT('Supply Truck', 'T', '$600', '', CLICKS) },
+  { ...G(5, 0), cls: 'sel cost', p: '$1,000', tip: () => TT('Linebacker', 'Y', '$1,000', '', CLICKS) },
+  { ...G(6, 0), cls: 'sel cost', p: '$500' },
+  { ...G(0, 1), cls: 'sel locked', p: '$800', tip: () => TT('Locked', 'Z', '$800', '', '', 'Requires a higher tech building') },
+  { ...G(1, 1), cls: 'sel gold', tip: () => TT('Upgrade', 'X', '', '', 'Purchased') },
+  { ...G(2, 1), cls: 'sel gold', tip: () => TT('Upgrade', 'C', '$100', '') },
+  { ...G(7, 1), cls: 'sel act', tip: () => TT('Rally Point', 'F') },
+  ...[3, 4, 5, 6].map(c => ({ ...G(c, 1), cls: 'sel empty' })), ...[7, 8, 9].map(c => ({ ...G(c, 0), cls: 'sel empty' })), ...[8, 9].map(c => ({ ...G(c, 1), cls: 'sel empty' })),
+  // os botões do minimapa
+  { x: 330, y: 832, w: 42, h: 42, tip: () => TT('Options') },
+  { x: 330, y: 880, w: 42, h: 42, tip: () => TT('Units') },
+  { x: 330, y: 928, w: 42, h: 42, tip: () => TT('Beacon') },
+  { x: 330, y: 976, w: 42, h: 42, id: 'hsChat', tip: () => TT('Chat', 'Enter') },
+  // a coluna de poderes
+  { x: 34, y: 456, w: 62, h: 60, cls: 'gold', tip: () => TT('Spy Drone', '', '', 'READY') },
+  { x: 34, y: 526, w: 62, h: 60, tip: () => TT('Paradrop', '', '', '0:48') },
+  { x: 34, y: 596, w: 62, h: 60, cls: 'gold', tip: () => TT('Artillery Strike', '', '', 'READY') },
+  { x: 34, y: 666, w: 62, h: 60, tip: () => TT('Orbital Lance', '', '', '5:40') },
+  { x: 34, y: 736, w: 62, h: 60, tip: () => TT('Orbital Lance', '', '', '2:31') },
+  // a fila no cartão
+  { x: 1537, y: 1005, w: 65, h: 52, cls: 'sel', tip: () => TT('Battle Tank', '', '', '64%', 'Click to cancel · drag to reorder') },
+  { x: 1609, y: 1005, w: 65, h: 52, cls: 'sel', tip: () => TT('Battle Tank', '', '', '', 'Click to cancel · drag to reorder') },
+  { x: 1681, y: 1005, w: 65, h: 52, cls: 'sel', tip: () => TT('Battle Tank', '', '', '', 'Click to cancel · drag to reorder') },
+  { x: 1753, y: 1005, w: 65, h: 52, cls: 'sel', tip: () => TT('Stryker', '', '', '', 'Click to cancel · drag to reorder') },
+];
+for (const h of HS) {
+  const d = document.createElement('div'); d.className = 'hs ' + (h.cls || ''); if (h.id) d.id = h.id;
+  Object.assign(d.style, { left: h.x + 'px', top: h.y + 'px', width: h.w + 'px', height: h.h + 'px', backgroundPosition: `${-h.x}px ${-h.y}px` });
+  if (h.p) d.innerHTML += `<em class="pr">${h.p}</em>`;
+  if (h.slow) d.innerHTML += '<em class="sl"><svg viewBox="0 0 10 12" width="15" height="19"><path d="M6 0 1 7h3l-1 5 6-8H6l1-4z" fill="#ff3b2c"/></svg></em>';
+  if (h.tip) bindTip(d, h.tip);
+  $('#hot').appendChild(d);
+}
+document.querySelectorAll('.tab').forEach(t => {
+  const n = t.querySelector('span').textContent, i = t.querySelector('i');
+  bindTip(t, () => TT('Group ' + n, n, '', '', i ? i.textContent.replace('×', '') + ' units' : 'Empty · Ctrl+' + n + ' to set'));
+});
+bindTip($('#crest'), () => TT('Credits', '', '', '', 'Income +$1,450/min · next airlift 0:42'));
+bindTip($('#spine'), () => {
+  const t = $('#pv').textContent.split(' / '), u = +t[0], p = +t[1];
+  return TT('Power', '', '', u + ' / ' + p, 'Cold Fusion Reactor +5 · Patriot −3 · War Factory −1', u > p ? 'Production 50% · Patriot offline' : '');
+});
+const rankTip = () => TT('Rank ' + $('#rlv').textContent, '', '', $('#rxp').textContent + ' XP', stage.classList.contains('ready') ? '1 point to spend · click to promote' : 'Promote unlocks general powers');
+['#rkA .rail', '#rkA .ins', '#rkA .slot', '#rkC .ring', '#rkC .tagC'].forEach(q => bindTip($(q), rankTip));
+const lvNow = () => +$('#rlv').textContent;
+const genTip = (click = true) => { const lv = lvNow(), r = rankOf(lv), nx = RANKS[lv];
+  return TT(r[1], '', '', '★'.repeat(lv), (lv ? 'Rank ' + lv + ' of 5 · ' : 'No star yet · ') + $('#rxp').textContent + ' XP' + (nx ? ' to ' + nx[1] : ''), '') +
+    (() => { const p = stage.classList.contains('ready') ? pointsLeft() : 0, parts = [];
+      if (p) parts.push(p + ' point' + (p === 1 ? '' : 's') + ' to spend');
+      if (click) parts.push("Click to open General's Command");
+      return parts.length ? `<div class="l" style="color:${p ? '#f6c850' : '#8fc6ff'}">${parts.join(' · ')}</div>` : ''; })(); };
+bindTip($('#rkB .head'), genTip); bindTip($('#rkB .tube'), () => genTip(false)); bindTip($('#rkB .tagB'), genTip);
+bindTip($('#allyRing'), () => TT('Bruno', '', '', 'Major General', 'Rank 2 of 5 · 40% to Lieutenant General'));
+
+// ---- o chat ----
+function chatLine(html, cls = '', pc = '#e6ecf3', life = 12000) {
+  const c = document.createElement('div'); c.className = 'cl ' + cls; c.style.setProperty('--pc', pc); c.innerHTML = html;
+  const box = $('#chat'); box.insertBefore(c, $('#chatIn'));
+  while (box.querySelectorAll('.cl').length > 6) box.querySelector('.cl').remove();
+  later(() => c.classList.add('old'), life); later(() => c.remove(), life + 1300);
+  const b = $('#hsChat'); b.classList.remove('ping'); void b.offsetWidth; b.classList.add('ping');
+}
+function typeOut(txt) {
+  const t = $('#chatIn .txt'); let i = 0;
+  const step = () => {
+    t.innerHTML = txt.slice(0, i) + '<i></i>';
+    if (i++ < txt.length) later(step, 70 + Math.random() * 60);
+    else later(() => { $('#chatIn').classList.remove('show'); t.innerHTML = '<i></i>'; chatLine('<span class="tg">ALLIES</span><b>Felipe:</b> ' + txt, '', '#5fb0ff'); }, 700);
+  };
+  step();
+}
+function chatDemo() {
+  later(() => chatLine('<span class="tg">ALLIES</span><b>Bruno:</b> pushing mid with 6 tanks, cover me'), 400);
+  later(() => chatLine('Hard AI 4 has been defeated', 'sys'), 2200);
+  later(() => chatLine('<b>Caio:</b> gg, your Patriots are toast', '', '#7bd66f'), 3800);
+  later(() => { $('#chatIn').classList.add('show'); typeOut('on my way, 2 min'); }, 5600);
+}
+
+// ---- a tela do general: a cada patente, 1 de 2 doutrinas (1 poder + 1 bônus). Exemplos da USA, pra discutir ----
+const DOC = {
+  1: [{ n: 'Recon', ic: 'spy_drone', p: 'Spy Drone', cd: '1:30', b: 'Vehicles see 15% farther', d: 'A drone circles any point for 30 s.' },
+      { n: 'Airborne', ic: 'paradrop', p: 'Paradrop', cd: '3:00', b: 'Rangers train 20% faster', d: 'Four Rangers drop anywhere you can see.' }],
+  2: [{ n: 'Field Engineers', ic: 'p_usa_dozer', p: 'Emergency Repair', cd: '2:00', b: 'Dozers build 15% faster', d: 'Vehicles in an area repair 50% over 10 s.' },
+      { n: 'Hardened Armor', ic: 'p_usa_heavy_tank', p: 'Armor Surge', cd: '2:30', b: 'Tanks +10% armor', d: 'Vehicles in an area take 25% less damage for 15 s.' }],
+  3: [{ n: 'Air Assault', ic: 'p_usa_chinook', p: 'Air Assault', cd: '3:30', b: 'Chinooks carry 2 more', d: 'An armed Chinook drops eight Rangers at the target.' },
+      { n: 'Fire Support', ic: 'p_usa_rocket_launcher', p: 'Artillery Barrage', cd: '4:00', b: 'Tomahawks reload 20% faster', d: 'Twelve shells walk across the target area.' }],
+  4: [{ n: 'Air Superiority', ic: 'p_usa_airfield', p: 'Fighter Sweep', cd: '3:00', b: 'Aircraft rearm 25% faster', d: 'Two Raptors clear the sky over the target.' },
+      { n: 'Precision Fires', ic: 'p_usa_orbital_lance', p: 'Orbital Lance', cd: '5:00', b: 'Artillery +15% range', d: 'A narrow beam cuts a line through the target.' }],
+  5: [{ n: 'Escalation', ic: 'artillery_strike', p: 'Your Rank 3 power, level II', cd: '—', b: 'All power cooldowns −15%', d: 'Grows the doctrine you already chose.' },
+      { n: 'Total Mobilization', ic: 'p_usa_war_factory', p: 'Mobilize', cd: '6:00', b: 'Production +10%', d: 'All factories build 50% faster for 45 s.' }]
+};
+const CHOSEN = { 1: 1, 2: 0, 3: 1 };          // o que já foi escolhido nesta partida (exemplo)
+let genSel = 0, genJust = 0;
+function genRender() {
+  const lv = +$('#rlv').textContent, ready = stage.classList.contains('ready');
+  const pick = ready ? lv : 0;
+  if (!genSel) genSel = pick || Math.min(lv + 1, 5);
+  const r = RANKS[lv - 1];
+  $('#gen .hd .sub').innerHTML = `United States · ${r[1]} <em>${'★'.repeat(lv)}</em> · ${$('#rxp').textContent} XP`;
+  let h = '';
+  for (let i = 1; i <= 5; i++) {
+    const done = CHOSEN[i] !== undefined, cur = i === lv, lock = i > lv;
+    const cls = ['rung', done ? 'done' : '', cur ? 'cur' : '', lock ? 'lock' : '', i === pick && !done ? 'pick' : '', i === genSel ? 'sel' : ''].join(' ');
+    const st = done ? 'Chosen: ' + DOC[i][CHOSEN[i]].n : i === pick ? 'Choose a doctrine' : lock ? (i === lv + 1 ? $('#rxp').textContent + ' XP' : 'Locked') : '';
+    const bar = i === lv + 1 && !ready ? `<div class="bar"><b style="width:${parseFloat($('#rfill').style.width) || 0}%"></b></div>` : '';
+    h += `<div class="${cls}" data-r="${i}"><div class="n">${i}</div><div class="t">${RANKS[i - 1][1]} <i>${'★'.repeat(i)}</i></div><div class="s">${st}</div>${bar}</div>`;
+  }
+  $('#gen .lad').innerHTML = h;
+  $('#gen .lad').querySelectorAll('.rung').forEach(el => el.onclick = () => { genSel = +el.dataset.r; genRender(); });
+  const sel = genSel, can = sel === pick && CHOSEN[sel] === undefined;
+  $('#gen .mid h3').innerHTML = `RANK ${sel} · ${RANKS[sel - 1][1].toUpperCase()}<small>${can ? 'choose one: the other is locked for this match' : CHOSEN[sel] !== undefined ? 'chosen' : sel > lv ? 'reach this rank to choose' : ''}</small>`;
+  $('#gen .cards').innerHTML = DOC[sel].map((d, k) => {
+    const st = CHOSEN[sel] === undefined ? (can ? 'can' : '') : CHOSEN[sel] === k ? 'chosen' : 'out';
+    return `<div class="card ${st} ${genJust === sel && CHOSEN[sel] === k ? 'just' : ''}" data-k="${k}">
+      <div class="art"><span class="kind">DOCTRINE</span><img src="a/${d.ic}.png" alt=""></div>
+      <div class="nm">${d.n.toUpperCase()}</div>
+      <div class="ln"><b>POWER</b><span>${d.p}${d.cd !== '—' ? ' · ' + d.cd : ''}</span></div>
+      <div class="ln"><b>BONUS</b><span>${d.b}</span></div>
+      <div class="ds">${d.d}</div>
+      <div class="go">${st === 'chosen' ? '✓ CHOSEN' : st === 'out' ? 'LOCKED OUT' : can ? 'CHOOSE' : 'RANK ' + sel}</div></div>`;
+  }).join('');
+  genJust = 0;
+  $('#gen .cards').querySelectorAll('.card.can .go').forEach(b => b.onclick = () => {
+    const k = +b.closest('.card').dataset.k; CHOSEN[sel] = k; genJust = sel;
+    stage.classList.remove('ready'); genSel = sel; genRender();
+  });
+}
+function genOpen() { genSel = 0; selId = null; stage.classList.remove('promoNew'); genRender(); stage.classList.add('genon'); tip.classList.remove('show'); if (new URLSearchParams(location.search).get('spy') !== '0') spyStart(15000); }
+function genClose() { stage.classList.remove('genon'); }
+['#rkB .head', '#rkB .tagB'].forEach(q => $(q).addEventListener('click', genOpen));
+$('#genBack').addEventListener('click', genClose);
+$('#gen .hd .x').addEventListener('click', genClose);
+addEventListener('keydown', e => { if (e.key === 'Escape') genClose(); });
+
+// ---- o cubo do general: as estrelas da patente dentro, abre a tela ----
+function hubUpdate(lv) {
+  if (lv > 0) { $('#hubStars').innerHTML = `<defs><clipPath id="rkclip"><circle cx="26" cy="26" r="18.6"/></clipPath></defs><image href="a/${rankIcon(lv)}" x="4.7" y="4.3" width="42.6" height="43.5" clip-path="url(#rkclip)"/>`; return; }
+  if (!lv) { $('#hubStars').innerHTML = '<text class="col" x="26" y="30" text-anchor="middle">COL</text>'; return; }
+  const P = { 1: [[26, 26]], 2: [[20, 26], [32, 26]], 3: [[26, 20], [20, 31], [32, 31]], 4: [[20, 20], [32, 20], [20, 32], [32, 32]], 5: [[26, 16], [17, 24], [35, 24], [20, 35], [32, 35]] }[lv];
+  const r = lv >= 4 ? 4.8 : 5.6;
+  const star = (x, y) => Array.from({ length: 10 }, (_, i) => { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .42 : r; return (x + rr * Math.cos(a)).toFixed(1) + ',' + (y + rr * Math.sin(a)).toFixed(1); }).join(' ');
+  $('#hubStars').innerHTML = P.map(([x, y]) => `<polygon points="${star(x, y)}" fill="url(#hubGold)" stroke="#3a2808" stroke-width=".6"/>`).join('');
+}
+bindTip($('#hub'), genTip); bindTip($('#hubTag'), genTip);
+['#hub', '#hubTag'].forEach(q => $(q).addEventListener('click', genOpen));
+hubUpdate(+$('#rlv').textContent);
+
+// ---- o aliado: o aro do emblema enche com o XP; subiu, o aro estala e ganha a estrela ----
+function allySet(lv, frac) {
+  const arc = (66 * frac).toFixed(1) + ' 200';   // o XP: 210° por cima do aro (o fundo é das estrelas)
+  $('#allyEmb .fg').setAttribute('stroke-dasharray', arc); $('#allyEmb .fgm').setAttribute('stroke-dasharray', arc);
+  $('#allyStars').textContent = '★'.repeat(lv);
+  // as 5 casas no fundo do aro, da esquerda pra direita; acesas = a patente
+  const star = (x, y, r) => Array.from({ length: 10 }, (_, i) => { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; return (x + rr * Math.cos(a)).toFixed(2) + ',' + (y + rr * Math.sin(a)).toFixed(2); }).join(' ');
+  $('#allyEmb .slots').innerHTML = [150, 120, 90, 60, 30].map((d, i) => { const t = d * Math.PI / 180, x = 21 + 18 * Math.cos(t), y = 21 + 18 * Math.sin(t);
+    return `<polygon class="slot" points="${star(x, y, 4.4)}" fill="${i < lv ? '#f6c850' : '#141a21'}" stroke="${i < lv ? '#5a3f08' : '#3a4552'}" stroke-width=".5"/>`; }).join('');
+}
+allySet(2, 0.62);
+bindTip($('#allyEmb'), () => TT('Bruno', '', '', RANKS[$('#allyStars').textContent.length - 1][1], 'Ally general · rank ' + $('#allyStars').textContent.length + ' of 5 · the ring is his XP'));
+function allyLevelUp() {
+  allySet(2, 1);
+  later(() => { allySet(3, 0.05); ['#allyEmb', '#allyStars'].forEach(q => { const e = $(q); e.classList.remove('lvl'); void e.offsetWidth; e.classList.add('lvl'); }); }, 900);
+}
+
+// ---- a tela: "tudo ao mesmo tempo" (as 5 patentes lado a lado) ----
+let genView = 'all';
+function genRenderAll() {
+  const lv = +$('#rlv').textContent, ready = stage.classList.contains('ready'), pick = ready ? lv : 0;
+  let h = '';
+  for (let i = 1; i <= 5; i++) {
+    const done = CHOSEN[i] !== undefined, lock = i > lv;
+    const st = done ? 'CHOSEN' : i === pick ? 'CHOOSE ONE' : lock ? (i === lv + 1 ? $('#rxp').textContent + ' XP' : 'LOCKED') : '';
+    h += `<div class="col"><div class="ch ${done ? 'done' : ''} ${i === pick && !done ? 'pick' : ''} ${lock ? 'lock' : ''}"><div class="st">${'★'.repeat(i)}</div><b>${RANKS[i - 1][1]}</b><span>${st}</span></div>`;
+    DOC[i].forEach((d, k) => {
+      const s = done ? (CHOSEN[i] === k ? 'chosen' : 'out') : i === pick ? 'can' : 'fut';
+      const go = s === 'chosen' ? '✓ CHOSEN' : s === 'out' ? '🔒 LOCKED FOR THIS MATCH' : s === 'can' ? 'CHOOSE' : 'AT ' + RANKS[i - 1][0];
+      h += `${k ? '<div class="or">OR</div>' : ''}<div class="tc ${s} ${genJust === i && CHOSEN[i] === k ? 'just' : ''}" data-r="${i}" data-k="${k}">
+        <div class="top"><img src="a/${d.ic}.png" alt=""><div><small>DOCTRINE</small><b>${d.n}</b></div></div>
+        <div class="ln"><em>POWER</em>${d.p}${d.cd !== '—' ? ' · ' + d.cd : ''}</div><div class="ln"><em>BONUS</em>${d.b}</div><div class="go">${go}</div></div>`;
+    });
+    h += '</div>';
+  }
+  $('#gen .tree').innerHTML = '<svg class="path"></svg>' + h;
+  genJust = 0;
+  $('#gen .tree').querySelectorAll('.tc.can .go').forEach(b => b.onclick = () => { const c = b.closest('.tc'); CHOSEN[+c.dataset.r] = +c.dataset.k; genJust = +c.dataset.r; stage.classList.remove('ready'); genRender(); });
+  $('#gen .tree').querySelectorAll('.tc.out').forEach(c => bindTip(c, () => TT('Locked for this match', '', '', '', 'You chose ' + DOC[c.dataset.r][CHOSEN[c.dataset.r]].n + ' at this rank. Next match you can pick either.')));
+  // a linha dourada liga as doutrinas escolhidas, de patente em patente
+  requestAnimationFrame(() => {
+    const tr = $('#gen .tree'), k = tr.getBoundingClientRect().width / tr.offsetWidth, o = tr.getBoundingClientRect();
+    const pts = [...tr.querySelectorAll('.tc.chosen')].map(c => { const r = c.getBoundingClientRect(); return [((r.left + r.right) / 2 - o.left) / k, ((r.top + r.bottom) / 2 - o.top) / k]; });
+    $('#gen .tree svg.path').innerHTML = pts.length > 1 ? `<polyline points="${pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="#f6c850" stroke-width="3" stroke-opacity=".55" stroke-dasharray="2 6" stroke-linecap="round"/>` : '';
+  });
+}
+const genRenderOne = genRender;
+genRender = function () {
+  $('#gen').classList.toggle('vall', genView === 'all');
+  document.querySelectorAll('#gen .vw i').forEach(i => i.classList.toggle('on', i.dataset.v === genView));
+  genRenderOne();
+  if (genView === 'all') genRenderAll();
+  renderIntel();
+};
+document.querySelectorAll('#gen .vw i').forEach(i => i.onclick = () => { genView = i.dataset.v; genSel = 0; genRender(); });
+
+// ---- enemy doctrines spotted: uma linha por inimigo; as patentes dele em casas (o que já usou aparece, o resto é "?") ----
+const ENEMIES_1V1 = [{ n: 'Enemy AI', c: '#ff5a4a', lv: 2, seen: { 1: 'paradrop' } }];
+const ENEMIES_8P = [
+  { n: 'Hard AI 2', c: '#ffa94d', lv: 3, seen: { 1: 'spy_drone', 3: 'artillery_strike' } },
+  { n: 'Caio', c: '#7bd66f', lv: 2, seen: { 2: 'repair' } },
+  { n: 'Hard AI 1', c: '#ff6b5b', lv: 2, seen: {} },
+  { n: 'Davi', c: '#b896ff', lv: 1, seen: {} },
+  { n: 'Hard AI 3', c: '#ffe066', lv: 1, seen: {} },
+  { n: 'Hard AI 4', c: '#8a939e', lv: 1, seen: {}, dead: 1 }];
+function intelHTML(rows) {
+  const q = new URLSearchParams(location.search);
+if (q.get('ally')) setTimeout(() => allySet(+q.get('ally'), 0.62), 0);
+  const list = q.get('intel') === '0' ? [] : (stage.classList.contains('none') ? ENEMIES_8P : ENEMIES_1V1);
+  const known = list.filter(e => Object.keys(e.seen).length), rest = list.length - known.length;
+  if (!known.length) return '';
+  let h = '<h5>ENEMY POWERS SPOTTED</h5>';
+  known.slice(0, rows).forEach(e => {
+    const sp = Object.values(e.seen).map(ic => `<img src="a/${ic}.png" alt="">`).join('');
+    h += `<div class="ir ${e.dead ? 'dead' : ''}"><i style="background:${e.c}"></i><b style="color:${e.c}">${e.n}</b><em>${'★'.repeat(e.lv)}</em><span class="sp">${sp}</span></div>`;
+  });
+  if (known.length > rows) h += `<div class="ir more">+${known.length - rows} more</div>`;
+  return h;
+}
+function renderIntel() {
+  const a = $('#gen .side .intel');
+  if (a) a.innerHTML = intelHTML(4);
+  document.querySelectorAll('#gen .strip .intel').forEach(b => b.innerHTML = intelHTML(2));
+}
+
+// ---- o cardápio do general: cada patente dá pontos; cada poder custa de 1 a 3; compra o que quiser, na ordem que quiser; não dá pra ter todos ----
+// (exemplos da USA, pra discutir; as faixas abrem nas patentes 1, 3 e 5, como no ZH)
+const PTS_PER_RANK = [1, 1, 2, 2, 3];
+const MENU = [
+  { rank: 1, items: [
+    { id: 'drone', n: 'Spy Drone', ic: 'spy_drone', cost: 1, cd: '1:30', d: 'A drone circles any point for 30 s and reveals what is under it.' },
+    { id: 'para', n: 'Paradrop', ic: 'paradrop', cost: 1, max: 3, cd: '3:00', d: 'Rangers drop anywhere you can see.', lv: ['4 Rangers', '8 Rangers', '12 Rangers and a Humvee'] },
+    { id: 'repair', n: 'Emergency Repair', ic: 'repair', cost: 1, cd: '2:00', d: 'Vehicles in an area repair 50% over 10 s.' } ] },
+  { rank: 3, items: [
+    { id: 'arty', n: 'Artillery Barrage', ic: 'artillery_strike', cost: 2, max: 3, cd: '4:00', d: 'Shells walk across the target area.', lv: ['12 shells', '18 shells', '24 shells, wider area'] },
+    { id: 'assault', n: 'Air Assault', ic: 'p_usa_chinook', cost: 2, cd: '3:30', d: 'An armed Chinook drops eight Rangers at the target.' },
+    { id: 'armor', n: 'Armor Surge', ic: 'p_usa_heavy_tank', cost: 1, cd: '2:30', d: 'Vehicles in an area take 25% less damage for 15 s.' },
+    { id: 'sweep', n: 'Fighter Sweep', ic: 'p_usa_airfield', cost: 2, cd: '3:00', d: 'Two Raptors clear the sky over the target.' } ] },
+  { rank: 5, items: [
+    { id: 'lance', n: 'Orbital Lance', ic: 'p_usa_orbital_lance', cost: 3, cd: '5:00', d: 'A narrow beam cuts a line through the target.' },
+    { id: 'mobil', n: 'Total Mobilization', ic: 'p_usa_war_factory', cost: 2, cd: '6:00', d: 'All factories build 50% faster for 45 s.' } ] }
+];
+const OWN = { drone: 1, para: 1, arty: 1 };     // comprado até a patente 3 (1 + 1 + 2 = 4 pontos)
+let menuSel = 'arty', menuJust = '';
+const menuItem = id => MENU.flatMap(b => b.items.map(it => ({ ...it, rank: b.rank }))).find(it => it.id === id);
+function pointsLeft() {
+  const lv = +$('#rlv').textContent;
+  const earned = PTS_PER_RANK.slice(0, lv).reduce((a, b) => a + b, 0);
+  const spent = Object.entries(OWN).reduce((a, [id, n]) => a + menuItem(id).cost * n, 0);
+  return Math.max(0, earned - spent);
+}
+function tileState(it, lv, pts) {
+  const own = OWN[it.id] || 0, max = it.max || 1;
+  if (lv < it.rank) return 'lock';
+  if (own >= max) return 'own';
+  if (pts >= it.cost) return own ? 'own buy' : 'buy';
+  return own ? 'own' : 'poor';
+}
+function genRenderMenu() {
+  const lv = +$('#rlv').textContent, pts = pointsLeft();
+  $('#gen .hd .pts2 b').textContent = pts;
+  let h = '';
+  MENU.forEach(b => {
+    const lock = lv < b.rank;
+    h += `<div class="band ${lock ? 'lock' : ''}"><div class="lb"><small>${b.rank === 1 ? 'TIER I' : b.rank === 3 ? 'TIER II' : 'TIER III'}</small><b>${RANKS[b.rank - 1][1]}</b><i>${'★'.repeat(b.rank)}</i></div><div class="tiles">`;
+    b.items.forEach(it => {
+      const st = tileState({ ...it, rank: b.rank }, lv, pts), own = OWN[it.id] || 0;
+      const lvp = it.max ? `<div class="lvp">${['I', 'II', 'III'].map((r, i) => `<i class="${i < own ? 'on' : ''}">${r}</i>`).join('')}</div>` : '';
+      h += `<div class="pw ${st} ${menuSel === it.id ? 'sel' : ''} ${menuJust === it.id ? 'just' : ''}" data-id="${it.id}"><div class="cost">${'<i></i>'.repeat(it.cost)}</div><img src="a/${it.ic}.png" alt=""><div class="nm">${it.n}</div>${lvp}</div>`;
+    });
+    h += `</div><div class="lockmsg">🔒 Unlocks at ${RANKS[b.rank - 1][1]} ${'★'.repeat(b.rank)}</div></div>`;
+  });
+  $('#gen .bands').innerHTML = h;
+  menuJust = '';
+  $('#gen .bands').querySelectorAll('.band:not(.lock) .pw').forEach(t => {
+    t.addEventListener('mouseenter', () => { menuSel = t.dataset.id; menuDetail(); $('#gen .bands').querySelectorAll('.pw').forEach(x => x.classList.toggle('sel', x === t)); });
+    t.onclick = () => menuBuy(t.dataset.id);
+  });
+  menuDetail();
+}
+function menuDetail() {
+  const it = menuItem(menuSel), lv = +$('#rlv').textContent, pts = pointsLeft(), own = OWN[it.id] || 0, max = it.max || 1;
+  const st = tileState(it, lv, pts);
+  let act = '';
+  if (st.includes('buy')) act = `<div class="act go">${own ? 'UPGRADE TO ' + ['I', 'II', 'III'][own] : 'BUY'} · ${it.cost} POINT${it.cost > 1 ? 'S' : ''}</div>`;
+  else if (own >= max) act = '<div class="act ok">✓ OWNED</div>';
+  else if (st === 'lock') act = `<div class="act">REACH ${RANKS[it.rank - 1][1].toUpperCase()}</div>`;
+  else act = `<div class="act">NEED ${it.cost - pts} MORE POINT${it.cost - pts > 1 ? 'S' : ''}</div>`;
+  const levels = it.lv ? `<div class="levels">${it.lv.map((t, i) => `<span class="${i < own ? 'on' : ''}">${['I', 'II', 'III'][i]} · ${t}</span>`).join('')}</div>` : '';
+  $('#gen .det').innerHTML = `<div class="top"><img src="a/${it.ic}.png" alt=""><div><h3>${it.n}</h3><div class="meta">Cost <b>${it.cost}</b> · ${RANKS[it.rank - 1][0]} ${'★'.repeat(it.rank)} · cooldown ${it.cd}</div></div></div><p>${it.d}</p>${levels}${act}`;
+  const go = $('#gen .det .act.go'); if (go) go.onclick = () => menuBuy(it.id);
+}
+function menuBuy(id) {
+  const it = menuItem(id), lv = +$('#rlv').textContent;
+  if (!tileState(it, lv, pointsLeft()).includes('buy')) return;
+  OWN[id] = (OWN[id] || 0) + 1; menuSel = id; menuJust = id;
+  if (pointsLeft() === 0) stage.classList.remove('ready');
+  hubPts(); genRender();
+}
+function hubPts() {
+  const p = pointsLeft();
+  $('#hub .pts').textContent = p;
+  $('#hubTag small').textContent = p + ' point' + (p === 1 ? '' : 's');
+}
+genView = 'menu';
+const genRenderPrev = genRender;
+genRender = function () {
+  $('#gen').classList.toggle('vmenu', genView === 'menu');
+  if (genView === 'menu') { genRenderMenu(); renderIntel(); } else genRenderPrev();
+};
+
+function menuReset() { Object.keys(OWN).forEach(k => delete OWN[k]); Object.assign(OWN, { drone: 1, para: 1, arty: 1 }); menuSel = 'arty'; }
+
+// ---- v9: os poderes como nós (o nível II e III são nós próprios, ligados ao anterior); colunas = patente, linhas = tipo ----
+// (03/11, decisão dele: "dá pra tirar essa distinção das linhas, C&C não tem isso") A árvore da USA SEM o rótulo de tipo nas linhas:
+// o tipo é lido no ícone (docs/poderes/ICONES.md). A ORDEM é a aprovada antes (as 4 linhas de antes, sem o rótulo: "não é pra mudar a
+// ordem que escolhemos"); uma patente pode ganhar outra linha quando precisar. Os níveis de um poder ficam na mesma linha, ligados.
+// A árvore de poderes da USA (docs/poderes/USA.md), no formato da tela de poderes do protótipo do HUD.
+// ic: o ícone em a/<ic>.png do protótipo; os novos estão em docs/poderes/tela/pw/ (provisórios). Os níveis de um poder ficam em
+// patentes seguidas (a linha que os liga não pode passar por trás de outro poder). Uma casa (linha × patente) = um poder.
+// t: o tipo (docs/poderes/ICONES.md): atk = golpe, intel = olhos, troop = tropas, sup = apoio (a família comando); pas = passivo; unl = desbloqueio.
+const ROWS = [['', ''], ['', ''], ['', ''], ['', '']];
+// (03/11, a árvore da USA em debate: docs/poderes/USA.md; os ícones em pw/ são provisórios)
+const NODES = [
+  { id: 'drone', t: 'intel', row: 0, rank: 1, n: 'Spy Drone', ic: '../../../../poderes/tela/icones/usa_drone_esc', cost: 1, cd: '1:30', d: 'A stealth drone circles the point for 40 s, sees 66 m and reveals hidden units. It can be shot down.' },
+  { id: 'desig', t: 'intel', row: 0, rank: 2, n: 'Target Designation', ic: '../../../../poderes/tela/icones/usa_desig_esc', cost: 1, cd: '1:30', d: 'A satellite paints a 30 m circle for 20 s. Hidden units are revealed and enemies inside take 25% more damage. The enemy sees the laser dots.' },
+  { id: 'a10_1', t: 'atk', row: 0, rank: 3, n: 'A-10 Strike', lv: 'I', ic: '../../../../poderes/tela/icones/usa_a10_esc', cost: 2, cd: '3:00', d: 'One A-10 makes a pass: six Mavericks and the 30 mm cannon along an 80 m strip. It can be shot down.' },
+  { id: 'a10_2', t: 'atk', row: 0, rank: 4, n: 'A-10 Strike', lv: 'II', req: 'a10_1', short: 'Two A-10s', ic: '../../../../poderes/tela/icones/usa_a10_esc', cost: 1, cd: '3:00', d: 'Two A-10s side by side.' },
+  { id: 'ac130', t: 'atk', row: 0, rank: 5, n: 'AC-130 Gunship', ic: '../../../../poderes/tela/icones/usa_ac130_esc', cost: 3, cd: '6:00', d: 'Orbits the area for 12 s and fires where you click: the 105 mm howitzer and the 25 mm cannon.' },
+  { id: 'para1', t: 'troop', row: 1, rank: 1, n: 'Paradrop', lv: 'I', ic: '../../../../poderes/tela/icones/usa_para_esc', cost: 1, cd: '3:00', d: 'Three Rangers and two Javelins drop at the target. $650 per drop.' },
+  { id: 'para2', t: 'troop', row: 1, rank: 2, n: 'Paradrop', lv: 'II', req: 'para1', short: '6 + 4', ic: '../../../../poderes/tela/icones/usa_para_esc', cost: 1, cd: '3:00', d: 'Six Rangers and four Javelins. $1,300 per drop.' },
+  { id: 'seal', t: 'troop', row: 1, rank: 4, n: 'SEAL Insertion', ic: '../../../../poderes/tela/icones/usa_seal_esc', cost: 2, cd: '4:00', d: 'An Osprey lands four hidden SEALs. Their charges bring a building down from where they were planted. $600 per insertion.' },
+  { id: 'para3', t: 'troop', row: 1, rank: 3, n: 'Paradrop', lv: 'III', req: 'para2', short: 'HALO, 10 + 6', ic: '../../../../poderes/tela/icones/usa_para_esc', cost: 1, cd: '3:00', d: 'HALO jump: ten Rangers and six Javelins from high altitude, where only long-range air defense reaches the plane. $2,000 per drop.' },
+  { id: 'naval1', t: 'atk', row: 2, rank: 2, n: 'Naval Gunfire', lv: 'I', ic: '../../../../poderes/tela/icones/usa_naval_esc', cost: 1, cd: '3:00', d: 'A destroyer offshore walks a line of twelve 127 mm shells across the target. Everyone hears the guns first.' },
+  { id: 'naval2', t: 'atk', row: 2, rank: 3, n: 'Naval Gunfire', lv: 'II', req: 'naval1', short: '3 destroyers', ic: '../../../../poderes/tela/icones/usa_naval_esc', cost: 1, cd: '3:00', d: 'Three destroyers, three lines of shells side by side.' },
+  { id: 'naval3', t: 'atk', row: 2, rank: 4, n: 'Naval Gunfire', lv: 'III', req: 'naval2', short: 'Battleship', ic: '../../../../poderes/tela/icones/usa_naval_esc', cost: 1, cd: '5:00', d: 'The battleship: one broadside of nine 406 mm shells. Every player hears it, then the shells come in like a freight train.' },
+  { id: 'moab', t: 'atk', row: 2, rank: 5, n: 'MOAB', ic: '../../../../poderes/tela/icones/usa_moab_esc', cost: 3, cd: '7:00', d: 'The biggest bomb, dropped from an MC-130 by parachute. The mark stays on the ground for 12 s.' },
+  { id: 'repair1', t: 'sup', row: 3, rank: 1, n: 'Emergency Repair', lv: 'I', ic: '../../../../poderes/tela/icones/usa_repair_esc', cost: 1, cd: '2:00', d: 'Vehicles in the area get back 30% of their health and take 25% less damage for 15 s.' },
+  { id: 'awacs', t: 'pas', row: 3, rank: 3, n: 'AWACS Early Warning', ic: '../../../../poderes/tela/icones/usa_awacs_esc', cost: 1, cd: 'Passive', d: 'Every enemy power shows its type, route and target the moment it is called, for you and your allies.' },
+  { id: 'repair2', t: 'sup', row: 3, rank: 2, n: 'Emergency Repair', lv: 'II', req: 'repair1', short: '50%, buildings too', ic: '../../../../poderes/tela/icones/usa_repair_esc', cost: 1, cd: '2:00', d: '50% back, and buildings too.' },
+  { id: 'angel', t: 'sup', row: 3, rank: 4, n: 'Guardian Angel', ic: '../../../../poderes/tela/icones/usa_angel_esc', cost: 2, cd: '3:00', d: 'For 20 s, lasers and interceptors shoot down missiles, rockets, shells and bombs over a 40 m circle. Not superweapons.' },
+  { id: 'fob', t: 'troop', row: 3, rank: 5, n: 'Forward Base', ic: '../../../../poderes/tela/icones/usa_fob_esc', cost: 3, cd: '6:00', d: 'A C-17 lands and sets up a forward base in 20 s. Reinforcements can leave from it, and it repairs vehicles around it. One at a time.' }];
+const HAVE = {};
+const node = id => NODES.find(n => n.id === id);
+const nodeName = n => n.n + (n.lv ? ' ' + n.lv : '');
+let selId = null, justId = '', genLayout = 'track';
+function haveReset() { Object.keys(HAVE).forEach(k => delete HAVE[k]); [].forEach(k => HAVE[k] = 1); selId = null; }
+haveReset();
+pointsLeft = function () {
+  const lv = +$('#rlv').textContent;
+  return Math.max(0, PTS_PER_RANK.slice(0, lv).reduce((a, b) => a + b, 0) - Object.keys(HAVE).reduce((a, id) => a + node(id).cost, 0));
+};
+function nodeState(n) {
+  const lv = +$('#rlv').textContent;
+  if (HAVE[n.id]) return 'own';
+  if (lv < n.rank) return 'lock';
+  if (n.req && !HAVE[n.req]) return 'req';
+  return pointsLeft() >= n.cost ? 'buy' : 'poor';
+}
+const TOK = (v, cls = 's') => `<span class="tok ${cls}"><b>${v}</b></span>`;
+function tileHTML(n) {
+  const st = nodeState(n), can = st === 'buy';
+  const corner = st === 'own' ? '<span class="tok s ok"><svg viewBox="0 0 13 11"><path d="M1.5 5.8l3.4 3.2L11.5 1.8" fill="none" stroke="#0d2a12" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>'
+    : st === 'lock' ? '<span class="lk">🔒</span>' : st === 'req' ? `<span class="chainreq">⛓ ${node(n.req).lv}</span>` : TOK(n.cost, 's' + (can ? '' : ' no'));
+  return `<div class="pw ${st} ${selId === n.id ? 'sel' : ''} ${justId === n.id ? 'just' : ''}" data-id="${n.id}">
+    ${corner}<span class="iw f-${(n => n.t === 'pas' ? 'pas' : n.t === 'unl' ? 'unl' : 'cmd')(n)}"><img src="a/${n.ic}.png" alt=""></span><div class="nm">${n.n}${n.lv ? `<span class="lvi">${n.lv}</span>` : ''}</div></div>`;
+}
+function genRenderTrack() {
+  const lv = +$('#rlv').textContent, fr = parseFloat($('#rfill').style.width) || 0;
+  let h = '<svg class="lines"></svg><div></div>';
+  for (let r = 1; r <= 5; r++)
+    h += `<div class="rh ${r === lv ? 'cur' : r > lv ? 'fut' : ''}"><img class="ri" src="a/${rankIcon(r)}" alt=""><div class="st">${'★'.repeat(r)}</div><b>${RANKS[r - 1][1]}</b><span class="gv">+${PTS_PER_RANK[r - 1]} ${TOK('', 'm')}</span>${r === lv + 1 ? `<div class="xp"><i style="width:${fr}%"></i></div>` : ''}</div>`;
+  ROWS.forEach(([t, sub], ri) => {
+    h += `<div class="rl"><b>${t}</b><small>${sub}</small></div>`;
+    for (let r = 1; r <= 5; r++) { const n = NODES.find(x => x.row === ri && x.rank === r); h += `<div class="cell ${r > lv ? 'fut' : ''}">${n ? tileHTML(n) : ''}</div>`; }
+  });
+  const t = $('#gen .trk'); t.innerHTML = h;
+  // os níveis do mesmo poder ligados por uma linha
+  requestAnimationFrame(() => {
+    const o = t.getBoundingClientRect(), k = o.width / t.offsetWidth; let L = '';
+    NODES.filter(n => n.req).forEach(n => {
+      const a = t.querySelector(`.pw[data-id="${n.req}"]`), b = t.querySelector(`.pw[data-id="${n.id}"]`); if (!a || !b) return;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), y = ((ra.top + ra.bottom) / 2 - o.top) / k;
+      L += `<line x1="${(ra.right - o.left) / k}" y1="${y}" x2="${(rb.left - o.left) / k}" y2="${y}" stroke="${HAVE[n.id] ? '#6fd36a' : nodeState(n) === 'buy' ? '#f6c850' : '#3a4552'}" stroke-width="3" stroke-dasharray="${HAVE[n.id] ? '0' : '5 5'}"/>`;
+    });
+    t.querySelector('svg.lines').innerHTML = L;
+  });
+}
+function genRenderTiers() {
+  const lv = +$('#rlv').textContent;
+  const T = [[1, 2, 'TIER I'], [3, 4, 'TIER II'], [5, 5, 'TIER III']];
+  $('#gen .bands').innerHTML = T.map(([a, b, name]) => `<div class="band ${lv < a ? 'lock' : ''}"><div class="lb"><small>${name}</small><b>${RANKS[a - 1][1]}</b><i>${'★'.repeat(a)}</i></div><div class="tiles">${NODES.filter(n => n.rank >= a && n.rank <= b).map(tileHTML).join('')}</div><div class="lockmsg">🔒 Unlocks at ${RANKS[a - 1][1]} ${'★'.repeat(a)}</div></div>`).join('');
+}
+function nodeDetail() {
+  if (!selId) { $('#gen .det').innerHTML = ''; return; }
+  const n = node(selId), st = nodeState(n), pts = pointsLeft();
+  const act = st === 'buy' ? `<div class="act go">BUY ${TOK(n.cost, 'm')}</div>` : st === 'own' ? '<div class="act ok">✓ OWNED</div>'
+    : st === 'lock' ? `<div class="act">REACH ${RANKS[n.rank - 1][1].toUpperCase()}</div>` : st === 'req' ? `<div class="act">BUY ${nodeName(node(n.req)).toUpperCase()} FIRST</div>`
+    : `<div class="act">NEED ${n.cost - pts} MORE ${TOK('', 'm no')}</div>`;
+  const chain = NODES.filter(x => x.n === n.n && x.lv);
+  const levels = chain.length ? `<div class="levels">${chain.map(x => `<span class="${HAVE[x.id] ? 'on' : ''}">${x.lv} · ${x.d} <i style="font-style:normal;color:#6f7b88">(${RANKS[x.rank - 1][0]})</i></span>`).join('')}</div>` : '';
+  const why = st === 'buy' ? '<div class="why buy">You can buy it: click the power</div>' : st === 'own' ? '<div class="why own">✓ Owned</div>' : st === 'lock' ? `<div class="why">🔒 Reach ${RANKS[n.rank - 1][1]}</div>`
+    : st === 'req' ? `<div class="why">⛓ Buy ${nodeName(node(n.req))} first</div>` : `<div class="why">Need ${n.cost - pts} more point${n.cost - pts > 1 ? 's' : ''}</div>`;
+  $('#gen .det').innerHTML = `<div class="top"><span class="iw f-${(n => n.t === 'pas' ? 'pas' : n.t === 'unl' ? 'unl' : 'cmd')(n)}"><img src="a/${n.ic}.png" alt=""></span><div><h3>${nodeName(n)}</h3><div class="meta">${TOK(n.cost, 'm')} cost · ${RANKS[n.rank - 1][0]} ${'★'.repeat(n.rank)} · cooldown ${n.cd}</div></div></div>${why}<p>${chain.length ? chain[0].d : n.d}</p>${levels}`;
+}
+function nodeBuy(id) {
+  if (nodeState(node(id)) !== 'buy') { const t = $(`#gen .pw[data-id="${id}"]`); if (t && !t.classList.contains('own')) { t.classList.remove('shake'); void t.offsetWidth; t.classList.add('shake'); } return; }
+  HAVE[id] = 1; selId = id; justId = id;
+  if (pointsLeft() === 0) stage.classList.remove('ready');
+  hubPts(); genRender();
+}
+function genHeader() {
+  const lv = +$('#rlv').textContent, nx = RANKS[lv];
+  $('#gen .cmdr').innerHTML = `<span style="position:relative;width:40px;height:44px;flex:none"><img src="a/hub_general.png" style="width:40px;height:44px" alt=""><svg viewBox="0 0 52 52" style="position:absolute;left:0;top:0;width:40px;height:40px">${$('#hubStars').innerHTML}</svg></span>
+    <div><b>${rankOf(lv)[1]}<em>${'★'.repeat(lv)}</em></b><div class="xb"><i style="width:${parseFloat($('#rfill').style.width) || 0}%"></i></div>
+    <small>${$('#rxp').textContent} XP${nx ? ' · next rank gives +' + PTS_PER_RANK[lv] + (PTS_PER_RANK[lv] === 1 ? ' point' : ' points') : ''}</small></div>`;
+  $('#gen .wallet').innerHTML = `${TOK(pointsLeft(), 'l')}<div class="wt"><b>POINTS</b><small>to spend</small></div>`;
+  document.querySelectorAll('#gen .lay i').forEach(i => i.classList.toggle('on', i.dataset.l === genLayout));
+}
+genRender = function () {
+  $('#gen').classList.add('vmenu'); $('#gen').classList.toggle('vtrack', genLayout === 'track');
+  genHeader();
+  if (genLayout === 'track') genRenderTrack(); else genRenderTiers();
+  justId = '';
+  $('#gen .bdMenu').querySelectorAll('.pw').forEach(t => {
+    t.addEventListener('mouseenter', () => { selId = t.dataset.id; nodeDetail(); $('#gen .bdMenu').querySelectorAll('.pw').forEach(x => x.classList.toggle('sel', x === t)); });
+    t.addEventListener('mouseleave', () => { selId = null; nodeDetail(); t.classList.remove('sel'); });
+    t.onclick = () => nodeBuy(t.dataset.id);
+  });
+  nodeDetail(); renderSpy();
+};
+document.querySelectorAll('#gen .lay i').forEach(i => i.onclick = () => { genLayout = i.dataset.l; genRender(); });
+hubPts = function () { const p = pointsLeft(), lv = +$('#rlv').textContent; $('#hub .pts').textContent = p; $('#hubTag small').innerHTML = $('#hubTag .tx b').textContent === 'FIRST POWER' ? '' : rankOf(lv)[1]; return; $('#hubTag small').innerHTML = `${rankOf(lv)[1]} <em>${'★'.repeat(lv)}</em> · ${p} point${p === 1 ? '' : 's'} to spend`; };
+
+// ---- o espionado: só enquanto dura; a vaga fica sempre (vazia quando não há) ----
+let spyUntil = 0, spyTotal = 15000, spyTimer = 0, spyKey = '';
+const SPOT_1V1 = [{ n: 'Enemy AI', c: '#ff5a4a', lv: 2, has: ['para1', 'drone', 'repair'], until: 15000 }];
+const SPOT_8P = [{ n: 'Hard AI 2', c: '#ffa94d', lv: 3, has: ['drone', 'arty1', 'armor', 'para1'], until: 15000 },
+                 { n: 'Caio', c: '#7bd66f', lv: 2, has: ['repair', 'para1'], until: 8000 }];
+const SPY_1V1 = { n: 'Enemy AI', c: '#ff5a4a', lv: 2, has: ['paradrop', 'spy_drone', 'repair'] };
+const SPY_8P = { n: 'Hard AI 2', c: '#ffa94d', lv: 3, has: ['spy_drone', 'artillery_strike', 'p_usa_heavy_tank', 'paradrop'] };
+function renderSpy() {
+  const box = $('#gen .bdMenu .strip .intel'); if (!box) return;
+  const t = performance.now() - (spyUntil - spyTotal);
+  const list = (stage.classList.contains('none') ? SPOT_8P : SPOT_1V1).filter(e => spyUntil && t < e.until);
+  const key = list.map(e => e.n).join('|');
+  if (key === spyKey && box.dataset.done) return;          // só redesenha quando alguém entra ou sai (a dica não pisca)
+  spyKey = key; box.dataset.done = 1;
+  if (!list.length) { box.className = 'intel empty'; box.innerHTML = ''; return; }
+  box.className = 'intel';
+  box.innerHTML = '<h5>ENEMY POWERS SPOTTED</h5>' + list.map(e => `<div class="ir"><i style="background:${e.c}"></i><b style="color:${e.c}">${e.n}</b><em>${'★'.repeat(e.lv)}</em><span class="sp">${e.has.map(id => `<img src="a/${node(id).ic}.png" alt="" data-id="${id}">`).join('')}</span></div>`).join('');
+  box.querySelectorAll('.sp img').forEach(im => bindTip(im, () => { const n = node(im.dataset.id); return TT(nodeName(n), '', '', 'cooldown ' + n.cd, n.d); }));
+  return;
+  const e = stage.classList.contains('none') ? SPY_8P : SPY_1V1;
+  box.className = 'intel spy';
+  box.innerHTML = `<div class="spyc"><div class="eye"><img src="a/spy_badge_ring.png" alt=""><img src="a/spy_badge_eye.png" alt=""><div class="dark" style="--gone:${(100 * (1 - left / spyTotal)).toFixed(1)}%"></div></div>
+    <div class="who"><small>SPYING · 0:${String(Math.ceil(left / 1000)).padStart(2, '0')}</small><b style="color:${e.c}">${e.n}</b><em>${'★'.repeat(e.lv)}</em></div>
+    <div class="sp">${e.has.map(ic => `<img src="a/${ic}.png" alt="">`).join('')}</div></div>`;
+}
+function spyStart(ms = 15000) { spyTotal = ms; spyUntil = performance.now() + ms; spyKey = '~'; const bx = $('#gen .bdMenu .strip .intel'); if (bx) delete bx.dataset.done; clearInterval(spyTimer); spyTimer = setInterval(() => { renderSpy(); if (performance.now() > spyUntil) clearInterval(spyTimer); }, 250); renderSpy(); }
+
+// ---- a barra de cima: escolher a patente (0 a 5) e a tela ----
+const XP_NEXT = [600, 1500, 3000, 5000, 8000];      // só pro protótipo mostrar a barra
+function setRank(lv) {
+  clear(); stage.classList.remove('ready', 'lvup', 'promoNew');
+  Object.keys(HAVE).forEach(k => delete HAVE[k]); selId = null;
+  rank(lv, lv < 5 ? 0.35 : 1, lv < 5 ? Math.round(XP_NEXT[lv] * 0.35).toLocaleString('en-US') + ' / ' + XP_NEXT[lv].toLocaleString('en-US') : 'max');
+  document.querySelectorAll('#bar .rkp button').forEach(b => b.classList.toggle('on', +b.dataset.rk === lv));
+  document.querySelectorAll('#bar button[data-s]').forEach(b => b.classList.remove('on'));
+  if (lv > 0) { void stage.offsetWidth; stage.classList.add('lvup'); later(() => stage.classList.remove('lvup'), 900); }
+  $('#hubTag .tx b').textContent = lv === 1 ? 'FIRST POWER' : 'PROMOTED';   // na patente 1 (o começo, como no ZH) não é promoção
+  if (pointsLeft() > 0) stage.classList.add('ready', 'promoNew');
+  hubPts();
+  if (stage.classList.contains('genon')) genRender();
+}
+document.querySelectorAll('#bar .rkp button').forEach(b => b.onclick = () => setRank(+b.dataset.rk));
+function setLayout(l) { genLayout = l; document.querySelectorAll('#bar .lyp button').forEach(b => b.classList.toggle('on', b.dataset.ly === l)); if (stage.classList.contains('genon')) genRender(); }
+document.querySelectorAll('#bar .lyp button').forEach(b => b.onclick = () => setLayout(b.dataset.ly));
+
+// ---- v17: as plaquetas de verdade (em fatias) e as medalhas ----
+function plateize(el, color) {
+  if (!el || el.querySelector('.pqbg')) return;
+  el.classList.add('plq');
+  const bg = document.createElement('div'); bg.className = 'pqbg';
+  bg.innerHTML = ['L', 'M', 'N', 'M', 'R'].map(k => `<span class="pq${k}" style="background-image:url(a/plate_${color}_${k}.png)"></span>`).join('');
+  el.prepend(bg);
+}
+// (01/11) as plaquetas com a arte do GPT ficaram sujas: voltaram ao desenho antigo, limpo, de uma linha
+const MEDAL = { 'First Strike': 'medal_first_strike', 'Tank Killer': 'medal_tank_killer', 'Hold the Line': 'medal_hold_the_line', 'Logistics': 'medal_logistics' };
+// 02/11: as patentes e as medalhas de cada exército (art/tools/cut_faction_ranks.py); a USA fica com as dela
+function rankIcon(lv) { return curFac === 'usa' ? `rank_usa_${lv}.png` : `${curFac}/rank_${curFac}_${lv}.png`; }   // declarada (sobe): o cubo usa antes desta linha
+function medalsSet() { document.querySelectorAll('.med').forEach(m => { const f = MEDAL[m.querySelector('.tx b').textContent.trim()]; if (f) { const ic = m.querySelector('.ic'); ic.classList.add('img'); ic.style.backgroundImage = `url(a/${curFac === 'usa' ? '' : curFac + '/'}${f}.png)`; } }); }
+medalsSet();
+
+// ---- a facção: as peças de cada uma e onde fica a janela dos tambores e o miolo do cubo (frações medidas na peça) ----
+const FAC = {
+  usa: { dir: '', crestWH: [896, 256], win: [0.184, 0.24, 0.816, 0.803], hubWH: [347, 384], disc: [0.5, 0.45, 0.73] },
+  china: { dir: 'china/', crestWH: [768, 233], win: [0.18, 0.206, 0.82, 0.794], hubWH: [163, 183], disc: [0.495, 0.456, 0.69] },   // 01/11: a laca (o brasão refeito na proporção das outras, a janela única do mostrador)
+  gla: { dir: 'gla/', crestWH: [731, 204], win: [0.17, 0.20, 0.83, 0.81], hubWH: [389, 403], disc: [0.45, 0.43, 0.62] },
+  russia: { dir: 'russia/', crestWH: [761, 214], win: [0.175, 0.21, 0.825, 0.77], hubWH: [335, 279], disc: [0.51, 0.45, 0.63] } };
+var DRUM_H = 40, curFac = 'usa';
+function setFaction(f) {
+  const F = FAC[f] || FAC.usa; curFac = f; RANKS = RANKS_BY[f] || RANKS_BY.usa;
+  setTimeout(() => { try { $('#rkB .head b').textContent = rankOf(lvNow())[0]; medalsSet(); hubUpdate(lvNow()); if (stage.classList.contains('genon')) genRender(); } catch (e) {} }, 0);
+  if (f === 'gla' && new URLSearchParams(location.search).get('nopow')) setTimeout(() => power(0, 0), 0);
+  stage.classList.remove('f-usa', 'f-china', 'f-gla', 'f-russia'); stage.classList.add('f-' + f);
+  // o brasão: largura fixa de 250, a altura da peça; a base encosta na fileira de energia
+  const cw = 250, ch = cw * F.crestWH[1] / F.crestWH[0];
+  const cr = $('#crest'); cr.style.height = ch + 'px'; cr.style.top = (860 - ch) + 'px';
+  const ci = $('#crest .crimg'); ci.src = 'a/' + F.dir + 'crest_money.png'; ci.style.height = ch + 'px';
+  const [x0, y0, x1, y1] = F.win, ow = (x1 - x0) * cw, oh = (y1 - y0) * ch;
+  const odo = $('#odo');
+  // com 'important': a regra antiga do #odo (a medida da USA, com !important) ganhava da janela de cada facção (01/11: o dinheiro da China fora do lugar)
+  [['left', x0 * cw], ['top', y0 * ch], ['width', ow], ['height', oh]].forEach(([k, v]) => odo.style.setProperty(k, v + 'px', 'important'));
+  DRUM_H = oh;
+  document.querySelectorAll('.drum').forEach(d => { d.style.setProperty('width', (ow / 5) + 'px', 'important'); d.style.setProperty('height', oh + 'px', 'important'); });
+  document.querySelectorAll('.drum .strip div').forEach(d => { d.style.setProperty('height', oh + 'px', 'important'); d.style.setProperty('font-size', Math.round(oh * 0.68) + 'px', 'important'); d.style.setProperty('line-height', oh + 'px', 'important'); });
+  const cur = odo.querySelector('.cur'); cur.style.setProperty('height', oh + 'px'); cur.style.setProperty('font-size', Math.round(oh * 0.62) + 'px', 'important');
+  const cm = odo.querySelector('.comma'); cm.style.left = (ow * 0.4 - 4) + 'px';
+  // o cubo: o miolo do medalhão no lugar do disco das estrelas (centro 26,26; 38 px)
+  const hi = $('#hub .hbimg'); hi.src = 'a/' + F.dir + 'hub_general.png';
+  const s = 38 / (F.disc[2] * F.hubWH[0]);
+  Object.assign(hi.style, { width: (F.hubWH[0] * s) + 'px', height: (F.hubWH[1] * s) + 'px', left: (26 - F.disc[0] * F.hubWH[0] * s) + 'px', top: (26 - F.disc[1] * F.hubWH[1] * s) + 'px' });
+  document.querySelectorAll('#bar .fcp button').forEach(b => b.classList.toggle('on', b.dataset.fc === f));
+  setOdo(Math.max(0, shown));
+  if (stage.classList.contains('genon')) genRender();
+}
+document.querySelectorAll('#bar .fcp button').forEach(b => b.onclick = () => setFaction(b.dataset.fc));
+
+let timers = [];
+function later(fn, ms) { timers.push(setTimeout(fn, new URLSearchParams(location.search).get('fast') ? ms / 100 : ms)); }
+function every(fn, ms) { timers.push(setInterval(fn, ms)); }
+function clear() { timers.forEach(t => { clearTimeout(t); clearInterval(t); }); timers = []; }
+
+const LEG = {
+  normal: '<b>Normal.</b> (Tecla S: o topo de 8, com o aliado subindo de nível.) A energia é a luz do console: uma célula por ponto. O contador é mecânico: o avião de carga entra rolando os números pra cima, a compra rola pra baixo. A patente (nível + XP) mora na ponta direita da fileira. Passe o mouse nos botões: eles sobem, acendem por dentro e a luz corre no metal; em cima do contador, da energia e da patente aparece o detalhe.',
+  near: '<b>Quase sem energia.</b> Sobram menos de 3 (o consumo do maior prédio): o tubo fica âmbar e o pedaço que sobra pisca. Ao colocar um prédio, o tubo mostra riscado o que ele vai comer; se estoura, a ponta pisca em vermelho e a mão avisa OVERLOAD.',
+  brown: '<b>Sem energia.</b> O console falha: o tubo fica vermelho, o neon e os painéis do HUD piscam e escurecem como uma queda de luz (a batalha não escurece). O que parou sai numa plaqueta do brasão; o botão em produção ganha o raio (mais lento).',
+  poor: '<b>Pouco dinheiro.</b> Os tambores acendem em vermelho; os preços que você não paga ficam vermelhos. Clicou sem ter: o botão pisca, o brasão treme e diz quanto falta e quando chega o próximo avião.',
+  promote: '<b>Patente: a escada.</b> Cada degrau é uma patente (1 a 5); o atual enche com o XP e a seta marca onde você está. A placa em cima mostra as estrelas e a sigla da patente (BG, MG, LTG, GEN, GA: os generais dos EUA) e é o botão GENERAL que abre a tela do general. Subiu de nível: o degrau pisca, a placa ganha a estrela com um tranco e a plaqueta PROMOTE sobe dela. No topo de 8 (tecla S), o aro dourado em volta do emblema do aliado é o XP dele.',
+  chat: '<b>Chat.</b> As mensagens ficam perto do minimapa, cada uma numa placa escura com a cor do jogador na borda, letra grande. Entram com o mesmo tranco das plaquetas e somem sozinhas em 12 s. O botão do chat no minimapa pisca quando chega mensagem. Enter abre a caixa: ALL / ALLIES em abas.'
+};
+
+function state(s) {
+  clear();
+  document.querySelectorAll('#bar button[data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === s));
+  document.querySelectorAll('#bar .rkp button').forEach(b => b.classList.remove('on'));
+  stage.classList.remove('near', 'brown', 'poor');
+  ['#tagPower', '#tagMoney', '#tagPromote'].forEach(t => $(t).classList.remove('show'));
+  $('#tagPower').classList.remove('amber');
+  $('#legend').innerHTML = LEG[s];
+  menuReset(); haveReset(); rank(3, 0.62, '1,240 / 2,000'); stage.classList.remove('ready', 'lvup', 'promoNew'); allySet(2, 0.62);
+  $('#chat').querySelectorAll('.cl').forEach(c => c.remove()); $('#chatIn').classList.remove('show');
+  setTimeout(() => setOdo(Math.max(0, shown)), 0);
+  if (s === 'normal') {
+    power(4, 10); shown = target = 4250;
+    later(allyLevelUp, 3500);
+    let up = true;
+    every(() => {
+      if (up) { chip('+$1,200', 'in'); later(() => moneyTo(target + 1200), 1050); }
+      else { chip('−$900', 'out'); moneyTo(target - 900, 500); }
+      up = !up;
+    }, 2600);
+  }
+  if (s === 'near') {
+    stage.classList.add('near'); power(8, 10, 3); shown = target = 4250;
+  }
+  if (s === 'brown') {
+    stage.classList.add('brown'); power(11, 10); shown = target = 4250;
+    later(() => $('#tagPower').classList.add('show'), 250);
+  }
+  if (s === 'poor') {
+    stage.classList.add('poor'); power(4, 10); moneyTo(150, 700);
+    const attempt = () => {
+      const cf = $('#hsR'); cf.classList.remove('flash'); void cf.offsetWidth; cf.classList.add('flash');
+      const c = $('#crest'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+      $('#tagMoney').classList.add('show'); later(() => $('#tagMoney').classList.remove('show'), 2200);
+    };
+    later(attempt, 900); every(attempt, 3600);
+  }
+  if (s === 'promote') {
+    power(4, 10); shown = target = 4250; rank(3, 0.82, '1,640 / 2,000');
+    later(() => rank(3, 1, '2,000 / 2,000'), 500);
+    later(() => { stage.classList.remove('lvup'); void stage.offsetWidth; stage.classList.add('lvup'); rank(4, 0, '0 / 3,000'); $('#hubTag .tx b').textContent = 'PROMOTED'; stage.classList.add('ready', 'promoNew'); hubPts(); }, 1250);
+    later(() => stage.classList.remove('lvup'), 2500);
+  }
+  if (s === 'chat') {
+    power(4, 10); shown = target = 4250;
+    if (!stage.classList.contains('none')) toggleSel();
+    chatDemo(); every(() => { $('#chat').querySelectorAll('.cl').forEach(c => c.remove()); chatDemo(); }, 16000);
+  }
+}
+document.querySelectorAll('#bar button[data-s]').forEach(b => b.onclick = () => state(b.dataset.s));
+function toggleSel() { stage.classList.toggle('none'); $('#sel').classList.toggle('on', !stage.classList.contains('none')); $('#sel').textContent = stage.classList.contains('none') ? 'Nada selecionado' : 'Com seleção'; }
+$('#sel').onclick = toggleSel;
+$('#leg').onclick = () => { stage.classList.toggle('legend'); $('#leg').classList.toggle('on'); };
+document.querySelectorAll('.rkb').forEach(b => b.onclick = () => { rkSet(b.dataset.rk); state('promote'); });
+addEventListener('keydown', e => {
+
+  const m = { '1': 'normal', '2': 'near', '3': 'brown', '4': 'poor', '5': 'promote', '6': 'chat' }[e.key];
+  if (m) state(m); if (e.key === 's' || e.key === 'S') toggleSel();
+});
+// o apagão também cobre a placa da facção sem seleção
+new MutationObserver(() => {
+  const n = stage.classList.contains('none');
+  Object.assign($('#dimPanel').style, n ? { display: 'none' } : { display: 'block' });
+  Object.assign($('#dimCard').style, n ? { top: '830px', height: '250px' } : { top: '758px', height: '322px' });
+}).observe(stage, { attributes: true, attributeFilter: ['class'] });
+const q = new URLSearchParams(location.search);
+if (q.get('ally')) setTimeout(() => allySet(+q.get('ally'), 0.62), 0);
+if (q.get('none')) toggleSel();
+if (q.get('leg')) { stage.classList.add('legend'); $('#leg').classList.add('on'); }
+rkSet('B');
+state(q.get('s') || 'normal');
+if (q.get('still')) stage.classList.add('still');
+setLayout(q.get('lay') || 'track');
+setFaction(q.get('fac') || 'usa');
+if (q.get('money') !== 'a') stage.classList.add('mflat');   // 01/11: o mostrador aprovado; ?money=a mostra os tambores
+if (q.get('rk') !== null && q.get('rk') !== undefined && q.get('rk') !== '') setTimeout(() => setRank(+q.get('rk')), 0);
+if (q.get('own')) setTimeout(() => { q.get('own').split(',').forEach(k => HAVE[k] = 1); hubPts(); if (pointsLeft() === 0) stage.classList.remove('ready'); }, 50);
+{ const pc = document.createElement('div'); pc.id = 'pcolx'; pc.innerHTML = `<span class="iw f-cmd" style="left:37px;top:459px;width:56px;height:40px"><img src="../../../poderes/tela/icones/usa_swDisparo_gemini.png" alt=""></span><span class="iw f-cmd" style="left:37px;top:529px;width:56px;height:40px"><img src="a/${node('a10_1').ic}.png" alt=""></span><span class="iw f-cmd" style="left:37px;top:599px;width:56px;height:40px"><img src="a/${node('naval1').ic}.png" alt=""></span><span class="iw f-cmd" style="left:37px;top:669px;width:56px;height:40px"><img src="a/${node('drone').ic}.png" alt=""></span><span class="iw f-cmd" style="left:37px;top:739px;width:56px;height:40px"><img src="a/${node('para1').ic}.png" alt=""></span>`; $('#stage').appendChild(pc); }
+if (q.get('gen')) setTimeout(genOpen, 400);
+// (poderes) ?have=id,id (o que já foi comprado) e ?sel=id (o poder no detalhe), pra foto
+if (q.get('have') || q.get('sel')) setTimeout(() => { (q.get('have') || '').split(',').filter(Boolean).forEach(k => HAVE[k] = 1); selId = q.get('sel') || null; hubPts(); genRender(); }, 700);
+if (q.get('seen')) setTimeout(() => { genOpen(); genClose(); }, 600);
+if (q.get('tipspy')) setTimeout(() => { const im = document.querySelector('#gen .bdMenu .intel .sp img'); if (im) im.dispatchEvent(new Event('mouseenter')); }, 900);
+// pra foto: ?force=#hsR|.tab acende o hover sem mouse (copia as regras :hover pra .f)
+if (q.get('force')) {
+  const sh = document.styleSheets[0], add = [];
+  for (const r of sh.cssRules) if (r.selectorText && r.selectorText.includes(':hover')) add.push(r.cssText.replaceAll(':hover', '.f'));
+  add.forEach(t => sh.insertRule(t, sh.cssRules.length));
+  const els = q.get('force').split('|').map(x => document.querySelector(x)).filter(Boolean);
+  els.forEach(el => el.classList.add('f'));
+  if (els[0]) setTimeout(() => els[0].dispatchEvent(new Event('mouseenter')), 300);
+}
+</script>
+</body>
+</html>

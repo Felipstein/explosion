@@ -79,6 +79,15 @@ As imagens aprovadas estão em `docs/aprovados/superarmas/`, e as folhas de cada
 6. **O detalhe é de jogo, não de filme:** superfícies grandes e limpas, poucos painéis e cabos. Nada de laje embaixo de tudo ("a base
    acompanha a forma").
 
+**O ícone do poder da superarma (03/11, em curso):** o botão de disparo na coluna de poderes (o prédio fica com a sessão que modela).
+- **A 1ª tentativa** (`captures/concept/170_`, GPT e Gemini) foi **reprovada**:
+  - a partição em 5 riscos e o disparo da arena;
+  - ele: "quero mais diferente, e essas explosões estão muito feias, artificiais, não dá medo, não parece ser superweapon, quero mais
+    variação, estude, veja como era do C&C ZH e de outros jogos".
+- **O caminho:** o estudo dos ícones de superarma (`docs/superarmas/ESTUDO_ICONE_SUPERARMA.md`), as ideias em palavras e só então a
+  imagem.
+- Por engano saiu antes o botão de construir do prédio (`169_`); ficou de fora.
+
 **O que falta** (a ordem da §12): a chegada da Rússia e da GLA pelo método novo; as regras na simulação; os modelos 3D com os estados;
 os efeitos no laboratório; o HUD; o som por último.
 

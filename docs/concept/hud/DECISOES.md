@@ -368,6 +368,15 @@ Mudar a caixa de lugar foi reprovado ("só pegou e tacou ali"). O rumo aprovado 
   Como fica: `docs/poderes/tela/poderes_usa.jpg` (a tela montada a partir deste protótipo por `docs/poderes/tela/make_tela.py`, sem mexer
   nele). Quando o protótipo for atualizado, sai a coluna AIR/GROUND/FIRE/SUPPORT.
 
+- **03/11, a tela do general calma e com direção (aprovada por ele, na sessão dos poderes; aplicada no protótipo):**
+  - "Meus olhos ainda cansam" e "parece que não tem ordem, hierarquia, direção".
+  - **A calma:** o estado aparece uma vez só (a ficha do custo ou o ✓), sem moldura acesa em todo cartão; o dourado só no mouse ou no
+    selecionado; o nível sem a plaquinha colorida; as linhas entre os níveis finas e cinza.
+  - **A linha do tempo:** a coluna da patente atual acende (o traço dourado no cabeçalho), e as que faltam apagam.
+  - Vale pras 4 facções, cada uma com o fio neutro da sua cor (o bloco de CSS de 03/11 no `prototipo/index.html`). O exemplo de poderes
+    do protótipo virou a árvore aprovada da USA, com os ícones aprovados.
+  - Fotos: `docs/concept/poderes/prototipo_<facção>.jpg`. O diagnóstico: `docs/poderes/USA.md` §18 e §19.
+
 ## 8. O HUD das outras facções (01/11)
 
 O plano e o estudo do ZH (pelos dados do jogo instalado) em `docs/concept/hud/FACCOES.md`. A proposta de 13/10 (o neon girado de cor) foi

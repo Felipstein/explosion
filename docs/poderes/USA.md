@@ -410,3 +410,48 @@ um por vez.
 - **A tela:** `docs/poderes/tela/poderes_usa.jpg` e `docs/concept/poderes/tela_sem_rotulos.jpg`.
   - `make_tela.py`: quando todos os rótulos de `ROWS` são vazios, some a coluna dos rótulos e a grade fica com as 5 patentes.
 
+---
+
+## 18. "Meus olhos ainda cansam ao ver essa tela" (03/11, em teste)
+
+- **A medida:**
+  - não é excesso de cor: só 3,4% da grade é cor forte e clara, e o dourado vivo é 1,1%;
+  - o cansaço vem da estrutura.
+- **As causas:**
+  1. **Moldura acesa em todo cartão:** o dourado de "dá pra comprar" e o verde de "comprado" fazem 18 retângulos de borda forte em
+     grade sobre o fundo escuro. Borda clara repetida em grade faz a vista vibrar.
+  2. **O estado repetido 3 vezes no mesmo cartão:** a moldura, a ficha do custo ou o ✓, e a cor da plaquinha do nível. Com umas 4 a 5
+     marcas por cartão, são uns 80 pontos de atenção.
+  3. **As linhas tracejadas douradas** entre os níveis.
+- **A versão calma** (`make_tela.py --calmo`, o `CALM_CSS`):
+  - o estado aparece uma vez só, na ficha do custo ou no ✓;
+  - todos os cartões têm o mesmo fio cinza;
+  - o dourado só aparece no cartão sob o mouse ou selecionado;
+  - o nível sem a plaquinha colorida;
+  - as linhas finas e cinza;
+  - um pouco mais de espaço entre os cartões.
+- **As fotos:** `docs/concept/poderes/tela_calma_antes.jpg` e `..._depois.jpg`.
+- **Se ele aprovar:** a mudança vai pro protótipo do HUD (da outra sessão), anotada em `docs/concept/hud/DECISOES.md`.
+
+---
+
+## 19. "Parece que não tem ordem, hierarquia, fluxo, sentido, direção" (03/11, em teste)
+
+- **O diagnóstico:**
+  - a tela tem dois eixos com o mesmo peso (as patentes na horizontal e as linhas de poderes na vertical), e os níveis ainda correm de
+    lado;
+  - o olho não sabe onde começa nem pra onde vai;
+  - não há um "estou aqui, isso eu compro agora".
+  - A calma da §18 tirou o ruído, mas não deu direção.
+- **As duas saídas, em cima da tela calma, na patente 3:**
+  - **A escada** (`escada.js` e `escada.css`, `make_tela.py --layout escada`): as patentes viram degraus de cima pra baixo, como no
+    ZH (as 3 fileiras de patente) e no XCOM 2 (a promoção do soldado):
+    - o degrau atual acende com o trilho dourado, os de cima ficam conquistados e os de baixo apagados;
+    - o nível seguinte de um poder fica logo abaixo, então subir de nível é descer;
+    - as colunas são as linhas de antes, na mesma ordem.
+  - **A linha do tempo** (`--layout linha`): as patentes continuam em colunas, mas a coluna atual acende e a fronteira divide o que já
+    abriu (aceso) do que falta (apagado).
+- **A minha recomendação:** a escada. Tem um eixo só, e descer é subir de patente, como no ZH. A linha do tempo melhora, mas continua com
+  os dois eixos.
+- **As fotos:** `docs/concept/poderes/tela_direcao_<escada|linha>.jpg`.
+

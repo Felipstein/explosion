@@ -1,0 +1,18 @@
+/* (03/11, em teste) a escada: os degraus das patentes de cima pra baixo; o degrau atual aceso, os de baixo apagados */
+#gen .trk.esc { grid-template-columns: 200px repeat(4, 1fr) !important; grid-template-rows: repeat(5, 1fr) !important; gap: 7px 10px !important; }
+#gen .trk.esc .rh { flex-direction: row !important; align-items: center; gap: 10px; padding: 6px 10px 6px 14px !important; background: #0d141b;
+  box-shadow: inset 0 0 0 1px #222c37 !important; border-radius: 4px; }
+#gen .trk.esc .rh .ri { position: static !important; width: 40px; height: 40px; flex: none; }
+#gen .trk.esc .rh .rt { display: flex; flex-direction: column; gap: 3px; }
+#gen .trk.esc .rh .rt b { font: 700 14px/1.1 Barlow; color: #dfe7ef; }
+#gen .trk.esc .rh .gv { position: static !important; font: 700 12px Barlow; color: #b9c6d3; }
+#gen .trk.esc .rh .xp { position: static !important; width: 110px; }
+/* o degrau atual: o trilho dourado à esquerda e a faixa um pouco mais clara na linha inteira */
+#gen .trk.esc .rh.cur { box-shadow: inset 4px 0 0 #f6c850, inset 0 0 0 1px #4a4027 !important; background: #18160f; }
+#gen .trk.esc .cell.cur { background: rgba(246, 200, 80, .045); border-radius: 4px; }
+/* os degraus de baixo (ainda não chegou): apagados; os de cima: normais */
+#gen .trk.esc .rh.fut, #gen .trk.esc .cell.fut { opacity: .38; }
+#gen .trk.esc .cell { display: flex; align-items: center; justify-content: center; }
+#gen .trk.esc .pw { max-width: 230px !important; }
+/* a regra da tela sem rótulos esconde o 1º filho depois do svg; na escada esse filho é o 1º degrau e tem de aparecer */
+#gen .trk.esc > .rh { display: flex !important; }
