@@ -466,6 +466,16 @@ fino na câmera do jogo; o pavilhão branco de duas águas pode ler como celeiro
 - Item 40, a tinta: "achei válida a ideia da areia na textura, mas por enquanto não vamos fazer isso, segue a textura bem detalhada
   [...] mas sem areia, depois eu tenho uma ideia nova pra areia": o `DustCoat` saiu da tinta e da parede da USA (ficam a lavagem, o
   tom por chapa e as lascas). "A areia da lagarta e do pneu deixa como está, a outra sessão vai trabalhar nisso": o pó da rodagem fica.
+- (03/11 09h40) **As 4 ideias novas prontas** (a folha `captures/game/models/ideias_novas_02_11_folha.jpg`, com a reprovada ao lado):
+  - o Propaganda v4 é a estátua de bronze de 8,5 m do soldado anônimo com o megafone (que gira), sobre o pedestal de granito, que é o estúdio;
+  - o quartel v3 são os 3 ônibus em leque com as lonas;
+  - o Stinger v3 é a caixa d'água de treliça com o ninho e a torre no alto (a boca a 9,5 m);
+  - o Stash v3 é o ferro-velho com o guindaste girando sobre o caminhão.
+
+  Os slots novos `CnBronze` e `CnGranite`. No jogo pelo `chain55` (depois da `chain54`).
+
+  O que o agente achou fraco: a estátua simplificada de perto (o punho, o rosto), o pedestal com cara de casinha, o pátio vazio dos
+  ônibus, o lançador pequeno lá no alto, os carros amassados como placas, e o ímã que passa 1,5 m do lote no giro.
 - (12h40) Um agente modelando as 4 ideias novas (`model_china_propaganda_center_v4.py`, `model_gla_barracks_v3.py`,
   `model_gla_stinger_site_v3.py`, `model_gla_supply_stash_v3.py`).
 - Item 47, o kit civil v3 (o agente terminou): a forma melhorou (a lataria redonda com o vinco, os amassados, o interior; a mureta

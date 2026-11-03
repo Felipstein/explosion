@@ -94,6 +94,10 @@ SLOTS = {
     'GlaPatch': ((0.122, 0.172, 0.150), 0.6, 0.2, {'Grime': 0.6}),
     'GlaRust': ((0.195, 0.076, 0.030), 0.85, 0.2, {'Grime': 0.6}),
     'GlaWood': ((0.181, 0.138, 0.064), 0.8, 0.0, {'Grime': 0.2}),
+    # (03/11, item 46) o Propaganda v4 (o herói do megafone): o bronze da estátua (escurecido, o verdete vai no GlaTile) e o granito
+    # vermelho do pedestal (o Red da China é saturado demais pra pedra)
+    'CnBronze': ((0.075, 0.05, 0.03), 0.45, 0.8, {'Grime': 0.2}),
+    'CnGranite': ((0.20, 0.065, 0.048), 0.6, 0.0, {'Grime': 0.25}),
     'UsConcrete': ((0.262, 0.243, 0.218), 0.92, 0.0, {'ConcreteMask': 1.0, 'Weather': 0.5}),
     # o kit civil da vila (as casas de adobe do Look, look_houses.py: as cores dele em linear) até o
     # M_Plaster do plugin RTSLook chegar
@@ -152,7 +156,7 @@ MASK_PARAMS = {
     'GlaPaint': {'Wear': 0.9, 'CavityDirt': 0.8, 'PanelTone': 1.0},
     'GlaStripe': {'Wear': 0.9, 'CavityDirt': 0.8, 'PanelTone': 1.0},
 }
-for _k in ('CnConcrete', 'CnPlinth', 'CnRoof', 'CnMetal', 'CnGold'):
+for _k in ('CnConcrete', 'CnPlinth', 'CnRoof', 'CnMetal', 'CnGold', 'CnBronze', 'CnGranite'):
     MASK_PARAMS[_k] = {'Wear': 0.4, 'CavityDirt': 0.7, 'PanelTone': 0.6}
 MASK_PARAMS['RuPaint'] = {'Wear': 0.4, 'CavityDirt': 0.6, 'PanelTone': 0.45, 'Camo': 2.0, 'CamoPix': 0.04, 'CamoScale': 1.8,
                           'CamoColor': (0.022, 0.024, 0.026), 'CamoColor2': (0.30, 0.32, 0.32)}
@@ -342,6 +346,13 @@ FACTION_MODELS = [
     ('gla_palace_v2', 'SM_GLA_Palace_*.glb', '/Game/Structures/gla_palace_v2', GLA_BUILDING_SLOTS),
     # (02/11, item 58) o tanque da GLA do zero (sacos de pano, o pneu na diagonal, a esteira que anda)
     ('gla_tank_v2', 'SM_GLA_MBT_*.glb', '/Game/Units/gla_tank_v2', GLA_TANK_SLOTS),
+    # (03/11, itens 46, 48, 50, 51: as ideias do zero, docs/elenco/IDEIAS_NOVAS_02_11.md) o herói do megafone, os ônibus, a caixa
+    # d'água e o ferro-velho do guindaste
+    ('china_propaganda_center_v4', 'SM_China_PropagandaCenter_*.glb', '/Game/Structures/china_propaganda_center_v4',
+     dict(CHINA_BUILDING_SLOTS, CnMetal='CnBronze', Red='CnGranite')),
+    ('gla_barracks_v3', 'SM_GLA_Barracks_*.glb', '/Game/Structures/gla_barracks_v3', GLA_BUILDING_SLOTS),
+    ('gla_stinger_site_v3', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v3', GLA_BUILDING_SLOTS),
+    ('gla_supply_stash_v3', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v3', GLA_BUILDING_SLOTS),
     ('gla_stinger_site_v2', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v2', GLA_BUILDING_SLOTS),
     ('gla_supply_stash_v2', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v2', GLA_BUILDING_SLOTS),
     # (01/11, itens 53, 54, 55) a Rússia refeita: o BMPT e o T-14 com a silhueta própria (longe do T-90M), o Shtab da torre em degraus
@@ -1442,7 +1453,7 @@ def main():
         # (31/10, o elenco das 3 facções) as instâncias dos slots novos e os modelos do FACTION_MODELS que existirem;
         # PROV_KEYS=china_type99,gla_palace: só essas pastas
         faction_instances(['UsCore', 'PowerLine', 'UsBody', 'UsConcrete', 'UsPaint', 'GlaTent', 'GlaTankPaint', 'GlaBag', 'GlaPatch',
-                           'GlaRust', 'GlaWood', 'RuBlue', 'RuPaint', 'RuSteel', 'RuMetal', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite',
+                           'GlaRust', 'GlaWood', 'CnBronze', 'CnGranite', 'RuBlue', 'RuPaint', 'RuSteel', 'RuMetal', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite',
                            'CnConcrete', 'CnPlinth', 'CnRoof', 'CnMetal', 'CnGold', 'Fire', 'CnTankPaint', 'CnTankCamo', 'CnTankMetal',
                            'GlaEarth', 'GlaNet', 'GlaPaint', 'GlaStripe', 'GlaTile', 'Broken', 'BrokenAdobe'])
         opaque = existing_instances()

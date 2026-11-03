@@ -44,3 +44,20 @@ e a saída em `chainNN.out`).
 - **A areia da esteira e dos pneus:** fica como está, porque a outra sessão vai trabalhar nisso.
 - **Reprovados:** o Propaganda v3, o quartel v2, o Stinger v2 e o Stash v2. O Palace v2 fica.
 - **Pedido de ver não é urgência:** não furar a fila sem ele pedir "agora".
+
+## 03/11, a volta (outra conta)
+- **As correntes 51, 52 e 53 morreram na pausa.** Pronto: os 15 primeiros modelos do Blender. O resto falhou na hora em que a sessão
+  fechou: o console sumiu e nada chegou ao Units.json. A `chain54` refaz tudo o que faltava, numa corrente só:
+  - os 5 modelos;
+  - o destrutor;
+  - os dados (o tanque da GLA v2 junto);
+  - as fotos A;
+  - os materiais e a importação;
+  - as fotos B e os tours;
+  - o A/B da máscara no tanque da USA.
+- **O teste do recorte (T0) parou no "zero"** e deixou o chão do World_TestHills zerado. Desfeito pelo `t0_undo.ps1`, que confere com a
+  foto `t0_desfeito`.
+  - O que o T0 mostrou: sem Nanite, o chão não sumiu e ficou com o xadrez cinza, que é o material padrão da Unreal enquanto o shader
+    compila. A foto saiu antes da compilação e o teste não decidiu nada.
+  - Refazer com uma rodada de aquecimento antes da foto.
+- **O agente das 4 ideias novas foi retomado.**
