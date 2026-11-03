@@ -15,11 +15,18 @@ Sessão do HUD. Ao retomar: ler isto, `FACCOES.md` (§5–8), `DECISOES.md` (§7
   recortado (`APROVADOS.md`, 02/11). O código do topo de 8 v1 (`RTSHudPainter::DrawTopMany`, `ImageUV`) está no HUDLab SEM commit:
   é o reprovado, refazer ou tirar.
 - **O estudo** (agente, 02/11): `JOGADORES.md` (as regras com números e as referências).
-- **A v2 (feita, NÃO mostrada a ele ainda):** `captures/concept/hud/recursos2/jogadores.html` (cópia em `docs/concept/hud/prototipo/jogadores.html`):
-  sem lista lateral; a barra do duelo com os painéis alongados (só a faixa lisa estica) e as fichas dos times (inimigos em grupos);
-  superarmas sem caixa, nome na cor do dono + tempo, canto superior direito; placar limpo de 7 colunas, linhas de 36 px, respiro entre
-  times, economia escondida = um olho fechado. Falta: conferir as fotos (`shots_fac/j2_*.png`, tiradas antes da pausa), corrigir o que
-  estiver errado e mostrar a ele. Servidor do protótipo: `.claude/launch.json` "hud-concept" (porta 8133).
+- **A v2 (03/11, retomada na outra conta): conferida, corrigida e pronta pra ele revisar** (não vista por ele ainda):
+  `captures/concept/hud/recursos2/jogadores.html` (cópia em `docs/concept/hud/prototipo/jogadores.html`; servidor "hud-concept", porta 8133).
+  - O topo: a barra do duelo com os painéis alongados (só a faixa lisa estica, os enfeites ficam); você no anel; o seu time à esquerda;
+    os inimigos em grupos de fichas à direita (16 px entre times); no anel da direita, quantos inimigos vivos; no todos contra todos, o seu
+    nome no painel da esquerda. Sem lista lateral.
+  - As superarmas: sem caixa, o nome na cor do dono + o tempo, os dois-pontos numa coluna, contorno preto; uma linha por jogador, no máximo 4
+    e "+N more · TAB"; sempre logo abaixo da barra do topo, à direita (com 16 jogadores a barra chegava no canto).
+  - O placar (Tab): 7 colunas, linhas de 36 px, o seu time primeiro, os outros por pontuação e os derrotados por último; respiro entre times;
+    a economia escondida = um olho fechado; o espionado com o olho ao lado do nome e os números em laranja; o exército sempre em "k".
+  - As imagens da revisão: `captures/concept/hud/faccoes/jogadores_v2_*.jpg`.
+- **Próximo passo:** ele revisar a v2. Aprovada, levar pro HUD (`RTSHudPainter`: trocar o `DrawTopMany` v1 pela barra alongada, a lista
+  das superarmas e o placar), registrar em `APROVADOS.md` e commitar.
 
 ## Depois disso
 - Levar o HUD aprovado pro jogo (`Game/Plugins/RTSHud`, o HUD novo atrás de -NewHud/F4) só quando os jogadores/placar forem aprovados.

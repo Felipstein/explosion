@@ -47,9 +47,9 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 
 /* ---- as superarmas: o timer do Zero Hour modernizado. Sem caixa: o nome na cor do dono e o tempo, com sombra, os dois-pontos numa
    coluna; uma linha por jogador (a mais próxima dele), no máximo 4, no canto de cima à direita ---- */
-#sw { position: absolute; right: 26px; top: 64px; z-index: 9; display: grid; grid-template-columns: auto 64px; column-gap: 12px; row-gap: 4px; align-items: baseline; }
-#sw .n { justify-self: end; font: 600 18px Barlow; text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 1px #000; white-space: nowrap; }
-#sw .t { font: 700 22px Barlow; font-variant-numeric: tabular-nums; color: #f1f4f7; text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 1px #000; }
+#sw { position: absolute; right: 26px; top: 172px; z-index: 9; display: grid; grid-template-columns: auto 64px; column-gap: 12px; row-gap: 4px; align-items: baseline; }
+#sw .n { justify-self: end; font: 600 18px Barlow; white-space: nowrap; text-shadow: 1px 0 1px #000, -1px 0 1px #000, 0 1px 1px #000, 0 -1px 1px #000, 0 0 6px rgba(0,0,0,.9); }
+#sw .t { font: 700 22px Barlow; font-variant-numeric: tabular-nums; color: #f1f4f7; text-shadow: 1px 0 1px #000, -1px 0 1px #000, 0 1px 1px #000, 0 -1px 1px #000, 0 0 6px rgba(0,0,0,.9); }
 #sw .t.soon { color: #ff8070; }
 #sw .t.ready { color: #ff5a48; animation: blink .5s steps(2) 6; }
 @keyframes blink { 50% { opacity: .25; } }
@@ -76,8 +76,8 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 #score h2 { margin: 0; font: 700 28px Barlow; letter-spacing: 3px; }
 #score .sub { font: 600 17px Barlow; color: #9aa9b8; }
 #score .sub b { color: #e9eef4; }
-.grid { display: grid; grid-template-columns: 34px minmax(0, 1fr) 104px 118px 132px 118px 128px 66px; column-gap: 14px; align-items: center; }
-.lab { font: 600 15px Barlow; letter-spacing: 1.5px; color: rgba(200,212,224,.6); text-transform: uppercase; padding-bottom: 8px; }
+.grid { display: grid; grid-template-columns: 34px minmax(0, 1fr) 96px 150px 104px 118px 128px 66px; column-gap: 14px; align-items: center; }
+.lab { font: 600 15px Barlow; letter-spacing: 1.5px; color: rgba(200,212,224,.6); text-transform: uppercase; padding-bottom: 8px; white-space: nowrap; }
 .lab.r, .num { text-align: right; }
 .row { height: 36px; }
 .row > div { white-space: nowrap; }
@@ -88,6 +88,7 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 .pl .chip { position: relative; transform: none; flex: none; width: 26px; height: 26px; }
 .pl img { width: 24px; height: 24px; flex: none; }
 .pl b { font: 600 20px Barlow; overflow: hidden; text-overflow: ellipsis; }
+.pl .spyb { width: 24px; height: 24px; flex: none; margin-left: 2px; }
 .pl .you { font: 700 13px Barlow; letter-spacing: 1px; color: #8fc6ff; margin-left: 2px; }
 .num { font: 600 22px Barlow; font-variant-numeric: tabular-nums; color: #eef2f6; }
 .num small { font-size: 16px; color: #8a97a5; }
@@ -141,6 +142,7 @@ function rnd(i, k) { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; 
 function light(hex, k = 0.4) { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * k)); return `rgb(${c})`; }
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const kfmt = v => v >= 10000 ? (v / 1000).toFixed(1).replace('.0', '') + 'k' : v.toLocaleString('en-US');
+const army = v => (v / 1000).toFixed(1).replace('.0', '') + 'k';   // o exército sempre no mesmo formato
 
 function makePlayers(sizes) {
   const P = []; let n = 0;
@@ -229,7 +231,9 @@ function render() {
   const eye = `<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" fill="none" stroke="#c8d4e0" stroke-width="1.8"/><path d="M4 20 20 4" stroke="#c8d4e0" stroke-width="1.8"/></svg>`;
   const bolt = c => `<svg viewBox="0 0 10 12"><path d="M6 0 1 7h3l-1 5 6-8H6l1-4z" fill="${c}"/></svg>`;
   let s = `<div class="lab"></div><div class="lab">Player</div><div class="lab r">Score</div><div class="lab r">Destroyed / Lost</div><div class="lab r">Army</div><div class="lab r">Money</div><div class="lab r">Income / min</div><div class="lab r">Power</div>`;
-  const order = [0, ...[...Array(teams).keys()].slice(1).sort((a, b) => P.filter(p => p.team === b).reduce((x, p) => x + p.score, 0) - P.filter(p => p.team === a).reduce((x, p) => x + p.score, 0))];
+  // o seu time primeiro; os outros pela pontuação, e os times já derrotados por último
+  const tScore = t => P.filter(p => p.team === t).reduce((x, p) => x + p.score, 0), tDead = t => P.filter(p => p.team === t).every(p => p.dead);
+  const order = [0, ...[...Array(teams).keys()].slice(1).sort((a, b) => (tDead(a) - tDead(b)) || (tScore(b) - tScore(a)))];
   order.forEach((t, bi) => {
     const list = P.filter(p => p.team === t).sort((a, b) => (b.me - a.me) || (a.dead - b.dead) || (b.score - a.score));
     if (bi > 0 && (list.length > 1 || P.filter(p => p.team === order[bi - 1]).length > 1)) s += `<div class="gap"></div>`;
@@ -237,12 +241,12 @@ function render() {
       const open = p.me || p.ally, spied = p.spied && !p.dead, dc = p.dead ? ' dead' : '';
       const team = j === 0 && teams > 1 && !SC.startsWith('ffa') ? `<div class="tn ${t === 0 ? 'mine' : ''}">${t + 1}</div>` : '<div></div>';
       const ch = `<span class="chip ${p.dead ? 'dead' : ''}" data-i="${p.i}" style="--c:${p.col};--g:${light(p.col, .25)};--m:url(a/glyph_${p.fac}.png)"><i></i></span>`;
-      const name = `<div class="pl${dc}">${ch}<img src="a/${rankIcon(p)}" alt=""><b style="color:${p.dead ? '#8a96a2' : light(p.col, .35)}">${p.name}</b>${p.me ? '<span class="you">YOU</span>' : ''}</div>`;
+      const name = `<div class="pl${dc}">${ch}<img src="a/${rankIcon(p)}" alt=""><b style="color:${p.dead ? '#8a96a2' : light(p.col, .35)}">${p.name}</b>${p.me ? '<span class="you">YOU</span>' : ''}${spied ? '<img class="spyb" src="a/spy_badge_eye.png" alt="">' : ''}</div>`;
       if (p.dead) { s += team + name + `<div class="gone dead">DEFEATED</div>`; return; }
       const kd = `<div class="num">${p.kills} <small>/ ${p.lost}</small></div>`;
       const powc = p.pu > p.pm ? '#ff3b2c' : p.pm - p.pu < p.pm * 0.1 ? '#ffd23a' : '#4fd36a';
       const eco = open || spied
-        ? `<div class="num ${spied ? 'spy' : ''}">${kfmt(p.army)}</div><div class="num ${spied ? 'spy' : ''}">$${kfmt(p.money)}</div><div class="num ${spied ? 'spy' : ''}">+${kfmt(p.income)}</div><div class="pw">${bolt(powc)}</div>`
+        ? `<div class="num ${spied ? 'spy' : ''}">${army(p.army)}</div><div class="num ${spied ? 'spy' : ''}">$${kfmt(p.money)}</div><div class="num ${spied ? 'spy' : ''}">+${kfmt(p.income)}</div><div class="pw">${bolt(powc)}</div>`
         : `<div class="hidden">${eye}</div><div></div>`;
       s += team + name + `<div class="num">${p.score.toLocaleString('en-US')}</div>` + kd + eco;
     });
