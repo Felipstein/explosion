@@ -849,7 +849,8 @@ window.__pop = (row, f) => { sel = row; const c = rowsEl.children[row].querySele
   if (Q.get('browser')) openBrowser();
   if (Q.get('pop')) { const [r, f] = Q.get('pop').split(','); window.__pop(+r, f); }
   if (Q.get('still') || Q.get('rec')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); if (Q.get('browser')) drawGrid(false); setTimeout(() => window.__ready = true, Q.get('browser') ? 1500 : 200); }, 400); }
-  else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last);   // (02/11) no navegador do jogo o tempo do quadro às vezes volta: nunca passo negativo window.__ready = true; }
+  // (02/11) no navegador do jogo o tempo do quadro às vezes volta: o passo nunca é negativo
+  else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last); window.__ready = true; }
 })();
 </script>
 </body>

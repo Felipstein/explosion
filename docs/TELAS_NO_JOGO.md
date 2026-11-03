@@ -54,8 +54,9 @@ partida ainda não ligadas). Os ganchos nos arquivos compartilhados estão no co
    `t2_skirmish` estava na fila) e o LAB (`t3_lab`, não abriu a tempo porque o jogo compilava shaders de outra sessão).
    Roda: `powershell -File docs/concept/ui/menu/tools/shell_game_test.ps1 -Name t2_skirmish -Steps <steps_t2.json>` (fora da tela,
    desiste se o log parar 90 s ou as telas não vierem em 30 s depois do mapa).
-2. Avisar a sessão dos Cursores: o navegador embutido usa o cursor Custom do Windows nas telas; o `RTSCursors` precisa repor o
-   dele quando a partida começa (o arquivo é dela).
+2. ~~Avisar a sessão dos Cursores~~ (03/11, feito por ela): o navegador embutido troca a forma do cursor Custom do Windows; o
+   `FRTSCursors::Invalidate()` repõe as dela no BeginPlay da partida. **Quando uma tela do RTSShell abrir no meio da partida**
+   (a pausa, o resultado), chamar `PC->Cursors.Invalidate()` ao fechar.
 3. Depois: a sala da LAN nova (hoje a antiga aparece quando cria/entra), as telas da partida (Esc, resultado, avisos, carregando),
    a dificuldade da IA (a IA tem um nível só), as superarmas, o CLASSIC de verdade, a música pelo volume do jogo, o pacote do pai
    (conferir que o CEF e `Resources/UI` vão junto).

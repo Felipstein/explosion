@@ -26,9 +26,9 @@ try {
     if ($txt -match 'RTS telas: o menu antigo') { 'FALHA: o jogo caiu no menu antigo'; break }
     if (-not $loaded -and $txt -match 'Load map complete') { $loaded = Get-Date }
     if ($loaded -and ((Get-Date) - $loaded).TotalSeconds -gt 30) { 'FALHA: o mapa carregou e as telas não apareceram em 30 s'; break }
-    # parado = o log não cresce há 90 s (compilar shader faz o log andar: isso não é parado); teto de 8 min
+    # parado = o log não cresce há 4 min (os shaders globais compilam sem escrever no log) (compilar shader faz o log andar: isso não é parado); teto de 8 min
     if ($txt.Length -ne $lastLen) { $lastLen = $txt.Length; $lastGrow = Get-Date }
-    if (((Get-Date) - $lastGrow).TotalSeconds -gt 90) { 'FALHA: o jogo parou (o log não anda há 90 s)'; break }
+    if (((Get-Date) - $lastGrow).TotalSeconds -gt 240) { 'FALHA: o jogo parou (o log não anda há 4 min)'; break }
     if (((Get-Date) - $t0).TotalMinutes -gt 8) { 'FALHA: o jogo não abriu em 8 min'; break }
   }
   "pronto em {0:N0} s: $ready" -f ((Get-Date) - $t0).TotalSeconds

@@ -31,5 +31,12 @@ shutil.copytree(os.path.join(S, 'a'), os.path.join(D, 'a'))
 os.makedirs(os.path.join(D, 'snd'))
 for f in ['Menu_Click.wav', 'Main_Menu_1.mp3', 'Main_Menu_2.mp3', 'Main_Menu_3.mp3']:
     shutil.copy2(os.path.join(S, 'snd_dl', f), os.path.join(D, 'snd', f))
+# a sintaxe de todo script (03/11: um comentário no meio da linha quebrou o menu e ninguém viu até o teste no jogo)
+import subprocess
+NODE = os.path.join(os.environ['LOCALAPPDATA'], 'Volta', 'tools', 'image', 'node', '24.15.0', 'node.exe')
+r = subprocess.run([NODE, os.path.join(S, 'tools', 'check_js.mjs'), D], capture_output=True, text=True)
+print(r.stdout.strip())
+if r.returncode != 0:
+    raise SystemExit('as páginas do jogo não compilam: corrigir antes de mandar')
 total = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(D) for f in fs)
 print(D, f'{total / 1e6:.1f} MB')
