@@ -45,3 +45,13 @@ Sessão do HUD. Ao retomar: ler isto, `FACCOES.md` (§5–8), `DECISOES.md` (§7
 - O placar com a cor de cada jogador em faixas.
 - **Próximo passo:** levar pro HUD em C++ (`RTSHudPainter`: a barra dos times no lugar do `DrawTopMany` v1, a lista C das superarmas, o placar
   no Tab com a coluna), provar no HUDLab com fotos das 4 facções e dos formatos, e só então pro jogo (`Game/Plugins/RTSHud`).
+
+## 03/11, noite: o C++ começado (parou no limite de uso)
+- Feito no HUDLab (compila, sem commit): `RTSHudPainterPlayers.cpp` (a barra dos times `DrawTopTeams`, a lista C `DrawSuperweaponList`, o placar
+  `DrawScoreboard` com a coluna das superarmas), os tipos novos em `RTSHudTypes.h` (superarma com tipo/segundos/desenho, jogador com time e
+  números do placar, `bScoreboard`), os formatos do protótipo em `HudLabStates.cpp` (`ApplyHudLabFormat`, mesmos números) e
+  `hudlab.ps1 shot -Format 3v5v8 -Tab -Abuse -Me -Scroll`. Desenhos novos no kit: `skin/sw_*.png`, `eye_hidden`, `bolt`, `gen_frame/gen_bg`.
+- Provado: o placar da GLA 3 × 5 × 8 com abuso (`captures/hudlab/state_2_ptab.png`) sai igual ao protótipo aprovado.
+- 03/11, depois: as fotos todas feitas e iguais ao protótipo (lado a lado em `captures/hudlab/ab_*.png`, as 4 facções em
+  `folha_topo_faccoes.jpg` e `folha_placar_faccoes.jpg`); os anéis finos com a beira suave (`SoftArc`, o Canvas não suaviza triângulo).
+  Mostrado a ele; falta o "aprovado" e depois levar pro jogo (Game/Plugins/RTSHud, a rodinha rolando a coluna, o Tab segurado).

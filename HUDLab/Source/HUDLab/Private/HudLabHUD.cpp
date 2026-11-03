@@ -85,6 +85,18 @@ void AHudLabHUD::DrawHUD()
 	}
 
 	FRTSHudState State = MakeHudLabState(StateIndex, MainColumns);
+	// os jogadores (03/11): -Format=3v5v8 troca os jogadores pelos de um formato do protótipo aprovado (os mesmos números); -Abuse dá 240
+	// superarmas a um inimigo; -Me=RRGGBB troca a sua cor; -Tab abre o placar (na janela: segurar o Tab); -Scroll=N rola a coluna das superarmas
+	{
+		FString Format, MeHex;
+		if (FParse::Value(FCommandLine::Get(), TEXT("Format="), Format))
+		{
+			FParse::Value(FCommandLine::Get(), TEXT("Me="), MeHex);
+			ApplyHudLabFormat(State, Format, SkinFaction.IsNone() ? FString(TEXT("usa")) : SkinFaction.ToString(), FParse::Param(FCommandLine::Get(), TEXT("Abuse")), MeHex);
+		}
+		State.bScoreboard = FParse::Param(FCommandLine::Get(), TEXT("Tab")) || (PlayerOwner && PlayerOwner->IsInputKeyDown(EKeys::Tab));
+		FParse::Value(FCommandLine::Get(), TEXT("Scroll="), State.ScoreSwScroll);
+	}
 	const bool bSeq = !ShotPath.IsEmpty() && SeqFrames > 0;
 	if (ShotPath.IsEmpty())
 	{

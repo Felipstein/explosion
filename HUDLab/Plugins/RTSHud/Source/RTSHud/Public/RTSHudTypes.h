@@ -32,19 +32,23 @@ struct FRTSHudSlot
 	bool bCancelMark = false; // fila: o X vermelho do cancelar (mouse em cima)
 };
 
+/** Uma superarma de um jogador (a lista C no canto e a coluna do placar juntam as do mesmo dono e tipo numa linha). */
 struct FRTSHudSuperweapon
 {
-	FString Name;             // "NUCLEAR MISSILE"
-	FString Time;             // "0:42"
-	bool bSoon = false;       // falta menos de 1 minuto: vermelho e brilhando
+	FName Type;               // o tipo: junta as iguais do mesmo dono ("nuclear_missile"); a capturada tem o tipo dela
+	FString Name;             // "Nuclear Missile"
+	FName Glyph;              // o desenho da arma, branco (pintado na hora): "skin:sw_nuclear"
+	int32 Seconds = 0;        // o que falta pra disparar; 0 = pronta
+	int32 FullSeconds = 600;  // a carga inteira (o arco de carga em volta do desenho)
 };
 
-/** Um jogador no topo. */
+/** Um jogador: a ficha no topo, a linha do placar (Tab) e as superarmas dele. */
 struct FRTSHudPlayer
 {
 	FString Name;
-	FName Emblem;             // "emblem:usa"
+	FName Emblem;             // "emblem:usa" (a ficha usa a silhueta "emblem:glyph_usa")
 	FLinearColor Color = FLinearColor::White;
+	int32 Team = 0;           // o time (o seu é o 0); todos contra todos: cada um no seu
 	bool bMe = false;
 	bool bAlly = false;
 	bool bDead = false;
@@ -54,7 +58,16 @@ struct FRTSHudPlayer
 	FString Money;
 	int32 PowerUsed = 0;
 	int32 PowerMade = 0;
-	TArray<FRTSHudSuperweapon> Superweapons; // a mais próxima primeiro
+	TArray<FRTSHudSuperweapon> Superweapons;
+
+	// o placar (Tab)
+	FName RankIcon;           // a patente: "skin:rank_usa_3", "skin:china/rank_china_3"
+	int32 Score = 0;
+	int32 Destroyed = 0;
+	int32 Lost = 0;
+	int32 Army = 0;           // o valor do exército em $
+	int32 Cash = 0;
+	int32 Income = 0;         // por minuto
 };
 
 struct FRTSHudAlert
@@ -115,7 +128,12 @@ struct FRTSHudState
 
 	// topo
 	FString Clock;
-	TArray<FRTSHudPlayer> Players;   // você e os aliados primeiro, depois os outros
+	TArray<FRTSHudPlayer> Players;   // você primeiro, depois os aliados, depois os outros time a time
+
+	// o placar (Tab aberto): a janela no meio com a moldura da facção; a lista C das superarmas some (está toda nele)
+	bool bScoreboard = false;
+	FString ModeLabel;               // "3 vs 5 vs 8", "Free for all"
+	int32 ScoreSwScroll = 0;         // a coluna das superarmas rolada (linhas; o jogo soma com a rodinha, o pintor limita)
 
 	// painel do comandante
 	FString Money;

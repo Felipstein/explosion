@@ -642,8 +642,10 @@ void FRTSHudPainter::Draw(UCanvas* InCanvas, const FRTSHudState& State, TArray<F
 	DrawAlerts(State);
 	DrawPowers(State);
 	DrawTop(State);
+	DrawSuperweaponList(State);
 	DrawCommander(State);
 	DrawTooltip(State);
+	DrawScoreboard(State);
 	// o fundo de cada peça segura o clique (não vai pro mundo); vem no fim, depois dos botões de verdade:
 	// quem procura o botão debaixo do mouse pega o primeiro da lista que contém o ponto
 	for (const FBox2D& Box : BgBoxes)
@@ -656,7 +658,7 @@ void FRTSHudPainter::Draw(UCanvas* InCanvas, const FRTSHudState& State, TArray<F
 }
 
 // ---------------------------------------------------------------------------------------------
-// topo: o relógio no centro, metade dos jogadores de cada lado; você e os aliados num bloco azul só
+// topo: o duelo é a peça 1x1 aprovada; com mais jogadores, a barra dos times (RTSHudPainterPlayers.cpp)
 
 void FRTSHudPainter::DrawTop(const FRTSHudState& State)
 {
@@ -670,204 +672,11 @@ void FRTSHudPainter::DrawTop(const FRTSHudState& State)
 		DrawTop1v1(State);
 		return;
 	}
-	if (DrawTopMany(State))
-	{
-		return;
-	}
-	const float CW = 136.0f, CH = 58.0f, TW = 104.0f, ClockX = 960.0f - TW * 0.5f;
-	const int32 Half = (N + 1) / 2;
-	const float LeftStart = ClockX - Half * CW;
-
-	int32 TeamN = 0;
-	for (int32 I = 0; I < Half; ++I)
-	{
-		if (State.Players[I].bMe || State.Players[I].bAlly) ++TeamN;
-	}
-	if (TeamN > 0)
-	{
-		// o seu time: uma tecla azul da pele (group_on) que abraça você e os aliados
-		const float X = SX(LeftStart - 2, EAnchor::Center), Y = SY(2, false);
-		Skin(SkGroupOn, X, Y, TeamN * CW * S, (CH + 4) * S, SkMGroup, 0.5f * S);
-		Bg(X, Y, TeamN * CW * S, (CH + 4) * S);
-		for (int32 I = 1; I < TeamN; ++I)
-		{
-			Rect(X + (I * CW - 3) * S, Y + 11 * S, FMath::Max(1.0f, S), (CH - 18) * S, WithA(KBlue, 0.55f));
-		}
-	}
-
-	float SWPx = 12.0f;
-	for (const FRTSHudPlayer& P : State.Players)
-	{
-		if (!P.bDead && P.Superweapons.Num() > 0)
-		{
-			SWPx = FMath::Min(SWPx, SuperweaponNamePx(P.Superweapons, (CW - 4) * S, 18 * S, 3, 12.0f));
-		}
-	}
-
-	for (int32 I = 0; I < N; ++I)
-	{
-		const FRTSHudPlayer& P = State.Players[I];
-		const float PX = I < Half ? LeftStart + I * CW : ClockX + TW + (I - Half) * CW;
-		const float X = SX(PX, EAnchor::Center), Y = SY(4, false), W = (CW - 4) * S, H = CH * S;
-		const bool bInTeam = P.bMe || P.bAlly;
-		if (!bInTeam)
-		{
-			// os outros: a tecla escura (group_off); espionado fica laranja
-			Skin(SkGroupOff, X, Y, W, H, SkMGroup, 0.5f * S, P.bSpied ? FLinearColor(1.0f, 0.70f, 0.32f) : FLinearColor::White);
-			Bg(X, Y, W, H);
-		}
-		const bool bEco = P.bShowEco && !P.bDead && !P.bMe;
-		// o emblema grande à esquerda, na altura do cartão (como a peça aprovada)
-		const float ES = 36 * S, EX = X + 8 * S, EY = Y + (H - ES) * 0.5f;
-		Image(P.Emblem, EX, EY, ES, ES, P.bDead ? FLinearColor(0.32f, 0.32f, 0.32f, 0.85f) : FLinearColor::White, false);
-		// a coluna do texto, do emblema até a borda de dentro do cartão: nada passa dela
-		const float TX = X + 50 * S, RX = X + W - 9 * S, TextW = RX - TX;
-		const FLinearColor NameC = P.bDead ? KTextDim : FMath::Lerp(P.Color, FLinearColor::White, bInTeam ? 0.30f : 0.12f);
-		auto FitPx = [&](const FString& Str, float Px, EWeight Wt)
-		{
-			while (Px > 10.0f && Measure(Str, Px, Wt).X > TextW)
-			{
-				Px -= 0.5f;
-			}
-			return Px;
-		};
-		if (!bEco)
-		{
-			TextMid(P.Name, TX, Y + H * 0.5f, FitPx(P.Name, 16.0f, EWeight::Bold), NameC, EWeight::Bold);
-		}
-		else
-		{
-			// o nome em cima; o dinheiro à esquerda e a energia em número à direita; a barra da energia embaixo
-			TextMid(P.Name, TX, Y + 16 * S, FitPx(P.Name, 15.0f, EWeight::Bold), NameC, EWeight::Bold);
-			TextMid(P.Money, TX, Y + 34 * S, 13.0f, KGoldText, EWeight::Bold);
-			if (P.PowerMade > 0)
-			{
-				const bool bLow = P.PowerUsed > P.PowerMade;
-				TextMid(FString::Printf(TEXT("%d/%d"), P.PowerUsed, P.PowerMade), RX, Y + 34 * S, 12.0f, bLow ? KRed : KTextMain, EWeight::SemiBold, EAlign::Right);
-				Rect(TX, Y + 44 * S, TextW, 4 * S, FLinearColor(0, 0, 0, 0.85f));
-				BarFill(TX + 1 * S, Y + 45 * S, (TextW - 2 * S) * FMath::Min(1.0f, float(P.PowerUsed) / P.PowerMade), 2 * S, bLow ? KRed : KGreen);
-			}
-		}
-		if (P.bSpied)
-		{
-			// o selo do olho no canto do emblema; o tempo que resta da espionagem é o carregamento do C&C no selo
-			const float BS = 24 * S, BX = EX + ES - BS + 7 * S, BY = EY + ES - BS + 6 * S;
-			Image(SkSpyRing, BX, BY, BS, BS, FLinearColor::White, false);
-			const FVector2D BC(BX + BS * 0.5f, BY + BS * 0.5f);
-			const float R = BS * 0.5f - 1 * S, A0 = FMath::Clamp(P.SpyLeft, 0.0f, 1.0f) * 2 * PI;
-			TArray<FVector2D> Pie;
-			const int32 Seg = FMath::Max(2, FMath::CeilToInt((1 - P.SpyLeft) * 40));
-			for (int32 K = 0; K < Seg; ++K)
-			{
-				const float Ta = A0 + (2 * PI - A0) * K / Seg, Tb = A0 + (2 * PI - A0) * (K + 1) / Seg;
-				Pie.Add(BC);
-				Pie.Add(BC + FVector2D(FMath::Sin(Ta), -FMath::Cos(Ta)) * R);
-				Pie.Add(BC + FVector2D(FMath::Sin(Tb), -FMath::Cos(Tb)) * R);
-			}
-			if (P.SpyLeft < 1.0f)
-			{
-				Tris(Pie, FLinearColor(0, 0, 0, 0.70f));
-			}
-			Image(SkSpyEye, BX, BY, BS, BS, FLinearColor::White, false);
-		}
-		if (P.bDead)
-		{
-			Image(SkDefeatedX, EX + 3 * S, EY + 3 * S, ES - 6 * S, ES - 6 * S, FLinearColor::White, false);
-		}
-
-		// a lista das superarmas: caixa separada embaixo do dono, uma por linha, até 3 e "+n more"
-		if (!P.bDead && P.Superweapons.Num() > 0)
-		{
-			DrawSuperweapons(P.Superweapons, X, Y + H + 4 * S, W, 18 * S, 3, SWPx, bInTeam);
-		}
-	}
-
-	// o relógio
-	const float CX = SX(ClockX + 2, EAnchor::Center);
-	Skin(SkGroupOff, CX, SY(0, false), (TW - 4) * S, (CH + 8) * S, SkMGroup, 0.5f * S);
-	Bg(CX, SY(0, false), (TW - 4) * S, (CH + 8) * S);
-	TextMid(State.Clock, CX + (TW - 4) * 0.5f * S, SY(33, false), 32.0f, KTextMain, EWeight::Bold, EAlign::Center);
-}
-
-void FRTSHudPainter::OutlinePoly(const TArray<FVector2D>& Poly, const FLinearColor& Rim)
-{
-	for (int32 I = 0; I < Poly.Num(); ++I)
-	{
-		Line(Poly[I], Poly[(I + 1) % Poly.Num()], 5 * S, FLinearColor(0, 0, 0, 0.9f));
-	}
-	for (int32 I = 0; I < Poly.Num(); ++I)
-	{
-		Line(Poly[I], Poly[(I + 1) % Poly.Num()], 2.5f * S, Rim);
-	}
-}
-
-// A caixa das superarmas (peça aprovada top_bar_8_players): uma mini tecla igual ao cartão de cima (azul no
-// seu time, escura no inimigo, vermelha com brilho quando alguma falta menos de 1 minuto); por linha, o trevo,
-// o nome e o tempo, com respiro nas pontas. A linha que está pra sair fica vermelha, sem faixa por trás.
-namespace
-{
-	struct FSWLayout
-	{
-		float Pad, Icon, Gap, TimePx;
-	};
-	FSWLayout SWLayout(float RowH, float S)
-	{
-		return { 8 * S, FMath::Min(RowH * 0.74f, 18 * S), 5 * S, RowH >= 24 * S ? 16.0f : 13.0f };
-	}
-}
-
-float FRTSHudPainter::SuperweaponNamePx(const TArray<FRTSHudSuperweapon>& List, float W, float RowH, int32 MaxRows, float NamePx) const
-{
-	const FSWLayout L = SWLayout(RowH, S);
-	float Px = NamePx;
-	for (int32 R = 0; R < FMath::Min(MaxRows, List.Num()); ++R)
-	{
-		const float Room = W - 2 * L.Pad - L.Icon - L.Gap - Measure(List[R].Time, L.TimePx, EWeight::Bold).X - 6 * S;
-		while (Px > 8.0f && Measure(List[R].Name, Px, EWeight::SemiBold).X > Room)
-		{
-			Px -= 0.5f;
-		}
-	}
-	return Px;
-}
-
-void FRTSHudPainter::DrawSuperweapons(const TArray<FRTSHudSuperweapon>& List, float X, float Y, float W, float RowH, int32 MaxRows, float NamePx, bool bTeam)
-{
-	const int32 Rows = FMath::Min(MaxRows, List.Num());
-	const int32 More = List.Num() - Rows;
-	bool bSoon = false;
-	for (const FRTSHudSuperweapon& SW : List) bSoon |= SW.bSoon;
-	const FSWLayout L = SWLayout(RowH, S);
-	const float PadY = Rows == 1 && More == 0 ? 2 * S : 4 * S;
-	const float MoreH = More > 0 ? 16 * S : 0.0f;
-	const float H = Rows * RowH + MoreH + 2 * PadY;
-	if (bSoon)
-	{
-		// falta menos de 1 minuto: o brilho vermelho pulsa
-		const float P = 0.55f + 0.45f * Pulse(1.0f);
-		FillPoly(ChamferPoly(X - 5 * S, Y - 5 * S, W + 10 * S, H + 10 * S, 9 * S), [P](const FVector2D&) { return FLinearColor(0.92f, 0.14f, 0.10f, 0.16f * P); });
-		FillPoly(ChamferPoly(X - 2.5f * S, Y - 2.5f * S, W + 5 * S, H + 5 * S, 7 * S), [P](const FVector2D&) { return FLinearColor(0.92f, 0.16f, 0.12f, 0.30f * P); });
-	}
-	Skin(bSoon ? SkGroupSoon : (bTeam ? SkGroupOn : SkGroupOff), X, Y, W, H, SkMGroup, 0.2f * S);
-	Bg(X, Y, W, H);
-	const float Px = FMath::Min(NamePx, SuperweaponNamePx(List, W, RowH, MaxRows, NamePx));
-	for (int32 R = 0; R < Rows; ++R)
-	{
-		const FRTSHudSuperweapon& SW = List[R];
-		const float CY = Y + PadY + (R + 0.5f) * RowH;
-		const FLinearColor TC = SW.bSoon ? FLinearColor(FColor(255, 92, 76)) : KTextMain;
-		Image(SW.bSoon ? SkRadiationRed : SkRadiation, X + L.Pad, CY - L.Icon * 0.5f, L.Icon, L.Icon, FLinearColor::White, false);
-		TextMid(SW.Name, X + L.Pad + L.Icon + L.Gap, CY, Px, TC, EWeight::SemiBold);
-		TextMid(SW.Time, X + W - L.Pad, CY, L.TimePx, TC, EWeight::Bold, EAlign::Right);
-	}
-	if (More > 0)
-	{
-		TextMid(FString::Printf(TEXT("+ %d more"), More), X + L.Pad + 1 * S, Y + PadY + Rows * RowH + MoreH * 0.5f - 1 * S, 12.0f, KTextSub, EWeight::SemiBold);
-	}
+	DrawTopTeams(State);
 }
 
 // o topo 1x1: a peça aprovada (você em azul, o relógio, o adversário em vermelho, os emblemas nos anéis
-// das pontas) na largura do limpo; a superarma sai de baixo da barra, do lado do dono
+// das pontas) na largura do limpo. As superarmas não saem mais de baixo da barra: são a lista C no canto (03/11)
 void FRTSHudPainter::DrawTop1v1(const FRTSHudState& State)
 {
 	const FRTSHudPlayer& Me = State.Players[0];
@@ -875,21 +684,7 @@ void FRTSHudPainter::DrawTop1v1(const FRTSHudState& State)
 	const float K = 617.0f / 1087.0f * S;
 	const float X = SX(651.5f, EAnchor::Center), Y = SY(0, false);
 	auto A = [&](float U, float V) { return FVector2D(X + U * K, Y + V * K); };
-
-	// onde o corpo da barra termina (em unidades da peça de 1087), medido no recorte de cada facção: a caixinha da superarma
-	// sai de baixo dele (a da USA termina em 128)
 	const FName F = Cur->SkinFaction;
-	const float Bottom = F == FName(TEXT("china")) ? 130.0f : F == FName(TEXT("gla")) ? 138.0f : F == FName(TEXT("russia")) ? 147.0f : 129.0f;
-	const float SwY = 73.0f + (Bottom - 128.0f) * 617.0f / 1087.0f;
-	for (int32 I = 0; I < 2; ++I)
-	{
-		const FRTSHudPlayer& Pl = I == 0 ? Me : Foe;
-		if (Pl.Superweapons.Num() > 0 && !Pl.bDead)
-		{
-			const bool bOne = Pl.Superweapons.Num() == 1;
-			DrawSuperweapons(Pl.Superweapons, SX(I == 0 ? 668.5f : 1019.5f, EAnchor::Center), SY(SwY, false), 232 * S, (bOne ? 26 : 22) * S, 3, 13.0f, I == 0);
-		}
-	}
 	// o azul e o vermelho são a cor de cada jogador (ele, 01/11): a peça vem em três (art/tools/cut_faction_frames.py --top): a base
 	// com o vidro neutro e as camadas do seu painel e do painel do adversário, pintadas aqui com a cor de cada um. A peça pode sair
 	// da caixa (o pano da GLA, as ripas da Rússia): a margem (MX dos lados, MB embaixo) vem do tamanho da textura. Sem as três, a
@@ -957,178 +752,6 @@ void FRTSHudPainter::DrawTop1v1(const FRTSHudState& State)
 	TextMid(Foe.Name, FoeC.X, FoeC.Y, 26.0f, FoeText, EWeight::Bold, EAlign::Center);
 }
 
-
-// o topo de 3 a 8 jogadores (02/11, ele: "e o topo com mais jogadores?"): montado com as peças do topo 1x1 aprovado da facção, na mesma
-// linguagem. Cada jogador ganha o anel (a silhueta do emblema pintada na cor dele) e um painel curto na cor dele; o relógio fica no meio;
-// as pontas da facção (as ripas da Rússia, o pano da GLA) só nas extremidades. A metade da esquerda usa o lado "você" da arte (o anel por
-// fora, o painel pra dentro), a da direita o lado do adversário. Escala 0,8 da do 1x1: com 8 jogadores a barra não chega nos avisos.
-bool FRTSHudPainter::DrawTopMany(const FRTSHudState& State)
-{
-	const int32 N = State.Players.Num();
-	const FName F = Cur->SkinFaction;
-	const FString Fac = F.IsNone() ? FString(TEXT("usa")) : F.ToString();
-	const FName Base(*FString::Printf(TEXT("skin:%s/top_bar_1v1"), *Fac));
-	const FName MeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_me"), *Fac)), FoeLayer(*FString::Printf(TEXT("skin:%s/top_bar_1v1_foe"), *Fac));
-	UTexture* BaseTex = Lookup ? Lookup(Base) : nullptr;
-	if (!BaseTex || !Lookup(MeLayer) || !Lookup(FoeLayer))
-	{
-		return false;
-	}
-	const float TW = BaseTex->GetSurfaceWidth(), TH = BaseTex->GetSurfaceHeight();
-	const float MX = FMath::Max(0.0f, (TW - 1087.0f) * 0.5f);
-	auto Glow = [](FLinearColor C)
-	{
-		const float M = FMath::Max3(C.R, C.G, C.B);
-		if (M > 0.001f && M < 0.7f)
-		{
-			C *= 0.7f / M;
-		}
-		C.A = 1.0f;
-		return C;
-	};
-	// os cortes da arte (em unidades da peça de 1087): o anel com o aro, o painel (o começo dele e a ponta chanfrada), o relógio
-	const float RingA = 28, RingB = 140, PanA = 140, PanLen = 135, TipA = 395, TipB = 430, ClockA = 430, ClockB = 657;
-	const float RTipA = 657, RTipB = 692, RPanB = 947, RRingA = 947, RRingB = 1059;
-	const float PanW = PanLen + (TipB - TipA), RingW = RingB - RingA, CellW = RingW + PanW;
-	const int32 NL = (N + 1) / 2;
-	const float CapW = RingA + MX;
-	const float TotalU = CapW * 2 + N * CellW + (ClockB - ClockA);
-	const float K = 0.46f * S;
-	const float H = TH * K;
-	const float X0 = SX(960.0f, EAnchor::Center) - TotalU * K * 0.5f, Y = SY(0, false);
-	float X = X0;
-	auto Piece = [&](float U0, float U1, FName Layer, const FLinearColor& Col)
-	{
-		const float W = (U1 - U0) * K;
-		const FVector2D UV0((MX + U0) / TW, 0.0f), UV1((MX + U1) / TW, 1.0f);
-		ImageUV(Base, X, Y, W, H, UV0, UV1, FLinearColor::White);
-		if (!Layer.IsNone())
-		{
-			ImageUV(Layer, X, Y, W, H, UV0, UV1, Col);
-		}
-		X += W;
-	};
-	struct FCell { float RingX; float PanX; int32 I; bool bLeft; };
-	TArray<FCell> Cells;
-	auto PlayerColor = [&](const FRTSHudPlayer& P) { return P.bDead ? FLinearColor(0.22f, 0.22f, 0.22f) : Glow(P.Color); };
-	Piece(-MX, RingA, NAME_None, FLinearColor::White);
-	for (int32 I = 0; I < NL; ++I)
-	{
-		const FLinearColor C = PlayerColor(State.Players[I]);
-		FCell Cell{ X, 0.0f, I, true };
-		Piece(RingA, RingB, NAME_None, FLinearColor::White);
-		Cell.PanX = X;
-		Piece(PanA, PanA + PanLen, MeLayer, C);
-		Piece(TipA, TipB, MeLayer, C);
-		Cells.Add(Cell);
-	}
-	const float ClockX = X;
-	Piece(ClockA, ClockB, NAME_None, FLinearColor::White);
-	for (int32 I = NL; I < N; ++I)
-	{
-		const FLinearColor C = PlayerColor(State.Players[I]);
-		FCell Cell{ 0.0f, X, I, false };
-		Piece(RTipA, RTipB, FoeLayer, C);
-		Piece(RPanB - PanLen, RPanB, FoeLayer, C);
-		Cell.RingX = X;
-		Piece(RRingA, RRingB, NAME_None, FLinearColor::White);
-		Cells.Add(Cell);
-	}
-	Piece(RRingB, 1087.0f + MX, NAME_None, FLinearColor::White);
-	Bg(X0 + MX * K, Y, (TotalU - 2 * MX) * K, 140 * K);
-	const float CY = Y + 68 * K;
-	TextMid(State.Clock, ClockX + (ClockB - ClockA) * K * 0.5f, CY, 28.0f, KTextMain, EWeight::Bold, EAlign::Center);
-
-	// onde o corpo da barra termina (a mesma tabela do 1x1): as superarmas saem de baixo dele
-	const float Bottom = F == FName(TEXT("china")) ? 128.0f : F == FName(TEXT("gla")) ? 138.0f : F == FName(TEXT("russia")) ? 147.0f : 129.0f;
-	float SWPx = 12.0f;
-	for (const FRTSHudPlayer& P : State.Players)
-	{
-		if (!P.bDead && P.Superweapons.Num() > 0)
-		{
-			SWPx = FMath::Min(SWPx, SuperweaponNamePx(P.Superweapons, CellW * K - 4 * S, 18 * S, 3, 12.0f));
-		}
-	}
-	for (const FCell& Cell : Cells)
-	{
-		const FRTSHudPlayer& P = State.Players[Cell.I];
-		const bool bInTeam = P.bMe || P.bAlly;
-		// o emblema no anel: a silhueta na cor do jogador (TopEmblem 1, o padrão), o inteiro (0) ou a ficha (2)
-		const float CX = Cell.RingX + (Cell.bLeft ? 83.0f - RingA : 1006.0f - RRingA) * K;
-		FString Fe = P.Emblem.ToString();
-		Fe.RemoveFromStart(TEXT("emblem:"));
-		FName Emb = P.Emblem;
-		FLinearColor Tint = P.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FLinearColor::White;
-		float R = 37 * K;
-		if (State.TopEmblem == 1)
-		{
-			Emb = FName(*FString::Printf(TEXT("emblem:glyph_%s"), *Fe));
-			Tint = P.bDead ? FLinearColor(0.3f, 0.3f, 0.3f) : FMath::Lerp(Glow(P.Color), FLinearColor::White, 0.25f);
-			R *= 0.86f;
-		}
-		else if (State.TopEmblem == 2)
-		{
-			Emb = FName(*FString::Printf(TEXT("emblem:token_%s"), *Fe));
-		}
-		Image(Emb, CX - R, CY - R, 2 * R, 2 * R, Tint, false);
-		if (P.bDead)
-		{
-			Image(SkDefeatedX, CX - R * 0.8f, CY - R * 0.8f, R * 1.6f, R * 1.6f, FLinearColor::White, false);
-		}
-		if (P.bSpied)
-		{
-			// o selo do olho no canto do anel; o tempo que resta da espionagem é o carregamento do C&C no selo
-			const float BS = 22 * S, BX = CX + R - BS * 0.4f, BY = CY + R - BS * 0.55f;
-			Image(SkSpyRing, BX, BY, BS, BS, FLinearColor::White, false);
-			const FVector2D BC(BX + BS * 0.5f, BY + BS * 0.5f);
-			const float PR = BS * 0.5f - 1 * S, A0 = FMath::Clamp(P.SpyLeft, 0.0f, 1.0f) * 2 * PI;
-			TArray<FVector2D> Pie;
-			const int32 Seg = FMath::Max(2, FMath::CeilToInt((1 - P.SpyLeft) * 40));
-			for (int32 Kk = 0; Kk < Seg; ++Kk)
-			{
-				const float Ta = A0 + (2 * PI - A0) * Kk / Seg, Tb = A0 + (2 * PI - A0) * (Kk + 1) / Seg;
-				Pie.Add(BC);
-				Pie.Add(BC + FVector2D(FMath::Sin(Ta), -FMath::Cos(Ta)) * PR);
-				Pie.Add(BC + FVector2D(FMath::Sin(Tb), -FMath::Cos(Tb)) * PR);
-			}
-			if (P.SpyLeft < 1.0f)
-			{
-				Tris(Pie, FLinearColor(0, 0, 0, 0.70f));
-			}
-			Image(SkSpyEye, BX, BY, BS, BS, FLinearColor::White, false);
-		}
-		// o nome no painel, na cor do jogador clareada; aliado ou espionado: o dinheiro e a energia embaixo
-		const float TX0 = Cell.PanX + (Cell.bLeft ? 6.0f : 26.0f) * K, TX1 = Cell.PanX + PanW * K - (Cell.bLeft ? 26.0f : 6.0f) * K;
-		const float TextW = TX1 - TX0, TMid = (TX0 + TX1) * 0.5f;
-		const FLinearColor NameC = P.bDead ? KTextDim : FMath::Lerp(Glow(P.Color), FLinearColor::White, 0.45f);
-		auto FitPx = [&](const FString& Str, float Px, EWeight Wt)
-		{
-			while (Px > 10.0f && Measure(Str, Px, Wt).X > TextW)
-			{
-				Px -= 0.5f;
-			}
-			return Px;
-		};
-		const bool bEco = P.bShowEco && !P.bDead && !P.bMe;
-		if (!bEco)
-		{
-			TextMid(P.Name, TMid, CY, FitPx(P.Name, 16.0f, EWeight::Bold), NameC, EWeight::Bold, EAlign::Center);
-		}
-		else
-		{
-			TextMid(P.Name, TMid, CY - 9 * S, FitPx(P.Name, 14.0f, EWeight::Bold), NameC, EWeight::Bold, EAlign::Center);
-			const bool bLow = P.PowerMade > 0 && P.PowerUsed > P.PowerMade;
-			const FString Eco = P.PowerMade > 0 ? FString::Printf(TEXT("%s  %d/%d"), *P.Money, P.PowerUsed, P.PowerMade) : P.Money;
-			TextMid(Eco, TMid, CY + 9 * S, FitPx(Eco, 12.0f, EWeight::SemiBold), bLow ? KRed : KGoldText, EWeight::SemiBold, EAlign::Center);
-		}
-		if (!P.bDead && P.Superweapons.Num() > 0)
-		{
-			const float CellX = Cell.bLeft ? Cell.RingX : Cell.PanX;
-			DrawSuperweapons(P.Superweapons, CellX + 2 * S, Y + Bottom * K + 2 * S, CellW * K - 4 * S, 18 * S, 3, SWPx, bInTeam);
-		}
-	}
-	return true;
-}
 
 // ---------------------------------------------------------------------------------------------
 // painel do comandante: dinheiro, energia, patente e o Promote (canto de cima à direita)

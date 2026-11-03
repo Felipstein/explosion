@@ -49,8 +49,26 @@ private:
 
 	void DrawTop(const FRTSHudState& State);
 	void DrawTop1v1(const FRTSHudState& State);
-	bool DrawTopMany(const FRTSHudState& State);
-	void OutlinePoly(const TArray<FVector2D>& Poly, const FLinearColor& Rim);
+	// os jogadores (RTSHudPainterPlayers.cpp, 03/11): a barra dos times, a lista C das superarmas e o placar do Tab
+	/** A barra com mais de 2 jogadores: sempre simétrica; 2 times com o painel na sua cor e o do outro em vermelho, 3+ times em vidro neutro. */
+	void DrawTopTeams(const FRTSHudState& State);
+	/** As superarmas dos outros no canto de cima à direita: uma linha por dono e tipo, até 8, o resto no Tab. */
+	void DrawSuperweaponList(const FRTSHudState& State);
+	/** O placar (Tab): uma faixa na cor de cada jogador, os times separados, e a coluna de todas as superarmas. */
+	void DrawScoreboard(const FRTSHudState& State);
+	/** A ficha de um jogador: o encaixe escuro, o aro na cor dele e a silhueta do emblema na cor dele clareada. */
+	void Chip(const FRTSHudPlayer& P, FVector2D C, float D, float Alpha = 1.0f);
+	/** Um anel (ou arco) entre os raios R0 e R1, de A0 a A1 (em voltas: 0 = em cima, no sentido do relógio), a cor de dentro e a de fora. */
+	void Arc(FVector2D C, float R0, float R1, float A0, float A1, const FLinearColor& C0, const FLinearColor& C1);
+	/** O anel com as beiras suaves (meio pixel esfumado de cada lado): os anéis finos sem serrilhado. */
+	void SoftArc(FVector2D C, float R0, float R1, float A0, float A1, const FLinearColor& Col);
+	/** A carga: o aro de fundo (Track) e o arco aceso de 0 até Frac, com as pontas redondas. */
+	void ChargeRing(FVector2D C, float R, float T, float Frac, const FLinearColor& Track, const FLinearColor& Lit);
+	/** A faixa arredondada com degradê na horizontal (Stops: a posição 0..1 e a cor); só o pedaço entre X0 e X1, se pedido. */
+	void RoundRect(float X, float Y, float W, float H, float R, TArrayView<const TPair<float, FLinearColor>> Stops, float X0 = -1e9f, float X1 = 1e9f);
+	void RoundRect(float X, float Y, float W, float H, float R, const FLinearColor& C);
+	/** O contorno por dentro da faixa arredondada (a borda fina), T de espessura. */
+	void RoundRectRing(float X, float Y, float W, float H, float R, float T, const FLinearColor& C);
 	void DrawCommander(const FRTSHudState& State);
 	void DrawAlerts(const FRTSHudState& State);
 	void DrawPowers(const FRTSHudState& State);
@@ -72,10 +90,6 @@ private:
 	UTexture* FactionTex(FName Name) const;
 	/** Quanto o painel central ainda está abaixo do lugar (a subida do PanelIn), em pixels da tela. */
 	float PanelDrop(const FRTSHudState& State) const;
-	/** A caixa das superarmas (mini tecla azul no seu time, escura no inimigo, vermelha quando falta pouco). */
-	void DrawSuperweapons(const TArray<FRTSHudSuperweapon>& List, float X, float Y, float W, float RowH, int32 MaxRows, float NamePx, bool bTeam);
-	/** O maior tamanho de letra (até NamePx) em que todos os nomes da lista cabem junto do tempo. */
-	float SuperweaponNamePx(const TArray<FRTSHudSuperweapon>& List, float W, float RowH, int32 MaxRows, float NamePx) const;
 	void Radiation(FVector2D C, float R);
 
 	// primitivas (já em pixels da tela)
@@ -114,6 +128,11 @@ private:
 	/** O texto centrado na altura CY (pra caber no meio das faixas da pele). */
 	FVector2D TextMid(const FString& Str, float X, float CY, float Px, const FLinearColor& C, EWeight W = EWeight::SemiBold, EAlign Al = EAlign::Left, bool bShadow = true);
 	FVector2D Measure(const FString& Str, float Px, EWeight W) const;
+	/** O texto com espaço entre as letras (os rótulos em caixa alta), centrado na altura CY; Spacing em px da planta. */
+	FVector2D TextSpaced(const FString& Str, float X, float CY, float Px, const FLinearColor& C, EWeight W, float Spacing, EAlign Al = EAlign::Left, bool bShadow = false);
+	float MeasureSpaced(const FString& Str, float Px, EWeight W, float Spacing) const;
+	/** O texto cortado com "…" até caber em MaxW (px da tela). */
+	FString Ellipsize(const FString& Str, float Px, EWeight W, float MaxW) const;
 	FSlateFontInfo Font(float Px, EWeight W) const;
 	static FLinearColor HealthColor(float H);
 

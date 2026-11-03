@@ -6,7 +6,8 @@ o corte passava no meio dos enfeites (as cantoneiras da China, as placas da Rús
 os quatro cantos inteiros no tamanho natural, a borda entre eles esticada só ao longo dela (ou repetida, quando tem rebites), e o miolo
 vazado. O fundo é uma textura gerada sem emenda e sem espelho (o espelhado fazia um X), no tom da face de cada facção.
 
-Uso: python art/tools/make_gen_frame.py   (grava em captures/concept/hud/recursos2/a/<facção>/gen_frame.png e gen_bg.png)
+Uso: python art/tools/make_gen_frame.py   (grava em captures/concept/hud/recursos2/a/<facção>/gen_frame.png e gen_bg.png, e as mesmas no
+kit do HUD, docs/concept/hud/kit/skin/[<facção>/]gen_frame.png e gen_bg.png: o placar do Tab no C++ usa a moldura e o fundo daqui)
 """
 import os
 import numpy as np
@@ -97,7 +98,10 @@ def background(p, seed):
 if __name__ == '__main__':
     for i, (fac, p) in enumerate(FAC.items()):
         d = OUT if fac == 'usa' else os.path.join(OUT, fac)
-        frame(fac, p).save(os.path.join(d, 'gen_frame.png'))
-        background(p, 7 + i).save(os.path.join(d, 'gen_bg.png'))
+        fr, bg = frame(fac, p), background(p, 7 + i)
+        kd = KIT if fac == 'usa' else os.path.join(KIT, fac)
+        for out_dir in (d, kd):
+            fr.save(os.path.join(out_dir, 'gen_frame.png'))
+            bg.save(os.path.join(out_dir, 'gen_bg.png'))
         T, B, L, R = p['t']
         print(fac, 'moldura', (W0 + L + R, H0 + T + B), 'borda em px de CSS (cima, baixo, esq., dir.)', [round(v * 0.8, 1) for v in (T, B, L, R)])

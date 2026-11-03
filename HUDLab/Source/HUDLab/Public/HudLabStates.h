@@ -9,3 +9,9 @@
 #include "RTSHudTypes.h"
 
 FRTSHudState MakeHudLabState(int32 Index, int32 MainColumns = 7);
+
+/**
+ * Troca os jogadores do estado pelos de um formato do protótipo aprovado (duel, 2v2, 3v5, 8v8, ffa6, ffa16, 4x4, 3v5v8), com os mesmos
+ * números de lá; bAbuse dá 240 superarmas a um inimigo; MeHex troca a sua cor. Falso se o formato não existe.
+ */
+bool ApplyHudLabFormat(FRTSHudState& St, const FString& Format, const FString& MyFaction, bool bAbuse, const FString& MeHex);
