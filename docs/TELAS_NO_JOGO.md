@@ -44,6 +44,15 @@ As páginas são editadas no protótipo (`captures/concept/ui/shell/`, o rascunh
 copiadas pro plugin com `python captures/concept/ui/shell/tools/export_game.py` (sem compilar: o jogo lê os arquivos na hora). O
 jogo responde às páginas pelo `window.ue.shell` (`URTSShellBridge`) e pelos JSON em `https://rts.ui/api/` (`RTSShellGame.cpp`).
 
+## DECISÃO DE 03/11: REFAZER NATIVO (esperar o sinal dele pra começar)
+
+O site dentro do jogo (o navegador embutido, plugin `RTSShell`) foi um erro: o protótipo HTML era só pra ele ver. As telas vão ser
+**refeitas nativas no código do jogo**, idênticas ao mockup aprovado (`docs/concept/ui/menu/`): UMG/Slate em C++, CommonUI pra
+pilha de telas e o voltar, os efeitos (radar, varreduras, brilhos) em material de UI, o minimapa da sala numa textura, as fontes
+importadas. Cada decisão pensada como num RTS AAA bem feito e mostrada a ele como plano ANTES do código. Reaproveitar a ligação
+com o jogo do `RTSShellGame.cpp` (START, sala da LAN, LAB, SCRIPT, qualidade). **Não começar sem o sinal dele** (03/11: "espera
+meu sinal"). Memória: "UI nativa; decisão grande antes".
+
 ## Onde parou (02/11, a conta do Felipe sem limite; continuar daqui)
 
 **Feito e testado no jogo:** o plugin `RTSShell` compila e as telas abrem no jogo (menu, skirmish, multiplayer, opções, SCRIPT); a
