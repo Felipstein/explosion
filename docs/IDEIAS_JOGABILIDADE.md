@@ -43,6 +43,10 @@ atirando de trás do muro de barro do quintal.
 
 ## 2. Fortificar a base: pátio, estrada e muro com portão (11/10/2026)
 
+**A imagem de referência (03/11):** `docs/aprovados/jogo/2026-11-03_base_usa_com_muros_e_estradas_REFERENCIA.jpg`, a base da USA
+com os muros e as estradas feitas (saiu na imagem da superarma da China). Ele: "é a mecânica que eu queria que já listei um dia, bem
+nessa cara, isso é bom, é bom salvar e referenciar".
+
 **A ideia, nas palavras dele:** veio da imagem do ataque à base (`docs/concept/scenes/special_base_assault/`),
 com muro de verdade e chão de concreto: "isso pode ser uma feature magnífica de arrepiar na construção de uma
 base! Pode ser um C&C ZH clássico, continua sendo, mas também a possibilidade de construir chão, os muros
