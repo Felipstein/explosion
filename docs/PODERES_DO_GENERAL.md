@@ -539,7 +539,17 @@ Pra cada facção, no debate:
   - perder lutando valendo de metade a 3/4 de matar (§6.2);
   - derrubar o avião de um poder dá XP, e matar com o poder dá metade (§10, item 9);
   - o relógio do jogador que sobrevive ao Command Center (§9, item 4).
-- **A artilharia não é de uma facção só.** O conflito de §8.2 acabou: como no Contra, cada facção (ou general) tem a sua artilharia,
-  do seu jeito: a de fogo na China, a do Assault na GLA, a de laser na USA Laser. "Lá tem muita criatividade, dá pra olhar lá
-  também, não fique tão enviesado assim com o C&C ZH."
+- **A artilharia não é exclusiva de ninguém, nem obrigatória pra todos.** O conflito de §8.2 acabou. No Contra ela aparece
+  espalhada com criatividade (a de fogo na China, a do Assault na GLA, a de laser na USA Laser): "lá tem muita criatividade, dá pra
+  olhar lá também, não fique tão enviesado assim com o C&C ZH". **Correção dele (03/11):** foi um exemplo, não uma regra ("eu não
+  falei que todos têm que ter artilharia [...] eu falei que não era regra"). Cada facção leva o que o estudo mostrar que serve.
 - **O debate começa pela USA**, e o conteúdo entra na tela de poderes que já existe (o protótipo aprovado do HUD).
+
+## 13. Como refazer (as ferramentas)
+
+- **As árvores:** um documento por facção, `docs/poderes/<FACÇÃO>.md` (a USA em debate desde 03/11).
+- **A conta de cada golpe:** `docs/poderes/poderes_conta.py`, na base de referência das superarmas.
+- **A tela de cada facção:** `docs/poderes/tela/<facção>.js` (os dados) e `make_tela.py` (a página e a foto, a partir do protótipo do
+  HUD); os ícones provisórios saem do `make_icons.py`.
+- **As pesquisas:** `docs/poderes/ESTUDO_ZH.md`, `ESTUDO_RTS.md` e `ESTUDO_USA.md`. Foram feitas por agentes com as fontes primárias:
+  os INI do ZH no GitHub do TheSuperHackers, o código local do ZH, as wikis e os changelogs dos mods.

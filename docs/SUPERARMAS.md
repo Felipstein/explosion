@@ -29,6 +29,61 @@ drama: a poeira da USA e o anel da nuke são os melhores, mas a cor e o exagero 
 
 ---
 
+## O estado final (03/11): leia isto primeiro
+
+**O que vale hoje está aqui.** O resto do documento é o caminho até chegar aqui: as rodadas, as reprovações e o raciocínio de cada
+uma. Algumas tabelas lá embaixo são da proposta antiga (a §0 ainda mostra a China "em aberto"). Os aprovados com a imagem e a frase dele
+estão em `docs/APROVADOS.md` §Superarmas. O prompt inteiro de cada imagem, com os anexos e o modelo, está em
+`docs/superarmas/RECEITAS_DAS_IMAGENS.md`.
+
+**As regras (as quatro):**
+- **O custo de lançar: armar a ogiva.** O prédio dá o direito; cada carga é paga, e o relógio só corre pago.
+  - O relógio é público.
+  - Uma ogiva por prédio.
+  - Cancelar devolve só a parte que falta.
+  - Vender ou perder o prédio não devolve nada.
+  - Sem energia, o relógio para.
+- **O prédio:** $5 000, 60 s, 4 000 de vida (o ZH). Aparece pro inimigo quando fica pronto.
+- **Na sala:** UNLIMITED / LIMITED / OFF. O LIMITED é 1 superarma por jogador, de qualquer tipo (o "Limit Superweapons" do ZH).
+- **Cada superarma é um tiro só**, menos a da GLA.
+- **Só o Patriot intercepta SCUD.**
+
+| | USA | Rússia | China | GLA |
+|---|---|---|---|---|
+| **A arma** | **Global Strike**: um míssil só, que volta do espaço e se parte em 5 pedaços; cada pedaço (2 000) derruba uma fábrica | **Nuclear Missile**: uma ogiva nuclear tática | **O enxame de drones**: ~70 drones que chegam disparando mísseis meio pesados e no fim se jogam como kamikaze | **SCUD Storm**: 9 SCUDs |
+| **Armar** | $3 000, 5:00 | $3 500, 6:00 | $2 000, 5:00 | $200 por SCUD (9 vagas de 30 s) |
+| **O prédio aprovado** | a arena afundada com o míssil de pé correndo no rasgo e a torre do satélite grande; a casa de montagem vira o bunker baixo da 6ª rodada (paredes inclinadas, porta redonda, faixa azul, sem laje embaixo); fechada e aberta | o salão de painel pré-moldado com o telhado-serra que corre; aberto, o míssil sobe **na diagonal** no braço amarelo; fechado e aberto são o mesmo modelo | a colmeia redonda de favo (a base do GPT com o topo do Gemini: as torrezinhas e o brilho) | **a coroa**: 9 trilhos presos no núcleo; cada SCUD montado é levado pro centro e sobe até ficar de pé; o último fecha a coroa |
+| **O disparo aprovado** | **a frio**: catapultado pra cima, quase para no ar e aí o foguete acende, a aceleração começando do zero (a imagem do Gemini é o segundo seguinte) | **a quente dentro do salão**: o fogo desce no fosso e sai pelos dois lados (o Gemini: "quero exatamente assim no jogo") | a colmeia esvaziando em cascata, os drones subindo em grade (o GPT) | a cascata dos 9 (o GPT e o Gemini) |
+| **A chegada** | aceita (a 3ª rodada) | falta pelo método novo | aprovada (o GPT), mais a ficha do drone | falta pelo método novo |
+
+As imagens aprovadas estão em `docs/aprovados/superarmas/`, e as folhas de cada rodada em `docs/concept/superarmas/`.
+
+**O método que deu certo** (e o que deu errado), pra quem for refazer ou continuar:
+1. **A ideia combinada em palavras antes de gastar imagem.** Uma facção por vez, uma imagem por vez.
+2. **O prédio nasce na família dos aprovados.**
+   - Anexar a folha dos prédios daquela facção já aprovados no jogo (`captures/concept/_attach/superarma_<facção>/`; a cópia está em
+     `docs/superarmas/RECEITAS_DAS_IMAGENS_anexos/`) e pedir o prédio novo no meio deles.
+   - **Deu errado:** 4 folhas em paralelo, "icônico" levado ao absurdo (o navio da GLA, a montanha de sucata) e o morro de areia da
+     Rússia.
+3. **Ajuste é edição da escolhida, mudando só o pedido.**
+   - O outro estado (fechado ou aberto) sai da mesma imagem editada.
+   - Conferir os dois lado a lado antes de mostrar (o mesmo número de portões, os mesmos contrafortes).
+   - **Deu errado:** refazer do zero, que mudou o prédio inteiro; anexar a imagem B pra pegar um detalhe, que copiou a B inteira.
+4. **O momento de gameplay é um quadro novo.**
+   - 2 ou 3 game shots aprovados anexados só como referência do jogo, e o pedido descreve uma cena nova.
+   - **Deu errado:** anexar só a cena r1, que deixou a imagem "enviesada" e "muito artística".
+5. **Os modelos:**
+   - o Gemini Pro é mais fiel ao jogo e à imagem anexada;
+   - o GPT põe mais volume e drama, mas recusou a GLA duas vezes por "violência" (resolvido no Gemini, com "desert scavenger faction").
+   - Pedido com texto longo em lote dá ENOENT no Windows: um pedido por vez.
+6. **O detalhe é de jogo, não de filme:** superfícies grandes e limpas, poucos painéis e cabos. Nada de laje embaixo de tudo ("a base
+   acompanha a forma").
+
+**O que falta** (a ordem da §12): a chegada da Rússia e da GLA pelo método novo; as regras na simulação; os modelos 3D com os estados;
+os efeitos no laboratório; o HUD; o som por último.
+
+---
+
 ## 0. A proposta numa página
 
 **Revisada duas vezes:** pela segunda opinião (§10; o texto inteiro em `docs/superarmas/SEGUNDA_OPINIAO.md`) e pelas decisões dele

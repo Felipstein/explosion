@@ -61,6 +61,14 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   sessão dona copia a imagem aprovada pra `docs/aprovados/<área>/` (jpg leve; vídeo vira 1 a 3 quadros) e
   põe a linha em `docs/APROVADOS.md` no mesmo turno: data, o quê, a frase dele, a imagem, onde está a
   receita e a sessão.
+- **Guardar a receita de tudo** (pedido dele, 03/11: "pra sempre, futuramente, cada coisa que a gente fez, outra sessão ou
+  outra hora a gente conseguir refazer, melhorar, sabendo das bases [...] eu incluo TUDO"). Tudo o que se cria entra no
+  repositório no mesmo turno, junto com o como: imagem, modelo, efeito, som, tela, regra, conta.
+  - O como é: o caminho, os números, o script que gera, o prompt inteiro com os anexos e o modelo, as decisões dele, e o que foi
+    reprovado e por quê.
+  - Nada que importe mora só em `captures/`, no scratchpad ou na memória da sessão.
+  - O documento da área abre com o estado final e o método que deu certo; o histórico vem embaixo.
+  - Imagens do Atelier: `python Atelier/tools/export_recipes.py --src <sessão> --approved docs/aprovados/<área> --out docs/<área>/RECEITAS_DAS_IMAGENS.md`.
 - **Commit só com aprovação explícita.** Implementar, testar você mesmo,
   reportar e esperar o "aprovado" (ou "pode commitar"). Commit = versão
   aprovada. Ele usa tags por marco (v1…v6).

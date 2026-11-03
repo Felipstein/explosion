@@ -148,6 +148,29 @@ clássica/completa). Versão 2, com benefícios que mudam a partida:
 2. Os números de partida: 2 linhas e +15% de velocidade?
 3. Quais veículos contam como pesados (só os superpesados, ou o tanque pesado de cada facção também)?
 
+**03/11, a volta da ideia (nos poderes do general):**
+- Ele: "lá [na fábrica] deveria ser melhoria das unidades, né?" O Contra traz construções de melhoria novas além do centro de
+  tecnologia, cada facção com a sua especial: "eu acho que queria expandir o jogo pra algo assim, não exatamente assim, pense você
+  mesmo".
+- **A proposta (minha, pra estudar):** um prédio novo por facção, **o da indústria**, separado do centro de tecnologia.
+  - **O centro de tecnologia** (Strategy Center, Propaganda Center, Palace, o Instituto) libera unidade e melhoria de combate (arma,
+    blindagem).
+  - **O prédio da indústria** vende a produção e a economia:
+    - a linha dupla, que faz cada fábrica ganhar o anexo visível no mapa;
+    - a produção mais rápida ou mais barata;
+    - uma especialidade da facção.
+  - **Abre pela patente** (a 3, como a camada do meio do Contra).
+  - **É alvo:** se ele cai, os anexos das fábricas apagam.
+- **A prova de que a produção dobrada é divertida quando custa e é escolha:** o Reactor do StarCraft II, um anexo que faz o prédio
+  produzir 2 de uma vez, contra o Tech Lab, que libera as unidades avançadas. Cada fábrica escolhe um dos dois.
+- **A cara de cada um (rascunho):**
+  - USA: a linha robotizada da indústria de defesa (a unidade sai melhor, a qualidade);
+  - China: o kombinat do segundo turno (a unidade sai mais barata em lote, a massa);
+  - GLA: o ferro-velho (a carcaça rende mais, a peça roubada barateia);
+  - Rússia: o depósito ferroviário, que já estava nas ideias dela (o trem traz carga e reforço).
+- Fica pra um estudo próprio, depois dos poderes: o pedido dele é expandir, então o estudo começa pelos RTS (o Contra e os outros) e
+  pelo que cada facção já tem.
+
 ---
 
 ## 4. A tecnologia se conquista na luta: a patente de combate (11/10/2026)
