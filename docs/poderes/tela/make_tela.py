@@ -71,8 +71,6 @@ def build(faction, style=None, column=None, icons=None, tree_name=None):
             if os.path.exists(os.path.join(ico, f'usa_{pw}_{icons}.png')):
                 n0 = out.index('const NODES')    # só na árvore: o protótipo tem outra lista com os mesmos ids (o MENU antigo)
                 out = out[:n0] + re.sub(r"(\{ id: '%s',[^\n]*? ic: ')[^']*'" % i, lambda m: m.group(1) + f"../../../../poderes/tela/icones/usa_{pw}_{icons}'", out[n0:], count=1)
-        # o exemplo de desbloqueio (a USA não tem: a tecnologia abre pela patente); a foto do botão de construir do tanque, do kit do HUD
-        if "id: 'unl_ex'" not in out: out = out.replace("  { id: 'moab',", "  { id: 'unl_ex', row: 4, rank: 5, n: 'Paladin (example)', t: 'unl', ic: '../../kit/photos/buttons/usa_battle_tank', cost: 1, cd: 'Unlock', d: 'Example of an unlock power: the tank becomes available in the War Factory, with the same picture as its build button.' },\n  { id: 'moab',", 1)
     hook = "if (q.get('gen')) setTimeout(genOpen, 400);"
     # a coluna de poderes do HUD (a da esquerda, desenhada no fundo): o ícone por cima de cada casa; o relógio embaixo continua
     if column:

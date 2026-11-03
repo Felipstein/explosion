@@ -404,12 +404,9 @@ um por vez.
   - as colunas são as patentes;
   - os níveis de um poder ficam na mesma linha, ligados pela linha;
   - as linhas seguem a ordem dos tipos (olhos, golpe, tropas, apoio), sem rótulo, só pra manter juntos os parecidos.
-- **A árvore** (`docs/poderes/tela/usa.js`), em 5 linhas:
-  1. olhos: Spy Drone, Target Designation, AWACS;
-  2. golpe do ar: A-10 I e II, AC-130;
-  3. golpe do mar: Naval I a III, MOAB;
-  4. tropas: Paradrop I a III, SEAL, posto avançado;
-  5. apoio: Emergency Repair I e II, Guardian Angel.
+- **A ordem continua a aprovada antes** (ele: "deixa exatamente na ordem que tava antes, mesmo que a gente desbloqueou, não é pra mudar a
+  ordem que escolhemos"). As 4 linhas de §2 ficam, só sem o rótulo. Na 1ª montagem sem rótulo eu tinha reordenado por tipo, e foi
+  desfeito. Uma linha nova só entra quando uma patente precisar de mais um poder.
 - **A tela:** `docs/poderes/tela/poderes_usa.jpg` e `docs/concept/poderes/tela_sem_rotulos.jpg`.
   - `make_tela.py`: quando todos os rótulos de `ROWS` são vazios, some a coluna dos rótulos e a grade fica com as 5 patentes.
 
