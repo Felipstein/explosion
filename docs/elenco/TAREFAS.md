@@ -535,6 +535,34 @@ do avião de carga e do canteiro também), com a MESMA luz medida em 29/10 contr
 conferido antes) e o tom mais quente (o alvo R/B 1,21), o pó mais forte, a lavagem e o tom por placa no máximo (a variação 0,59 do
 alvo). A/B no `chain47`.
 
+62. ✅ (03/11 ~15h, o Felipe: "as bandeiras das facções parece que não pegam a sombra das construções, tive essa impressão, preciso
+    que valide isso corretamente se é verdade") **conferir se o pano das bandeiras recebe a sombra dos prédios.**
+    - A suspeita: o pano novo (o modelo de folhagem de dois lados, a luz atravessando o tecido) pode estar acendendo o pano dentro da sombra.
+    - A prova: uma cena com a bandeira na sombra de um prédio e outra ao sol, medindo a luz do pano contra o chão na sombra.
+    - Se for verdade: a causa e o conserto (a translucidez só do lado do sol, a sombra no termo de dentro), com o antes/depois.
+    - Conferência rápida: vai logo depois do que está rodando.
+    - **(03/11, 17h) Validado: não é verdade, o pano recebe a sombra.** Os testes `bandeira_sombra` (o sol a 25° em 6 rumos) e
+      `bandeira_sombra_baixo` (o sol a 8° e 4° atrás do bloco grande da War Factory). Medido no linear contra o sol: o pano cai pra
+      54–65%, o topo do ar-condicionado pra 47–53%, a bola do mastro pra 37–54%. Por que parece aceso:
+      - é a coisa mais branca da cena;
+      - o pano fino pega o céu dos dois lados (~10–15% a mais que o concreto);
+      - com o sol a 25° a sombra do prédio pega o telhado embaixo, mas não alcança o pano, que está mais alto.
+      A prova: `captures/game/bandeira_sombra_baixo/prova_sombra_no_pano.jpg`. Se ele ainda achar claro demais: baixar a translucidez
+      na sombra ou o branco do pano (0,85 → 0,75), com A/B.
+63. ⏳ (03/11) **O Supply Dock (o depósito neutro do mapa, de onde a facção tira o dinheiro) refeito, com VARIAÇÕES TOP**:
+    - o pedido: "precisa ser muito bem legal, investido, porque o outro foi feito como se fosse um jogo de lego, feio, sem criatividade";
+    - "variações tops que fazem sentido, tanto pra mapa quanto pra tamanhos": por tipo de mapa (deserto, cidade, porto, montanha...) e
+      por tamanho (o pequeno, o médio, o grande, com a carga que acaba);
+    - o estudo antes (o Supply Dock e as caixas do ZH, os outros RTS, a autenticidade: o depósito de ajuda humanitária, o porto, o
+      armazém, o ponto de contrabando), o conceito no Atelier pra ele escolher, depois o modelo.
+    - É o item principal desta leva.
+    - (03/11 tarde) o estudo em `docs/elenco/SUPPLY_DOCK_ESTUDO.md` ("a carga que a guerra deixou": o veículo ou o lugar que trazia
+      suprimento e ficou parado, cheio das caixas do C&C; nunca repõe) e a 1ª folha no Atelier, as 4 famílias (o cargueiro encalhado,
+      o trem parado, o avião de carga caído, o pátio do pórtico): `captures/concept/160_supply_dock_4_familias/raiz_r1_gpt.png`,
+      mostrada; falta ele escolher. Depois, a folha dos tamanhos (50, 150 e 400 caixas, como o ZH) da família escolhida.
+64. ⏳ (03/11) **As torres de energia e os postes do mapa refeitos** (o mesmo "lego"), junto com o kit civil v3: as variações (o poste de
+    madeira, o de concreto, a torre de alta tensão de treliça), mantendo os isoladores onde os fios ligam (o `RTSWireSystem`).
+
 **(19h50) A rodada grande dos itens 42 e 43** (`chain41`): os 20 modelos que já existem com a estrela aprovada e a esteira sem furos
 (a Rússia: a fábrica, o Instituto, o Pantsir fixo, o T-90M, o TOS-1A, o Pantsir, o IMR; a China: o quartel, o QG, o depósito, a fábrica,
 o Type 99, o Overlord, o Gattling Tank, o Inferno, o trator, o caminhão; a USA: o Dozer, o Linebacker, o Paladin v2), o destrutor dos
@@ -553,3 +581,15 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
    esteira com vãos (42), o emblema da Rússia × China (43).
 4. A galeria (§G), por facção: a USA (56, 57/41), a Rússia (54, 55, 53, 43), a China (44, 45, 46), a GLA (48 a 52), o civil (47).
 5. Sempre: marcar aqui cada item que fecha e o que ele aprovar no `docs/APROVADOS.md`.
+
+**(03/11 ~16h, PAUSA pelo limite de tokens) Onde parou:**
+- Falta ele escolher: o Supply básico (a folha `captures/concept/161_supply_basico_vila/raiz_r1_gpt.png`: 1 pilha pequena, 2 pilha,
+  3 armazém da vila, 4 a doca; no 3 e na metade coberta do 4 o telhado esconde as caixas); o quartel v5 da GLA (a folha enviada).
+- Rodando sozinhas: a `chain56` (a importação da China, da Rússia e dos veículos da USA, os tours `_v56` e o A/B da máscara no tanque) e,
+  depois dela, a `chain59` (compila, importa os 4 da GLA, as fotos `gla_defesas_v5` e `elenco_gla_tour_v59`). Ver as fotos e mostrar.
+- Os 4 da GLA (o poço, o alçapão, o SAM só antiaéreo, o bunker de 3 vagas) já estão no Units.json, com o dano e a malha do tiro.
+- O C++ do bunker (entrar pela borda do prédio em `WorldTransport.cpp`, o teste `TestGarrison` em `SimTests.cpp`, sem tampa de escotilha
+  no prédio em `RTSMatchSubsystem.cpp`) está no disco; o `WorldTransport.cpp` inteiro ainda não tem commit (é o transporte de 01/11).
+  Os testes da simulação passaram (o mesmo FINAL_HASH nas 3 compilações).
+- O kit do adobe (`adobe_block` em `model_building_parts.py`) sobrepõe as paredes nas quinas e deve piscar na Unreal: conferir nos prédios
+  que usam o kit.

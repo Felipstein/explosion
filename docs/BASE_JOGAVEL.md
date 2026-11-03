@@ -193,7 +193,13 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
 - [ ] **Como o 2º PC recebe o conteúdo:** o mapa (262 MB), as fatias e os assets por link estão fora do git (o `Game/Content` tem 2,3 GB e só 2 arquivos versionados), e o GitHub recusa arquivo acima de 100 MB: pacote cozido ou Git LFS.
 - [ ] **Câmera em rede:** o Alt+meio desce até 12° (cinematográfico); travar na faixa de jogo no multiplayer?
 - [~] **Pausar, retomar, render-se e sair viram comandos da rede** (13/10, sem o teste do Felipe): a pausa é o anfitrião parar de fechar passo, então todos param no mesmo; render-se é o comando `Resign`; quem sai ou cai é rendido pelo anfitrião.
-- [ ] **HUD pra N jogadores.** Hoje é "Seus tanques / Inimigo", com a cor do jogador 1 fixa.
+- [~] **HUD pra N jogadores.** Hoje é "Seus tanques / Inimigo", com a cor do jogador 1 fixa.
+  - **03/11 (HUD, aprovado no HUDLab, `be8a4c9`):** no HUD novo (`-NewHud`/F4) a barra do topo dos times (simétrica; 3+ times em vidro
+    neutro), a lista C das superarmas no canto e o placar segurando o **Tab** (as contas do ZH por jogador: feitos, destruídos, perdidos,
+    dinheiro ganho e a renda do último minuto, em `URTSMatchSubsystem::StatsOf`/`IncomeLastMinute`, só desenho, pelos eventos). O plugin
+    `Game/Plugins/RTSHud` agora é cópia do `HUDLab/Plugins/RTSHud` (a fonte única, com o relógio da Drop Zone e o botão do trabalhador
+    juntados) e o HUD novo usa a pele da sua facção. Teste: `-RTSTab` abre o placar. **Falta:** as superarmas na simulação (a lista e a
+    coluna ficam vazias até lá), a rodinha rolando a coluna (hoje a rodinha dá zoom; precisa do controle) e a espionagem.
 - [ ] **Grade igual nos dois PCs:**
   - conferir o hash da grade na sala de espera;
   - plano B: o anfitrião manda a grade (~0,4 MB);

@@ -357,6 +357,12 @@ FACTION_MODELS = [
     ('gla_supply_stash_v3', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v3', GLA_BUILDING_SLOTS),
     ('gla_stinger_site_v2', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v2', GLA_BUILDING_SLOTS),
     ('gla_supply_stash_v2', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v2', GLA_BUILDING_SLOTS),
+    # (03/11, APROVADOS os conceitos) o poço do contrabando, o alçapão, os mísseis de caça roubados (só antiaéreo) e o ninho no
+    # telhado (o bunker de 3 vagas): docs/concept/buildings/gla_*_APROVADO.jpg
+    ('gla_supply_stash_v5', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v5', GLA_BUILDING_SLOTS),
+    ('gla_stinger_site_v5', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v5', GLA_BUILDING_SLOTS),
+    ('gla_sam_site', 'SM_GLA_SamSite_*.glb', '/Game/Structures/gla_sam_site', GLA_BUILDING_SLOTS),
+    ('gla_bunker', 'SM_GLA_Bunker_*.glb', '/Game/Structures/gla_bunker', GLA_BUILDING_SLOTS),
     # (01/11, itens 53, 54, 55) a Rússia refeita: o BMPT e o T-14 com a silhueta própria (longe do T-90M), o Shtab da torre em degraus
     # com a agulha (não a "prisão") e a Kazarma com o plaç pintado e o KPP
     ('russia_bmpt_v2', 'SM_Russia_BMPT_*.glb', '/Game/Units/russia_bmpt_v2', RUSSIA_VEHICLE_SLOTS),

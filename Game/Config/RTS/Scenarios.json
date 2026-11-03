@@ -31738,6 +31738,1314 @@
           }
         ]
       }
+    },
+    {
+      "name": "russia_quem_e_quem",
+      "about": "(01/11, itens 54/55) O T-90M, o T-14 v2 e o BMPT v2 lado a lado (de cima, na câmera do jogo e de perto), e o Shtab v2 de 25,6 m com 4 tanques em volta na câmera do jogo: a torre não pode tapar unidade.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "russia_command_center",
+          "player": 0,
+          "at_m": [
+            -290.0,
+            -350.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -300.0,
+            -300.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t14",
+          "at_m": [
+            -288.0,
+            -300.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_bmpt",
+          "at_m": [
+            -276.0,
+            -300.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -271.0,
+            -350.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -309.0,
+            -350.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -290.0,
+            -330.0
+          ],
+          "facing_deg": 0.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -290.0,
+            -370.0
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -288.0,
+          -300.0
+        ],
+        "distance_m": 45.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 40.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 8.5,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 2.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 45.0,
+            "pitch_deg": 85.0,
+            "focus_m": [
+              -288.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 2.55,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 2.6,
+            "op": "shot",
+            "name": "quem_e_quem_cima"
+          },
+          {
+            "t_s": 3.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 45.0,
+            "pitch_deg": 40.0,
+            "focus_m": [
+              -288.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 3.55,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 3.6,
+            "op": "shot",
+            "name": "quem_e_quem_jogo"
+          },
+          {
+            "t_s": 4.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 26.0,
+            "pitch_deg": 34.0,
+            "focus_m": [
+              -288.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 4.55,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 4.6,
+            "op": "shot",
+            "name": "quem_e_quem_perto"
+          },
+          {
+            "t_s": 5.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 70.0,
+            "pitch_deg": 40.0,
+            "focus_m": [
+              -290.0,
+              -350.0
+            ]
+          },
+          {
+            "t_s": 5.55,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 5.6,
+            "op": "shot",
+            "name": "shtab_jogo"
+          },
+          {
+            "t_s": 6.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 70.0,
+            "pitch_deg": 85.0,
+            "focus_m": [
+              -290.0,
+              -350.0
+            ]
+          },
+          {
+            "t_s": 6.55,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 6.6,
+            "op": "shot",
+            "name": "shtab_cima"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bandeira_perto",
+      "about": "(01/11) A bandeira da War Factory da USA de perto (a favor e contra o sol) e o prédio na câmera do jogo: o pano preso no mastro, a dobra com luz e sombra, a cor de campanha.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "gla_command_center",
+          "player": 1,
+          "at_m": [
+            -225.0,
+            -330.0
+          ]
+        }
+      ],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          -265.0,
+          -330.0
+        ],
+        "distance_m": 36.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 36.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 36.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 3.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 3.1,
+            "op": "shot",
+            "name": "wf_jogo"
+          },
+          {
+            "t_s": 4.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 34.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -243.76,
+              -328.06
+            ]
+          },
+          {
+            "t_s": 4.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 4.1,
+            "op": "shot",
+            "name": "pano_favor_a"
+          },
+          {
+            "t_s": 5.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 34.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -270.14,
+              -354.45
+            ]
+          },
+          {
+            "t_s": 5.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 5.1,
+            "op": "shot",
+            "name": "pano_favor_b"
+          },
+          {
+            "t_s": 6.0,
+            "op": "camera",
+            "yaw_deg": 225.0,
+            "distance_m": 34.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -270.14,
+              -354.45
+            ]
+          },
+          {
+            "t_s": 6.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 6.1,
+            "op": "shot",
+            "name": "pano_contra_a"
+          },
+          {
+            "t_s": 7.0,
+            "op": "camera",
+            "yaw_deg": 225.0,
+            "distance_m": 34.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -243.76,
+              -328.06
+            ]
+          },
+          {
+            "t_s": 7.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 7.1,
+            "op": "shot",
+            "name": "pano_contra_b"
+          }
+        ]
+      },
+      "end_s": 12.0
+    },
+    {
+      "name": "tanque_gla_volta",
+      "about": "(01/11) O tanque da GLA (o v2) sozinho com a câmera em volta (os 4 lados, as diagonais, a frente baixa e de cima): a tinta, a esteira e a frente de perto, de todos os lados.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [],
+      "units": [
+        {
+          "player": 0,
+          "key": "gla_tank",
+          "at_m": [
+            -300.0,
+            -300.0
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -300.0,
+          -300.0
+        ],
+        "distance_m": 16.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 30.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 15.0,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "camera",
+            "yaw_deg": 0.0,
+            "distance_m": 16.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 3.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 3.1,
+            "op": "shot",
+            "name": "lado_0"
+          },
+          {
+            "t_s": 4.0,
+            "op": "camera",
+            "yaw_deg": 90.0,
+            "distance_m": 16.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 4.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 4.1,
+            "op": "shot",
+            "name": "lado_90"
+          },
+          {
+            "t_s": 5.0,
+            "op": "camera",
+            "yaw_deg": 180.0,
+            "distance_m": 16.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 5.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 5.1,
+            "op": "shot",
+            "name": "lado_180"
+          },
+          {
+            "t_s": 6.0,
+            "op": "camera",
+            "yaw_deg": 270.0,
+            "distance_m": 16.0,
+            "pitch_deg": 25.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 6.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 6.1,
+            "op": "shot",
+            "name": "lado_270"
+          },
+          {
+            "t_s": 7.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 15.0,
+            "pitch_deg": 38.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 7.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 7.1,
+            "op": "shot",
+            "name": "diag_45"
+          },
+          {
+            "t_s": 8.0,
+            "op": "camera",
+            "yaw_deg": 135.0,
+            "distance_m": 15.0,
+            "pitch_deg": 38.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 8.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 8.1,
+            "op": "shot",
+            "name": "diag_135"
+          },
+          {
+            "t_s": 9.0,
+            "op": "camera",
+            "yaw_deg": 225.0,
+            "distance_m": 15.0,
+            "pitch_deg": 38.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 9.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 9.1,
+            "op": "shot",
+            "name": "diag_225"
+          },
+          {
+            "t_s": 10.0,
+            "op": "camera",
+            "yaw_deg": 315.0,
+            "distance_m": 15.0,
+            "pitch_deg": 38.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 10.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 10.1,
+            "op": "shot",
+            "name": "diag_315"
+          },
+          {
+            "t_s": 11.0,
+            "op": "camera",
+            "yaw_deg": 0.0,
+            "distance_m": 11.0,
+            "pitch_deg": 12.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 11.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 11.1,
+            "op": "shot",
+            "name": "baixo_0"
+          },
+          {
+            "t_s": 12.0,
+            "op": "camera",
+            "yaw_deg": 180.0,
+            "distance_m": 11.0,
+            "pitch_deg": 12.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 12.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 12.1,
+            "op": "shot",
+            "name": "baixo_180"
+          },
+          {
+            "t_s": 13.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 18.0,
+            "pitch_deg": 85.0,
+            "focus_m": [
+              -300.0,
+              -300.0
+            ]
+          },
+          {
+            "t_s": 13.05,
+            "op": "pause",
+            "real_s": 1.5
+          },
+          {
+            "t_s": 13.1,
+            "op": "shot",
+            "name": "cima"
+          }
+        ]
+      }
+    },
+    {
+      "name": "bandeira_sombra",
+      "about": "(03/11, item 62) a bandeira pega a sombra dos prédios? A War Factory e o QG da GLA na câmera do jogo, o sol baixo girando em 6 rumos (a sombra do bloco grande cai no pano em algum).",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "gla_command_center",
+          "player": 1,
+          "at_m": [
+            -225.0,
+            -330.0
+          ]
+        }
+      ],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          -265.0,
+          -330.0
+        ],
+        "distance_m": 36.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 36.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 0.0
+          },
+          {
+            "t_s": 3.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 3.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 3.15,
+            "op": "shot",
+            "name": "sol_000"
+          },
+          {
+            "t_s": 4.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 4.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 4.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 4.15,
+            "op": "shot",
+            "name": "sol_060"
+          },
+          {
+            "t_s": 5.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 5.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 5.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 5.15,
+            "op": "shot",
+            "name": "sol_120"
+          },
+          {
+            "t_s": 6.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 6.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 6.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 6.15,
+            "op": "shot",
+            "name": "sol_180"
+          },
+          {
+            "t_s": 7.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 7.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 7.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 7.15,
+            "op": "shot",
+            "name": "sol_240"
+          },
+          {
+            "t_s": 8.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 8.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 8.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 8.15,
+            "op": "shot",
+            "name": "sol_300"
+          },
+          {
+            "t_s": 9.0,
+            "op": "sun_reset"
+          }
+        ]
+      },
+      "end_s": 10.0
+    },
+    {
+      "name": "bandeira_sombra_baixo",
+      "about": "(03/11, item 62) o sol a 8° e a 25° atrás do bloco grande da War Factory (240° e 300°): com o sol baixo a sombra cobre o pano com certeza; o pano escurece junto com o telhado?",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "gla_command_center",
+          "player": 1,
+          "at_m": [
+            -225.0,
+            -330.0
+          ]
+        }
+      ],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          -265.0,
+          -330.0
+        ],
+        "distance_m": 36.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 36.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 240.0
+          },
+          {
+            "t_s": 3.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 3.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 3.15,
+            "op": "shot",
+            "name": "sol_240_el25"
+          },
+          {
+            "t_s": 4.0,
+            "op": "sun",
+            "elevation": 8.0,
+            "azimuth_delta": 0.0
+          },
+          {
+            "t_s": 4.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 4.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 4.15,
+            "op": "shot",
+            "name": "sol_240_el08"
+          },
+          {
+            "t_s": 5.0,
+            "op": "sun",
+            "elevation": 8.0,
+            "azimuth_delta": 60.0
+          },
+          {
+            "t_s": 5.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 5.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 5.15,
+            "op": "shot",
+            "name": "sol_300_el08"
+          },
+          {
+            "t_s": 6.0,
+            "op": "sun",
+            "elevation": 25.0,
+            "azimuth_delta": 0.0
+          },
+          {
+            "t_s": 6.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 6.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 6.15,
+            "op": "shot",
+            "name": "sol_300_el25"
+          },
+          {
+            "t_s": 7.0,
+            "op": "sun",
+            "elevation": 4.0,
+            "azimuth_delta": -30.0
+          },
+          {
+            "t_s": 7.05,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 30.0,
+            "pitch_deg": 36.0,
+            "focus_m": [
+              -265.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 7.1,
+            "op": "pause",
+            "real_s": 2.0
+          },
+          {
+            "t_s": 7.15,
+            "op": "shot",
+            "name": "sol_270_el04"
+          },
+          {
+            "t_s": 8.0,
+            "op": "sun_reset"
+          }
+        ]
+      },
+      "end_s": 9.0
+    },
+    {
+      "name": "gla_defesas_v5",
+      "about": "(03/11) os 4 prédios da GLA dos conceitos aprovados (o poço do contrabando, o alçapão, os mísseis de caça roubados, o ninho no telhado) de perto; 3 rebeldes entram no bunker e um tanque inimigo chega.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          282.6,
+          335.7
+        ],
+        [
+          -282.6,
+          -335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "gla_command_center",
+          "player": 0,
+          "at_m": [
+            222.0,
+            346.0
+          ]
+        },
+        {
+          "key": "gla_supply_stash",
+          "player": 0,
+          "at_m": [
+            228.0,
+            310.0
+          ]
+        },
+        {
+          "key": "gla_stinger_site",
+          "player": 0,
+          "at_m": [
+            262.0,
+            310.0
+          ]
+        },
+        {
+          "key": "gla_sam_site",
+          "player": 0,
+          "at_m": [
+            284.0,
+            312.0
+          ]
+        },
+        {
+          "key": "gla_bunker",
+          "player": 0,
+          "at_m": [
+            252.0,
+            340.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "gla_rebel",
+          "at_m": [
+            244.0,
+            358.0
+          ],
+          "facing_deg": 270.0
+        },
+        {
+          "player": 0,
+          "key": "gla_rebel",
+          "at_m": [
+            246.0,
+            358.0
+          ],
+          "facing_deg": 270.0
+        },
+        {
+          "player": 0,
+          "key": "gla_rebel",
+          "at_m": [
+            248.0,
+            358.0
+          ],
+          "facing_deg": 270.0
+        },
+        {
+          "player": 0,
+          "key": "gla_rpg",
+          "at_m": [
+            252.0,
+            360.0
+          ],
+          "facing_deg": 270.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          256.0,
+          326.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 37.5
+      },
+      "shots_s": [
+        3.0
+      ],
+      "end_s": 23.4,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 4.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 40.0,
+            "focus_m": [
+              228.0,
+              310.0
+            ]
+          },
+          {
+            "t_s": 4.9,
+            "op": "shot",
+            "name": "peca_gla_supply_stash"
+          },
+          {
+            "t_s": 5.6,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 40.0,
+            "focus_m": [
+              262.0,
+              310.0
+            ]
+          },
+          {
+            "t_s": 6.5,
+            "op": "shot",
+            "name": "peca_gla_stinger_site"
+          },
+          {
+            "t_s": 7.199999999999999,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 40.0,
+            "focus_m": [
+              284.0,
+              312.0
+            ]
+          },
+          {
+            "t_s": 8.1,
+            "op": "shot",
+            "name": "peca_gla_sam_site"
+          },
+          {
+            "t_s": 8.799999999999999,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 40.0,
+            "focus_m": [
+              252.0,
+              340.0
+            ]
+          },
+          {
+            "t_s": 9.7,
+            "op": "shot",
+            "name": "peca_gla_bunker"
+          },
+          {
+            "t_s": 10.399999999999999,
+            "op": "enter",
+            "player": 0,
+            "key": "gla_rebel",
+            "target_m": [
+              252.0,
+              340.0
+            ]
+          },
+          {
+            "t_s": 16.4,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 34.0,
+            "focus_m": [
+              252.0,
+              340.0
+            ]
+          },
+          {
+            "t_s": 17.299999999999997,
+            "op": "shot",
+            "name": "bunker_cheio"
+          },
+          {
+            "t_s": 17.4,
+            "op": "spawn",
+            "player": 1,
+            "key": "usa_mbt",
+            "at_m": [
+              252.0,
+              296.0
+            ],
+            "facing_deg": 90.0
+          },
+          {
+            "t_s": 17.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 50.0,
+            "focus_m": [
+              252.0,
+              322.0
+            ]
+          },
+          {
+            "t_s": 20.4,
+            "op": "shot",
+            "name": "bunker_tiro"
+          },
+          {
+            "t_s": 21.9,
+            "op": "shot",
+            "name": "bunker_tiro_2"
+          }
+        ]
+      }
     }
   ]
 }

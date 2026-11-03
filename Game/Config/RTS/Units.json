@@ -160,49 +160,49 @@
 			"counts_for_victory": true,
 			"visual": {
 				"hull": [
-					"/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Base/StaticMeshes/SM_USA_CommandCenter_Base"
+					"/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Base/StaticMeshes/SM_USA_CommandCenter_Base"
 				],
 				"fire_points_m": [
-					[-5.0, 12.0, 7.3],
-					[2.0, 9.6, 4.7],
-					[-4.5, 0.0, 5.64]
+					[-5.4, 10.0, 5.25],
+					[-2.0, 2.0, 7.51],
+					[-0.4, -10.6, 3.4]
 				],
 				"turret": [],
 				"spin": [
 					{
-						"mesh": "/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Radar/StaticMeshes/SM_USA_CommandCenter_Radar",
-						"at_m": [7.9, 12.35, 12.95],
-						"rpm": 4
+						"mesh": "/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Radar/StaticMeshes/SM_USA_CommandCenter_Radar",
+						"at_m": [8.4, -10.2, 12.6],
+						"rpm": 6
 					}
 				],
-				"scaffold": "/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Scaffold/StaticMeshes/SM_USA_CommandCenter_Scaffold",
+				"scaffold": "/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Scaffold/StaticMeshes/SM_USA_CommandCenter_Scaffold",
 				"_about": "Modelos PROVISÓRIOS (até a arte final): Game/Tools/blender_provisional.py + import_provisional.py (game.ps1 models). spin = peça que gira no próprio eixo (rpm; para sem energia); scaffold = andaime da obra; blade = lâmina do Dozer (pivô); cargo = uma caixa por vaga do caminhão. As posições (at_m, slots_m) são da Unreal: o Y é o contrário do Blender (o glTF espelha; a antena do CC foi pro lado errado em 10/10).",
 				"damage_states": {
-					"damaged": "/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Damaged/StaticMeshes/SM_USA_CommandCenter_Damaged",
-					"wrecked": "/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Wrecked/StaticMeshes/SM_USA_CommandCenter_Wrecked",
-					"ruin": "/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Ruin/StaticMeshes/SM_USA_CommandCenter_Ruin",
+					"damaged": "/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Damaged/StaticMeshes/SM_USA_CommandCenter_Damaged",
+					"wrecked": "/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Wrecked/StaticMeshes/SM_USA_CommandCenter_Wrecked",
+					"ruin": "/Game/Structures/usa_command_center_v5/SM_USA_CommandCenter_Ruin/StaticMeshes/SM_USA_CommandCenter_Ruin",
 					"fire_damaged_m": [
-						[-0.05, 5.55, 4.76],
-						[-9.05, 8.55, 4.7],
-						[-8.05, -1.45, 5.4],
-						[2.95, 5.55, 4.81]
+						[1.6, 10.54, 8.59],
+						[-8.4, -3.46, 6.56],
+						[-8.4, 2.54, 7.19],
+						[1.6, 4.54, 5.81]
 					],
 					"fire_wrecked_m": [
-						[-0.05, 5.55, 4.76],
-						[-9.05, 8.55, 4.7],
-						[-8.05, -1.45, 5.4],
-						[2.95, 5.55, 4.81],
-						[0.95, 0.55, 5.79]
+						[1.6, 10.54, 8.59],
+						[-8.4, -3.46, 6.56],
+						[-8.4, 2.54, 7.19],
+						[1.6, 4.54, 5.81],
+						[4.6, 1.54, 7.61]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [4.6, -6.604, 9.35],
+						"mast_m": [7.6, 6.596, 9.35],
 						"size_m": [2.4, 1.45],
 						"emblem": 4
 					}
 				],
-				"_mesh_B": "(01/11, item 38: o A, o B, o Pentágono e os conceitos reprovados; \"olha o C&C ZH, nem que copie quase tudo\") a v4 de Game/Tools/model_usa_command_center_v4.py; a de antes: ['/Game/Structures/usa_command_center_v3/SM_USA_CommandCenter_Base/StaticMeshes/SM_USA_CommandCenter_Base']"
+				"_mesh_B": "(01/11, item 38: o v4 do ZH ensinou a forma; \"agora um modelo novo do zero, porque não se pode copiar de outro jogo\") a v5 de Game/Tools/model_usa_command_center_v5.py; a de antes: ['/Game/Structures/usa_command_center_v4/SM_USA_CommandCenter_Base/StaticMeshes/SM_USA_CommandCenter_Base']"
 			},
 			"produces": [
 				"usa_dozer"
@@ -1811,14 +1811,14 @@
 				"mesh_scale": 1.1,
 				"_mesh": "o provisório de 13/10 (model_gla_tank.py: as medidas do T-55, casco 6,45 × 3,27 m, a torre em (0,35; 0), o canhão a 2,05 m): os slots dele no import_gla.py (a areia-cáqui, os sacos, a chapa teal, a ferrugem e a madeira)",
 				"hull": [
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Hull/StaticMeshes/SM_GLA_MBT_Hull",
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Wheels/StaticMeshes/SM_GLA_MBT_Wheels",
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Track_l/StaticMeshes/SM_GLA_MBT_Track_l",
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Track_r/StaticMeshes/SM_GLA_MBT_Track_r"
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Hull/StaticMeshes/SM_GLA_MBT_Hull",
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Wheels/StaticMeshes/wheel_*",
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Track_l/StaticMeshes/SM_GLA_MBT_Track_l",
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Track_r/StaticMeshes/SM_GLA_MBT_Track_r"
 				],
 				"turret": [
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Turret/StaticMeshes/SM_GLA_MBT_Turret",
-					"/Game/Units/GLA_MBT/SM_GLA_MBT_Barrel/StaticMeshes/SM_GLA_MBT_Barrel"
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Turret/StaticMeshes/SM_GLA_MBT_Turret",
+					"/Game/Units/gla_tank_v2/SM_GLA_MBT_Barrel/StaticMeshes/SM_GLA_MBT_Barrel"
 				],
 				"turret_pivot_m": [0.385, 0.0],
 				"turret_box_m": [
@@ -1838,7 +1838,23 @@
 					"bake": "eg_jato_municao",
 					"scale": 0.9,
 					"base_m": 2.5
-				}
+				},
+				"track_step_m": 0.15072,
+				"flags": [
+					{
+						"mast_m": [-0.451, -0.466, 4.51],
+						"size_m": [0.792, 0.521],
+						"emblem": 1,
+						"turret": true
+					},
+					{
+						"mast_m": [-1.749, 0.928, 3.333],
+						"size_m": [0.44, 0.333],
+						"emblem": 1,
+						"turret": true
+					}
+				],
+				"_mesh_B": "(02/11, item 58: \"tem bolhas que parece que está doente, não parece sacos de areia, o pneu não está na diagonal\") a v2 de Game/Tools/model_gla_tank_v2.py (os sacos de pano, o pneu na diagonal, a esteira que anda); a de antes: ['/Game/Units/GLA_MBT/SM_GLA_MBT_Hull/StaticMeshes/SM_GLA_MBT_Hull', '/Game/Units/GLA_MBT/SM_GLA_MBT_Wheels/StaticMeshes/SM_GLA_MBT_Wheels', '/Game/Units/GLA_MBT/SM_GLA_MBT_Track_l/StaticMeshes/SM_GLA_MBT_Track_l', '/Game/Units/GLA_MBT/SM_GLA_MBT_Track_r/StaticMeshes/SM_GLA_MBT_Track_r']"
 			},
 			"requires": [
 				"gla_arms_dealer"
@@ -1894,32 +1910,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/USA/SKM_Soldier_USA.SKM_Soldier_USA",
 					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
 					"scale": 1.25,
 					"cloth": [0.36, 0.31, 0.22],
 					"team": [0.07, 0.1, 0.24],
-					"paint": [
-						"/Game/Characters/Soldier/USA/T_Soldier_USA_0.T_Soldier_USA_0",
-						"/Game/Characters/Soldier/USA/T_Soldier_USA_1.T_Soldier_USA_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/USA/SM_Soldier_USA_head/StaticMeshes/SM_Soldier_USA_head.SM_Soldier_USA_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/USA/SM_Soldier_USA_spine_03/StaticMeshes/SM_Soldier_USA_spine_03.SM_Soldier_USA_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/USA/SM_Soldier_USA_pelvis/StaticMeshes/SM_Soldier_USA_pelvis.SM_Soldier_USA_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 1.05,
 				"light_gun": true,
@@ -2041,17 +2038,17 @@
 					"wrecked": "/Game/Structures/china_power_plant/SM_China_PowerPlant_Wrecked/StaticMeshes/SM_China_PowerPlant_Wrecked",
 					"ruin": "/Game/Structures/china_power_plant/SM_China_PowerPlant_Ruin/StaticMeshes/SM_China_PowerPlant_Ruin",
 					"fire_damaged_m": [
-						[3.97, 0.03, 5.04],
-						[-0.03, 1.03, 4.6],
-						[-0.03, -1.97, 5.06],
-						[-3.03, 0.03, 4.38]
+						[3.97, 0.03, 5.05],
+						[-0.03, 1.03, 4.61],
+						[-0.03, -1.97, 5.07],
+						[-3.03, 0.03, 4.39]
 					],
 					"fire_wrecked_m": [
-						[3.97, 0.03, 5.04],
-						[-0.03, 1.03, 4.6],
-						[-0.03, -1.97, 5.06],
-						[-3.03, 0.03, 4.38],
-						[-4.22, 5.62, 2.83]
+						[3.97, 0.03, 5.05],
+						[-0.03, 1.03, 4.61],
+						[-0.03, -1.97, 5.07],
+						[-3.03, 0.03, 4.39],
+						[-3.38, 4.78, 2.72]
 					]
 				}
 			}
@@ -2269,39 +2266,63 @@
 			"_tech": "(31/10) a tecnologia da China: destrava o Inferno Cannon e o Overlord",
 			"visual": {
 				"hull": [
-					"/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Base/StaticMeshes/SM_China_PropagandaCenter_Base"
+					"/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Base/StaticMeshes/SM_China_PropagandaCenter_Base"
 				],
 				"fire_points_m": [
-					[-3.0, -6.0, 7.0],
-					[-2.0, 6.0, 7.0]
+					[0.9, -2.9, 4.65],
+					[-4.9, 2.9, 4.65],
+					[-2.0, 0.0, 9.5]
 				],
 				"turret": [],
 				"spin": [
 					{
-						"mesh": "/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Speakers/StaticMeshes/SM_China_PropagandaCenter_Speakers",
-						"at_m": [-1.0, 7.4, 11.05],
-						"rpm": 3
+						"mesh": "/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Speakers/StaticMeshes/SM_China_PropagandaCenter_Speakers",
+						"at_m": [-2.0, 0.0, 14.15],
+						"rpm": 3.0
 					}
 				],
-				"scaffold": "/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Scaffold/StaticMeshes/SM_China_PropagandaCenter_Scaffold",
+				"scaffold": "/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Scaffold/StaticMeshes/SM_China_PropagandaCenter_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Damaged/StaticMeshes/SM_China_PropagandaCenter_Damaged",
-					"wrecked": "/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Wrecked/StaticMeshes/SM_China_PropagandaCenter_Wrecked",
-					"ruin": "/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Ruin/StaticMeshes/SM_China_PropagandaCenter_Ruin",
+					"damaged": "/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Damaged/StaticMeshes/SM_China_PropagandaCenter_Damaged",
+					"wrecked": "/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Wrecked/StaticMeshes/SM_China_PropagandaCenter_Wrecked",
+					"ruin": "/Game/Structures/china_propaganda_center_v5/SM_China_PropagandaCenter_Ruin/StaticMeshes/SM_China_PropagandaCenter_Ruin",
 					"fire_damaged_m": [
-						[1.97, -5.97, 7.85],
-						[-5.03, -10.97, 8.07],
-						[-0.03, 3.03, 7.95],
-						[-6.03, -5.97, 7.86]
+						[-0.66, -3.6, 7.82],
+						[1.34, 2.4, 8.12],
+						[-5.66, 2.4, 8.08],
+						[-6.66, -4.6, 8.91]
 					],
 					"fire_wrecked_m": [
-						[1.97, -5.97, 7.85],
-						[-5.03, -10.97, 8.07],
-						[-0.03, 3.03, 7.95],
-						[-6.03, -5.97, 7.86],
-						[-1.03, 9.03, 8.15]
+						[-0.66, -3.6, 7.82],
+						[1.34, 2.4, 8.12],
+						[-5.66, 2.4, 8.08],
+						[-6.66, -4.6, 8.91],
+						[-5.16, -3.1, 5.66]
 					]
-				}
+				},
+				"flags": [
+					{
+						"mast_m": [6.45, -4.304, 7.05],
+						"size_m": [2.1, 1.35],
+						"emblem": 2
+					},
+					{
+						"mast_m": [6.45, -6.477, 7.05],
+						"size_m": [2.1, 1.35],
+						"emblem": 2
+					},
+					{
+						"mast_m": [6.45, 4.323, 7.05],
+						"size_m": [2.1, 1.35],
+						"emblem": 2
+					},
+					{
+						"mast_m": [6.45, 6.523, 7.05],
+						"size_m": [2.1, 1.35],
+						"emblem": 2
+					}
+				],
+				"_mesh_B": "(03/11, item 46: \"propaganda center aprovado\") a ideia nova, A TORRE VERMELHA (APROVADA) (Game/Tools/model_china_propaganda_center_v5.py, docs/elenco/ICONES_03_11.md); a de antes: ['/Game/Structures/china_propaganda_center/SM_China_PropagandaCenter_Base/StaticMeshes/SM_China_PropagandaCenter_Base']"
 			}
 		},
 		{
@@ -2350,40 +2371,39 @@
 			},
 			"visual": {
 				"hull": [
-					"/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Base/StaticMeshes/SM_China_GattlingCannon_Base"
+					"/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Base/StaticMeshes/SM_China_GattlingCannon_Base"
 				],
 				"fire_points_m": [
-					[0.0, 0.0, 3.0]
+					[-2.6, 1.3, 0.7],
+					[2.2, -2.3, 0.7],
+					[0.0, 0.0, 2.6]
 				],
 				"turret": [
-					"/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Turret/StaticMeshes/SM_China_GattlingCannon_Turret"
+					"/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Turret/StaticMeshes/SM_China_GattlingCannon_Turret"
 				],
-				"scaffold": "/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Scaffold/StaticMeshes/SM_China_GattlingCannon_Scaffold",
+				"scaffold": "/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Scaffold/StaticMeshes/SM_China_GattlingCannon_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Damaged/StaticMeshes/SM_China_GattlingCannon_Damaged",
-					"wrecked": "/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Wrecked/StaticMeshes/SM_China_GattlingCannon_Wrecked",
-					"ruin": "/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Ruin/StaticMeshes/SM_China_GattlingCannon_Ruin",
+					"damaged": "/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Damaged/StaticMeshes/SM_China_GattlingCannon_Damaged",
+					"wrecked": "/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Wrecked/StaticMeshes/SM_China_GattlingCannon_Wrecked",
+					"ruin": "/Game/Structures/china_gattling_cannon_v2/SM_China_GattlingCannon_Ruin/StaticMeshes/SM_China_GattlingCannon_Ruin",
 					"fire_damaged_m": [
-						[-1.03, 2.03, 2.21],
-						[1.97, 1.03, 2.26],
-						[0.97, -1.97, 2.19],
-						[-2.03, -1.97, 2.21]
+						[1.22, -1.05, 2.43],
+						[-0.78, 0.95, 2.39]
 					],
 					"fire_wrecked_m": [
-						[-1.03, 2.03, 2.21],
-						[1.97, 1.03, 2.26],
-						[0.97, -1.97, 2.19],
-						[-2.03, -1.97, 2.21],
-						[-2.82, -2.82, 1.1]
+						[1.22, -1.05, 2.43],
+						[-0.78, 0.95, 2.39],
+						[0.77, 1.35, 1.15]
 					]
 				},
 				"turret_yaw_offset_deg": 0,
 				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 3.0,
+				"muzzle_height_m": 3.05,
 				"light_gun": true,
 				"light_gun_flash_m": 0.4,
 				"light_gun_tracer_m": 3.5,
-				"light_gun_spread_m": 2.0
+				"light_gun_spread_m": 2.0,
+				"_mesh_B": "(01/11, item 44: \"parece um bunker; o bagulho é redondo\") a v2 (model_china_gattling_cannon_v2.py); a de antes: ['/Game/Structures/china_gattling_cannon/SM_China_GattlingCannon_Base/StaticMeshes/SM_China_GattlingCannon_Base']"
 			}
 		},
 		{
@@ -2779,37 +2799,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/CHINA/SKM_Soldier_CHINA.SKM_Soldier_CHINA",
 					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
 					"scale": 1.25,
 					"cloth": [0.12, 0.13, 0.08],
 					"team": [0.32, 0.03, 0.02],
-					"paint": [
-						"/Game/Characters/Soldier/CHINA/T_Soldier_CHINA_0.T_Soldier_CHINA_0",
-						"/Game/Characters/Soldier/CHINA/T_Soldier_CHINA_1.T_Soldier_CHINA_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA/SM_Soldier_CHINA_head/StaticMeshes/SM_Soldier_CHINA_head.SM_Soldier_CHINA_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA/SM_Soldier_CHINA_thigh_l/StaticMeshes/SM_Soldier_CHINA_thigh_l.SM_Soldier_CHINA_thigh_l",
-							"bone": "thigh_l",
-							"origin_cm": [9.97, 2.54, 93.54]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA/SM_Soldier_CHINA_thigh_r/StaticMeshes/SM_Soldier_CHINA_thigh_r.SM_Soldier_CHINA_thigh_r",
-							"bone": "thigh_r",
-							"origin_cm": [-9.97, 2.55, 93.54]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA/SM_Soldier_CHINA_pelvis/StaticMeshes/SM_Soldier_CHINA_pelvis.SM_Soldier_CHINA_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 1.05,
 				"light_gun": true,
@@ -2883,32 +2879,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/CHINA_AT/SKM_Soldier_CHINA_AT.SKM_Soldier_CHINA_AT",
 					"rifle": "/Game/Weapons/Launchers/SM_Launcher_PF98/StaticMeshes/SM_Launcher_PF98",
 					"scale": 1.25,
 					"cloth": [0.12, 0.13, 0.08],
 					"team": [0.32, 0.03, 0.02],
-					"paint": [
-						"/Game/Characters/Soldier/CHINA_AT/T_Soldier_CHINA_AT_0.T_Soldier_CHINA_AT_0",
-						"/Game/Characters/Soldier/CHINA_AT/T_Soldier_CHINA_AT_1.T_Soldier_CHINA_AT_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA_AT/SM_Soldier_CHINA_AT_head/StaticMeshes/SM_Soldier_CHINA_AT_head.SM_Soldier_CHINA_AT_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA_AT/SM_Soldier_CHINA_AT_spine_03/StaticMeshes/SM_Soldier_CHINA_AT_spine_03.SM_Soldier_CHINA_AT_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/CHINA_AT/SM_Soldier_CHINA_AT_pelvis/StaticMeshes/SM_Soldier_CHINA_AT_pelvis.SM_Soldier_CHINA_AT_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 0.9,
 				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
@@ -3039,49 +3016,45 @@
 			"exit_lane_m": 6.6,
 			"visual": {
 				"hull": [
-					"/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Base/StaticMeshes/SM_GLA_SupplyStash_Base"
+					"/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Base/StaticMeshes/SM_GLA_SupplyStash_Base",
+					"/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Wheel/StaticMeshes/SM_GLA_SupplyStash_Wheel",
+					"/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Cage/StaticMeshes/SM_GLA_SupplyStash_Cage",
+					"/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Cable/StaticMeshes/SM_GLA_SupplyStash_Cable"
 				],
 				"fire_points_m": [
-					[-3.0, -3.0, 4.0],
-					[2.0, 3.0, 3.5]
+					[0.5, 4.2, 1.4],
+					[-1.8, -4.6, 1.0],
+					[-2.3, 3.6, 6.5],
+					[-1.6, -0.6, 0.6]
 				],
 				"turret": [],
-				"scaffold": "/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Scaffold/StaticMeshes/SM_GLA_SupplyStash_Scaffold",
+				"scaffold": "/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Scaffold/StaticMeshes/SM_GLA_SupplyStash_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Damaged/StaticMeshes/SM_GLA_SupplyStash_Damaged",
-					"wrecked": "/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Wrecked/StaticMeshes/SM_GLA_SupplyStash_Wrecked",
-					"ruin": "/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Ruin/StaticMeshes/SM_GLA_SupplyStash_Ruin",
+					"damaged": "/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Damaged/StaticMeshes/SM_GLA_SupplyStash_Damaged",
+					"wrecked": "/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Wrecked/StaticMeshes/SM_GLA_SupplyStash_Wrecked",
+					"ruin": "/Game/Structures/gla_supply_stash_v5/SM_GLA_SupplyStash_Ruin/StaticMeshes/SM_GLA_SupplyStash_Ruin",
 					"fire_damaged_m": [
-						[-7.03, 6.03, 2.98],
-						[-7.03, -4.97, 2.95],
-						[-7.03, 0.03, 2.91],
-						[-3.03, -0.97, 2.07]
+						[-4.62, -1.79, 3.5],
+						[-0.62, -0.79, 3.68],
+						[-3.62, -5.79, 2.56],
+						[0.38, -5.79, 2.62]
 					],
 					"fire_wrecked_m": [
-						[-7.03, 6.03, 2.98],
-						[-7.03, -4.97, 2.95],
-						[-7.03, 0.03, 2.91],
-						[-3.03, -0.97, 2.07],
-						[5.97, 7.03, 2.76]
+						[-4.62, -1.79, 3.5],
+						[-0.62, -0.79, 3.68],
+						[-3.62, -5.79, 2.56],
+						[0.38, -5.79, 2.62],
+						[-3.72, -4.99, 1.51]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [7.1, -7.272, 5.85],
-						"size_m": [1.2, 0.75],
-						"emblem": 1
-					},
-					{
-						"mast_m": [7.1, 7.274, 5.85],
-						"size_m": [1.2, 0.75],
-						"emblem": 1
-					},
-					{
-						"mast_m": [-2.8, 0.37, 5.012],
-						"size_m": [1.6, 1.0],
+						"mast_m": [-3.13, 4.49, 9.42],
+						"size_m": [1.35, 0.85],
 						"emblem": 1
 					}
-				]
+				],
+				"_mesh_B": "(03/11, APROVADO o conceito gla_supply_stash_poco_APROVADO.jpg) a v5 de Game/Tools/model_gla_supply_stash_v5.py (o poço do contrabando); a de antes: ['/Game/Structures/gla_supply_stash/SM_GLA_SupplyStash_Base/StaticMeshes/SM_GLA_SupplyStash_Base']"
 			}
 		},
 		{
@@ -3284,44 +3257,45 @@
 			"_tech": "(31/10) a tecnologia da GLA: destrava o Rocket Buggy",
 			"visual": {
 				"hull": [
-					"/Game/Structures/gla_palace/SM_GLA_Palace_Base/StaticMeshes/SM_GLA_Palace_Base"
+					"/Game/Structures/gla_palace_v2/SM_GLA_Palace_Base/StaticMeshes/SM_GLA_Palace_Base"
 				],
 				"fire_points_m": [
-					[-2.0, 0.0, 10.0],
-					[-5.0, -8.0, 6.0]
+					[0, 0, 10.05],
+					[-4.25, -4.25, 8.05]
 				],
 				"turret": [],
-				"scaffold": "/Game/Structures/gla_palace/SM_GLA_Palace_Scaffold/StaticMeshes/SM_GLA_Palace_Scaffold",
+				"scaffold": "/Game/Structures/gla_palace_v2/SM_GLA_Palace_Scaffold/StaticMeshes/SM_GLA_Palace_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/gla_palace/SM_GLA_Palace_Damaged/StaticMeshes/SM_GLA_Palace_Damaged",
-					"wrecked": "/Game/Structures/gla_palace/SM_GLA_Palace_Wrecked/StaticMeshes/SM_GLA_Palace_Wrecked",
-					"ruin": "/Game/Structures/gla_palace/SM_GLA_Palace_Ruin/StaticMeshes/SM_GLA_Palace_Ruin",
+					"damaged": "/Game/Structures/gla_palace_v2/SM_GLA_Palace_Damaged/StaticMeshes/SM_GLA_Palace_Damaged",
+					"wrecked": "/Game/Structures/gla_palace_v2/SM_GLA_Palace_Wrecked/StaticMeshes/SM_GLA_Palace_Wrecked",
+					"ruin": "/Game/Structures/gla_palace_v2/SM_GLA_Palace_Ruin/StaticMeshes/SM_GLA_Palace_Ruin",
 					"fire_damaged_m": [
-						[-7.03, -2.97, 6.93],
-						[0.97, 8.03, 8.19],
-						[-4.03, -6.97, 6.86],
-						[-7.03, 1.03, 8.66]
+						[7.07, -0.01, 6.22],
+						[2.07, 7.99, 6.23],
+						[5.07, -4.01, 8.83],
+						[5.07, 2.99, 8.07]
 					],
 					"fire_wrecked_m": [
-						[-7.03, -2.97, 6.93],
-						[0.97, 8.03, 8.19],
-						[-4.03, -6.97, 6.86],
-						[-7.03, 1.03, 8.66],
-						[0.97, -7.97, 8.07]
+						[7.07, -0.01, 6.22],
+						[2.07, 7.99, 6.23],
+						[5.07, -4.01, 8.83],
+						[5.07, 2.99, 8.07],
+						[0.07, -8.01, 6.03]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [-7.25, -7.388, 10.8],
-						"size_m": [1.25, 0.85],
+						"mast_m": [5.25, -5.238, 10.02],
+						"size_m": [1.3, 0.85],
 						"emblem": 1
 					},
 					{
-						"mast_m": [-7.25, 7.424, 10.8],
-						"size_m": [1.25, 0.85],
+						"mast_m": [5.25, 5.274, 10.02],
+						"size_m": [1.3, 0.85],
 						"emblem": 1
 					}
-				]
+				],
+				"_mesh_B": "(01/11, item 49: \"sai um pouco dessa de tudo ser murado assim\") a v2 de Game/Tools/model_gla_palace_v2.py (o palácio aberto no pódio em cruz); a de antes: ['/Game/Structures/gla_palace/SM_GLA_Palace_Base/StaticMeshes/SM_GLA_Palace_Base']"
 			}
 		},
 		{
@@ -3361,7 +3335,7 @@
 					"turn_dps": 200.0,
 					"boost_s": 0.15,
 					"launch_pitch_deg": 20.0,
-					"launch_height_m": 1.6,
+					"launch_height_m": 3.0,
 					"spread_deg": 6.0,
 					"life_s": 3.5
 				}
@@ -3383,50 +3357,224 @@
 					"turn_dps": 240.0,
 					"boost_s": 0.15,
 					"launch_pitch_deg": 50.0,
-					"launch_height_m": 1.6,
+					"launch_height_m": 3.0,
 					"spread_deg": 6.0,
 					"life_s": 4.0
 				}
 			},
 			"visual": {
 				"hull": [
-					"/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Base/StaticMeshes/SM_GLA_StingerSite_Base"
+					"/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Base/StaticMeshes/SM_GLA_StingerSite_Base",
+					"/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_HatchL/StaticMeshes/SM_GLA_StingerSite_HatchL",
+					"/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_HatchR/StaticMeshes/SM_GLA_StingerSite_HatchR"
 				],
 				"fire_points_m": [
-					[0.0, 0.0, 2.0]
+					[0.0, 0.0, 0.5],
+					[-2.3, 1.6, 0.6],
+					[1.9, 2.2, 0.6]
 				],
 				"turret": [
-					"/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Turret/StaticMeshes/SM_GLA_StingerSite_Turret"
+					"/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Turret/StaticMeshes/SM_GLA_StingerSite_Turret"
 				],
-				"scaffold": "/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Scaffold/StaticMeshes/SM_GLA_StingerSite_Scaffold",
+				"scaffold": "/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Scaffold/StaticMeshes/SM_GLA_StingerSite_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Damaged/StaticMeshes/SM_GLA_StingerSite_Damaged",
-					"wrecked": "/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Wrecked/StaticMeshes/SM_GLA_StingerSite_Wrecked",
-					"ruin": "/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Ruin/StaticMeshes/SM_GLA_StingerSite_Ruin",
+					"damaged": "/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Damaged/StaticMeshes/SM_GLA_StingerSite_Damaged",
+					"wrecked": "/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Wrecked/StaticMeshes/SM_GLA_StingerSite_Wrecked",
+					"ruin": "/Game/Structures/gla_stinger_site_v5/SM_GLA_StingerSite_Ruin/StaticMeshes/SM_GLA_StingerSite_Ruin",
 					"fire_damaged_m": [
-						[-1.03, 0.03, 3.27]
+						[-0.01, 2.9, 0.96],
+						[2.99, 0.9, 0.63],
+						[1.99, -3.1, 0.85]
 					],
 					"fire_wrecked_m": [
-						[-1.03, 0.03, 3.27],
-						[2.82, -2.82, 1.44]
+						[-0.01, 2.9, 0.96],
+						[2.99, 0.9, 0.63],
+						[1.99, -3.1, 0.85],
+						[-2.8, -2.86, 0.4]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [1.6, -1.976, 3.65],
-						"size_m": [1.1, 0.7],
+						"mast_m": [-1.85, -1.838, 5.93],
+						"size_m": [1.05, 0.62],
 						"emblem": 1
 					}
 				],
 				"turret_yaw_offset_deg": 0,
 				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 2.0,
+				"muzzle_height_m": 3.18,
+				"missile_model": {
+					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
+					"length_m": 1.52,
+					"trail_width": 0.25,
+					"trail_density": 0.6
+				},
+				"_mesh_B": "(03/11, APROVADO o conceito gla_stinger_site_alcapao_APROVADO.jpg) a v5 de Game/Tools/model_gla_stinger_site_v5.py (o alçapão); a de antes: ['/Game/Structures/gla_stinger_site/SM_GLA_StingerSite_Base/StaticMeshes/SM_GLA_StingerSite_Base']"
+			}
+		},
+		{
+			"key": "gla_sam_site",
+			"name": "SAM Site",
+			"_source": "(03/11) novo, sem par no ZH: o Stinger Site virou o padrão (chão e ar) e este é só antiaéreo, o par de mísseis de caça roubados (docs/concept/buildings/gla_sam_site_misseis_roubados_APROVADO.jpg)",
+			"kind": "structure",
+			"max_hp": 800,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 120,
+			"turret_idle_return_s": 2.0,
+			"sight_m": 136.0,
+			"size_m": [10.0, 10.0],
+			"cost": 1000,
+			"build_time_s": 20,
+			"energy": 0,
+			"counts_for_victory": false,
+			"requires": [
+				"gla_barracks"
+			],
+			"weapon": {
+				"range_m": 136.0,
+				"damage": 60,
+				"damage_type": "explosive",
+				"reload_s": 0.5,
+				"aim_tolerance_deg": 4,
+				"projectile_mps": 110.0,
+				"targets": [
+					"air"
+				],
+				"splash_m": [2.0, 2.0],
+				"missile": {
+					"launch_mps": 25.0,
+					"accel_mps2": 160.0,
+					"turn_dps": 240.0,
+					"boost_s": 0.15,
+					"launch_pitch_deg": 30.0,
+					"launch_height_m": 2.6,
+					"spread_deg": 6.0,
+					"life_s": 5.0
+				},
+				"clip_size": 2,
+				"clip_reload_s": 6.0
+			},
+			"visual": {
+				"hull": [
+					"/Game/Structures/gla_sam_site/SM_GLA_SamSite_Base/StaticMeshes/SM_GLA_SamSite_Base"
+				],
+				"fire_points_m": [
+					[-1.91, -1.63, 1.0],
+					[1.91, 0.78, 0.7],
+					[0.0, 0.0, 1.5]
+				],
+				"turret": [
+					"/Game/Structures/gla_sam_site/SM_GLA_SamSite_Turret/StaticMeshes/SM_GLA_SamSite_Turret"
+				],
+				"scaffold": "/Game/Structures/gla_sam_site/SM_GLA_SamSite_Scaffold/StaticMeshes/SM_GLA_SamSite_Scaffold",
+				"damage_states": {
+					"damaged": "/Game/Structures/gla_sam_site/SM_GLA_SamSite_Damaged/StaticMeshes/SM_GLA_SamSite_Damaged",
+					"wrecked": "/Game/Structures/gla_sam_site/SM_GLA_SamSite_Wrecked/StaticMeshes/SM_GLA_SamSite_Wrecked",
+					"ruin": "/Game/Structures/gla_sam_site/SM_GLA_SamSite_Ruin/StaticMeshes/SM_GLA_SamSite_Ruin",
+					"fire_damaged_m": [
+						[-2.82, -2.13, 1.01],
+						[2.18, -2.13, 0.88],
+						[-0.82, 0.87, 0.85]
+					],
+					"fire_wrecked_m": [
+						[-2.82, -2.13, 1.01],
+						[2.18, -2.13, 0.88],
+						[-0.82, 0.87, 0.85],
+						[-3.37, -3.38, 0.48]
+					]
+				},
+				"turret_pivot_m": [0.0, 0.0],
+				"turret_yaw_offset_deg": 0,
+				"muzzle_height_m": 2.68,
 				"missile_model": {
 					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
 					"length_m": 1.52,
 					"trail_width": 0.25,
 					"trail_density": 0.6
 				}
+			}
+		},
+		{
+			"key": "gla_bunker",
+			"name": "Bunker",
+			"_source": "(03/11) novo, o GarrisonContain do ZH num prédio da GLA: \"um bunker que você coloca o que você quiser dentro, slot de 3\" (docs/concept/buildings/gla_bunker_ninho_APROVADO.jpg)",
+			"kind": "structure",
+			"max_hp": 1200,
+			"armor": "structure",
+			"radius_m": 0,
+			"path_radius_m": 0,
+			"speed_mps": 0,
+			"accel_mps2": 0,
+			"brake_mps2": 0,
+			"turn_dps": 0,
+			"turret_turn_dps": 0,
+			"turret_idle_return_s": 0,
+			"sight_m": 60.0,
+			"size_m": [8.0, 8.0],
+			"cost": 500,
+			"build_time_s": 15,
+			"energy": 0,
+			"counts_for_victory": false,
+			"requires": [
+				"gla_barracks"
+			],
+			"transport": {
+				"_about": "(03/11) o mesmo transporte do Stryker num prédio: 3 vagas (as do ninho no teto, model_gla_bunker.py), a tropa atira de dentro com a arma dela, o alcance contado do bunker; entra ao encostar na borda da planta (WorldTransport.cpp); sai pela porta da frente (+X); quando o bunker cai, cada um perde metade da vida (o prédio protege mais que o Humvee)",
+				"slots": 3,
+				"passengers_fire": true,
+				"exit_delay_s": 0.25,
+				"death_damage_pct": 50,
+				"exit_point_m": [3.4, 1.66],
+				"fire_height_m": 4.9,
+				"hatches_m": [
+					[0.72, 1.78],
+					[-2.05, -0.15],
+					[-0.95, -1.58]
+				]
+			},
+			"visual": {
+				"hull": [
+					"/Game/Structures/gla_bunker/SM_GLA_Bunker_Base/StaticMeshes/SM_GLA_Bunker_Base"
+				],
+				"fire_points_m": [
+					[-0.5, 0.1, 4.1],
+					[2.1, 1.66, 1.2],
+					[-1.5, -2.6, 1.5]
+				],
+				"turret": [],
+				"scaffold": "/Game/Structures/gla_bunker/SM_GLA_Bunker_Scaffold/StaticMeshes/SM_GLA_Bunker_Scaffold",
+				"damage_states": {
+					"damaged": "/Game/Structures/gla_bunker/SM_GLA_Bunker_Damaged/StaticMeshes/SM_GLA_Bunker_Damaged",
+					"wrecked": "/Game/Structures/gla_bunker/SM_GLA_Bunker_Wrecked/StaticMeshes/SM_GLA_Bunker_Wrecked",
+					"ruin": "/Game/Structures/gla_bunker/SM_GLA_Bunker_Ruin/StaticMeshes/SM_GLA_Bunker_Ruin",
+					"fire_damaged_m": [
+						[-2.88, -0.16, 4.52],
+						[1.12, 1.84, 5.76],
+						[0.12, 2.84, 3.54],
+						[2.12, -2.16, 4.75]
+					],
+					"fire_wrecked_m": [
+						[-2.88, -0.16, 4.52],
+						[1.12, 1.84, 5.76],
+						[0.12, 2.84, 3.54],
+						[2.12, -2.16, 4.75],
+						[-2.83, 1.94, 2.46]
+					]
+				},
+				"flags": [
+					{
+						"mast_m": [-2.55, -1.927, 6.42],
+						"size_m": [1.0, 0.62],
+						"emblem": 1
+					}
+				],
+				"hatch_z_m": 4.6
 			}
 		},
 		{
@@ -3765,6 +3913,8 @@
 				"gla_arms_dealer",
 				"gla_palace",
 				"gla_stinger_site",
+				"gla_sam_site",
+				"gla_bunker",
 				"gla_command_center"
 			],
 			"visual": {
@@ -3784,37 +3934,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/GLA_WORKER/SKM_Soldier_GLA_WORKER.SKM_Soldier_GLA_WORKER",
 					"rifle": "",
 					"scale": 1.25,
 					"cloth": [0.21, 0.19, 0.14],
 					"team": [0.1, 0.18, 0.05],
-					"paint": [
-						"/Game/Characters/Soldier/GLA_WORKER/T_Soldier_GLA_WORKER_0.T_Soldier_GLA_WORKER_0",
-						"/Game/Characters/Soldier/GLA_WORKER/T_Soldier_GLA_WORKER_1.T_Soldier_GLA_WORKER_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_WORKER/SM_Soldier_GLA_WORKER_head/StaticMeshes/SM_Soldier_GLA_WORKER_head.SM_Soldier_GLA_WORKER_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_WORKER/SM_Soldier_GLA_WORKER_spine_03/StaticMeshes/SM_Soldier_GLA_WORKER_spine_03.SM_Soldier_GLA_WORKER_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_WORKER/SM_Soldier_GLA_WORKER_thigh_l/StaticMeshes/SM_Soldier_GLA_WORKER_thigh_l.SM_Soldier_GLA_WORKER_thigh_l",
-							"bone": "thigh_l",
-							"origin_cm": [9.97, 2.54, 93.54]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_WORKER/SM_Soldier_GLA_WORKER_thigh_r/StaticMeshes/SM_Soldier_GLA_WORKER_thigh_r.SM_Soldier_GLA_WORKER_thigh_r",
-							"bone": "thigh_r",
-							"origin_cm": [-9.97, 2.55, 93.54]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 1.05,
 				"light_gun": true,
@@ -3876,37 +4002,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/GLA/SKM_Soldier_GLA.SKM_Soldier_GLA",
 					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
 					"scale": 1.25,
 					"cloth": [0.21, 0.19, 0.14],
 					"team": [0.1, 0.18, 0.05],
-					"paint": [
-						"/Game/Characters/Soldier/GLA/T_Soldier_GLA_0.T_Soldier_GLA_0",
-						"/Game/Characters/Soldier/GLA/T_Soldier_GLA_1.T_Soldier_GLA_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/GLA/SM_Soldier_GLA_head/StaticMeshes/SM_Soldier_GLA_head.SM_Soldier_GLA_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA/SM_Soldier_GLA_spine_03/StaticMeshes/SM_Soldier_GLA_spine_03.SM_Soldier_GLA_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA/SM_Soldier_GLA_thigh_l/StaticMeshes/SM_Soldier_GLA_thigh_l.SM_Soldier_GLA_thigh_l",
-							"bone": "thigh_l",
-							"origin_cm": [9.97, 2.54, 93.54]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA/SM_Soldier_GLA_thigh_r/StaticMeshes/SM_Soldier_GLA_thigh_r.SM_Soldier_GLA_thigh_r",
-							"bone": "thigh_r",
-							"origin_cm": [-9.97, 2.55, 93.54]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 1.05,
 				"light_gun": true,
@@ -3980,37 +4082,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/GLA_AT/SKM_Soldier_GLA_AT.SKM_Soldier_GLA_AT",
 					"rifle": "/Game/Weapons/Launchers/SM_Launcher_RPG7/StaticMeshes/SM_Launcher_RPG7",
 					"scale": 1.25,
 					"cloth": [0.21, 0.19, 0.14],
 					"team": [0.1, 0.18, 0.05],
-					"paint": [
-						"/Game/Characters/Soldier/GLA_AT/T_Soldier_GLA_AT_0.T_Soldier_GLA_AT_0",
-						"/Game/Characters/Soldier/GLA_AT/T_Soldier_GLA_AT_1.T_Soldier_GLA_AT_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_AT/SM_Soldier_GLA_AT_head/StaticMeshes/SM_Soldier_GLA_AT_head.SM_Soldier_GLA_AT_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_AT/SM_Soldier_GLA_AT_spine_03/StaticMeshes/SM_Soldier_GLA_AT_spine_03.SM_Soldier_GLA_AT_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_AT/SM_Soldier_GLA_AT_thigh_l/StaticMeshes/SM_Soldier_GLA_AT_thigh_l.SM_Soldier_GLA_AT_thigh_l",
-							"bone": "thigh_l",
-							"origin_cm": [9.97, 2.54, 93.54]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/GLA_AT/SM_Soldier_GLA_AT_thigh_r/StaticMeshes/SM_Soldier_GLA_AT_thigh_r.SM_Soldier_GLA_AT_thigh_r",
-							"bone": "thigh_r",
-							"origin_cm": [-9.97, 2.55, 93.54]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 0.9,
 				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
@@ -4222,32 +4300,13 @@
 				"muzzle_height_m": 1.64,
 				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
 				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
+					"mesh": "/Game/Characters/Soldier/V3/USA_AT/SKM_Soldier_USA_AT.SKM_Soldier_USA_AT",
 					"rifle": "/Game/Weapons/Launchers/SM_Launcher_Javelin/StaticMeshes/SM_Launcher_Javelin",
 					"scale": 1.25,
 					"cloth": [0.36, 0.31, 0.22],
 					"team": [0.07, 0.1, 0.24],
-					"paint": [
-						"/Game/Characters/Soldier/USA_AT/T_Soldier_USA_AT_0.T_Soldier_USA_AT_0",
-						"/Game/Characters/Soldier/USA_AT/T_Soldier_USA_AT_1.T_Soldier_USA_AT_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/USA_AT/SM_Soldier_USA_AT_head/StaticMeshes/SM_Soldier_USA_AT_head.SM_Soldier_USA_AT_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/USA_AT/SM_Soldier_USA_AT_spine_03/StaticMeshes/SM_Soldier_USA_AT_spine_03.SM_Soldier_USA_AT_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/USA_AT/SM_Soldier_USA_AT_pelvis/StaticMeshes/SM_Soldier_USA_AT_pelvis.SM_Soldier_USA_AT_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
+					"paint": [],
+					"pieces": []
 				},
 				"muzzle_forward_m": 0.9,
 				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
@@ -4290,62 +4349,53 @@
 			"grants_powers": true,
 			"visual": {
 				"hull": [
-					"/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Base/StaticMeshes/SM_Russia_CommandCenter_Base"
+					"/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Base/StaticMeshes/SM_Russia_CommandCenter_Base"
 				],
 				"fire_points_m": [
-					[-6.0, -10.0, 6.1],
-					[-5.5, 5.0, 9.3],
-					[-6.0, -1.5, 12.5]
+					[-8.0, -7.5, 3.7],
+					[2.0, 5.0, 10.1],
+					[0.4, -3.6, 13.7]
 				],
 				"turret": [],
 				"spin": [
 					{
-						"mesh": "/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Radar/StaticMeshes/SM_Russia_CommandCenter_Radar",
-						"at_m": [-9.2, 10.0, 15.52],
+						"mesh": "/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Radar/StaticMeshes/SM_Russia_CommandCenter_Radar",
+						"at_m": [-7.6, 8.9, 4.65],
 						"rpm": 6
 					}
 				],
-				"scaffold": "/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Scaffold/StaticMeshes/SM_Russia_CommandCenter_Scaffold",
+				"scaffold": "/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Scaffold/StaticMeshes/SM_Russia_CommandCenter_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Damaged/StaticMeshes/SM_Russia_CommandCenter_Damaged",
-					"wrecked": "/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Wrecked/StaticMeshes/SM_Russia_CommandCenter_Wrecked",
-					"ruin": "/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Ruin/StaticMeshes/SM_Russia_CommandCenter_Ruin",
+					"damaged": "/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Damaged/StaticMeshes/SM_Russia_CommandCenter_Damaged",
+					"wrecked": "/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Wrecked/StaticMeshes/SM_Russia_CommandCenter_Wrecked",
+					"ruin": "/Game/Structures/russia_command_center_v2/SM_Russia_CommandCenter_Ruin/StaticMeshes/SM_Russia_CommandCenter_Ruin",
 					"fire_damaged_m": [
-						[-9.93, -12.07, 6.62],
-						[-11.93, 4.93, 6.58],
-						[-1.93, 11.93, 6.58],
-						[-11.93, -6.07, 6.66]
+						[-6.64, -6.36, 9.9],
+						[4.36, 1.64, 9.01],
+						[-7.64, 2.64, 9.91],
+						[-0.64, -6.36, 9.93]
 					],
 					"fire_wrecked_m": [
-						[-9.93, -12.07, 6.62],
-						[-11.93, 4.93, 6.58],
-						[-1.93, 11.93, 6.58],
-						[-11.93, -6.07, 6.66],
-						[-8.93, 8.93, 9.97]
+						[-6.64, -6.36, 9.9],
+						[4.36, 1.64, 9.01],
+						[-7.64, 2.64, 9.91],
+						[-0.64, -6.36, 9.93],
+						[-0.64, 5.64, 9.76]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [-7.4, 0.008, 16.73],
-						"size_m": [2.0, 1.3],
+						"mast_m": [7.0, -8.204, 9.98],
+						"size_m": [1.9, 1.25],
 						"emblem": 3
 					},
 					{
-						"mast_m": [9.6, 4.596, 7.02],
-						"size_m": [1.7, 1.1],
-						"emblem": 3
-					},
-					{
-						"mast_m": [9.6, 5.92, 7.02],
-						"size_m": [1.7, 1.1],
-						"emblem": 3
-					},
-					{
-						"mast_m": [9.6, 7.224, 7.02],
-						"size_m": [1.7, 1.1],
+						"mast_m": [7.0, 8.212, 9.98],
+						"size_m": [1.9, 1.25],
 						"emblem": 3
 					}
-				]
+				],
+				"_mesh_B": "(01/11, item 54: \"parece uma prisão\") a v2 de Game/Tools/model_russia_command_center_v2.py (a torre em degraus com a agulha); a de antes: ['/Game/Structures/russia_command_center/SM_Russia_CommandCenter_Base/StaticMeshes/SM_Russia_CommandCenter_Base']"
 			}
 		},
 		{
@@ -4517,7 +4567,7 @@
 			"exit_lane_m": 6.6,
 			"visual": {
 				"hull": [
-					"/Game/Structures/russia_barracks/SM_Russia_Barracks_Base/StaticMeshes/SM_Russia_Barracks_Base"
+					"/Game/Structures/russia_barracks_v2/SM_Russia_Barracks_Base/StaticMeshes/SM_Russia_Barracks_Base"
 				],
 				"fire_points_m": [
 					[-4.5, -5.5, 7.5],
@@ -4525,32 +4575,33 @@
 					[-1.0, 0.0, 7.45]
 				],
 				"turret": [],
-				"scaffold": "/Game/Structures/russia_barracks/SM_Russia_Barracks_Scaffold/StaticMeshes/SM_Russia_Barracks_Scaffold",
+				"scaffold": "/Game/Structures/russia_barracks_v2/SM_Russia_Barracks_Scaffold/StaticMeshes/SM_Russia_Barracks_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/russia_barracks/SM_Russia_Barracks_Damaged/StaticMeshes/SM_Russia_Barracks_Damaged",
-					"wrecked": "/Game/Structures/russia_barracks/SM_Russia_Barracks_Wrecked/StaticMeshes/SM_Russia_Barracks_Wrecked",
-					"ruin": "/Game/Structures/russia_barracks/SM_Russia_Barracks_Ruin/StaticMeshes/SM_Russia_Barracks_Ruin",
+					"damaged": "/Game/Structures/russia_barracks_v2/SM_Russia_Barracks_Damaged/StaticMeshes/SM_Russia_Barracks_Damaged",
+					"wrecked": "/Game/Structures/russia_barracks_v2/SM_Russia_Barracks_Wrecked/StaticMeshes/SM_Russia_Barracks_Wrecked",
+					"ruin": "/Game/Structures/russia_barracks_v2/SM_Russia_Barracks_Ruin/StaticMeshes/SM_Russia_Barracks_Ruin",
 					"fire_damaged_m": [
-						[-1.95, 6.93, 6.25],
-						[-3.95, -9.07, 7.23],
-						[-7.95, 1.93, 5.78],
-						[-0.95, -0.07, 7.64]
+						[-1.95, 6.97, 6.25],
+						[-3.95, -9.03, 7.19],
+						[-7.95, 1.97, 5.78],
+						[-0.95, -0.03, 7.66]
 					],
 					"fire_wrecked_m": [
-						[-1.95, 6.93, 6.25],
-						[-3.95, -9.07, 7.23],
-						[-7.95, 1.93, 5.78],
-						[-0.95, -0.07, 7.64],
-						[-7.95, 6.93, 5.65]
+						[-1.95, 6.97, 6.25],
+						[-3.95, -9.03, 7.19],
+						[-7.95, 1.97, 5.78],
+						[-0.95, -0.03, 7.66],
+						[-7.95, 6.97, 5.65]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [6.6, 8.604, 9.02],
-						"size_m": [2.0, 1.3],
+						"mast_m": [5.3, 7.504, 10.88],
+						"size_m": [2.4, 1.6],
 						"emblem": 3
 					}
-				]
+				],
+				"_mesh_B": "(01/11, item 53: \"parece um prédio normal\") a v2 de Game/Tools/model_russia_barracks_v2.py (o plaç pintado e o KPP); a de antes: ['/Game/Structures/russia_barracks/SM_Russia_Barracks_Base/StaticMeshes/SM_Russia_Barracks_Base']"
 			}
 		},
 		{
@@ -4766,13 +4817,11 @@
 					"wrecked": "/Game/Structures/russia_pantsir_site/SM_Russia_PantsirSite_Wrecked/StaticMeshes/SM_Russia_PantsirSite_Wrecked",
 					"ruin": "/Game/Structures/russia_pantsir_site/SM_Russia_PantsirSite_Ruin/StaticMeshes/SM_Russia_PantsirSite_Ruin",
 					"fire_damaged_m": [
-						[1.54, -2.54, 1.17],
-						[-0.46, -0.54, 1.65]
+						[-0.46, -0.54, 1.64]
 					],
 					"fire_wrecked_m": [
-						[1.54, -2.54, 1.17],
-						[-0.46, -0.54, 1.65],
-						[2.43, 2.43, 0.64]
+						[-0.46, -0.54, 1.64],
+						[1.09, -1.09, 0.64]
 					]
 				},
 				"turret_yaw_offset_deg": 0,
@@ -4999,19 +5048,19 @@
 			},
 			"visual": {
 				"hull": [
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Hull/StaticMeshes/SM_Russia_BMPT_Hull",
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Wheels/StaticMeshes/wheel_*",
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Track_l/StaticMeshes/SM_Russia_BMPT_Track_l",
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Track_r/StaticMeshes/SM_Russia_BMPT_Track_r"
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Hull/StaticMeshes/SM_Russia_BMPT_Hull",
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Wheels/StaticMeshes/wheel_*",
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Track_l/StaticMeshes/SM_Russia_BMPT_Track_l",
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Track_r/StaticMeshes/SM_Russia_BMPT_Track_r"
 				],
 				"turret": [
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Turret/StaticMeshes/SM_Russia_BMPT_Turret",
-					"/Game/Units/russia_bmpt/SM_Russia_BMPT_Barrel/StaticMeshes/SM_Russia_BMPT_Barrel"
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Turret/StaticMeshes/SM_Russia_BMPT_Turret",
+					"/Game/Units/russia_bmpt_v2/SM_Russia_BMPT_Barrel/StaticMeshes/SM_Russia_BMPT_Barrel"
 				],
-				"turret_pivot_m": [0.35, 0.0],
-				"muzzle_height_m": 2.3,
-				"tracks_m": [2.84, 0.58],
-				"track_step_m": 0.1496,
+				"turret_pivot_m": [0.15, 0.0],
+				"muzzle_height_m": 2.2,
+				"tracks_m": [2.64, 0.56],
+				"track_step_m": 0.14865,
 				"light_gun": true,
 				"light_gun_flash_m": 0.4,
 				"light_gun_tracer_m": 3.5,
@@ -5022,7 +5071,8 @@
 					"length_m": 1.0,
 					"trail_width": 0.2,
 					"trail_density": 0.5
-				}
+				},
+				"_mesh_B": "(01/11, item 55: \"muito parecido com o outro tanque\") a v2 de Game/Tools/model_russia_bmpt_v2.py; a de antes: ['/Game/Units/russia_bmpt/SM_Russia_BMPT_Hull/StaticMeshes/SM_Russia_BMPT_Hull', '/Game/Units/russia_bmpt/SM_Russia_BMPT_Wheels/StaticMeshes/wheel_*', '/Game/Units/russia_bmpt/SM_Russia_BMPT_Track_l/StaticMeshes/SM_Russia_BMPT_Track_l', '/Game/Units/russia_bmpt/SM_Russia_BMPT_Track_r/StaticMeshes/SM_Russia_BMPT_Track_r']"
 			}
 		},
 		{
@@ -5276,729 +5326,28 @@
 			},
 			"visual": {
 				"hull": [
-					"/Game/Units/russia_t14/SM_Russia_T14_Hull/StaticMeshes/SM_Russia_T14_Hull",
-					"/Game/Units/russia_t14/SM_Russia_T14_Wheels/StaticMeshes/wheel_*",
-					"/Game/Units/russia_t14/SM_Russia_T14_Track_l/StaticMeshes/SM_Russia_T14_Track_l",
-					"/Game/Units/russia_t14/SM_Russia_T14_Track_r/StaticMeshes/SM_Russia_T14_Track_r"
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Hull/StaticMeshes/SM_Russia_T14_Hull",
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Wheels/StaticMeshes/wheel_*",
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Track_l/StaticMeshes/SM_Russia_T14_Track_l",
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Track_r/StaticMeshes/SM_Russia_T14_Track_r"
 				],
 				"turret": [
-					"/Game/Units/russia_t14/SM_Russia_T14_Turret/StaticMeshes/SM_Russia_T14_Turret",
-					"/Game/Units/russia_t14/SM_Russia_T14_Barrel/StaticMeshes/SM_Russia_T14_Barrel"
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Turret/StaticMeshes/SM_Russia_T14_Turret",
+					"/Game/Units/russia_t14_v2/SM_Russia_T14_Barrel/StaticMeshes/SM_Russia_T14_Barrel"
 				],
-				"turret_pivot_m": [-0.35, 0.0],
-				"muzzle_height_m": 2.08,
-				"tracks_m": [2.8, 0.64],
-				"track_step_m": 0.16009,
+				"turret_pivot_m": [-0.45, 0.0],
+				"muzzle_height_m": 2.12,
+				"tracks_m": [2.72, 0.62],
+				"track_step_m": 0.15928,
 				"impact_crater": "A",
 				"near_miss": 0.2,
-				"mass_t": 55
+				"mass_t": 55,
+				"_mesh_B": "(01/11, item 55: \"muito parecido com o outro tanque\") a v2 de Game/Tools/model_russia_t14_v2.py; a de antes: ['/Game/Units/russia_t14/SM_Russia_T14_Hull/StaticMeshes/SM_Russia_T14_Hull', '/Game/Units/russia_t14/SM_Russia_T14_Wheels/StaticMeshes/wheel_*', '/Game/Units/russia_t14/SM_Russia_T14_Track_l/StaticMeshes/SM_Russia_T14_Track_l', '/Game/Units/russia_t14/SM_Russia_T14_Track_r/StaticMeshes/SM_Russia_T14_Track_r']"
 			}
 		},
 		{
 			"key": "russia_motostrelok",
 			"name": "Motostrelok",
-			"_source": "(Rússia) o fuzileiro motorizado (AK-12)",
-			"infantry": true,
-			"max_hp": 140,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 6.6,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"russia_barracks"
-			],
-			"cost": 200,
-			"build_time_s": 8,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 26.3,
-				"damage": 16,
-				"damage_type": "small_arms",
-				"reload_s": 1.0,
-				"aim_tolerance_deg": 5,
-				"projectile_mps": 0
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
-					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
-					"scale": 1.25,
-					"cloth": [0.1, 0.11, 0.095],
-					"team": [0.3, 0.03, 0.03],
-					"paint": [
-						"/Game/Characters/Soldier/RUSSIA/T_Soldier_RUSSIA_0.T_Soldier_RUSSIA_0",
-						"/Game/Characters/Soldier/RUSSIA/T_Soldier_RUSSIA_1.T_Soldier_RUSSIA_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA/SM_Soldier_RUSSIA_head/StaticMeshes/SM_Soldier_RUSSIA_head.SM_Soldier_RUSSIA_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA/SM_Soldier_RUSSIA_spine_03/StaticMeshes/SM_Soldier_RUSSIA_spine_03.SM_Soldier_RUSSIA_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA/SM_Soldier_RUSSIA_pelvis/StaticMeshes/SM_Soldier_RUSSIA_pelvis.SM_Soldier_RUSSIA_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
-				},
-				"muzzle_forward_m": 1.05,
-				"light_gun": true,
-				"light_gun_flash_m": 0.15,
-				"light_gun_tracer_m": 2.6,
-				"light_gun_spread_m": 1.5,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry"
-			}
-		},
-		{
-			"key": "russia_kornet",
-			"name": "Kornet Team",
-			"_source": "(Rússia) o antitanque de tripé: o tiro mais longe da infantaria",
-			"infantry": true,
-			"max_hp": 100,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.0,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"russia_barracks"
-			],
-			"cost": 300,
-			"build_time_s": 6,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 55.0,
-				"damage": 70,
-				"damage_type": "armor_piercing",
-				"reload_s": 2.0,
-				"aim_tolerance_deg": 4,
-				"projectile_mps": 70.0,
-				"missile": {
-					"launch_mps": 30.0,
-					"accel_mps2": 160.0,
-					"turn_dps": 160.0,
-					"boost_s": 0.1,
-					"launch_pitch_deg": 6.0,
-					"launch_height_m": 1.6,
-					"spread_deg": 2.0,
-					"life_s": 2.5
-				}
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple",
-					"rifle": "/Game/Weapons/Launchers/SM_Launcher_Javelin/StaticMeshes/SM_Launcher_Javelin",
-					"scale": 1.25,
-					"cloth": [0.1, 0.11, 0.095],
-					"team": [0.3, 0.03, 0.03],
-					"paint": [
-						"/Game/Characters/Soldier/RUSSIA_AT/T_Soldier_RUSSIA_AT_0.T_Soldier_RUSSIA_AT_0",
-						"/Game/Characters/Soldier/RUSSIA_AT/T_Soldier_RUSSIA_AT_1.T_Soldier_RUSSIA_AT_1"
-					],
-					"pieces": [
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA_AT/SM_Soldier_RUSSIA_AT_head/StaticMeshes/SM_Soldier_RUSSIA_AT_head.SM_Soldier_RUSSIA_AT_head",
-							"bone": "head",
-							"origin_cm": [-0.0, 0.66, 162.58]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA_AT/SM_Soldier_RUSSIA_AT_spine_03/StaticMeshes/SM_Soldier_RUSSIA_AT_spine_03.SM_Soldier_RUSSIA_AT_spine_03",
-							"bone": "spine_03",
-							"origin_cm": [0.0, 4.25, 113.42]
-						},
-						{
-							"mesh": "/Game/Characters/Soldier/RUSSIA_AT/SM_Soldier_RUSSIA_AT_pelvis/StaticMeshes/SM_Soldier_RUSSIA_AT_pelvis.SM_Soldier_RUSSIA_AT_pelvis",
-							"bone": "pelvis",
-							"origin_cm": [-0.0, 2.28, 95.9]
-						}
-					]
-				},
-				"muzzle_forward_m": 0.9,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry",
-				"missile_model": {
-					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
-					"length_m": 1.0,
-					"trail_width": 0.2,
-					"trail_density": 0.5
-				},
-				"warhead_kg": 1.2
-			},
-			"_balance": "(01/11) a força 100 × 35 ÷ 300² = 0,039, 12% abaixo do Tank Hunter, do RPG e do Javelin (0,044): o preço do alcance (55 m contra 46) e do tiro mais pesado (70); não atira no ar"
-		},
-		{
-			"key": "usa_ranger_v3",
-			"name": "Ranger (v3, teste)",
-			"_source": "(30/10, simulação 26) o Ranger do ZH 1.04 (docs/ESTUDO_INFANTARIA.md §1.1, com os INI): vida 180 (AmericaInfantry.ini:923), 5,3 m/s (BasicHumanLocomotor), giro 500°/s, 26 m/s², a arma de 5 de dano em rajada de 3 a 0,1 s e 0,7 s de recarga a 26,3 m (Weapon.ini:729), visão 26,3 m, custo 225 e 5 s (AmericaInfantry.ini:881-882). O raio de 1 m é o espaçamento entre soldados (o ZH usa 1,84 m); o caminho passa com 0,4 m",
-			"infantry": true,
-			"max_hp": 180,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.3,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"usa_barracks"
-			],
-			"cost": 225,
-			"build_time_s": 5,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 26.3,
-				"damage": 5,
-				"damage_type": "small_arms",
-				"reload_s": 0.1,
-				"clip_size": 3,
-				"clip_reload_s": 0.7,
-				"aim_tolerance_deg": 5,
-				"projectile_mps": 0
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/USA/SKM_Soldier_USA.SKM_Soldier_USA",
-					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
-					"scale": 1.25,
-					"cloth": [0.36, 0.31, 0.22],
-					"team": [0.07, 0.1, 0.24],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 1.05,
-				"light_gun": true,
-				"light_gun_flash_m": 0.15,
-				"light_gun_tracer_m": 2.6,
-				"light_gun_spread_m": 1.5,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry"
-			}
-		},
-		{
-			"key": "usa_javelin_v3",
-			"name": "Javelin (v3, teste)",
-			"_source": "AmericaInfantryMissileDefender (AmericaInfantry.ini; MissileDefenderMissileWeapon)",
-			"infantry": true,
-			"max_hp": 100,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.3,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"usa_barracks",
-				"usa_strategy_center"
-			],
-			"cost": 300,
-			"build_time_s": 5,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 46.0,
-				"damage": 40,
-				"damage_type": "armor_piercing",
-				"reload_s": 1.0,
-				"aim_tolerance_deg": 4,
-				"projectile_mps": 70.0,
-				"targets": [
-					"ground",
-					"air"
-				],
-				"missile": {
-					"launch_mps": 30.0,
-					"accel_mps2": 160.0,
-					"turn_dps": 160.0,
-					"boost_s": 0.1,
-					"launch_pitch_deg": 6.0,
-					"launch_height_m": 1.6,
-					"spread_deg": 2.0,
-					"life_s": 2.5
-				}
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/USA_AT/SKM_Soldier_USA_AT.SKM_Soldier_USA_AT",
-					"rifle": "/Game/Weapons/Launchers/SM_Launcher_Javelin/StaticMeshes/SM_Launcher_Javelin",
-					"scale": 1.25,
-					"cloth": [0.36, 0.31, 0.22],
-					"team": [0.07, 0.1, 0.24],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 0.9,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry",
-				"missile_model": {
-					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
-					"length_m": 1.0,
-					"trail_width": 0.2,
-					"trail_density": 0.5
-				},
-				"warhead_kg": 1.0
-			}
-		},
-		{
-			"key": "china_rifleman_v3",
-			"name": "Red Guard (v3, teste)",
-			"_source": "ChinaInfantryRedguard (ChinaInfantry.ini; RedguardMachineGun)",
-			"infantry": true,
-			"max_hp": 120,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 6.6,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"china_barracks"
-			],
-			"cost": 300,
-			"build_time_s": 10,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 26.3,
-				"damage": 15,
-				"damage_type": "small_arms",
-				"reload_s": 1.0,
-				"aim_tolerance_deg": 5,
-				"projectile_mps": 0
-			},
-			"produce_count": 2,
-			"_pair": "(31/10) sai em par: o QuantityModifier do ZH (o preço é do par)",
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/CHINA/SKM_Soldier_CHINA.SKM_Soldier_CHINA",
-					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
-					"scale": 1.25,
-					"cloth": [0.12, 0.13, 0.08],
-					"team": [0.32, 0.03, 0.02],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 1.05,
-				"light_gun": true,
-				"light_gun_flash_m": 0.15,
-				"light_gun_tracer_m": 2.6,
-				"light_gun_spread_m": 1.5,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry"
-			}
-		},
-		{
-			"key": "china_tank_hunter_v3",
-			"name": "Tank Hunter (v3, teste)",
-			"_source": "ChinaInfantryTankHunter (ChinaInfantry.ini; TankHunterMissileWeapon)",
-			"infantry": true,
-			"max_hp": 100,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.3,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"china_barracks"
-			],
-			"cost": 300,
-			"build_time_s": 5,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 46.0,
-				"damage": 40,
-				"damage_type": "armor_piercing",
-				"reload_s": 1.0,
-				"aim_tolerance_deg": 4,
-				"projectile_mps": 70.0,
-				"targets": [
-					"ground",
-					"air"
-				],
-				"missile": {
-					"launch_mps": 30.0,
-					"accel_mps2": 160.0,
-					"turn_dps": 160.0,
-					"boost_s": 0.1,
-					"launch_pitch_deg": 6.0,
-					"launch_height_m": 1.6,
-					"spread_deg": 2.0,
-					"life_s": 2.5
-				}
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/CHINA_AT/SKM_Soldier_CHINA_AT.SKM_Soldier_CHINA_AT",
-					"rifle": "/Game/Weapons/Launchers/SM_Launcher_PF98/StaticMeshes/SM_Launcher_PF98",
-					"scale": 1.25,
-					"cloth": [0.12, 0.13, 0.08],
-					"team": [0.32, 0.03, 0.02],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 0.9,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry",
-				"missile_model": {
-					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
-					"length_m": 1.0,
-					"trail_width": 0.2,
-					"trail_density": 0.5
-				},
-				"warhead_kg": 1.0
-			}
-		},
-		{
-			"key": "gla_worker_v3",
-			"name": "Worker (v3, teste)",
-			"_source": "GLAInfantryWorker (GLAInfantry.ini): constrói e desmancha carcaça em dinheiro",
-			"infantry": true,
-			"max_hp": 100,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 7.9,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"cost": 200,
-			"build_time_s": 3,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"repair_pct_per_s": 2.0,
-			"constructs": [
-				"gla_supply_stash",
-				"gla_barracks",
-				"gla_arms_dealer",
-				"gla_palace",
-				"gla_stinger_site",
-				"gla_command_center"
-			],
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/GLA_WORKER/SKM_Soldier_GLA_WORKER.SKM_Soldier_GLA_WORKER",
-					"rifle": "",
-					"scale": 1.25,
-					"cloth": [0.21, 0.19, 0.14],
-					"team": [0.1, 0.18, 0.05],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 1.05,
-				"light_gun": true,
-				"light_gun_flash_m": 0.15,
-				"light_gun_tracer_m": 2.6,
-				"light_gun_spread_m": 1.5,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry"
-			}
-		},
-		{
-			"key": "gla_rebel_v3",
-			"name": "Rebel (v3, teste)",
-			"_source": "GLAInfantryRebel (GLAInfantry.ini; GLAInfantryRifle)",
-			"infantry": true,
-			"max_hp": 120,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.3,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 39.5,
-			"requires": [
-				"gla_barracks"
-			],
-			"cost": 150,
-			"build_time_s": 5,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 26.3,
-				"damage": 5,
-				"damage_type": "small_arms",
-				"reload_s": 0.1,
-				"aim_tolerance_deg": 5,
-				"projectile_mps": 0,
-				"clip_size": 3,
-				"clip_reload_s": 0.7
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/GLA/SKM_Soldier_GLA.SKM_Soldier_GLA",
-					"rifle": "/Game/Weapons/Rifle/Meshes/SM_Rifle",
-					"scale": 1.25,
-					"cloth": [0.21, 0.19, 0.14],
-					"team": [0.1, 0.18, 0.05],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 1.05,
-				"light_gun": true,
-				"light_gun_flash_m": 0.15,
-				"light_gun_tracer_m": 2.6,
-				"light_gun_spread_m": 1.5,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry"
-			}
-		},
-		{
-			"key": "gla_rpg_v3",
-			"name": "RPG Trooper (v3, teste)",
-			"_source": "GLAInfantryTunnelDefender (GLAInfantry.ini; TunnelDefenderRocketWeapon)",
-			"infantry": true,
-			"max_hp": 100,
-			"armor": "infantry",
-			"radius_m": 1.0,
-			"path_radius_m": 0.4,
-			"speed_mps": 5.3,
-			"accel_mps2": 26.3,
-			"brake_mps2": 26.3,
-			"turn_dps": 500,
-			"turret_turn_dps": 500,
-			"turret_idle_return_s": 2.0,
-			"sight_m": 26.3,
-			"requires": [
-				"gla_barracks"
-			],
-			"cost": 300,
-			"build_time_s": 5,
-			"wreck_life_s": 0,
-			"wreck_sink_s": 0,
-			"weapon": {
-				"range_m": 46.0,
-				"damage": 40,
-				"damage_type": "armor_piercing",
-				"reload_s": 1.0,
-				"aim_tolerance_deg": 4,
-				"projectile_mps": 70.0,
-				"targets": [
-					"ground",
-					"air"
-				],
-				"missile": {
-					"launch_mps": 30.0,
-					"accel_mps2": 160.0,
-					"turn_dps": 160.0,
-					"boost_s": 0.1,
-					"launch_pitch_deg": 6.0,
-					"launch_height_m": 1.6,
-					"spread_deg": 2.0,
-					"life_s": 2.5
-				}
-			},
-			"visual": {
-				"_mesh": "(30/10) o soldado provisório (Tools/blender_provisional.py, ranger(): 1,8 m × 1,25, a escala do meio da faixa medida no gs15; o A/B decide): o corpo com o fuzil é a torre (gira inteiro pra mira); as pernas balançam no quadril (legs)",
-				"hull": [],
-				"turret": [
-					"/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_Body"
-				],
-				"legs": {
-					"left": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegL",
-					"right": "/Game/Structures/ranger/SM_USA_Ranger/StaticMeshes/SM_USA_Ranger_LegR",
-					"hip_m": [0.0, 0.1125, 1.1],
-					"stride_m": 3.6
-				},
-				"_legs": "o pivô de cada perna no quadril (y ± do hip_m, a altura 0,88 m × 1,25); o ciclo de passo de 3,6 m (2 passadas de 1,45 m de um soldado correndo, × 1,25): a perna anda com o chão, não patina",
-				"turret_pivot_m": [0.0, 0.0],
-				"muzzle_height_m": 1.64,
-				"_soldier": "(30/10, o Felipe: a infantaria \"horrível, quadradinhos, sem detalhes\"; docs/ESTUDO_INFANTARIA_VISUAL.md §8) o corpo humano e os clipes de fuzil do modelo da Unreal 5.8 (licença de exemplo da Epic, uso comercial dentro da Unreal; nada comprado), o fuzil do modelo, a farda areia e o colete na cor da facção (os game shots: o capacete e o colete pintados)",
-				"soldier": {
-					"mesh": "/Game/Characters/Soldier/V3/GLA_AT/SKM_Soldier_GLA_AT.SKM_Soldier_GLA_AT",
-					"rifle": "/Game/Weapons/Launchers/SM_Launcher_RPG7/StaticMeshes/SM_Launcher_RPG7",
-					"scale": 1.25,
-					"cloth": [0.21, 0.19, 0.14],
-					"team": [0.1, 0.18, 0.05],
-					"paint": [],
-					"pieces": []
-				},
-				"muzzle_forward_m": 0.9,
-				"_light_gun": "(o ZH: o traçante do fuzil de 2,6 m × 8 cm, metade dos tiros) a rajada desenhada da arma leve, com o clarão de boca pequeno",
-				"mass_t": 0.1,
-				"death_kind": "infantry",
-				"missile_model": {
-					"mesh": "/Game/Effects/Missiles/SM_Missile_Stinger/StaticMeshes/SM_Missile_Stinger.SM_Missile_Stinger",
-					"length_m": 1.0,
-					"trail_width": 0.2,
-					"trail_density": 0.5
-				},
-				"warhead_kg": 1.0
-			}
-		},
-		{
-			"key": "russia_motostrelok_v3",
-			"name": "Motostrelok (v3, teste)",
 			"_source": "(Rússia) o fuzileiro motorizado (AK-12)",
 			"infantry": true,
 			"max_hp": 140,
@@ -6063,8 +5412,8 @@
 			}
 		},
 		{
-			"key": "russia_kornet_v3",
-			"name": "Kornet Team (v3, teste)",
+			"key": "russia_kornet",
+			"name": "Kornet Team",
 			"_source": "(Rússia) o antitanque de tripé: o tiro mais longe da infantaria",
 			"infantry": true,
 			"max_hp": 100,
