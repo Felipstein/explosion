@@ -62,8 +62,8 @@ partida ainda não ligadas). Os ganchos nos arquivos compartilhados estão no co
    (a pausa, o resultado), chamar `PC->Cursors.Invalidate()` ao fechar.
 3. Depois: ~~a sala da LAN nova~~ (03/11, feita), o que falta no protocolo da rede pra sala ficar inteira (a facção por jogador, o
    mapa, as 24 cores, a conversa: é da sessão do jogo/multiplayer), as telas da partida (Esc, resultado, avisos, carregando),
-   a dificuldade da IA (a IA tem um nível só), as superarmas, o CLASSIC de verdade, a música pelo volume do jogo, o pacote do pai
-   (conferir que o CEF e `Resources/UI` vão junto).
+   a dificuldade da IA (a IA tem um nível só), as superarmas, o CLASSIC de verdade, a música pelo volume do jogo.
+   (Na hora do pacote da versão fechada, não antes: conferir que o CEF e `Resources/UI` vão junto.)
 4. A linha no CLAUDE.md apontando este guia (o Felipe pediu pras outras sessões saberem).
 
 **Pra quem continua (o necessário pra seguir sem perguntar):**
