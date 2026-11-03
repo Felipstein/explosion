@@ -481,6 +481,23 @@ fino na câmera do jogo; o pavilhão branco de duas águas pode ler como celeiro
   - o Stash = O YAKHCHAL (a geladeira persa cônica).
 
   🔄 Um agente modelando os 4.
+- ✅ (03/11 ~14h) **A GLA decidida pelo Atelier** (os conceitos em `docs/concept/buildings/gla_*_APROVADO.jpg`; o estudo em
+  `docs/elenco/GLA_ESTUDO_03_11.md`):
+  - o Supply Stash = o poço do contrabando;
+  - o Stinger Site = o alçapão, a defesa padrão "igual Patriot";
+  - PRÉDIO NOVO `gla_sam_site` = os mísseis de caça roubados, SÓ antiaéreo;
+  - PRÉDIO NOVO `gla_bunker` = o ninho no telhado, o BUNKER de 3 vagas (entra quem ele quiser e atira de dentro);
+  - o quartel = o do ZH com uma modificação ou outra e o CAMPO DE TREINAMENTO no pátio ("faz igual o command center da USA").
+
+  🔄 Dois agentes modelando: o quartel; o Stash, o Stinger, o SAM e o bunker.
+
+  **O jogo dos 2 novos (os números propostos, a afinar nas partidas da IA):**
+  - o bunker usa o transporte que já existe (o `transport` do Stryker: as vagas, a tropa atirando de dentro com a arma dela, as
+    escotilhas = as 3 posições do ninho, a saída em leque; o GarrisonContain do ZH é o mesmo mecanismo): 3 vagas, $500, 1200 de vida;
+  - o SAM só antiaéreo: o alcance 1,3× o do Stinger (136 m), 2 mísseis por rajada de 60 de dano, a recarga à mão de 6 s, $1000,
+    800 de vida (improvisado e frágil).
+
+  Os 2 entram no menu da GLA sozinhos (pelo prefixo da facção).
 - Item 40, a tinta: "achei válida a ideia da areia na textura, mas por enquanto não vamos fazer isso, segue a textura bem detalhada
   [...] mas sem areia, depois eu tenho uma ideia nova pra areia": o `DustCoat` saiu da tinta e da parede da USA (ficam a lavagem, o
   tom por chapa e as lascas). "A areia da lagarta e do pneu deixa como está, a outra sessão vai trabalhar nisso": o pó da rodagem fica.
