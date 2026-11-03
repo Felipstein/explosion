@@ -165,7 +165,7 @@ class Banner:
         nn = da.cross(dt).normalized()
         return nn if nn.dot(self.out) > 0 else -nn
 
-    def cloth(self, p, m='Player#ban', nu=10, nv=30):
+    def cloth(self, p, m='Red#ban', nu=10, nv=30):
         """O pano com espessura (as 2 camadas pela normal, as bordas fechadas)."""
         b = p.bm(m, 0.0)
         top, bot = [], []
@@ -473,6 +473,8 @@ def upper(p, top1):
     return z_axle
 
 
+# (03/11, aprovada; no jogo o jogador azul pintava as faixas de azul e a Torre Vermelha virava azul) as 4 faixas sempre VERMELHAS (o
+# Red fixo, o ícone); a cor do time fica nas colunas e nas bandeiras
 def banners(p):
     """As 4 faixas (uma por face), penduradas sob a fáscia do 1º telhado, caindo até o pódio."""
     Ex = COL + 0.1 + R1['over']
@@ -484,7 +486,7 @@ def banners(p):
 
 def base():
     p = BPart(PREFIX + '_Base')
-    for m in ('Player#ban', 'CnGold#glyph', 'CnGold#trim', 'Dark#rope', 'CnRoof'):
+    for m in ('Red#ban', 'CnGold#glyph', 'CnGold#trim', 'Dark#rope', 'CnRoof'):
         p.bm(m, 0.0)
     podium(p)
     gate(p)
