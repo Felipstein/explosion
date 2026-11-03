@@ -162,6 +162,14 @@ no jogo (16), o canto do para-lama do tanque B mal encaixado (39, achado dele à
     Depth Offset zerado vindo de um nó Custom ela fica. O rebaixo no caderno vira o plano B (precisa de −3,3 m: a magnitude do chão
     inteiro subiria, o culling piora, e no Baixa/Média não há deslocamento). ⏳ O 1º teste (T0): o 2º erro (o buraco também não abriu sem
     Nanite: o modo mascarado não chega ao desenho); isolado num mestre de teste, pra não sumir com o chão dos testes das outras sessões.
+    (03/11) O T0 no World_TestHills (o mestre só dele):
+    - Sem Nanite, o recorte zerado deu o xadrez cinza, que é o material padrão enquanto o shader compila: a foto saiu antes e não decidiu nada.
+    - A pausa deixou o chão zerado; já desfeito e conferido (o mestre opaco de novo).
+    - O Python da Unreal 5.8 NÃO expõe a entrada do Pixel Depth Offset (a lista: só a base, a normal, a opacidade, o WPO etc.).
+    O PDO precisa de outro caminho:
+    - o nó SetMaterialAttributes, se o mestre usa os atributos;
+    - ou uma função C++ do editor (o `WorldForgeEditorLib`).
+    ⏳ O próximo T0: o aquecimento antes da foto, e o PDO por um desses caminhos.
 23. ✅ Bandeiras com física em tudo, num sistema só e na placa (`M_FlagCloth`, `SM_FlagCloth`, `visual.flags`; a Technical migrou): ✅ vistas ondulando no jogo (as 3 do Shtab, quadro a quadro, 01/11) e a da Technical andando (o pano esticado pra trás no vento do
     carro, `captures/game/elenco_prova_tecnica`). A pintura da Technical (a camuflagem urbana do atlas) é a dele no Blender: "a cor depois a gente vê".
 24. ✅ Cada coisa já nasce pensada e otimizada (a regra; ver a memória `feedback-pensar-o-todo-nao-reagir`).
@@ -463,6 +471,16 @@ fino na câmera do jogo; o pavilhão branco de duas águas pode ler como celeiro
   bem feitas, criativas"); o Palace v2 fica. As ideias novas em `docs/elenco/IDEIAS_NOVAS_02_11.md`: o Propaganda = O HERÓI DO
   MEGAFONE (a estátua monumental sobre o estúdio), o quartel = O CEMITÉRIO DE ÔNIBUS, o Stinger = A CAIXA D'ÁGUA tomada, o Supply
   Stash = O FERRO-VELHO DO GUINDASTE. Os agentes quando vagarem (os dois rodando: o civil e o tanque da GLA).
+- ❌ (03/11 ~10h) REPROVADAS as 4 ideias do zero (o herói, os ônibus, a caixa d'água, o ferro-velho: "a porra de um ônibus no
+  barrack? [...] olha os do C&C ZH, olha os dos outros RTS"). O pedido: "criativo, da mesma família do nosso jogo, seguindo a
+  autenticidade, ICÔNICO igual ao C&C ZH, que todo mundo lembra [...] mas não pode ser igual ao C&C ZH". O plano novo em
+  `docs/elenco/ICONES_03_11.md` (com o ZH e a família aprovada em `docs/concept/buildings/ref_zh/`):
+  - o Propaganda = A TORRE VERMELHA (a torre vestida de faixas vermelhas gigantes com a estrela que gira);
+  - o quartel = A FILEIRA DE CÚPULAS DOURADAS;
+  - o Stinger = O BURJ (a torre redonda de barro);
+  - o Stash = O YAKHCHAL (a geladeira persa cônica).
+
+  🔄 Um agente modelando os 4.
 - Item 40, a tinta: "achei válida a ideia da areia na textura, mas por enquanto não vamos fazer isso, segue a textura bem detalhada
   [...] mas sem areia, depois eu tenho uma ideia nova pra areia": o `DustCoat` saiu da tinta e da parede da USA (ficam a lavagem, o
   tom por chapa e as lascas). "A areia da lagarta e do pneu deixa como está, a outra sessão vai trabalhar nisso": o pó da rodagem fica.
