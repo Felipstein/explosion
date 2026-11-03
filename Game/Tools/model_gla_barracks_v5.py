@@ -385,11 +385,12 @@ def dome_patch(p, zb, zt):
     for i in range(len(pts) - 1):
         a, b = pts[i], pts[i + 1]
         nrm = facet_normal(0 if i < len(path0) - 1 else K, 0.6, zb)
-        w = 0.11 if 2 <= i <= 6 else 0.07
+        # (03/11) mais larga: com 7–11 cm a rachadura lia como um risco preto na câmera do jogo; o vão aberto de ~20 cm lê como metal rachado
+        w = 0.2 if 2 <= i <= 6 else 0.13
         ribbon(p, 'Dark#crack', [a, b], w, t=0.02, upf=lambda q, n=nrm: n)
     # os galhos finos da rachadura
-    for (u0, t0, u1, t1) in ((0.4, 0.6, 0.3, 0.68), (0.46, 0.52, 0.62, 0.47), (0.28, 0.44, 0.33, 0.35), (0.5, 0.78, 0.66, 0.74)):
-        ribbon(p, 'Dark#crack', [facet(0, u0, t0, zb, off=0.012), facet(0, u1, t1, zb, off=0.012)], 0.05, t=0.02,
+    for (u0, t0, u1, t1) in ((0.4, 0.6, 0.3, 0.68), (0.46, 0.52, 0.62, 0.47)):   # (03/11) só 2 galhos, mais grossos: os finos eram riscos
+        ribbon(p, 'Dark#crack', [facet(0, u0, t0, zb, off=0.012), facet(0, u1, t1, zb, off=0.012)], 0.09, t=0.02,
                upf=lambda q: facet_normal(0, 0.6, zb))
     # as lascas de dourado levantadas na beira da rachadura (o metal rasgado pega o sol)
     for (u, t, s) in ((0.52, 0.74, 1), (0.42, 0.57, -1), (0.31, 0.46, 1)):

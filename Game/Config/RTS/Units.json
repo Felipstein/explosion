@@ -127,7 +127,8 @@
 					"damaged": "/Game/Units/usa_mbt_v2/SM_LL_USATank_Hull_Damaged/StaticMeshes/SM_LL_USATank_Hull_Damaged",
 					"wrecked": "/Game/Units/usa_mbt_v2/SM_LL_USATank_Hull_Wrecked/StaticMeshes/SM_LL_USATank_Hull_Wrecked",
 					"turret_damaged": "/Game/Units/usa_mbt_v2/SM_LL_USATank_Turret_Damaged/StaticMeshes/SM_LL_USATank_Turret_Damaged",
-					"turret_wrecked": "/Game/Units/usa_mbt_v2/SM_LL_USATank_Turret_Wrecked/StaticMeshes/SM_LL_USATank_Turret_Wrecked"
+					"turret_wrecked": "/Game/Units/usa_mbt_v2/SM_LL_USATank_Turret_Wrecked/StaticMeshes/SM_LL_USATank_Turret_Wrecked",
+					"engine_m": [-2.98, 0.0, 1.6]
 				}
 			},
 			"cost": 900,
@@ -1697,7 +1698,8 @@
 					"damaged": "/Game/Units/usa_stryker_v2/SM_USA_Stryker_Hull_Damaged/StaticMeshes/SM_USA_Stryker_Hull_Damaged",
 					"wrecked": "/Game/Units/usa_stryker_v2/SM_USA_Stryker_Hull_Wrecked/StaticMeshes/SM_USA_Stryker_Hull_Wrecked",
 					"turret_damaged": "/Game/Units/usa_stryker_v2/SM_USA_Stryker_Turret_Damaged/StaticMeshes/SM_USA_Stryker_Turret_Damaged",
-					"turret_wrecked": "/Game/Units/usa_stryker_v2/SM_USA_Stryker_Turret_Wrecked/StaticMeshes/SM_USA_Stryker_Turret_Wrecked"
+					"turret_wrecked": "/Game/Units/usa_stryker_v2/SM_USA_Stryker_Turret_Wrecked/StaticMeshes/SM_USA_Stryker_Turret_Wrecked",
+					"engine_m": [1.775, 0.0, 2.025]
 				}
 			}
 		},
@@ -1770,7 +1772,14 @@
 				"_death_scale": "(30/10, o Felipe: a morte \"extremamente forte, parecendo um tanque de vdd\") o tamanho da morte: a bola, o anel, os destroços, o fogo da carcaça e a arma que voa (docs/ESTUDO_IMPACTOS.md D: pela raiz cúbica da massa que queima; 1 = o tanque de 60 t)",
 				"death_scale": 0.4,
 				"death_kind": "gasoline",
-				"_mass_t": "(28/10) a picape de ~1,6 t com a DShK, a munição e as chapas [E]"
+				"_mass_t": "(28/10) a picape de ~1,6 t com a DShK, a munição e as chapas [E]",
+				"damage_states": {
+					"damaged": "/Game/Units/GLA_Technical/SM_GLA_Technical_Hull_Damaged/StaticMeshes/SM_GLA_Technical_Hull_Damaged",
+					"wrecked": "/Game/Units/GLA_Technical/SM_GLA_Technical_Hull_Wrecked/StaticMeshes/SM_GLA_Technical_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/GLA_Technical/SM_GLA_Technical_Turret_Damaged/StaticMeshes/SM_GLA_Technical_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/GLA_Technical/SM_GLA_Technical_Turret_Wrecked/StaticMeshes/SM_GLA_Technical_Turret_Wrecked",
+					"engine_m": [2.197, 0.0, 1.625]
+				}
 			},
 			"requires": [
 				"gla_arms_dealer"
@@ -2457,7 +2466,12 @@
 						"rpm": 90
 					}
 				],
-				"mass_t": 40
+				"mass_t": 40,
+				"damage_states": {
+					"damaged": "/Game/Units/china_dozer/SM_China_Dozer_Hull_Damaged/StaticMeshes/SM_China_Dozer_Hull_Damaged",
+					"wrecked": "/Game/Units/china_dozer/SM_China_Dozer_Hull_Wrecked/StaticMeshes/SM_China_Dozer_Hull_Wrecked",
+					"engine_m": [1.11, 0.0, 1.73]
+				}
 			}
 		},
 		{
@@ -2510,6 +2524,11 @@
 						[-0.5, -0.5, 1.0],
 						[-0.5, 0.5, 1.0]
 					]
+				},
+				"damage_states": {
+					"damaged": "/Game/Units/china_supply_truck/SM_China_SupplyTruck_Hull_Damaged/StaticMeshes/SM_China_SupplyTruck_Hull_Damaged",
+					"wrecked": "/Game/Units/china_supply_truck/SM_China_SupplyTruck_Hull_Wrecked/StaticMeshes/SM_China_SupplyTruck_Hull_Wrecked",
+					"engine_m": [1.25, 0.0, 2.01]
 				}
 			}
 		},
@@ -2562,7 +2581,14 @@
 				"track_step_m": 0.16039,
 				"impact_crater": "A",
 				"near_miss": 0.2,
-				"mass_t": 54
+				"mass_t": 54,
+				"damage_states": {
+					"damaged": "/Game/Units/china_type99/SM_China_Type99_Hull_Damaged/StaticMeshes/SM_China_Type99_Hull_Damaged",
+					"wrecked": "/Game/Units/china_type99/SM_China_Type99_Hull_Wrecked/StaticMeshes/SM_China_Type99_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/china_type99/SM_China_Type99_Turret_Damaged/StaticMeshes/SM_China_Type99_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/china_type99/SM_China_Type99_Turret_Wrecked/StaticMeshes/SM_China_Type99_Turret_Wrecked",
+					"engine_m": [-2.98, 0.0, 1.65]
+				}
 			}
 		},
 		{
@@ -2634,7 +2660,14 @@
 				"light_gun_flash_m": 0.4,
 				"light_gun_tracer_m": 3.5,
 				"light_gun_spread_m": 2.0,
-				"mass_t": 35
+				"mass_t": 35,
+				"damage_states": {
+					"damaged": "/Game/Units/china_gattling_tank/SM_China_GattlingTank_Hull_Damaged/StaticMeshes/SM_China_GattlingTank_Hull_Damaged",
+					"wrecked": "/Game/Units/china_gattling_tank/SM_China_GattlingTank_Hull_Wrecked/StaticMeshes/SM_China_GattlingTank_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/china_gattling_tank/SM_China_GattlingTank_Turret_Damaged/StaticMeshes/SM_China_GattlingTank_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/china_gattling_tank/SM_China_GattlingTank_Turret_Wrecked/StaticMeshes/SM_China_GattlingTank_Turret_Wrecked",
+					"engine_m": [1.83, 0.0, 1.48]
+				}
 			}
 		},
 		{
@@ -2690,7 +2723,14 @@
 				"tracks_m": [2.6, 0.58],
 				"track_step_m": 0.15089,
 				"impact_crater": "A",
-				"mass_t": 33
+				"mass_t": 33,
+				"damage_states": {
+					"damaged": "/Game/Units/china_inferno_cannon/SM_China_InfernoCannon_Hull_Damaged/StaticMeshes/SM_China_InfernoCannon_Hull_Damaged",
+					"wrecked": "/Game/Units/china_inferno_cannon/SM_China_InfernoCannon_Hull_Wrecked/StaticMeshes/SM_China_InfernoCannon_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/china_inferno_cannon/SM_China_InfernoCannon_Turret_Damaged/StaticMeshes/SM_China_InfernoCannon_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/china_inferno_cannon/SM_China_InfernoCannon_Turret_Wrecked/StaticMeshes/SM_China_InfernoCannon_Turret_Wrecked",
+					"engine_m": [-2.02, 0.0, 1.58]
+				}
 			}
 		},
 		{
@@ -2746,7 +2786,14 @@
 				"track_step_m": 0.21118,
 				"impact_crater": "A",
 				"near_miss": 0.2,
-				"mass_t": 90
+				"mass_t": 90,
+				"damage_states": {
+					"damaged": "/Game/Units/china_overlord/SM_China_Overlord_Hull_Damaged/StaticMeshes/SM_China_Overlord_Hull_Damaged",
+					"wrecked": "/Game/Units/china_overlord/SM_China_Overlord_Hull_Wrecked/StaticMeshes/SM_China_Overlord_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/china_overlord/SM_China_Overlord_Turret_Damaged/StaticMeshes/SM_China_Overlord_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/china_overlord/SM_China_Overlord_Turret_Wrecked/StaticMeshes/SM_China_Overlord_Turret_Wrecked",
+					"engine_m": [-4.09, 0.0, 2.09]
+				}
 			}
 		},
 		{
@@ -3085,54 +3132,51 @@
 			"exit_lane_m": 6.6,
 			"visual": {
 				"hull": [
-					"/Game/Structures/gla_barracks/SM_GLA_Barracks_Base/StaticMeshes/SM_GLA_Barracks_Base"
+					"/Game/Structures/gla_barracks_v5/SM_GLA_Barracks_Base/StaticMeshes/SM_GLA_Barracks_Base"
 				],
 				"fire_points_m": [
-					[-4.0, -5.0, 6.0],
-					[-2.0, 4.0, 4.0]
+					[-5.0, -2.6, 5.8],
+					[-5.8, -8.4, 3.6],
+					[-1.7, 8.9, 3.3]
 				],
 				"turret": [],
-				"scaffold": "/Game/Structures/gla_barracks/SM_GLA_Barracks_Scaffold/StaticMeshes/SM_GLA_Barracks_Scaffold",
+				"scaffold": "/Game/Structures/gla_barracks_v5/SM_GLA_Barracks_Scaffold/StaticMeshes/SM_GLA_Barracks_Scaffold",
 				"damage_states": {
-					"damaged": "/Game/Structures/gla_barracks/SM_GLA_Barracks_Damaged/StaticMeshes/SM_GLA_Barracks_Damaged",
-					"wrecked": "/Game/Structures/gla_barracks/SM_GLA_Barracks_Wrecked/StaticMeshes/SM_GLA_Barracks_Wrecked",
-					"ruin": "/Game/Structures/gla_barracks/SM_GLA_Barracks_Ruin/StaticMeshes/SM_GLA_Barracks_Ruin",
+					"damaged": "/Game/Structures/gla_barracks_v5/SM_GLA_Barracks_Damaged/StaticMeshes/SM_GLA_Barracks_Damaged",
+					"wrecked": "/Game/Structures/gla_barracks_v5/SM_GLA_Barracks_Wrecked/StaticMeshes/SM_GLA_Barracks_Wrecked",
+					"ruin": "/Game/Structures/gla_barracks_v5/SM_GLA_Barracks_Ruin/StaticMeshes/SM_GLA_Barracks_Ruin",
 					"fire_damaged_m": [
-						[-7.03, 6.03, 6.48],
-						[-1.03, 3.03, 7.5],
-						[-1.03, 6.03, 4.76],
-						[-1.03, 9.03, 5.5]
+						[-4.2, 5.13, 5.69],
+						[-8.2, -2.87, 5.23],
+						[6.8, 10.13, 6.12],
+						[-5.2, -4.87, 5.72]
 					],
 					"fire_wrecked_m": [
-						[-7.03, 6.03, 6.48],
-						[-1.03, 3.03, 7.5],
-						[-1.03, 6.03, 4.76],
-						[-1.03, 9.03, 5.5],
-						[-6.03, 2.03, 6.91]
+						[-4.2, 5.13, 5.69],
+						[-8.2, -2.87, 5.23],
+						[6.8, 10.13, 6.12],
+						[-5.2, -4.87, 5.72],
+						[-8.2, 0.13, 5.22]
 					]
 				},
 				"flags": [
 					{
-						"mast_m": [7.9, 3.404, 6.35],
-						"size_m": [1.3, 0.8],
+						"mast_m": [-0.41, -1.978, 7.82],
+						"size_m": [1.2, 0.75],
 						"emblem": 1
 					},
 					{
-						"mast_m": [7.9, 7.224, 6.35],
-						"size_m": [1.3, 0.8],
+						"mast_m": [-0.41, 2.013, 7.82],
+						"size_m": [1.2, 0.75],
 						"emblem": 1
 					},
 					{
-						"mast_m": [-7.2, 9.223, 9.4],
-						"size_m": [1.4, 0.9],
-						"emblem": 1
-					},
-					{
-						"mast_m": [-6.3, -1.278, 7.45],
-						"size_m": [1.0, 0.6],
+						"mast_m": [8.86, 10.344, 8.05],
+						"size_m": [2.1, 1.35],
 						"emblem": 1
 					}
-				]
+				],
+				"_mesh_B": "(03/11) a v5 de Game/Tools/model_gla_barracks_v5.py (o quartel do ZH mudado: a cúpula dourada rachada com a lona verde, a torre de vigia, o campo de treino na frente aberta); a de antes: ['/Game/Structures/gla_barracks/SM_GLA_Barracks_Base/StaticMeshes/SM_GLA_Barracks_Base']"
 			}
 		},
 		{
@@ -3635,6 +3679,11 @@
 						[-1.4, 0.45, 0.9],
 						[-0.5, -0.45, 0.9]
 					]
+				},
+				"damage_states": {
+					"damaged": "/Game/Units/gla_supply_pickup/SM_GLA_SupplyPickup_Hull_Damaged/StaticMeshes/SM_GLA_SupplyPickup_Hull_Damaged",
+					"wrecked": "/Game/Units/gla_supply_pickup/SM_GLA_SupplyPickup_Hull_Wrecked/StaticMeshes/SM_GLA_SupplyPickup_Hull_Wrecked",
+					"engine_m": [0.86, 0.0, 2.01]
 				}
 			}
 		},
@@ -3726,7 +3775,14 @@
 				"light_gun_tracer_m": 3.9,
 				"light_gun_spread_m": 3.0,
 				"death_kind": "gasoline",
-				"death_scale": 0.5
+				"death_scale": 0.5,
+				"damage_states": {
+					"damaged": "/Game/Units/gla_quad_cannon/SM_GLA_QuadCannon_Hull_Damaged/StaticMeshes/SM_GLA_QuadCannon_Hull_Damaged",
+					"wrecked": "/Game/Units/gla_quad_cannon/SM_GLA_QuadCannon_Hull_Wrecked/StaticMeshes/SM_GLA_QuadCannon_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/gla_quad_cannon/SM_GLA_QuadCannon_Turret_Damaged/StaticMeshes/SM_GLA_QuadCannon_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/gla_quad_cannon/SM_GLA_QuadCannon_Turret_Wrecked/StaticMeshes/SM_GLA_QuadCannon_Turret_Wrecked",
+					"engine_m": [-1.76, 0.0, 1.93]
+				}
 			}
 		},
 		{
@@ -3797,7 +3853,14 @@
 				},
 				"mass_t": 5,
 				"death_kind": "gasoline",
-				"death_scale": 0.5
+				"death_scale": 0.5,
+				"damage_states": {
+					"damaged": "/Game/Units/gla_toxin_tractor/SM_GLA_ToxinTractor_Hull_Damaged/StaticMeshes/SM_GLA_ToxinTractor_Hull_Damaged",
+					"wrecked": "/Game/Units/gla_toxin_tractor/SM_GLA_ToxinTractor_Hull_Wrecked/StaticMeshes/SM_GLA_ToxinTractor_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/gla_toxin_tractor/SM_GLA_ToxinTractor_Turret_Damaged/StaticMeshes/SM_GLA_ToxinTractor_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/gla_toxin_tractor/SM_GLA_ToxinTractor_Turret_Wrecked/StaticMeshes/SM_GLA_ToxinTractor_Turret_Wrecked",
+					"engine_m": [-1.72, 0.0, 2.51]
+				}
 			}
 		},
 		{

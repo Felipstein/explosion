@@ -353,6 +353,8 @@ FACTION_MODELS = [
     # (03/11, item 46, APROVADO) o Propaganda Center v5: A TORRE VERMELHA (docs/elenco/ICONES_03_11.md)
     ('china_propaganda_center_v5', 'SM_China_PropagandaCenter_*.glb', '/Game/Structures/china_propaganda_center_v5', CHINA_BUILDING_SLOTS),
     ('gla_barracks_v3', 'SM_GLA_Barracks_*.glb', '/Game/Structures/gla_barracks_v3', GLA_BUILDING_SLOTS),
+    # (03/11) o quartel v5: o do ZH mudado (a cúpula rachada com a lona verde, a torre de vigia, o campo de treino)
+    ('gla_barracks_v5', 'SM_GLA_Barracks_*.glb', '/Game/Structures/gla_barracks_v5', GLA_BUILDING_SLOTS),
     ('gla_stinger_site_v3', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v3', GLA_BUILDING_SLOTS),
     ('gla_supply_stash_v3', 'SM_GLA_SupplyStash_*.glb', '/Game/Structures/gla_supply_stash_v3', GLA_BUILDING_SLOTS),
     ('gla_stinger_site_v2', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v2', GLA_BUILDING_SLOTS),

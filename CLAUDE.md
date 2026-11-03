@@ -51,6 +51,8 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
     `docs/RECEITAS_DO_LOOK.md`. Leia antes de mexer em qualquer visual. Quem faz algo que
     o Felipe aprova anota lá o caminho, os números e os arquivos.
 - **Tudo que o Felipe aprovou (ou reprovou), com a imagem:** `docs/APROVADOS.md`, o índice único.
+- **Como fazemos as coisas bem feitas (do conceito ao jogo, modelagem, detalhe, dano, importação, teste):** `docs/COMO_FAZEMOS.md`.
+  Leia antes de criar unidade, prédio, peça de mapa ou melhoria visual (pedido dele, 03/11: "pra ninguém nunca esquecer").
   Leia a área antes de mexer em qualquer coisa.
 - `captures/` (fora do git): renders, capturas e testes (a arte conceitual
   fica em `captures/concept/`). É rascunho: nada aprovado mora só lá.

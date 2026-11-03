@@ -40,6 +40,13 @@ def grid(o, cell):
     bm.from_mesh(me)
     S = o.matrix_world.to_scale()
     s = max(abs(S.x), abs(S.y), abs(S.z))
+    # (03/11, o Felipe na frente do tanque: "esse polígono feio de terra/areia aí sem sentido nenhum") a face de mais de 4 lados (a chapa
+    # chanfrada, o recorte) não ganha pontos dentro com o preenchimento em grade: a exportação a abria em leque, com triângulos de até
+    # 7,8 m no casco do M1, e a fresta de um canto pintava o triângulo inteiro (a mancha reta em diagonal). Ela vira triângulos antes
+    # (os de forma boa, BEAUTY), e as passadas abaixo cortam as arestas longas deles como as do resto
+    ngons = [f for f in bm.faces if len(f.verts) > 4]
+    if ngons:
+        bmesh.ops.triangulate(bm, faces=ngons, quad_method='BEAUTY', ngon_method='BEAUTY')
     # ao meio, em passadas, todas as arestas longas juntas (o preenchimento em grade só acontece quando os lados da face são
     # cortados na mesma chamada: em grupos separados a face grande virava um polígono sem pontos dentro, e a quina pintava a face toda)
     for _ in range(9):

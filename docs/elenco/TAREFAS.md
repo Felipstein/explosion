@@ -413,10 +413,10 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     🔄 (22h15) Um agente refazendo os carros e as casas (v3, em `captures/game/models/civ_v3/`, sem tocar a v2 nem as miudezas): a
     lataria amassada e desbotada com o interior pelo vidro, a frente própria do sedã e do hatch; a mureta comida, a quina gasta, o
     reboco caído mostrando o adobe, o escorrido, a parede fora de prumo; a mesma pegada (o gerador da vila não muda).
-48. ⏳ **GLA, quartel (REFAZER).**
+48. ✅ **GLA, quartel (REFAZER).** (03/11 noite) O v5 (o do ZH mudado, o pedido dele) no jogo: a rachadura da cúpula alargada (lia como risco), o dano, a malha do tiro (`chain61`).
 49. ⏳ **GLA, Palace (REFAZER):** "sai um pouco dessa de tudo ser mudado [murado?] assim".
-50. ⏳ **GLA, Stinger Site (REFAZER).**
-51. ⏳ **GLA, Supply Stash (REFAZER).**
+50. ✅ **GLA, Stinger Site (REFAZER).** (03/11) No jogo o v5, o alçapão aprovado (o padrão, chão e ar); e o SAM Site novo (só antiaéreo).
+51. ✅ **GLA, Supply Stash (REFAZER).** (03/11) No jogo o v5, o poço do contrabando aprovado; e o Bunker novo (3 vagas).
 52. ⏳ **GLA, Worker (NO RUMO):** "parece que ele tá segurando uma arma".
     (21h50) O Worker é o boneco da infantaria (`T_Soldier_GLA_WORKER`): fica com a sessão da infantaria (o Felipe vê com ela).
     **48 a 51, o plano (21h50):** `docs/elenco/GLA_PREDIOS.md`: sem muro em volta, uma forma por prédio: o quartel = a tenda beduína
@@ -429,7 +429,14 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
 53. ⏳ **Rússia, Kazarma (NO RUMO):** "mude algumas coisas, parece um prédio normal".
 54. ⏳ **Rússia, BMPT e T-14 (REFAZER):** "muito parecido com o outro tanque": a mesma regra do item 41 (cada blindado com a silhueta
     própria de cima, no casco também), contra o T-90M.
-55. ⏳ **Rússia, Shtab (REFAZER):** "parece uma prisão, mas dá pra reaproveitar o modelo pra outra coisa".
+55. ⏳ **Rússia, Shtab (REFAZER DE NOVO, 03/11: o v2 "parece uma casa civil, sem originalidade, sem criatividade, sem base, não é icônico, fugiu de tudo que tínhamos feito"; refazer pelo método dos aprovados: o QG do ZH/da família como base, o elemento-assinatura, conceito no Atelier antes do modelo):** "parece uma prisão, mas dá pra reaproveitar o modelo pra outra coisa".
+    (03/11 noite) A folha das 4 assinaturas na família aprovada (a pirâmide do radar, a torre de Shukhov, o radar Big Bird, o disco
+    brutalista): `captures/concept/171_shtab_da_russia_4_icones/raiz_r1_gpt.png`, enviada; a minha aposta é a 1. REPROVADAS ("um lixo ainda [...] parece que veio de outro jogo"). 3 voltas sem acertar: perguntar o rumo antes da 4ª.
+    (03/11 ~19h30) A 4ª volta pelo rumo dele ("quero o Rise of the Reds e o Red Alert soviéticos pra comparar"; "claro que não é pra
+    copiar, é pra refazer melhor, e original"): as referências em `docs/concept/buildings/ref_russia/`, os 2 originais (175 o bunker
+    facetado do Armata, 176 a fortaleza do Kremlin com o radome e o guindaste). Ele saiu e deixou a decisão comigo ("não dependa de
+    mim"): ESCOLHI a 176, com o radome em cúpula de cebola (`docs/concept/buildings/russia_shtab_kremlin_radar_ESCOLHIDO.png`). Um agente
+    modelando `model_russia_command_center_v3.py`.
 56. 🔄 **USA, Strategy Center A e B (REFAZER):** "sem criatividade". (17h40) Junta com o Pentágono: o QG de inteligência = o Pentágono
     melhorado com as radomos (o agente termina o campo de radomos; depois a fusão). (17h55, o Felipe vendo no jogo) "o pentágono com a
     bola ficou muito bom, dá pra usar como o centro de inteligência, mas tem que melhorar, tirar o portão, mudar algumas coisas, mais
@@ -556,6 +563,9 @@ alvo). A/B no `chain47`.
     - o estudo antes (o Supply Dock e as caixas do ZH, os outros RTS, a autenticidade: o depósito de ajuda humanitária, o porto, o
       armazém, o ponto de contrabando), o conceito no Atelier pra ele escolher, depois o modelo.
     - É o item principal desta leva.
+    - (03/11 noite) Ele deixou a decisão comigo: as 4 do básico (`docs/concept/buildings/supply_basico_4_tamanhos_ESCOLHIDO.png`): a pilha
+      pequena (50), a pilha (150), a doca (400, o telhado só no terço de trás) e o armazém da vila (400, o estoque no pátio da frente).
+      Um agente modelando, com as vagas do estoque por variação (`stock_layout.json`); depois o jogo lê uma variação por depósito.
     - (03/11 tarde) o estudo em `docs/elenco/SUPPLY_DOCK_ESTUDO.md` ("a carga que a guerra deixou": o veículo ou o lugar que trazia
       suprimento e ficou parado, cheio das caixas do C&C; nunca repõe) e a 1ª folha no Atelier, as 4 famílias (o cargueiro encalhado,
       o trem parado, o avião de carga caído, o pátio do pórtico): `captures/concept/160_supply_dock_4_familias/raiz_r1_gpt.png`,
