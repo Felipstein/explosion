@@ -162,7 +162,8 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 .f-russia #score { --ft: 20.5px; --fb: 19.2px; --fl: 17.9px; --fr: 17.9px; background-image: url(a/russia/gen_bg.png); }
 .f-russia #score::before { background-image: url(a/russia/gen_frame.png); }
 .tabon #score { display: block; }
-.tabon #swl { display: none; }   /* com o placar aberto, a lista completa está nele */
+.tabon #swl { display: none; }
+.body { align-items: stretch; min-height: 300px; }   /* com o placar aberto, a lista completa está nele */
 .tabon #back { opacity: 1; }
 #score .hd { display: flex; align-items: baseline; gap: 18px; margin-bottom: 22px; }
 #score h2 { margin: 0; font: 700 28px Barlow; letter-spacing: 3px; }
@@ -224,6 +225,12 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 .ss.hot .tt { color: #ff8f80; }
 .ss.ready .tt { font-size: 13px; letter-spacing: 1.5px; color: #fff; background: #c8281b; border-radius: 6px; padding: 2px 8px; }
 .ss.ready { box-shadow: inset 4px 0 0 #ff4a3a, inset 0 0 0 1px rgba(255,74,58,.6); }
+.ss .tx b u, #swl.top .vb .n u { text-decoration: none; font: 700 12px Barlow; color: #0b0f14; background: #ffd257; border-radius: 3px; padding: 0 5px; margin-left: 7px; vertical-align: 2px; }
+#swl.top .vb .n u { font-size: 10.5px; padding: 0 4px; margin-left: 5px; vertical-align: 1px; }
+.ss .tx .ex { color: rgba(220,228,236,.7); margin-left: 8px; }
+.side { position: relative; }
+.side .sl { position: absolute; left: 24px; right: 0; top: 34px; bottom: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 6px; scrollbar-width: thin; scrollbar-color: rgba(200,212,224,.35) transparent; }
+.side .sl.over { -webkit-mask-image: linear-gradient(#000 calc(100% - 34px), transparent); mask-image: linear-gradient(#000 calc(100% - 34px), transparent); }
 .side .none { font: 600 15px Barlow; color: rgba(200,212,224,.5); padding: 10px 2px; }
 .gone { grid-column: span 6; font: 600 16px Barlow; color: #9aa6b2; text-align: right; letter-spacing: 1.5px; }
 </style>
@@ -238,6 +245,7 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
     <b>FACÇÃO</b>
     <button data-f="usa">USA</button><button data-f="china">China</button><button data-f="gla">GLA</button><button data-f="russia">Rússia</button>
     <b>MINHA COR</b><span id="mcs"></span>
+    <button data-abuse="1">Superarmas demais</button>
     <span class="hint">segure TAB: o placar · mouse nas fichas: o nome</span>
   </div>
   <div id="top"><canvas id="cv" width="1920" height="114"></canvas><div id="ovs"></div></div>
@@ -258,11 +266,20 @@ const NAMES = ['Felipe', 'Bruno', 'Caio', 'Davi', 'Edu', 'Fabio', 'Gui', 'Hugo',
 const SWN = { usa: 'Orbital Lance', china: 'Nuclear Missile', gla: 'Plague Storm', russia: 'Thermobaric Strike' };
 const SCEN = { duel: [1, 1], '2v2': [2, 2], '3v5': [3, 5], '8v8': [8, 8], ffa6: [1, 1, 1, 1, 1, 1], ffa16: Array(16).fill(1), '4x4': [4, 4, 4, 4], '3v5v8': [3, 5, 8] };
 const LABEL = { duel: '1 vs 1', '2v2': '2 vs 2', '3v5': '3 vs 5', '8v8': '8 vs 8', ffa6: 'Free for all', ffa16: 'Free for all', '4x4': '4 teams of 4', '3v5v8': '3 vs 5 vs 8' };
-let FAC = 'usa', SC = '3v5', MYCOL = null, SWM = 'list';
+let FAC = 'usa', SC = '3v5', MYCOL = null, SWM = 'list', ABUSE = false;
 function rnd(i, k) { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); }
 // a cor do jogador clareada pra texto e silhueta (o azul e o roxo puros não passam no contraste)
 function light(hex, k = 0.4) { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * k)); return `rgb(${c})`; }
 const rgbOf = hex => { const n = parseInt(hex.slice(1), 16); return `${n >> 16} ${n >> 8 & 255} ${n & 255}`; };
+function swGroups(list) {
+  const G = [];
+  list.forEach(p => { const by = {}; (p.sws || []).forEach(w => (by[w.k] = by[w.k] || []).push(w.t));
+    Object.entries(by).forEach(([k, ts]) => { const ready = ts.filter(t => t === 0).length, rest = ts.filter(t => t > 0).sort((a, b) => a - b);
+      // a próxima depois da mostrada: com prontas, a primeira que ainda carrega; sem prontas, a segunda
+      const after = ready ? (rest[0] ?? null) : (rest[1] ?? null);
+      G.push({ p, k, n: ts.length, ready, next: ready ? 0 : rest[0], after }); }); });
+  return G.sort((a, b) => (a.next - b.next) || (b.n - a.n));
+}
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const kfmt = v => v >= 10000 ? (v / 1000).toFixed(1).replace('.0', '') + 'k' : v.toLocaleString('en-US');
 const army = v => (v / 1000).toFixed(1).replace('.0', '') + 'k';   // o exército sempre no mesmo formato
@@ -279,6 +296,13 @@ function makePlayers(sizes) {
     if (p.dead) p.sw = null;
     P.push(p);
   } });
+  P.forEach(p => {
+    p.sws = p.sw === null ? [] : [{ k: SWN[p.fac], t: p.sw }];
+    if (p.sw !== null && rnd(p.i, 17) < 0.3) p.sws.push({ k: SWN[p.fac], t: Math.min(600, p.sw + 60 + Math.round(rnd(p.i, 18) * 200)) });
+    if (p.fac === 'gla' && !p.dead && rnd(p.i, 19) < 0.6) p.sws.push({ k: 'Scud Storm', t: Math.round(30 + rnd(p.i, 20) * 400) });
+  });
+  if (ABUSE) { const a = P.find(p => !p.me && !p.ally && !p.dead); if (a) a.sws = Array.from({ length: 240 }, (_, k) => ({ k: SWN[a.fac], t: k < 37 ? 0 : Math.round(20 + (k * 37) % 560) })); }
+  P.forEach(p => { p.sw = p.sws.length ? Math.min(...p.sws.map(w => w.t)) : null; });
   if (MYCOL) { const o = P.find(p => p.col === MYCOL); if (o && o !== P[0]) o.col = P[0].col; P[0].col = MYCOL; }
   return P;
 }
@@ -428,18 +452,21 @@ function render() {
   // a lista na direita: todas as superarmas dos outros, a mais próxima em cima (mais de 6: as caixas afinam; até 12, o resto no Tab)
   const L = P.filter(p => p.sw !== null && !p.me && !p.dead).sort((x, y) => x.sw - y.sw);
   const compact = L.length > 6, shown = L.slice(0, 12);
-  const SWV = new URLSearchParams(location.search).get('swv') || 'C';   // 03/11: a C escolhida
-  if (SWV) {
-    const row = p => { const f = p.sw === 0 ? 1 : Math.max(0.03, 1 - p.sw / 600), cls = p.sw === 0 ? 'ready' : p.sw < 60 ? 'hot' : '', t = p.sw === 0 ? 'READY' : fmt(p.sw), col = light(p.col, .2);
-      if (SWV === 'A') return `<div class="r ${cls}" data-i="${p.i}" data-sw="1" style="--c:${col}"><div class="t1"><span>${SWN[p.fac]}</span><b>${t}</b></div><div class="ln"><i style="width:${f * 100}%"></i></div></div>`;
-      if (SWV === 'B') return `<div class="r ${cls}" data-i="${p.i}" data-sw="1" style="--c:${col}"><span class="dot"></span><span class="n">${SWN[p.fac]}</span><span class="tm">${t}</span></div>`;
-      const R = 10.5, C = 2 * Math.PI * R;
-      return `<div class="r ${cls}" data-i="${p.i}" data-sw="1" style="--c:${col}"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="${R}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1.6"/><circle cx="12" cy="12" r="${R}" fill="none" stroke="${p.sw < 60 ? '#ff5a48' : col}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 12 12)"/></svg><span class="g">${GLYPH[p.fac]}</span></span><span class="n">${SWN[p.fac]}</span><span class="tm">${t}</span></div>`; };
-    const top8 = SWV === 'C' ? L.slice(0, 8) : shown;
-    const rows = top8.map(row).join('') + (SWV === 'C' && L.length > 8 ? `<div class="more8">+${L.length - 8} · TAB</div>` : '');
-    $('#swl').classList.toggle('top', SWV === 'C');
-    $('#swl').innerHTML = SWV === 'A' ? `<div class="va">${rows}</div>` : `<div class="vb ${SWV === 'C' ? 'vc' : ''}">${rows}</div>`;
-  } else
+  const SCUD = '<svg viewBox="0 0 24 24" fill="#eef2f6"><path d="M12 1.5c1.6 1.4 2.4 3.4 2.4 5.6V16h-4.8V7.1c0-2.2.8-4.2 2.4-5.6z"/><path d="M9.6 12.5 7 16v2.2l2.6-1.6zM14.4 12.5 17 16v2.2l-2.6-1.6z"/><path d="M10.4 17h3.2l-.6 2.4h-2z" opacity=".75"/><path d="M11 20.5h2L12 23z" opacity=".55"/></svg>';
+  const GLYPHT = { 'Orbital Lance': GLYPH.usa, 'Nuclear Missile': GLYPH.china, 'Plague Storm': GLYPH.gla, 'Thermobaric Strike': GLYPH.russia, 'Scud Storm': SCUD };
+  {
+    // 03/11: um grupo por jogador e tipo (várias iguais = uma linha "×N"; a GLA com dois tipos = duas linhas; o abuso = "×240")
+    const groups = swGroups(P.filter(p => !p.me && !p.dead));
+    const R = 10.5, C = 2 * Math.PI * R;
+    const rowC = g => { const f = g.ready ? 1 : Math.max(0.03, 1 - g.next / 600), hot = !g.ready && g.next < 60, col = light(g.p.col, .2);
+      return `<div class="r ${g.ready ? 'ready' : hot ? 'hot' : ''}" data-i="${g.p.i}" data-sw="1" data-k="${g.k}" style="--c:${col}"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="${R}" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="1.6"/>`
+        + `<circle cx="12" cy="12" r="${R}" fill="none" stroke="${g.ready || hot ? '#ff5a48' : col}" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 12 12)"/></svg><span class="g">${GLYPHT[g.k]}</span></span>`
+        + `<span class="n">${g.k}${g.n > 1 ? `<u>×${kfmt(g.n)}</u>` : ''}</span><span class="tm">${g.ready ? 'READY' : fmt(g.next)}</span></div>`; };
+    const rows = groups.slice(0, 8).map(rowC).join('') + (groups.length > 8 ? `<div class="more8">+${groups.length - 8} · TAB</div>` : '');
+    $('#swl').classList.add('top');
+    $('#swl').innerHTML = groups.length ? `<div class="vb vc">${rows}</div>` : '';
+  }
+  if (false)
   $('#swl').innerHTML = SWM !== 'list' ? '' : shown.map(p => {
     const f = p.sw === 0 ? 1 : Math.max(0, 1 - p.sw / 600), on = Math.round(f * 12), hot = p.sw > 0 && p.sw < 60;
     const cells = Array.from({ length: 12 }, (_, k) => `<i class="${k < on ? 'on' : ''}"></i>`).join('');
@@ -480,21 +507,24 @@ function render() {
     s += `<div class="tb"><div class="tlab ${t === 0 ? 'mine' : ''}">${t + 1}</div><div class="rows">${list.map(rowHTML).join('')}</div></div>`;
   });
   $('#score .grid').innerHTML = s;
-  // a coluna das superarmas: todas (com as suas e as dos aliados), a mais próxima em cima
-  const SA = P.filter(p => p.sw !== null && !p.dead).sort((x, y) => x.sw - y.sw);
-  const many = SA.length > 10;
+  // a coluna das superarmas: todas (as suas e as dos aliados também), um grupo por jogador e tipo, a mais próxima em cima; rola no placar
+  const SG = swGroups(P.filter(p => !p.dead));
+  const many = SG.length > 10, total = SG.reduce((x, g) => x + g.n, 0);
   $('#score .side').className = 'side' + (many ? ' many' : '');
-  $('#score .side').innerHTML = `<div class="sh"><span class="lab">Superweapons</span><b>${SA.length}</b></div>` + (SA.length ? SA.map(p => {
-    const sz = many ? 28 : 34, R = sz / 2 - 2, C = 2 * Math.PI * R, f = p.sw === 0 ? 1 : Math.max(0.05, 1 - p.sw / 600), hot = p.sw > 0 && p.sw < 60;
+  $('#score .side').innerHTML = `<div class="sh"><span class="lab">Superweapons</span><b>${kfmt(total)}</b></div><div class="sl">` + (SG.length ? SG.map(g => {
+    const p = g.p, sz = many ? 28 : 34, R = sz / 2 - 2, C = 2 * Math.PI * R, f = g.ready ? 1 : Math.max(0.05, 1 - g.next / 600), hot = !g.ready && g.next < 60;
     const ring = `<svg viewBox="0 0 ${sz} ${sz}"><circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="#0a0f15" stroke="rgba(255,255,255,.14)" stroke-width="2.4"/>`
-      + `<circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="none" stroke="${p.sw === 0 || hot ? '#ff4a3a' : light(p.col, .2)}" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${sz / 2} ${sz / 2})"/></svg>`;
+      + `<circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="none" stroke="${g.ready || hot ? '#ff4a3a' : light(p.col, .2)}" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${sz / 2} ${sz / 2})"/></svg>`;
     const tag = p.me ? '<em>YOU</em>' : p.ally ? '<em>ALLY</em>' : '';
-    return `<div class="ss ${p.sw === 0 ? 'ready' : hot ? 'hot' : ''}" style="--rc:${rgbOf(p.col)}"><span class="ic">${ring}<span class="g">${GLYPH[p.fac]}</span></span>`
-      + `<span class="tx"><b>${SWN[p.fac]}</b><i style="color:${light(p.col, .45)}">${p.name}${tag}</i></span><span class="tt">${p.sw === 0 ? 'READY' : fmt(p.sw)}</span></div>`;
-  }).join('') : '<div class="none">No superweapons charging</div>');
+    const extra = g.n > 1 ? `<span class="ex">${g.ready ? `${kfmt(g.ready)} ready` : ''}${g.ready && g.after !== null ? ' · ' : ''}${g.after !== null ? `next ${fmt(g.after)}` : ''}</span>` : '';
+    return `<div class="ss ${g.ready ? 'ready' : hot ? 'hot' : ''}" data-i="${p.i}" data-sw="1" data-k="${g.k}" style="--rc:${rgbOf(p.col)}"><span class="ic">${ring}<span class="g">${GLYPHT[g.k]}</span></span>`
+      + `<span class="tx"><b>${g.k}${g.n > 1 ? `<u>×${kfmt(g.n)}</u>` : ''}</b><i style="color:${light(p.col, .45)}">${p.name}${tag}${extra}</i></span><span class="tt">${g.ready ? 'READY' : fmt(g.next)}</span></div>`;
+  }).join('') : '<div class="none">No superweapons charging</div>') + '</div>';
+  requestAnimationFrame(() => { const sl = $('#score .sl'); if (sl) sl.classList.toggle('over', sl.scrollHeight > sl.clientHeight + 2); });
   $('#score .sub').innerHTML = `${LABEL[SC]} · <b>${P.length} players</b> · <b>12:34</b>`;
   document.querySelectorAll('#bar [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === SC));
   document.querySelectorAll('#bar [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === FAC));
+  document.querySelector('#bar [data-abuse]').classList.toggle('on', ABUSE);
   document.querySelectorAll('#bar [data-w]').forEach(b => b.classList.toggle('on', b.dataset.w === SWM));
   document.querySelectorAll('#bar [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === (MYCOL || COLORS[0])));
 }
@@ -503,18 +533,19 @@ document.querySelectorAll('#bar [data-f]').forEach(b => b.addEventListener('clic
 document.querySelectorAll('#bar [data-w]').forEach(b => b.addEventListener('click', () => { SWM = b.dataset.w; render(); }));
 $('#mcs').innerHTML = COLORS.slice(0, 8).map(c => `<button class="mc" data-c="${c}" style="background:${c}"></button>`).join('');
 document.querySelectorAll('#bar [data-c]').forEach(b => b.addEventListener('click', () => { MYCOL = b.dataset.c; render(); }));
-addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); stage.classList.add('tabon'); } });
+document.querySelector('#bar [data-abuse]').addEventListener('click', () => { ABUSE = !ABUSE; render(); });
+addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); stage.classList.add('tabon'); const sl = $('#score .sl'); if (sl) sl.classList.toggle('over', sl.scrollHeight > sl.clientHeight + 2); } });
 addEventListener('keyup', e => { if (e.key === 'Tab') stage.classList.remove('tabon'); });
 // o mouse na ficha: o nome; nos aliados, o dinheiro e a energia
 const tip = $('#tip');
 stage.addEventListener('mousemove', e => {
   const c = e.target.closest('[data-i]'); if (!c || stage.classList.contains('tabon')) { tip.style.display = 'none'; return; }
   const p = P[+c.dataset.i], r = stage.getBoundingClientRect(), k = r.width / 1920;
-  tip.innerHTML = `${c.dataset.sw ? SWN[p.fac] + ' · ' + (p.sw === 0 ? 'READY' : fmt(p.sw)) + ' · ' : ''}<span style="color:${light(p.col, .35)}">${p.name}</span>${p.me ? ' (you)' : ''}${p.dead ? ' · defeated' : ''}${p.ally && !p.dead ? `<small>$${p.money.toLocaleString('en-US')} · power ${p.pu}/${p.pm}</small>` : ''}`;
+  tip.innerHTML = `${c.dataset.sw ? (c.dataset.k || SWN[p.fac]) + ' · ' : ''}<span style="color:${light(p.col, .35)}">${p.name}</span>${p.me ? ' (you)' : ''}${p.dead ? ' · defeated' : ''}${p.ally && !p.dead ? `<small>$${p.money.toLocaleString('en-US')} · power ${p.pu}/${p.pm}</small>` : ''}`;
   tip.style.display = 'block'; tip.style.left = ((e.clientX - r.left) / k + 14) + 'px'; tip.style.top = ((e.clientY - r.top) / k + 18) + 'px';
 });
 const q = new URLSearchParams(location.search);
-if (q.get('s')) SC = q.get('s'); if (q.get('fac')) FAC = q.get('fac'); if (q.get('me')) MYCOL = '#' + q.get('me'); if (q.get('sw')) SWM = q.get('sw');
+if (q.get('s')) SC = q.get('s'); if (q.get('fac')) FAC = q.get('fac'); if (q.get('me')) MYCOL = '#' + q.get('me'); if (q.get('abuse')) ABUSE = true; if (q.get('sw')) SWM = q.get('sw');
 render();
 if (q.get('tab')) stage.classList.add('tabon');
 </script>
