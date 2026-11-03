@@ -231,7 +231,16 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 .side { position: relative; }
 .side .sl { position: absolute; left: 24px; right: 0; top: 34px; bottom: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 6px; scrollbar-width: thin; scrollbar-color: rgba(200,212,224,.35) transparent; }
 .side .sl.over { -webkit-mask-image: linear-gradient(#000 calc(100% - 34px), transparent); mask-image: linear-gradient(#000 calc(100% - 34px), transparent); }
-/* a coluna por jogador */
+/* as plaquinhas na lista corrida: a vermelha das prontas e a âmbar das que carregam, uma em cima da outra à direita */
+.ss .pl2 { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.ss .pl2 .rd { display: flex; align-items: baseline; gap: 4px; padding: 0 8px; border-radius: 6px; background: #c8281b; color: #fff; font: 700 10px Barlow; letter-spacing: 1px; box-shadow: 0 0 8px rgba(255,60,40,.45); }
+.ss .pl2 .rd b { font: 700 16px Barlow; letter-spacing: 0; }
+.ss .pl2 .ch { display: flex; align-items: center; gap: 5px; padding: 0 8px; border-radius: 6px; background: rgba(6,9,12,.75); box-shadow: inset 0 0 0 1px rgba(255,210,87,.4);
+  font: 700 15px Barlow; font-variant-numeric: tabular-nums; color: #ffe08a; }
+.ss .pl2 .ch i { font-style: normal; font: 700 12px Barlow; color: #0b0f14; background: #ffd257; border-radius: 3px; padding: 0 4px; }
+.ss .pl2 .ch.hot { color: #ff8f80; box-shadow: inset 0 0 0 1px rgba(255,80,60,.6); }
+.ss.ready { box-shadow: inset 4px 0 0 rgb(var(--rc) / .95), inset 0 0 0 1px rgba(255,74,58,.55); }
+/* a coluna por jogador (reprovada, sem uso) */
 .side .sh .cnt { display: flex; gap: 6px; }
 .side .sh b.rdy { background: #c8281b; color: #fff; }
 .ob { flex: none; padding: 6px 10px 6px 12px; border-radius: 9px; display: flex; flex-direction: column; gap: 2px;
@@ -530,27 +539,22 @@ function render() {
     s += `<div class="tb"><div class="tlab ${t === 0 ? 'mine' : ''}">${t + 1}</div><div class="rows">${list.map(rowHTML).join('')}</div></div>`;
   });
   $('#score .grid').innerHTML = s;
-  // 03/11 (ele: "não dá pra saber quantos ready estão prontos" e "agrupado assim não vai dar certo" com 3 tipos ou capturada):
-  // a coluna agrupa por JOGADOR: um bloco na cor dele; dentro, uma linha por tipo (as capturadas também), com a plaquinha vermelha do
-  // número de prontas e a âmbar de quantas carregam e quando vem a próxima. Os jogadores mais perto de disparar em cima.
-  const OB = P.filter(p => !p.dead && p.sws && p.sws.length).map(p => {
-    const types = swGroups([p]).sort((x, y) => (y.ready - x.ready) || (x.next - y.next));
-    return { p, types, key: Math.min(...types.map(t => t.next)), total: types.reduce((x, t) => x + t.n, 0) };
-  }).sort((x, y) => (x.key - y.key) || (y.total - x.total));
-  const totalSW = OB.reduce((x, o) => x + o.total, 0), totalReady = OB.reduce((x, o) => x + o.types.reduce((y, t) => y + t.ready, 0), 0);
+  // 03/11, 2ª volta (os blocos por jogador: "horrível, deixa sem nome de novo, como estava antes, mas com as bombas diversificadas"):
+  // a lista corrida aprovada (uma faixa por superarma na cor do dono, o dono embaixo do nome da arma), uma linha por jogador e tipo (as
+  // capturadas também); à direita, a plaquinha vermelha com o número de prontas e a âmbar com quantas carregam e quando vem a próxima
+  const SG = swGroups(P.filter(p => !p.dead)).sort((x, y) => (y.ready > 0) - (x.ready > 0) || (y.ready - x.ready) || (x.next - y.next));
+  const totalSW = SG.reduce((x, g) => x + g.n, 0), totalReady = SG.reduce((x, g) => x + g.ready, 0);
   $('#score .side').className = 'side';
-  $('#score .side').innerHTML = `<div class="sh"><span class="lab">Superweapons</span><span class="cnt">${totalReady ? `<b class="rdy">${kfmt(totalReady)} ready</b>` : ''}<b>${kfmt(totalSW)}</b></span></div><div class="sl">` + (OB.length ? OB.map(o => {
-    const p = o.p, tag = p.me ? '<em>YOU</em>' : p.ally ? '<em>ALLY</em>' : '';
-    const lines = o.types.map(t => {
-      const charging = t.n - t.ready, sz = 24, R = sz / 2 - 2, C = 2 * Math.PI * R, f = t.ready ? 1 : Math.max(0.05, 1 - t.next / 600), hot = !t.ready && t.next < 60;
-      const ring = `<svg viewBox="0 0 ${sz} ${sz}"><circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="#0a0f15" stroke="rgba(255,255,255,.14)" stroke-width="2"/>`
-        + `<circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="none" stroke="${t.ready || hot ? '#ff4a3a' : '#ffd257'}" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${sz / 2} ${sz / 2})"/></svg>`;
-      const nextT = t.ready ? t.after : t.next;
-      return `<div class="ot" data-i="${p.i}" data-sw="1" data-k="${t.k}"><span class="ic">${ring}<span class="g">${GLYPHT[t.k]}</span></span><span class="tn">${t.k}</span>`
-        + (t.ready ? `<span class="rd"><b>${kfmt(t.ready)}</b>READY</span>` : '')
-        + (charging ? `<span class="ch ${hot ? 'hot' : ''}">${charging > 1 ? `<i>${kfmt(charging)}</i>` : ''}${fmt(nextT)}</span>` : '') + `</div>`;
-    }).join('');
-    return `<div class="ob" style="--rc:${rgbOf(p.col)}"><div class="oh">${chipHTML(p, 0, 0, 22).replace(/left:0px;top:0px;width:22px;height:22px;/, '')}<b style="color:${light(p.col, .45)}">${p.name}</b>${tag}</div>${lines}</div>`;
+  $('#score .side').innerHTML = `<div class="sh"><span class="lab">Superweapons</span><span class="cnt">${totalReady ? `<b class="rdy">${kfmt(totalReady)} ready</b>` : ''}<b>${kfmt(totalSW)}</b></span></div><div class="sl">` + (SG.length ? SG.map(g => {
+    const p = g.p, charging = g.n - g.ready, sz = 34, R = sz / 2 - 2, C = 2 * Math.PI * R, hot = !g.ready && g.next < 60;
+    const nextT = g.ready ? g.after : g.next, f = g.ready ? 1 : Math.max(0.05, 1 - g.next / 600);
+    const ring = `<svg viewBox="0 0 ${sz} ${sz}"><circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="#0a0f15" stroke="rgba(255,255,255,.14)" stroke-width="2.4"/>`
+      + `<circle cx="${sz / 2}" cy="${sz / 2}" r="${R}" fill="none" stroke="${g.ready || hot ? '#ff4a3a' : light(p.col, .2)}" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${sz / 2} ${sz / 2})"/></svg>`;
+    const tag = p.me ? '<em>YOU</em>' : p.ally ? '<em>ALLY</em>' : '';
+    const pills = (g.ready ? `<span class="rd"><b>${kfmt(g.ready)}</b>READY</span>` : '')
+      + (charging ? `<span class="ch ${hot ? 'hot' : ''}">${charging > 1 ? `<i>${kfmt(charging)}</i>` : ''}${fmt(nextT)}</span>` : '');
+    return `<div class="ss ${g.ready ? 'ready' : hot ? 'hot' : ''}" data-i="${p.i}" data-sw="1" data-k="${g.k}" style="--rc:${rgbOf(p.col)}"><span class="ic">${ring}<span class="g">${GLYPHT[g.k]}</span></span>`
+      + `<span class="tx"><b>${g.k}</b><i style="color:${light(p.col, .45)}">${p.name}${tag}</i></span><span class="pl2">${pills}</span></div>`;
   }).join('') : '<div class="none">No superweapons</div>') + '</div>';
   requestAnimationFrame(() => { const sl = $('#score .sl'); if (sl) sl.classList.toggle('over', sl.scrollHeight > sl.clientHeight + 2); });
   $('#score .sub').innerHTML = `${LABEL[SC]} · <b>${P.length} players</b> · <b>12:34</b>`;
