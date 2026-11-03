@@ -61,3 +61,19 @@ e a saída em `chainNN.out`).
     compila. A foto saiu antes da compilação e o teste não decidiu nada.
   - Refazer com uma rodada de aquecimento antes da foto.
 - **O agente das 4 ideias novas foi retomado.**
+
+## 03/11 11h40, depois do 2º desligamento
+- **A `chain54`** fez:
+  - os 5 modelos;
+  - o destrutor dos 12 prédios;
+  - o Units.json (a China sem o Propaganda, a Rússia v2, o Strategy Center, o CC v5, o Palace v2, o tanque da GLA v2);
+  - as fotos A (`*_A54`);
+  - os materiais (a bandeira e a tinta sem areia).
+- **A importação foi PARADA de propósito às 11h30:** era lenta demais (24 malhas em 1 h, só os 5 prédios da China; o resto levaria
+  ~7 h segurando a fila).
+  - O teste de velocidade da importação: `import_speed.ps1` (a War Factory da China, do jeito de hoje × o Nanite já na importação).
+  - Depois disso, importar por partes, a 1ª com o que ele quer ver: os prédios da USA, o CC v5, a Rússia v2, o tanque da GLA e o Palace.
+  - ⚠️ O Units.json já aponta pras malhas novas que ainda não foram importadas: a Rússia v2, o CC v5, o Palace v2 e o tanque da GLA v2.
+    No jogo eles ficam sem malha até a importação.
+- **O agente dos 4 ícones** (a torre vermelha, as cúpulas, o burj, o yakhchal) foi retomado.
+- **Reprovadas em 03/11:** as 4 ideias do herói, dos ônibus, da caixa d'água e do ferro-velho. O plano novo é o `docs/elenco/ICONES_03_11.md`.
