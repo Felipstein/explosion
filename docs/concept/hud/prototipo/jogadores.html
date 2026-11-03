@@ -25,6 +25,8 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 #bar b { color: #8fa3b8; font-weight: 600; margin: 0 6px 0 10px; }
 #bar button { font: 700 13px Barlow; color: #cfd8e2; background: #121a24; border: 1px solid #2a3644; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
 #bar button.on { background: #1d4f80; color: #fff; border-color: #49aaff; }
+#bar .mc { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid #2a3644; }
+#bar .mc.on { border-color: #fff; box-shadow: 0 0 0 2px #49aaff; }
 #bar .hint { margin-left: auto; color: #8fa3b8; font-weight: 500; }
 
 /* ---- a barra do topo: a do duelo; com mais jogadores, os painéis alongam (estica só a faixa lisa do meio deles) ---- */
@@ -34,6 +36,21 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
 .clock { font: 700 34px Barlow; letter-spacing: .5px; color: #e9eef4; text-shadow: 0 1px 2px #000; }
 .pname { font: 700 22px Barlow; text-shadow: 0 1px 2px #000; white-space: nowrap; }
 .ringnum { font: 700 30px Barlow; color: #ff7c6c; text-shadow: 0 1px 2px #000; }
+.swring { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
+.swring.ready { animation: pulse 1s ease-in-out infinite; }
+.swtag { position: absolute; transform: translate(-50%, -50%); padding: 1px 6px; border-radius: 8px; background: rgba(6,9,12,.88); box-shadow: inset 0 0 0 1px rgba(255,210,87,.35);
+  font: 700 13px Barlow; font-variant-numeric: tabular-nums; color: #ffe08a; white-space: nowrap; cursor: default; }
+.swtag.hot { color: #ff8a7a; box-shadow: inset 0 0 0 1px rgba(255,80,60,.6); }
+.swtag.ready { background: #c8281b; color: #fff; box-shadow: none; animation: pulse 1s ease-in-out infinite; }
+/* a linha do tempo: de agora (esquerda) até 5 min (direita); cada superarma é a ficha do dono no ponto do tempo que falta */
+#swt { position: absolute; left: 50%; top: 176px; transform: translateX(-50%); width: 620px; height: 70px; z-index: 9; display: none; }
+.time #swt { display: block; }
+.time #sw { display: none; }
+#swt .track { position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, rgba(255,74,58,.9), rgba(255,210,87,.75) 20%, rgba(255,255,255,.25)); box-shadow: 0 1px 4px rgba(0,0,0,.8); }
+#swt .tk { position: absolute; top: 22px; transform: translateX(-50%); font: 700 12px Barlow; color: rgba(235,240,245,.75); text-shadow: 0 1px 2px #000; }
+#swt .mk { position: absolute; transform: translate(-50%, -50%); }
+#swt .mk .chip { position: relative; transform: none; display: block; }
+#swt .mk.ready .chip { box-shadow: 0 0 0 2px #ff4a3a, 0 0 10px #ff4a3a; animation: pulse 1s ease-in-out infinite; }
 .allyline { position: absolute; height: 3px; border-radius: 2px; background: #8fc6ff; box-shadow: 0 0 6px rgba(143,198,255,.7); }
 .more { position: absolute; transform: translateY(-50%); font: 700 16px Barlow; color: #cfd8e2; text-shadow: 0 1px 2px #000; }
 
@@ -129,10 +146,12 @@ html, body { margin: 0; height: 100%; background: #07090b; overflow: hidden; fon
     <button data-s="ffa6">Todos × todos (6)</button><button data-s="ffa16">Todos × todos (16)</button><button data-s="4x4">4 times de 4</button><button data-s="3v5v8">3 × 5 × 8</button>
     <b>FACÇÃO</b>
     <button data-f="usa">USA</button><button data-f="china">China</button><button data-f="gla">GLA</button><button data-f="russia">Rússia</button>
+    <b>MINHA COR</b><span id="mcs"></span>
+    <b>SUPERARMAS</b><button data-w="chip">Na ficha</button><button data-w="time">Linha do tempo</button>
     <span class="hint">segure TAB: o placar · mouse nas fichas: o nome</span>
   </div>
   <div id="top"><canvas id="cv" width="1920" height="114"></canvas><div id="ovs"></div></div>
-  <div id="sw"></div>
+  <div id="sw"></div><div id="swt"></div>
   <div id="back"></div>
   <div id="score"><div class="hd"><h2>SCOREBOARD</h2><span class="sub"></span></div><div class="grid"></div></div>
   <div class="tip" id="tip"></div>
@@ -149,7 +168,7 @@ const NAMES = ['Felipe', 'Bruno', 'Caio', 'Davi', 'Edu', 'Fabio', 'Gui', 'Hugo',
 const SWN = { usa: 'Orbital Lance', china: 'Nuclear Missile', gla: 'Plague Storm', russia: 'Thermobaric Strike' };
 const SCEN = { duel: [1, 1], '2v2': [2, 2], '3v5': [3, 5], '8v8': [8, 8], ffa6: [1, 1, 1, 1, 1, 1], ffa16: Array(16).fill(1), '4x4': [4, 4, 4, 4], '3v5v8': [3, 5, 8] };
 const LABEL = { duel: '1 vs 1', '2v2': '2 vs 2', '3v5': '3 vs 5', '8v8': '8 vs 8', ffa6: 'Free for all', ffa16: 'Free for all', '4x4': '4 teams of 4', '3v5v8': '3 vs 5 vs 8' };
-let FAC = 'usa', SC = '3v5';
+let FAC = 'usa', SC = '3v5', MYCOL = null, SWM = 'chip';
 function rnd(i, k) { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); }
 // a cor do jogador clareada pra texto e silhueta (o azul e o roxo puros não passam no contraste)
 function light(hex, k = 0.4) { const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * k)); return `rgb(${c})`; }
@@ -169,13 +188,21 @@ function makePlayers(sizes) {
     if (p.dead) p.sw = null;
     P.push(p);
   } });
+  if (MYCOL) { const o = P.find(p => p.col === MYCOL); if (o && o !== P[0]) o.col = P[0].col; P[0].col = MYCOL; }
   return P;
 }
 const dir = () => FAC === 'usa' ? '' : FAC + '/';
 const chipHTML = (p, x, y, d) => `<span class="chip ${p.dead ? 'dead' : ''}" data-i="${p.i}" style="left:${x}px;top:${y}px;width:${d}px;height:${d}px;--c:${p.col};--g:${light(p.col, .25)};--m:url(a/glyph_${p.fac}.png)"><i></i></span>`;
 
 // ---- a barra do topo, composta no canvas a partir da arte do duelo (1307 × 200 com as margens) ----
-const BAR = new Image(), BARN = new Image(); let barFac = '';
+const BARN = new Image(), LME = new Image(), LFOE = new Image(), BARC = document.createElement('canvas'); let barFac = '';
+// a camada de um painel pintada numa cor (a cor do jogador acende o vidro: a escura sobe até um brilho mínimo, como no HUD)
+function glowHex(hex) { const n = parseInt(hex.slice(1), 16); let c = [n >> 16, n >> 8 & 255, n & 255]; const m = Math.max(...c); if (m < 178) c = c.map(v => Math.round(v * 178 / m)); return `rgb(${c})`; }
+function tintLayer(im, col) { const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d');
+  g.drawImage(im, 0, 0); g.globalCompositeOperation = 'multiply'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'destination-in'; g.drawImage(im, 0, 0); return c; }
+function compose() { BARC.width = BARN.width; BARC.height = BARN.height; const g = BARC.getContext('2d'); g.clearRect(0, 0, BARC.width, BARC.height);
+  g.drawImage(BARN, 0, 0); g.drawImage(tintLayer(LME, glowHex(P[0].col)), 0, 0); g.drawImage(tintLayer(LFOE, glowHex(SC === 'duel' ? P[1].col : '#e0443a')), 0, 0); }
 const K = 742 / 1307;                      // a escala do topo 1x1 aprovado
 const u = v => (110 + v);                  // unidade da peça (0..1087) -> coluna da imagem com a margem
 // os cortes: a ponta esquerda com o anel e o começo do painel | a faixa lisa do painel (estica) | o fim do painel | o relógio | ...
@@ -190,6 +217,7 @@ let P = [];
 function drawTop() {
   const cv = $('#cv'), g = cv.getContext('2d'); g.clearRect(0, 0, 1920, 114);
   const ov = []; const teams = SCEN[SC].length;
+  const at = {}; const chipAt = (p, x, y, d) => { at[p.i] = [x, y, d]; return chipHTML(p, x, y, d); };
   const cy = 68 * K;
   const me = P[0], allies = P.filter(p => p.ally), enemies = P.filter(p => !p.me && !p.ally);
   const duel = SC === 'duel', many = teams > 2;
@@ -218,19 +246,19 @@ function drawTop() {
   const widths = segs.map(([k, w]) => w !== undefined ? w : W(k));
   const leftW = widths.slice(0, 5).reduce((a, b) => a + b, 0);
   let x = 960 - W('clock') / 2 - leftW;
-  const pos = {}, img = many ? BARN : BAR;
+  const pos = {}, img = many ? BARN : BARC;
   segs.forEach(([k], i) => { const [a, b] = CUT[k]; pos[k] = x;
     g.drawImage(img, u(a), 0, b - a, 200, x, 0, widths[i] + 0.6, 114); x += widths[i]; });
   const ringL = pos.lfix + (u(83) - u(-110)) * K, ringR = pos.rfix + (1006 - 917) * K;
   const pL0 = pos.lfix + (150 + 110) * K, pL1 = pos.ltip + 30 * K, pR0 = pos.rtip + 30 * K, pR1 = pos.rfix + (937 - 917) * K;
-  ov.push(chipHTML(me, ringL, cy, 40));
+  ov.push(chipAt(me, ringL, cy, 40));
   ov.push(`<div class="ov clock" style="left:960px;top:${cy}px">12:34</div>`);
   const place = (gs, c0, c1, need) => {
     let cx = (c0 + c1) / 2 - need / 2 + D / 2;
     gs.forEach(gr => {
       const x0 = cx;
-      gr.forEach(p => { ov.push(chipHTML(p, cx, cy, D)); cx += D + GAP; });
-      if (many && gr[0].ally) ov.push(`<div class="allyline" style="left:${x0 - D / 2}px;width:${cx - GAP - x0 + D}px;top:${cy + D / 2 + 4}px"></div>`);
+      gr.forEach(p => { ov.push(chipAt(p, cx, cy, D)); cx += D + GAP; });
+      if (many && gr[0].ally) ov.push(`<div class="allyline" style="left:${x0 - D / 2}px;width:${cx - GAP - x0}px;top:${cy + D / 2 + 4}px;background:${light(me.col, .3)};box-shadow:0 0 6px ${me.col}"></div>`);
       cx += TGAP - GAP;
     });
   };
@@ -238,13 +266,31 @@ function drawTop() {
     const foe = P[1];
     ov.push(`<div class="ov pname" style="left:${(pL0 + pL1) / 2}px;top:${cy}px;color:${light(me.col)}">${me.name}</div>`);
     ov.push(`<div class="ov pname" style="left:${(pR0 + pR1) / 2}px;top:${cy}px;color:${light(foe.col)}">${foe.name}</div>`);
-    ov.push(chipHTML(foe, ringR, cy, 40));
+    ov.push(chipAt(foe, ringR, cy, 40));
   } else {
     if (leftGroups.length) place(leftGroups, pL0, pL1, leftNeed);
     else ov.push(`<div class="ov pname" style="left:${(pL0 + pL1) / 2}px;top:${cy}px;color:${light(me.col)}">${me.name}</div>`);
     place(rightGroups, pR0, pR1, rightNeed);
     ov.push(`<div class="ov ringnum" style="left:${ringR}px;top:${cy}px">${enemies.filter(p => !p.dead).length}</div>`);
   }
+  // as superarmas na ficha: o anel de carga em volta da ficha do dono e o tempo numa plaquinha embaixo da barra
+  // os tempos embaixo da barra: só nos últimos 2 min (e o READY); o anel de carga aparece em todos. Se dois se encostam, o de depois desce
+  const tags = [];
+  if (SWM === 'chip') P.forEach(p => {
+    if (p.me || p.sw === null || p.dead || !at[p.i]) return;
+    const [x, y, d] = at[p.i], R = d / 2 + 5, C = 2 * Math.PI * R, f = p.sw === 0 ? 1 : Math.max(0.05, 1 - p.sw / 600), hot = p.sw < 60;
+    ov.push(`<svg class="swring ${p.sw === 0 ? 'ready' : ''}" style="left:${x}px;top:${y}px;width:${2 * R + 6}px;height:${2 * R + 6}px" viewBox="0 0 ${2 * R + 6} ${2 * R + 6}">`
+      + `<circle cx="${R + 3}" cy="${R + 3}" r="${R}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="3.5"/>`
+      + `<circle cx="${R + 3}" cy="${R + 3}" r="${R}" fill="none" stroke="${hot ? '#ff4a3a' : '#ffd257'}" stroke-width="3" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${R + 3} ${R + 3})"/></svg>`);
+    if (p.sw < 120) tags.push([x, p]);
+  });
+  const rowEnd = [];
+  tags.sort((a, b) => a[0] - b[0]).forEach(([x, p]) => {
+    const w = p.sw === 0 ? 52 : 40; let row = 0;
+    while (rowEnd[row] !== undefined && x - w / 2 < rowEnd[row] + 3) row++;
+    rowEnd[row] = x + w / 2;
+    ov.push(`<div class="swtag ${p.sw === 0 ? 'ready' : p.sw < 60 ? 'hot' : ''}" data-i="${p.i}" data-sw="1" style="left:${x}px;top:${86 + row * 21}px">${p.sw === 0 ? 'READY' : fmt(p.sw)}</div>`);
+  });
   $('#ovs').innerHTML = ov.join('');
 }
 
@@ -252,8 +298,9 @@ function render() {
   stage.className = 'f-' + FAC;
   P = makePlayers(SCEN[SC]);
   const src = `a/${dir()}bar_duel.png`;
-  if (barFac !== FAC) { barFac = FAC; let n = 0; const done = () => { if (++n === 2) drawTop(); };
-    BAR.onload = done; BARN.onload = done; BAR.src = src; BARN.src = `a/${dir()}bar_neutral.png`; } else drawTop();
+  if (barFac !== FAC) { barFac = FAC; let n = 0; const done = () => { if (++n === 3) { compose(); drawTop(); } };
+    [BARN, LME, LFOE].forEach(im => im.onload = done); BARN.src = `a/${dir()}bar_neutral.png`; LME.src = `a/${dir()}bar_me.png`; LFOE.src = `a/${dir()}bar_foe.png`; }
+  else { compose(); drawTop(); }
 
   // as superarmas: a mais próxima de cada jogador, em ordem de tempo, no máximo 4
   const sw = P.filter(p => p.sw !== null && !p.me).sort((a, b) => a.sw - b.sw);
@@ -274,8 +321,20 @@ function render() {
       + `<circle cx="33" cy="33" r="${R}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 33 33)"/></svg>`
       + `<div class="core">${GLYPH[p.fac]}</div><div class="tm">${p.sw === 0 ? 'READY' : fmt(p.sw)}</div></div>`;
   };
-  // o mais urgente fica na ponta de dentro (perto do centro da tela); o "+N" na ponta de fora
-  $('#sw').innerHTML = show.map(medal).join('') + (sw.length > show.length ? `<div class="swmore">+${sw.length - show.length}</div>` : '');
+  // 03/11: os medalhões no canto reprovados ("se aparecer um monte não consigo ver os restantes"). Duas formas de ver TODAS:
+  // na ficha (o anel de carga na ficha de cada jogador na barra) ou a linha do tempo (de agora até 5 min, a ficha do dono no ponto)
+  $('#sw').innerHTML = '';
+  const all = P.filter(p => p.sw !== null && !p.me && !p.dead).sort((a, b) => a.sw - b.sw);
+  const TW = 620, rowsEnd = [];
+  let t = [0, 1, 2, 3, 4, 5].map(m => `<span class="tk" style="left:${m / 5 * TW}px">${m === 0 ? 'NOW' : m + ':00'}</span>`).join('') + '<div class="track"></div>';
+  all.forEach(p => {
+    const x = Math.min(1, p.sw / 300) * TW; let row = 0;
+    while (rowsEnd[row] !== undefined && x - rowsEnd[row] < 26) row++;
+    rowsEnd[row] = x;
+    t += `<div class="mk ${p.sw === 0 ? 'ready' : ''}" data-i="${p.i}" data-sw="1" style="left:${x}px;top:${16 - row * 26 + (row ? -6 : 0)}px">${chipHTML(p, 0, 0, 22).replace(/left:0px;top:0px;/, '')}</div>`;
+  });
+  $('#swt').innerHTML = t;
+  stage.classList.toggle('time', SWM === 'time');
 
   // o placar: o seu time primeiro, os outros pela pontuação; um bloco por time, separado por respiro
   const teams = SCEN[SC].length;
@@ -312,9 +371,14 @@ function render() {
   $('#score .sub').innerHTML = `${LABEL[SC]} · <b>${P.length} players</b> · <b>12:34</b>`;
   document.querySelectorAll('#bar [data-s]').forEach(b => b.classList.toggle('on', b.dataset.s === SC));
   document.querySelectorAll('#bar [data-f]').forEach(b => b.classList.toggle('on', b.dataset.f === FAC));
+  document.querySelectorAll('#bar [data-w]').forEach(b => b.classList.toggle('on', b.dataset.w === SWM));
+  document.querySelectorAll('#bar [data-c]').forEach(b => b.classList.toggle('on', b.dataset.c === (MYCOL || COLORS[0])));
 }
 document.querySelectorAll('#bar [data-s]').forEach(b => b.addEventListener('click', () => { SC = b.dataset.s; render(); }));
 document.querySelectorAll('#bar [data-f]').forEach(b => b.addEventListener('click', () => { FAC = b.dataset.f; render(); }));
+document.querySelectorAll('#bar [data-w]').forEach(b => b.addEventListener('click', () => { SWM = b.dataset.w; render(); }));
+$('#mcs').innerHTML = COLORS.slice(0, 8).map(c => `<button class="mc" data-c="${c}" style="background:${c}"></button>`).join('');
+document.querySelectorAll('#bar [data-c]').forEach(b => b.addEventListener('click', () => { MYCOL = b.dataset.c; render(); }));
 addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); stage.classList.add('tabon'); } });
 addEventListener('keyup', e => { if (e.key === 'Tab') stage.classList.remove('tabon'); });
 // o mouse na ficha: o nome; nos aliados, o dinheiro e a energia
@@ -322,11 +386,11 @@ const tip = $('#tip');
 stage.addEventListener('mousemove', e => {
   const c = e.target.closest('[data-i]'); if (!c || stage.classList.contains('tabon')) { tip.style.display = 'none'; return; }
   const p = P[+c.dataset.i], r = stage.getBoundingClientRect(), k = r.width / 1920;
-  tip.innerHTML = `${c.dataset.sw ? SWN[p.fac] + ' · ' : ''}<span style="color:${light(p.col, .35)}">${p.name}</span>${p.me ? ' (you)' : ''}${p.dead ? ' · defeated' : ''}${p.ally && !p.dead ? `<small>$${p.money.toLocaleString('en-US')} · power ${p.pu}/${p.pm}</small>` : ''}`;
+  tip.innerHTML = `${c.dataset.sw ? SWN[p.fac] + ' · ' + (p.sw === 0 ? 'READY' : fmt(p.sw)) + ' · ' : ''}<span style="color:${light(p.col, .35)}">${p.name}</span>${p.me ? ' (you)' : ''}${p.dead ? ' · defeated' : ''}${p.ally && !p.dead ? `<small>$${p.money.toLocaleString('en-US')} · power ${p.pu}/${p.pm}</small>` : ''}`;
   tip.style.display = 'block'; tip.style.left = ((e.clientX - r.left) / k + 14) + 'px'; tip.style.top = ((e.clientY - r.top) / k + 18) + 'px';
 });
 const q = new URLSearchParams(location.search);
-if (q.get('s')) SC = q.get('s'); if (q.get('fac')) FAC = q.get('fac');
+if (q.get('s')) SC = q.get('s'); if (q.get('fac')) FAC = q.get('fac'); if (q.get('me')) MYCOL = '#' + q.get('me'); if (q.get('sw')) SWM = q.get('sw');
 render();
 if (q.get('tab')) stage.classList.add('tabon');
 </script>
