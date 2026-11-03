@@ -5,6 +5,7 @@
 #include "RTSNetSession.h"
 #include "RTSLab.h"
 #include "RTSGameData.h"
+#include "RTSMatchSubsystem.h"
 #include "Containers/Ticker.h"
 #include "Dom/JsonObject.h"
 #include "Misc/CommandLine.h"
@@ -25,6 +26,7 @@ namespace
 	bool GHasSlots = false;
 	TArray<FRTSLocalSlot> GSlots;
 	FTSTicker::FDelegateHandle GTick;
+	int32 GLastPage = -1;                 // a página do menu do jogo que as telas mostram (a principal, a LAN, a sala)
 
 	bool Wanted()
 	{
@@ -182,16 +184,39 @@ namespace
 			N->StopBrowsing();
 			return true;
 		}
-		// criar ou entrar: a sala ainda é a antiga (o HUD desenha quando a página do menu sai da principal)
-		if (Command == TEXT("host"))
+		// os botões da sala (03/11, a sala nova da LAN): os mesmos do menu antigo, pela função do botão; a página do menu do jogo
+		// (a principal, a LAN, a sala) é que decide a tela (o relógio de Install)
+		static const TMap<FString, FString> Buttons = { { TEXT("host"), TEXT("lan_host") }, { TEXT("leave"), TEXT("lan_leave") },
+			{ TEXT("back"), TEXT("lan_back") }, { TEXT("start"), TEXT("lan_start") }, { TEXT("addai"), TEXT("lan_add_ai") }, { TEXT("random"), TEXT("lan_random") } };
+		if (const FString* Id = Buttons.Find(Command))
 		{
-			GPC->OnButton(TEXT("lan_host"));
-			return GPC->GetMenuPage() != ARTSPlayerController::EMenuPage::Main;
+			if (Command == TEXT("host"))
+			{
+				GMap.Reset();   // a rede abre o mapa de sempre em todos os PCs
+				GHasSlots = false;
+			}
+			GPC->OnButton(FName(**Id));
+			return true;
 		}
-		if (Command.StartsWith(TEXT("join:")))
+		static const TMap<FString, FString> SlotButtons = { { TEXT("join:"), TEXT("lan_join_") }, { TEXT("team:"), TEXT("lan_team_") },
+			{ TEXT("color:"), TEXT("lan_color_") }, { TEXT("kick:"), TEXT("lan_kick_") } };
+		for (const TPair<FString, FString>& B : SlotButtons)
 		{
-			GPC->OnButton(FName(*(TEXT("lan_join_") + Command.Mid(5))));
-			return GPC->GetMenuPage() != ARTSPlayerController::EMenuPage::Main;
+			if (Command.StartsWith(B.Key))
+			{
+				if (B.Key == TEXT("join:"))
+				{
+					GMap.Reset();
+					GHasSlots = false;
+				}
+				GPC->OnButton(FName(*(B.Value + FString::FromInt(FCString::Atoi(*Command.Mid(B.Key.Len()))))));
+				return true;
+			}
+		}
+		if (Command.StartsWith(TEXT("money:")) && N->IsHost())
+		{
+			N->SetStartingMoney(FCString::Atoi(*Command.Mid(6)));
+			return true;
 		}
 		return false;
 	}
@@ -202,6 +227,40 @@ namespace
 		{
 			// o arquivo do jogo como está (a página conta as unidades e as ordens)
 			return FFileHelper::LoadFileToString(OutJson, *FPaths::Combine(FPaths::ProjectConfigDir(), TEXT("RTS"), TEXT("Scenarios.json")));
+		}
+		if (Path == TEXT("lobby.json"))
+		{
+			// a sala da rede como está (a página redesenha a cada meio segundo)
+			TSharedPtr<FJsonObject> Root = MakeShared<FJsonObject>();
+			TArray<TSharedPtr<FJsonValue>> Members;
+			if (const URTSNetSession* N = Net())
+			{
+				for (const FRTSNetMember& M : N->Members())
+				{
+					const FLinearColor C = URTSMatchSubsystem::PaletteColor(M.Color);
+					TSharedPtr<FJsonObject> O = MakeShared<FJsonObject>();
+					O->SetNumberField(TEXT("slot"), M.Slot);
+					O->SetStringField(TEXT("name"), M.Name);
+					O->SetBoolField(TEXT("ai"), M.bAI);
+					O->SetNumberField(TEXT("team"), M.Team);
+					O->SetNumberField(TEXT("color"), M.Color);
+					O->SetStringField(TEXT("hex"), FString::Printf(TEXT("#%02x%02x%02x"), FMath::RoundToInt(FMath::Clamp(C.R, 0.0f, 1.0f) * 255.0f),
+						FMath::RoundToInt(FMath::Clamp(C.G, 0.0f, 1.0f) * 255.0f), FMath::RoundToInt(FMath::Clamp(C.B, 0.0f, 1.0f) * 255.0f)));
+					O->SetBoolField(TEXT("ready"), M.bReady);
+					O->SetBoolField(TEXT("inLobby"), M.bInLobby);
+					Members.Add(MakeShared<FJsonValueObject>(O));
+				}
+				Root->SetBoolField(TEXT("host"), N->IsHost());
+				Root->SetNumberField(TEXT("me"), N->LocalSlot());
+				Root->SetBoolField(TEXT("canStart"), N->IsHost() && N->CanStart());
+				Root->SetStringField(TEXT("status"), N->StatusText());
+				Root->SetNumberField(TEXT("money"), N->GetStartingMoney());
+				Root->SetNumberField(TEXT("slotLimit"), N->SlotLimit());
+			}
+			Root->SetStringField(TEXT("map"), URTSSessionSubsystem::SkirmishMapName());
+			Root->SetArrayField(TEXT("members"), Members);
+			const TSharedRef<TJsonWriter<>> W = TJsonWriterFactory<>::Create(&OutJson);
+			return FJsonSerializer::Serialize(Root.ToSharedRef(), W);
 		}
 		if (Path == TEXT("lan.json"))
 		{
@@ -249,7 +308,8 @@ namespace
 		H.Lan = [](const FString& Command) { return Lan(Command); };
 		H.Api = [](const FString& Path, FString& OutJson) { return Api(Path, OutJson); };
 		FRTSShell::SetHandlers(MoveTemp(H));
-		// a sala da LAN ainda é a antiga: quando a página do menu sai da principal, as telas saem; quando volta, voltam
+		// a página do menu do jogo decide a tela: a principal = o menu, a LAN = a lista (depois de sair de uma sala), a sala = a sala nova
+		// (03/11); só na troca de página, pra não atropelar a navegação dentro das telas
 		GTick = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([](float)
 		{
 			ARTSPlayerController* PC = GPC.Get();
@@ -257,15 +317,23 @@ namespace
 			{
 				return true;
 			}
-			const bool bMain = PC->GetMenuPage() == ARTSPlayerController::EMenuPage::Main;
-			if (bMain && !GCovering)
+			const int32 Page = int32(PC->GetMenuPage());
+			if (Page == GLastPage && GCovering)
 			{
-				GCovering = true;
-				FRTSShell::Show(TEXT("menu.html"));
+				return true;
 			}
-			else if (!bMain && GCovering)
+			GLastPage = Page;
+			GCovering = true;
+			if (PC->GetMenuPage() == ARTSPlayerController::EMenuPage::Lobby)
 			{
-				Leave();
+				const URTSNetSession* N = Net();
+				FString Host = N && N->Members().Num() > 0 ? N->Members()[0].Name : FString(TEXT("HOST"));
+				Host = Host.Replace(TEXT("&"), TEXT("")).Replace(TEXT("#"), TEXT("")).Replace(TEXT(" "), TEXT("+"));
+				FRTSShell::Show(FString::Printf(TEXT("skirmish.html?mp=1&lan=1&src=lan&iamhost=%d&host=%s"), N && N->IsHost() ? 1 : 0, *Host));
+			}
+			else
+			{
+				FRTSShell::Show(PC->GetMenuPage() == ARTSPlayerController::EMenuPage::Lan ? TEXT("multiplayer.html") : TEXT("menu.html"));
 			}
 			return true;
 		}), 0.25f);
@@ -296,6 +364,7 @@ void RTSShellGame::OnPlayerBegin(ARTSPlayerController* PC, bool bMenu)
 		// de volta ao menu (o fim da partida, o Esc): a próxima partida local volta a ser montada pela sala
 		GHasSlots = false;
 		GCovering = true;
+		GLastPage = int32(ARTSPlayerController::EMenuPage::Main);
 		FRTSShell::Show(TEXT("menu.html"));
 	}
 	else

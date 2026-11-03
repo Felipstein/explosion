@@ -311,7 +311,7 @@ if (UE) {
   setInterval(poll, 1000); poll();
   join = r => { if (r.game) return; UE.lan('join:' + r.idx); };
   $('#host').onclick = () => UE.lan('host');
-  $('#back').onclick = () => { UE.lan('stop'); location.href = 'menu.html'; };
+  $('#back').onclick = () => { UE.lan('back'); location.href = 'menu.html'; };   // sai da LAN no jogo (a página do menu do jogo volta pra principal)
 }
 (async () => { await document.fonts.ready; renderList(); setTimeout(() => window.__ready = true, 1500); })();
 </script>

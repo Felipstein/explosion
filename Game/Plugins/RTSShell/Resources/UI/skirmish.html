@@ -105,6 +105,9 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
 .pop { position: absolute; z-index: 20; min-width: 180px; background: #121715; border: 1px solid rgba(230,220,190,.18); box-shadow: 0 18px 40px rgba(0,0,0,.6); padding: 6px; display: none; }
 .pop.on { display: block; animation: popin .14s ease-out; }
 @keyframes popin { from { opacity: 0; transform: translateY(-4px); } }
+body.lanreal .kick { display: none; }
+/* na rede de hoje o exército e a largada não se escolhem (os humanos vão de USA, a IA com a facção do anfitrião, as bases pelos times) */
+body.lanreal .cell[data-f="fac"], body.lanreal .cell[data-f="base"] { cursor: var(--cur); } body.lanreal .cell[data-f="fac"] .chev, body.lanreal .cell[data-f="base"] .chev { display: none; }   /* a rede de hoje só tira IA (o ✕ do jogador humano não existe lá) */
 .pop .it { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: var(--curh); font: 700 15px 'Barlow Semi Condensed'; letter-spacing: 2px; color: rgba(238,241,244,.85); white-space: nowrap; }
 .pop .it:hover { background: rgba(216,173,78,.1); color: #fff; }
 .pop .it.cur { color: rgb(var(--ac)); }
@@ -225,7 +228,7 @@ svg.link { position: absolute; inset: 0; width: 1920px; height: 1080px; pointer-
 <audio id="music" preload="auto"></audio>
 <script>
 const W = 1920, H = 1080, Q = new URLSearchParams(location.search);
-const MP = !!Q.get('mp'), HOSTN = (Q.get('host') || 'FELIPE').toUpperCase(), ROOM = (Q.get('room') || '').toUpperCase(), IAMHOST = HOSTN === 'FELIPE', SRCN = (Q.get('src') || 'online').toUpperCase();
+const MP = !!Q.get('mp'), HOSTN = (Q.get('host') || 'FELIPE').toUpperCase(), ROOM = (Q.get('room') || '').toUpperCase(), IAMHOST = Q.get('iamhost') ? Q.get('iamhost') === '1' : HOSTN === 'FELIPE', SRCN = (Q.get('src') || 'online').toUpperCase();
 const stage = document.getElementById('stage');
 function fit() { const k = Math.min(innerWidth / W, innerHeight / H); stage.style.transform = `scale(${k})`; }
 addEventListener('resize', fit); fit();
@@ -447,7 +450,7 @@ function render() {
   st.slots.slice(0, n).forEach((s, i) => {
     const el = document.createElement('div'); el.className = 'tr' + (i === sel ? ' sel' : '') + (selSet.size > 1 && selSet.has(i) ? ' msel' : '') + (live(s) ? '' : ' off');
     el.style.setProperty('--pc', live(s) ? colHex(s) : 'rgba(230,220,190,.12)');
-    const who = s.kind === 'you' ? (MP ? 'FELIPE' : 'YOU') : s.kind === 'human' ? s.name : s.kind === 'ai' ? `AI · ${AIS[s.ai]}` : s.kind === 'open' ? 'OPEN' : 'CLOSED';
+    const who = s.kind === 'you' ? (MP ? (s.name || 'YOU') : 'YOU') : s.kind === 'human' ? s.name : s.kind === 'ai' ? (s.label || `AI · ${AIS[s.ai]}`) : s.kind === 'open' ? 'OPEN' : 'CLOSED';
     const lk = canEdit(i) ? '' : 'lock', pc = p => p < 60 ? 'rgb(120,200,120)' : p < 120 ? 'rgb(216,173,78)' : 'rgb(240,110,90)';
     const stat = MP && (s.kind === 'you' || s.kind === 'human') ? `${s.kind === 'you' ? '<span class="youtag">YOU</span>' : ''}${s.host ? '<svg class="crown" viewBox="0 0 16 12"><path d="M1 11h14L13 3l-3 4-2-6-2 6-3-4z" fill="rgb(216,173,78)"/></svg>' : ''}`
       + `<span style="margin-left:auto;display:flex;gap:8px;align-items:center">${s.ping ? `<div class="pg" style="--gc:${pc(s.ping)}">${[4, 7, 10, 14].map((h, k) => `<i class="${k < (s.ping < 40 ? 4 : s.ping < 80 ? 3 : 2) ? 'f' : ''}" style="height:${h}px"></i>`).join('')}</div>` : ''}<div class="rdy ${s.ready ? '' : 'no'}">${s.ready ? '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.5 5.2l2.3 2.3 4.7-5" fill="none" stroke="rgb(120,200,120)" stroke-width="1.8"/></svg>' : ''}</div></span>` : '';
@@ -588,7 +591,7 @@ function token(a, b, s, R) {     // a ficha: o disco na cor do jogador com a sil
   else { ctx.font = `800 ${R}px 'Big Shoulders Display'`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', a, b + 1); }
 }
 function label(a, y, s, alpha) {
-  const lab = s.kind === 'you' ? (MP ? 'FELIPE' : 'YOU') : s.kind === 'human' ? s.name : `AI · ${AIS[s.ai]}`; ctx.font = "800 15px 'Big Shoulders Display'"; const lw = ctx.measureText(lab).width + 16;
+  const lab = s.kind === 'you' ? (MP ? (s.name || 'YOU') : 'YOU') : s.kind === 'human' ? s.name : (s.label || `AI · ${AIS[s.ai]}`); ctx.font = "800 15px 'Big Shoulders Display'"; const lw = ctx.measureText(lab).width + 16;
   ctx.globalAlpha = alpha; ctx.fillStyle = 'rgba(8,10,9,.88)'; ctx.fillRect(a - lw / 2, y, lw, 22); ctx.fillStyle = colHex(s); ctx.fillRect(a - lw / 2, y, 3, 22);
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lab, a + 1, y + 12); ctx.globalAlpha = 1;
 }
@@ -824,15 +827,54 @@ function musicFade(to, ms) { clearInterval(musicFade.t); const v0 = music.volume
   if (m.playing) music.play().then(() => { musicOn = true; musicFade(MUSIC_VOL, 1400); }).catch(() => { music.volume = MUSIC_VOL; }); else music.volume = MUSIC_VOL; })();
 addEventListener('pagehide', () => { try { sessionStorage.setItem('menu_music', JSON.stringify({ track, t: music.currentTime, vol: music.volume, playing: !music.paused, at: Date.now() })); } catch (e) { } });
 
+// ---------- a sala da LAN de verdade (só no jogo, ?lan=1): o estado vem do jogo (api/lobby.json, a cada meio segundo) e cada clique
+// vira o comando que a rede de hoje tem: a cor e o time andam em sequência (a paleta de 8 do jogo), a IA entra e sai, o dinheiro,
+// começar e sair. A facção por jogador, o mapa, as superarmas e a conversa ainda não existem no protocolo: saem da sala no jogo
+if (UE && Q.get('lan')) {
+  document.body.classList.add('lanreal');
+  ['#bulk', '#change', '.chat'].forEach(q => { const e = $(q); if (e) e.style.display = 'none'; });
+  $('#sw').closest('.rule').style.display = 'none';
+  const rgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16));
+  const near = hex => { const a = rgb(hex); let best = 0, bd = 1e9; COLORS.forEach(([, h], k) => { const b = rgb(h), d = (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2; if (d < bd) { bd = d; best = k; } }); return best; };
+  let L = null, busy = false, sentCash = -1;
+  const poll = async () => {
+    if (busy) return; busy = true;
+    try {
+      L = await fetch('api/lobby.json').then(r => r.json());
+      const e = CAT.find(c => c.real === L.map) || CAT[0]; if (!entry || entry.id !== e.id) await chooseMap(e);
+      const n = Math.min(CUR.starts.length, L.slotLimit || 8);
+      st.slots = Array.from({ length: n }, (_, k) => { const m = L.members.find(o => o.slot === k); if (!m) return mk('open', 'random', -1, 0, -1);
+        const o = mk(k === L.me ? 'you' : m.ai ? 'ai' : 'human', m.ai ? 'random' : 'usa', near(m.hex), m.team, -1, 1); o.name = m.name.toUpperCase(); if (m.ai) o.label = 'AI'; o.ready = m.ready; return o; });   // a IA de hoje tem um nível só
+      st.cash = CASH.reduce((b, v, k) => Math.abs(v - L.money) < Math.abs(CASH[b] - L.money) ? k : b, 0); sentCash = st.cash;
+      render(); lanStart();
+    } catch (err) { } busy = false;
+  };
+  const lanStart = () => { if (!L) return; const b = $('#start'); b.classList.remove('cd'); b.classList.toggle('no', !(L.host && L.canStart));
+    b.innerHTML = L.host ? (L.canStart ? 'START MATCH <kbd>ENTER</kbd>' : 'WAITING FOR PLAYERS') : 'WAITING FOR THE HOST'; };
+  const act = c => { UE.lan(c); setTimeout(poll, 150); };
+  rowsEl.addEventListener('click', e => {
+    let el = e.target; while (el && el.parentElement !== rowsEl) el = el.parentElement; if (!el || !L) return;
+    e.stopPropagation(); e.preventDefault();
+    const i = [...rowsEl.children].indexOf(el), s = st.slots[i], f = (e.target.closest('.cell') || {}).dataset?.f;
+    if (!s) return;
+    if (f === 'color' && (s.kind === 'you' || (L.host && s.kind === 'ai'))) act('color:' + i);
+    else if (f === 'team' && (s.kind === 'you' || L.host)) act('team:' + i);
+    else if (f === 'who' && L.host && s.kind === 'open') act('addai');
+    else if (f === 'who' && L.host && s.kind === 'ai') act('kick:' + i);
+  }, true);
+  $('#start').addEventListener('click', e => { e.stopImmediatePropagation(); if (L && L.host && L.canStart) act('start'); }, true);
+  const rS = render; render = function () { rS(); if (L && L.host && st.cash !== sentCash) { sentCash = st.cash; act('money:' + CASH[st.cash]); } };
+  goBack = () => UE.lan('leave');
+  setInterval(poll, 500); poll();
+}
+
 // ---------- começa ----------
 
-window.__pop = (row, f) => { sel = row; const c = rowsEl.children[row].querySelector(`[data-f="${f}"]`); openPop(c, row, f); };
 (async () => {
   await document.fonts.ready; await chooseMap(CAT[+(Q.get('map') || 0)]); fade = 1;
   if (Q.get('hs')) hoverRow = +Q.get('hs');
   if (Q.get('browser')) openBrowser();
-  if (Q.get('pop')) { const [r, f] = Q.get('pop').split(','); window.__pop(+r, f); }
-  if (Q.get('still') || Q.get('rec')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); if (Q.get('browser')) drawGrid(false); setTimeout(() => window.__ready = true, Q.get('browser') ? 1500 : 200); }, 400); }
+    if (Q.get('still') || Q.get('rec')) { frame(1 / 30); setTimeout(() => { frame(1 / 30); if (Q.get('browser')) drawGrid(false); setTimeout(() => window.__ready = true, Q.get('browser') ? 1500 : 200); }, 400); }
   // (02/11) no navegador do jogo o tempo do quadro às vezes volta: o passo nunca é negativo
   else { let last = performance.now(); (function loop(now) { frame(Math.max(0, Math.min((now - last) / 1000, .1))); last = Math.max(last, now); requestAnimationFrame(loop); })(last); window.__ready = true; }
 })();

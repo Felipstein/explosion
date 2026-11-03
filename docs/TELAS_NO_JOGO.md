@@ -29,7 +29,9 @@ Play Skirmish como antes.
 - **SKIRMISH:** a sala monta a partida: até 8 vagas (você e as IAs), com a facção, a cor (as 24 da tela), o time e a base de cada
   uma, e o dinheiro inicial. Mapas: SALT FLATS (`World_TestSalt2`), DUNE SEA (`World_TestDunesSim`) e BROKEN HILLS
   (`World_TestHills`). A dificuldade da IA fica guardada, mas a IA de hoje tem um nível só; as superarmas ainda não mudam nada.
-- **MULTIPLAYER:** a LAN de verdade (as salas da rede, CREATE e JOIN). A sala de espera ainda é a antiga do jogo.
+- **MULTIPLAYER:** a LAN de verdade (as salas da rede, HOST e JOIN) e **a sala nova** (03/11, provada no jogo: criar, pôr IA, trocar a
+  cor, começar): os jogadores da rede, a cor e o time em sequência (a paleta de 8 do jogo), pôr e tirar IA, o dinheiro, começar e
+  sair. A facção por jogador, o mapa, as superarmas e a conversa ainda não existem no protocolo da rede: ficam fora da sala no jogo.
 - **OPTIONS:** o preset muda a qualidade de verdade (LOW, MEDIUM, HIGH, ULTRA; o CLASSIC ainda vai na média). Os outros itens
   ficam guardados pra quando o jogo tiver cada um.
 - **QUIT** fecha o jogo.
@@ -50,14 +52,16 @@ ponte `window.ue.shell` responde; o SCRIPT roda a cena armada (`RTS telas: SCRIP
 partida ainda não ligadas). Os ganchos nos arquivos compartilhados estão no commit (só as minhas linhas).
 
 **Falta:**
-1. Provar o START do skirmish no jogo (corrigido o passo de tempo negativo do navegador embutido que travava o clique; o reteste
+1. ~~Provar o START e o LAB~~ (03/11, provados no jogo: `RTS telas: skirmish em World_TestHills com 3 vagas, $10000`, as
+   largadas com times e as facções; o LAB abriu o `Lab_Flat`). O texto de antes: provar o START do skirmish no jogo (corrigido o passo de tempo negativo do navegador embutido que travava o clique; o reteste
    `t2_skirmish` estava na fila) e o LAB (`t3_lab`, não abriu a tempo porque o jogo compilava shaders de outra sessão).
    Roda: `powershell -File docs/concept/ui/menu/tools/shell_game_test.ps1 -Name t2_skirmish -Steps <steps_t2.json>` (fora da tela,
    desiste se o log parar 90 s ou as telas não vierem em 30 s depois do mapa).
 2. ~~Avisar a sessão dos Cursores~~ (03/11, feito por ela): o navegador embutido troca a forma do cursor Custom do Windows; o
    `FRTSCursors::Invalidate()` repõe as dela no BeginPlay da partida. **Quando uma tela do RTSShell abrir no meio da partida**
    (a pausa, o resultado), chamar `PC->Cursors.Invalidate()` ao fechar.
-3. Depois: a sala da LAN nova (hoje a antiga aparece quando cria/entra), as telas da partida (Esc, resultado, avisos, carregando),
+3. Depois: ~~a sala da LAN nova~~ (03/11, feita), o que falta no protocolo da rede pra sala ficar inteira (a facção por jogador, o
+   mapa, as 24 cores, a conversa: é da sessão do jogo/multiplayer), as telas da partida (Esc, resultado, avisos, carregando),
    a dificuldade da IA (a IA tem um nível só), as superarmas, o CLASSIC de verdade, a música pelo volume do jogo, o pacote do pai
    (conferir que o CEF e `Resources/UI` vão junto).
 4. A linha no CLAUDE.md apontando este guia (o Felipe pediu pras outras sessões saberem).
