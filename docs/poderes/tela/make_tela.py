@@ -8,26 +8,86 @@
 #
 # Na página: ?rk=<patente>&gen=1 abre a tela; ?have=id,id marca o que já foi comprado; ?sel=id mostra o detalhe.
 import os, re, subprocess, sys
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 PROTO = os.path.join(ROOT, 'docs', 'concept', 'hud', 'prototipo', 'index.html')
 CHROME = r'C:\Program Files\Google\Chrome\Application\chrome.exe'
 
-def build(faction):
+# (03/11) as famílias do ícone (docs/poderes/ICONES.md §3.1): comando = o botão em relevo; passivo = a placa chapada, sem relevo
+# e sem sombra; desbloqueio = a foto do botão de construir, com o filete de aço. O subtipo do comando (golpe, olhos, tropas, apoio)
+# vem da própria imagem, sem marca. (O padrão anterior, a moldura com forma e o selo colorido por tipo, foi reprovado em 03/11.)
+FAMILY_CSS = '''
+.iw { position: relative; display: inline-block; flex: none; line-height: 0; }
+.iw img { display: block; }
+.f-cmd::after { content: ''; position: absolute; inset: 0; border-radius: 4px; pointer-events: none;
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,.38), inset -2px -2px 0 rgba(0,0,0,.65), inset 0 0 0 1px rgba(0,0,0,.8); }
+.f-cmd img { border-radius: 4px; }
+.f-pas img { border-radius: 1px; box-shadow: none !important; }
+.f-unl img { border-radius: 2px; box-shadow: 0 0 0 1px #9aa6b2, 0 2px 4px rgba(0,0,0,.6) !important; }
+#pcolx { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 5; }
+#pcolx .iw { position: absolute; }
+#pcolx .iw img { width: 100%; height: 100%; object-fit: cover; }
+'''
+FAM_JS = "${(n => n.t === 'pas' ? 'pas' : n.t === 'unl' ? 'unl' : 'cmd')(%s)}"
+
+def build(faction, style=None, column=None, icons=None, tree_name=None):
     src = open(PROTO, encoding='utf-8').read()
-    tree = open(os.path.join(HERE, f'{faction}.js'), encoding='utf-8').read()
+    tree = open(os.path.join(HERE, f'{tree_name or faction}.js'), encoding='utf-8').read()
     a = src.index('const ROWS = [['); b = src.index('const HAVE = {};')
     out = src[:a] + tree.rstrip() + '\n' + src[b:]
     out = out.replace("['drone', 'para1', 'arty1'].forEach(k => HAVE[k] = 1)", "[].forEach(k => HAVE[k] = 1)")
     out = re.sub(r'<title>.*?</title>', f'<title>Poderes: {faction.upper()}</title>', out, count=1)
     out = out.replace('<head>', '<head>\n<base href="../../concept/hud/prototipo/">', 1)
+    # a família do ícone: o invólucro com a classe (comando, passivo, desbloqueio), na grade e no detalhe
+    def wrap(v):
+        return '<span class="iw f-' + FAM_JS % v + '"><img src="a/${' + v + '.ic}.png" alt=""></span>'
+    for a_, b_ in (('${corner}<img src="a/${n.ic}.png" alt="">', '${corner}' + wrap('n')),
+                   ('<div class="top"><img src="a/${n.ic}.png" alt="">', '<div class="top">' + wrap('n'))):
+        assert a_ in out, 'o protótipo mudou: ' + a_
+        out = out.replace(a_, b_, 1)
+    out = out.replace('</head>', '<style>' + FAMILY_CSS + '</style>\n</head>', 1)
+    # as linhas sem rótulo (decisão dele em 03/11: o tipo se lê no ícone): some a coluna dos rótulos, a grade fica com as 5 patentes
+    # e tantas linhas quanto a árvore tiver
+    rows = re.search(r"const ROWS = \[(.*?)\];", tree, re.S).group(1)
+    if "['', '']" in rows and not re.search(r"\['[^']+'", rows):
+        lanes = rows.count('[')
+        out = out.replace('</head>', '<style>#gen .trk { grid-template-columns: repeat(5, 1fr); grid-template-rows: 58px '
+                          f'repeat({lanes}, 1fr); }} #gen .trk .rl, #gen .trk > svg + div {{ display: none; }}'
+                          ' #gen .trk .pw { max-width: 190px; }</style>\n</head>', 1)
+    # o estilo de ícone em teste: troca o ícone dos 3 poderes da folha de estilos (A-10, AWACS, Naval)
+    if style:
+        est = '../../../../poderes/tela/estilos/' + style
+        for ids, pw in ((('a10_1', 'a10_2'), 'a10'), (('awacs',), 'awacs'), (('naval1', 'naval2', 'naval3'), 'naval')):
+            for i in ids:
+                n0 = out.index('const NODES')
+                out = out[:n0] + re.sub(r"(\{ id: '%s',[^\n]*? ic: ')[^']*'" % i, lambda m: m.group(1) + f"{est}_{pw}'", out[n0:], count=1)
+    if icons:
+        ico = os.path.join(HERE, 'icones')
+        for i, pw in (('drone', 'drone'), ('desig', 'desig'), ('a10_1', 'a10'), ('a10_2', 'a10'), ('ac130', 'ac130'), ('naval1', 'naval'),
+                      ('naval2', 'naval'), ('naval3', 'naval'), ('moab', 'moab'), ('para1', 'para'), ('para2', 'para'), ('para3', 'para'),
+                      ('seal', 'seal'), ('fob', 'fob'), ('repair1', 'repair'), ('repair2', 'repair'), ('angel', 'angel'), ('awacs', 'awacs')):
+            if os.path.exists(os.path.join(ico, f'usa_{pw}_{icons}.png')):
+                n0 = out.index('const NODES')    # só na árvore: o protótipo tem outra lista com os mesmos ids (o MENU antigo)
+                out = out[:n0] + re.sub(r"(\{ id: '%s',[^\n]*? ic: ')[^']*'" % i, lambda m: m.group(1) + f"../../../../poderes/tela/icones/usa_{pw}_{icons}'", out[n0:], count=1)
+        # o exemplo de desbloqueio (a USA não tem: a tecnologia abre pela patente); a foto do botão de construir do tanque, do kit do HUD
+        if "id: 'unl_ex'" not in out: out = out.replace("  { id: 'moab',", "  { id: 'unl_ex', row: 4, rank: 5, n: 'Paladin (example)', t: 'unl', ic: '../../kit/photos/buttons/usa_battle_tank', cost: 1, cd: 'Unlock', d: 'Example of an unlock power: the tank becomes available in the War Factory, with the same picture as its build button.' },\n  { id: 'moab',", 1)
     hook = "if (q.get('gen')) setTimeout(genOpen, 400);"
+    # a coluna de poderes do HUD (a da esquerda, desenhada no fundo): o ícone por cima de cada casa; o relógio embaixo continua
+    if column:
+        slots = ''.join(f'<span class="iw f-cmd" style="left:37px;top:{459 + 70 * k}px;width:56px;height:40px">'
+                        f'<img src="a/${{node(\'{nid}\').ic}}.png" alt=""></span>'
+                        for k, nid in enumerate(column))
+        out = out.replace(hook, "{ const pc = document.createElement('div'); pc.id = 'pcolx'; pc.innerHTML = `" + slots
+                          + "`; $('#stage').appendChild(pc); }\n" + hook, 1)
     assert hook in out, 'o protótipo mudou: achar de novo onde a tela do general abre'
     out = out.replace(hook, hook + """
 // (poderes) ?have=id,id (o que já foi comprado) e ?sel=id (o poder no detalhe), pra foto
 if (q.get('have') || q.get('sel')) setTimeout(() => { (q.get('have') || '').split(',').filter(Boolean).forEach(k => HAVE[k] = 1); selId = q.get('sel') || null; hubPts(); genRender(); }, 700);""", 1)
-    dst = os.path.join(HERE, f'poderes_{faction}.html')
+    tag = style or (icons and 'icones_' + icons)
+    if tree_name: tag = (tag + '_' if tag else '') + tree_name
+    dst = os.path.join(HERE, f'poderes_{faction}{"_" + tag if tag else ""}.html')
     open(dst, 'w', encoding='utf-8').write(out)
     return dst
 
@@ -45,7 +105,11 @@ def shot(page, rank, have, sel):
 
 if __name__ == '__main__':
     f = sys.argv[1]
-    page = build(f); print(os.path.relpath(page, ROOT))
+    style = sys.argv[sys.argv.index('--style') + 1] if '--style' in sys.argv else None
+    column = sys.argv[sys.argv.index('--column') + 1].split(',') if '--column' in sys.argv else None
+    icons = sys.argv[sys.argv.index('--icons') + 1] if '--icons' in sys.argv else None
+    tree_name = sys.argv[sys.argv.index('--tree') + 1] if '--tree' in sys.argv else None
+    page = build(f, style, column, icons, tree_name); print(os.path.relpath(page, ROOT))
     if '--shot' in sys.argv:
         i = sys.argv.index('--shot')
         rank, have, sel = (sys.argv[i + 1:i + 4] + ['3', '', ''])[:3]

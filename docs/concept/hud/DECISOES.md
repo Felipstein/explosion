@@ -362,6 +362,12 @@ Mudar a caixa de lugar foi reprovado ("só pegou e tacou ali"). O rumo aprovado 
   Entram no miolo do cubo (no lugar das estrelas desenhadas), no cabeçalho da tela do general e na fileira das patentes (o ícone à esquerda do
   nome; as estrelas em texto saíram, o ícone já diz). A plaqueta PROMOTED aprovada ficou como está (a ficha com a estrela).
 
+- **03/11, a tela do general sem as linhas por tipo (decisão dele, na sessão dos poderes):** "dá pra tirar essa distinção das linhas,
+  C&C não tem isso". O tipo do poder passou a ser lido no próprio ícone (`docs/poderes/ICONES.md`). As colunas continuam sendo as
+  patentes; as linhas ficam livres, sem rótulo, e uma patente pode ter quantos poderes precisar; os níveis seguem ligados na mesma linha.
+  Como fica: `docs/poderes/tela/poderes_usa.jpg` (a tela montada a partir deste protótipo por `docs/poderes/tela/make_tela.py`, sem mexer
+  nele). Quando o protótipo for atualizado, sai a coluna AIR/GROUND/FIRE/SUPPORT.
+
 ## 8. O HUD das outras facções (01/11)
 
 O plano e o estudo do ZH (pelos dados do jogo instalado) em `docs/concept/hud/FACCOES.md`. A proposta de 13/10 (o neon girado de cor) foi

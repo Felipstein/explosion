@@ -241,3 +241,175 @@ Target Designation, o Paradrop I e a Naval I e II comprados.
 - **O próximo passo** (quando ele der o sinal): um ícone de verdade pra cada poder, no estilo dos ícones do HUD (o kit), antes de ir pra
   próxima facção. Os de hoje (`docs/poderes/tela/pw/`) são provisórios, feitos por script.
 
+---
+
+## 12. Os ícones dos poderes (03/11, em teste)
+
+- **Pedido dele:** gerar os ícones de cada poder, gastando o mínimo, só pra ver (sem pôr no jogo).
+- **1ª tentativa, reprovada antes de ver:** a folha dos 9 ícones novos no estilo de pictograma do kit do HUD (`captures/concept/162_`).
+  Ele: "eles são ícones muito básicos, eu quero propostas e ideias diferentes, tanto o design do ícone quanto o design proposto como
+  padrão".
+- **2ª, os estilos:** uma imagem só, com 3 poderes (A-10, AWACS, Naval) em 4 estilos. Ele pediu o Gemini também:
+  `docs/concept/poderes/icones_4_estilos_gpt.jpg` e `..._gemini.jpg` (`captures/concept/163_`; o prompt está nas receitas). Os estilos:
+  1. **o retrato pintado** (o botão do ZH);
+  2. **a visão do sensor**: a câmera térmica, o radar, a visão noturna, com as marcas de mira;
+  3. **o emblema bordado**, o patch militar;
+  4. **a silhueta heroica** contra a luz.
+- **A minha leitura:**
+  - o GPT acertou mais as formas (o A-10 do Gemini saiu errado na silhueta);
+  - a 64 px, a silhueta e o emblema leem melhor;
+  - o pintado é o mais ZH, mas embola quando fica pequeno;
+  - **a visão do sensor é a que conta quem a USA é** ("vê tudo") e casa com os poderes de olho (o drone, o satélite, o AWACS).
+- **A ideia pro padrão:** cada facção com o estilo de ícone que conta quem ela é, como os HUDs de cada facção (aprovados) já são
+  diferentes:
+  - USA: a visão do sensor;
+  - China: o cartaz de propaganda;
+  - GLA: o estêncil pintado com spray na chapa;
+  - Rússia: o distintivo de esmalte.
+
+---
+
+## 13. Os estilos na tela de verdade e o padrão por tipo (03/11)
+
+- **Pedido dele:** pôr os estilos "na UI, bem feito, como se fosse realmente no jogo", pra comparar; e seguir um padrão de desenho por
+  tipo de poder: os que atacam, os que dão suporte, os que desbloqueiam unidade ou construção, e os outros.
+- **Como foi feito** (a receita):
+  - `cut_styles.py` recorta as 12 casas de cada folha; o emblema sai com o fundo transparente;
+  - `make_tela.py usa --style <modelo>_<estilo> --column a10_1,naval1,drone,para1,repair1 --shot 5 drone,a10_1,naval1,naval2 naval3`
+    monta a tela com os ícones dos 3 poderes da folha (o A-10, o AWACS e o Naval) e a coluna de poderes do HUD com os ícones por cima
+    de cada casa, e tira a foto.
+  - Os outros poderes seguem com os ícones provisórios.
+  - As fotos estão em `docs/concept/poderes/tela_estilo_<estilo>_gpt.jpg` e `tela_estilo_<estilo>_gemini.jpg` (uma tela por imagem: ele pediu, "tudo pequeno não consigo ver nada").
+- **O padrão por tipo** (proposta). A forma vem da moldura, e a cor fica só no selo, pra não brigar com o verde de "comprado" e o
+  dourado de "dá pra comprar". Também lê pra quem não distingue cor:
+
+  | Tipo | A moldura | O selo |
+  |---|---|---|
+  | **Golpe** (A-10, AC-130, Naval, MOAB) | os cantos chanfrados | vermelho com a mira |
+  | **Olhos** (Spy Drone, Target Designation, AWACS) | as 4 cantoneiras de mira em ciano | ciano com o olho |
+  | **Tropas** (Paradrop, SEAL) | a ponta de escudo embaixo | oliva com as divisas |
+  | **Apoio** (Emergency Repair, Guardian Angel) | redonda | azul com o escudo |
+  | **Construção e desbloqueio** (Forward Operating Base; as unidades e os prédios que um poder destravar) | hexágono | bronze com a bandeira |
+
+  - O poder passivo (o AWACS) ainda não tem marca própria.
+  - No estilo do emblema, a moldura do tipo corta o próprio formato do bordado. Se o emblema for o escolhido, o tipo passa a ser o
+    formato do emblema (o escudo, o círculo, o hexágono).
+
+---
+
+## 14. Os ícones reprovados (03/11) e o caminho certo
+
+- **Reprovados:** os 4 estilos e o padrão por tipo da §13. "Mal feito, mal pensado, foi rápido demais, não teve embasamento em nada."
+  - O erro foi o mesmo das superarmas no começo: fui pra imagem antes do estudo e da ideia combinada em palavras.
+  - Também: uma imagem com várias telas pequenas não serve. A regra é uma tela por imagem.
+- **O que continua:** cada tipo de poder com o seu padrão de desenho. Os tipos que ele citou: o desbloqueio de unidade (como o Paladin
+  do ZH), o ataque, o suporte, o drop e o bônus. "É algo que dá pra testar", com decisões bem pensadas e discutidas.
+- **O caminho:**
+  1. o estudo de como os jogos AAA mostram o tipo no ícone (`docs/poderes/ESTUDO_ICONES.md`);
+  2. a proposta em palavras, com o porquê de cada decisão;
+  3. só depois o teste: uma imagem por tela.
+- **Os critérios dele pro ícone (03/11):**
+  - cada um **traduz bem o que faz**: "nem todos conseguem numa imagem, e tá ok, mas tem que ser algo que faz sentido";
+  - **fácil de ler visualmente.**
+  - Somam-se à regra do HUD: sem legenda (a forma, a cor e a reação ao mouse explicam).
+
+---
+
+## 15. O lugar do Forward Operating Base (03/11, proposta)
+
+**Ele:** "o Forward Base não representa o que eu tinha entendido, e na verdade esse superpoder nem sei se eu gostei realmente dele,
+acho que dá pra gente pensar num outro da USA que faz sentido".
+
+**O que a casa pede** (SUPPORT, patente 5, 3 pontos):
+- Na ★5 já há dois golpes, o AC-130 (de habilidade) e a MOAB (a grande).
+- A terceira opção tem de ser **estratégica e sem dano**: quem não quer mais um golpe precisa de uma escolha forte.
+- E tem de ser a cara da USA, que leva a guerra pra qualquer lugar.
+
+**A proposta: Strategic Airlift.**
+- **Como funciona:**
+  - você escolhe até 4 veículos seus (ou 8 soldados) em qualquer lugar;
+  - um C-17 pousa ao lado deles e embarca em 5 s;
+  - cruza o mapa à vista de todos (~15 s);
+  - pousa onde você mandou, em chão aberto que você já viu.
+- **Por que é bom:**
+  - abre as jogadas grandes: o ataque pelo flanco, o reforço de uma base longe, o prédio neutro tomado de surpresa;
+  - é a força de verdade dos EUA (o transporte aéreo estratégico);
+  - faz o que o posto avançado queria (levar a frente pra perto do inimigo), mas com as suas unidades e sem prédio novo.
+- **A resposta do inimigo:**
+  - derrubar o C-17 no ar, e a carga cai junto: 1 500 de vida, risco e prêmio;
+  - o pouso aparece pra todos uns segundos antes.
+- **O ícone:** o C-17 de rampa aberta, com o tanque descendo. Família comando, subtipo tropas (a chegada).
+- **A 2ª opção, se ele preferir:** Global Recon. O satélite revela o mapa inteiro por 15 s, os camuflados também: o máximo do "vê
+  tudo". É mais fraca de jogar (não muda nada sozinha), por isso fica atrás.
+
+**O AWACS (a pergunta dele):**
+- O E-3 Sentry é o avião de radar: um Boeing com o disco giratório em cima, que voa alto e vê aviões e mísseis a centenas de
+  quilômetros.
+- No jogo é passivo: depois de comprado, toda vez que o inimigo chama um poder (o A-10, a bomba, o paraquedas), você e os aliados veem na
+  hora o que é, por onde o avião vem e onde vai cair. É o tempo pra tirar as unidades ou ligar o Guardian Angel.
+- Não tem botão nem recarga.
+
+---
+
+## 16. As perguntas dele (03/11) e as regras que saem delas
+
+**O AWACS vê tudo, até a superarma? E os poderes comprados?** A proposta:
+- **Os poderes, na hora em que são chamados:** o tipo, a rota e o ponto do impacto, pra você e pros aliados (já era assim).
+- **A superarma:** quando a superarma inimiga é lançada, quem tem o AWACS vê **a área do impacto na hora do lançamento**. Os outros só
+  veem nos segundos finais (a regra das superarmas).
+- **O arsenal do inimigo:** cada poder que ele usa fica anotado no card do general dele, na tela do general, enquanto o AWACS existir.
+  Você vai conhecendo o arsenal dele pelo uso. A lista do que ele comprou e ainda não usou continua sendo só da espionagem (a regra do HUD).
+- **O ícone:** a imagem do avião não dizia isso. Vira a placa com o AWACS visto de cima e o disco de radar dele como uma tela, com as
+  setas vermelhas dos ataques chegando e o ponto de onde cada um cai (`captures/concept/167_`).
+
+**O que era o Forward Operating Base:** o C-17 pousava num ponto que você escolhesse e montava em 20 s um posto avançado de 1 500 de
+vida. As unidades novas das fábricas podiam sair dali em vez de atravessar o mapa; ele via 60 m e consertava os veículos em volta. Só
+um por vez.
+
+**O Strategic Airlift, em detalhe:**
+- **Quem:** qualquer unidade de terra sua, menos os superpesados. Vêm **dois C-17**, cada um leva 2 veículos ou 6 soldados (até 4
+  veículos ou 12 soldados, misturando).
+- **Como:**
+  1. aperta o poder;
+  2. escolhe o grupo (ou usa a seleção);
+  3. clica no destino, um chão aberto que você já viu.
+  - Os C-17 pousam num trecho aberto perto do grupo (o pouso curto é licença do jogo), embarcam em 5 s, cruzam em linha reta e pousam no
+    destino; as unidades descem prontas.
+- **A rapidez:**
+  - o C-17 a ~60 m/s cruza 800 m em ~13 s; com o embarque e o pouso, ~26 s no total;
+  - um tanque leva ~100 s pra andar os mesmos 800 m: o poder é 4 vezes mais rápido.
+- **A resposta do inimigo:**
+  - a rota aparece pra todos;
+  - os C-17 (1 500 de vida cada) podem ser derrubados com tudo dentro.
+- **O custo:** 3 pontos, recarga de 6:00. Não cobra por uso: não cria unidade, só leva as suas.
+- **03/11, a decisão dele:** fica o Forward Operating Base, não o Strategic Airlift ("entendi, mas acho que pode deixar o outro então,
+  o posto avançado, mas precisamos de uma imagem mais bonita"). O ícone novo tem de dizer o principal do poder, que os reforços saem
+  dali lá na frente. Duas ideias em teste: o portão com o tanque saindo, e o forte visto de cima com a sombra do C-17
+  (`captures/concept/168_`, GPT e Gemini).
+
+---
+
+## 17. A tela sem as linhas por tipo (03/11, decidido)
+
+- **A pergunta dele:** "e se tiver 2 AIR, ou SUPPORT, ou GROUND [...] no Major General, como encaixaria?" A grade tinha uma casa por
+  tipo e patente; dois poderes do mesmo tipo na mesma patente não cabiam.
+- **A 1ª resposta:** as faixas por tipo, onde uma faixa ganha uma 2ª linha quando precisa. Funcionou, mas ele cortou antes: "daria pra
+  tirar essa distinção das linhas, e foda-se, C&C não tem isso mesmo".
+- **Por que essa é a certa:**
+  - o tipo já se lê no ícone (`ICONES.md`), então o rótulo da linha repetia a informação;
+  - sem a coluna dos rótulos, os cartões ganham largura;
+  - uma patente pode ter quantos poderes precisar;
+  - o ZH também não tem linha por tipo.
+- **As regras que ficam:**
+  - as colunas são as patentes;
+  - os níveis de um poder ficam na mesma linha, ligados pela linha;
+  - as linhas seguem a ordem dos tipos (olhos, golpe, tropas, apoio), sem rótulo, só pra manter juntos os parecidos.
+- **A árvore** (`docs/poderes/tela/usa.js`), em 5 linhas:
+  1. olhos: Spy Drone, Target Designation, AWACS;
+  2. golpe do ar: A-10 I e II, AC-130;
+  3. golpe do mar: Naval I a III, MOAB;
+  4. tropas: Paradrop I a III, SEAL, posto avançado;
+  5. apoio: Emergency Repair I e II, Guardian Angel.
+- **A tela:** `docs/poderes/tela/poderes_usa.jpg` e `docs/concept/poderes/tela_sem_rotulos.jpg`.
+  - `make_tela.py`: quando todos os rótulos de `ROWS` são vazios, some a coluna dos rótulos e a grade fica com as 5 patentes.
+

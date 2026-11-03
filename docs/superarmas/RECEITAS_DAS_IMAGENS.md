@@ -1,6 +1,6 @@
 # A receita das imagens: Superarmas
 
-Gerado por `Atelier/tools/export_recipes.py --src Superarmas` em 03/11/2026 15:50, a partir dos pedidos do Atelier
+Gerado por `Atelier/tools/export_recipes.py --src Superarmas` em 03/11/2026 18:46, a partir dos pedidos do Atelier
 (`captures/atelier/requests/`, fora do git). Cada pedido traz o prompt inteiro de cada rodada, os modelos, os anexos na ordem em
 que foram mandados e o que foi escolhido (✓) ou reprovado (✗). Os anexos que não estavam no repositório foram copiados pra
 `docs/superarmas/RECEITAS_DAS_IMAGENS_anexos/`. As imagens geradas ficam em `captures/concept/` (rascunho); as aprovadas
@@ -1439,3 +1439,398 @@ Show the attached image (the approved superweapon building of the Chinese army i
 Model sheet of a unit for a serious modern military real-time strategy game: the attack drone of the Chinese army's drone swarm superweapon. Attached image 1 is the approved battle tank of this faction: use it ONLY as the reference for the faction's paint and markings. Attached image 2 is the approved launch of the swarm: use it ONLY for the general silhouette and the red light of the drones. The design, close to real Chinese loitering munitions (the delta-wing family with a rear pusher propeller): a compact delta-wing attack drone about three meters wingspan, a slim fuselage with a rounded sensor nose and the warhead in the front, a rear pusher propeller, small vertical winglets at the wingtips, two small missiles mounted under the wings, a red navigation light on top. Paint: dark olive-drab with the faded blocky digital camouflage of image 1, a small red star on the wings, the player color only as a thin red band on the wingtips. Show the same drone in: a straight top-down view (as the strategy camera sees it), a three-quarter game-camera view from above, a side elevation and a front elevation; and in one corner a small group of six drones flying in formation above a Chinese battle tank for scale. Plain neutral grey background, even studio lighting, photorealistic AAA game asset render with a strong, readable silhouette, realistic worn paint. No text, no letters.
 ```
 - **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/155_china_a_ficha_do_drone_do_enxame/raiz_r1_gpt.png` → **registrada: `docs/aprovados/superarmas/2026-11-03_china_drone_ficha_APROVADA.jpg`**; Gemini Pro (f: Gemini 429: Your project has exceeded its monthly spending cap. Please go to AI ): ``
+
+---
+
+## 162_usa_os_icones_dos_poderes: USA, os ícones dos poderes
+
+- **Data:** 2026-11-03 20:31 (UTC) · **proporção:** 1:1 · **pedido:** `mw158s0bs3w`
+- **Anexos, na ordem:**
+  1. spy_drone: `docs/concept/hud/kit/icons/spy_drone.png`
+  2. paradrop: `docs/concept/hud/kit/icons/paradrop.png`
+  3. repair: `docs/concept/hud/kit/icons/repair.png`
+
+**Prompt (a raiz):**
+
+```text
+Create a sprite sheet of 9 square power icons for the USA faction of a modern C&C Zero Hour style RTS game (a serious modern military game, AAA quality). They must match EXACTLY the style of the three approved icons attached (image 1, image 2 and image 3): the same square dark navy tile with the same beveled steel frame and the same corner rivets, the same proportions, and one bold light-silver metal pictogram in the center with the same soft top-left lighting, slightly worn, premium game UI quality. Each pictogram must read instantly at about 48 pixels: bold simple silhouettes, strong contrast, no tiny details that turn into noise.
+```
+
+**Prompt (a raiz):**
+
+```text
+The 9 icons, in a 3 by 3 grid, left to right, top to bottom:
+```
+
+**Prompt (a raiz):**
+
+```text
+1. Target Designation: a small satellite at the top shining a thin straight laser line down onto a ground target reticle.
+```
+
+**Prompt (a raiz):**
+
+```text
+2. A-10 Strike: the A-10 attack jet seen from above (long straight wings, two round engines on the rear fuselage, twin tail fins), with a short line of cannon fire ahead of its nose.
+```
+
+**Prompt (a raiz):**
+
+```text
+3. AC-130 Gunship: the four-engine AC-130 seen from above, banking, inside a dashed circular orbit line.
+```
+
+**Prompt (a raiz):**
+
+```text
+4. SEAL Insertion: a kneeling special forces soldier silhouette with a helmet and night-vision goggles, placing a small demolition charge.
+```
+
+**Prompt (a raiz):**
+
+```text
+5. Naval Gunfire: a battleship in side view firing a broadside, three muzzle flashes and three shells arcing up.
+```
+
+**Prompt (a raiz):**
+
+```text
+6. MOAB: one huge bomb with lattice grid fins hanging under a parachute.
+```
+
+**Prompt (a raiz):**
+
+```text
+7. AWACS Early Warning: the AWACS plane seen from above with the big round radar disc on its back and curved radar waves.
+```
+
+**Prompt (a raiz):**
+
+```text
+8. Guardian Angel: a shield with a thin laser beam rising from it and hitting an incoming missile above it.
+```
+
+**Prompt (a raiz):**
+
+```text
+9. Forward Operating Base: a small fortified outpost with sandbag walls, a tent and a flag on a pole.
+```
+
+**Prompt (a raiz):**
+
+```text
+Background: one flat pure chroma green (#00FF00) over the whole sheet, no gradient, no shadow, no glow spilling onto the green. Square sheet, all 9 tiles the same size in a 3 by 3 grid, every tile separated by a clear gap of green. Straight front view, no perspective, crisp clean edges. Absolutely no text, no numbers, no letters, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/162_usa_os_icones_dos_poderes/raiz_r1_gpt.png`
+
+---
+
+## 163_icones_dos_poderes_4_estilos: Ícones dos poderes, 4 estilos
+
+- **Data:** 2026-11-03 20:33 (UTC) · **proporção:** 16:9 · **pedido:** `mw15af3soct`
+
+**Prompt (a raiz):**
+
+```text
+A comparison board of square ability icons for the USA faction of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality. The board is a grid of 4 columns and 3 rows of square icons, all the same size, separated by thin dark gaps, on a plain dark charcoal background. Each ROW is one power, each COLUMN is one icon style. Every icon is a finished, premium game icon that reads instantly at 64 pixels: one clear subject, strong silhouette, strong contrast.
+```
+
+**Prompt (a raiz):**
+
+```text
+The three powers (rows, top to bottom):
+```
+
+**Prompt (a raiz):**
+
+```text
+- Row 1, A-10 Strike: an A-10 Warthog attack jet making a low gun run, the line of cannon fire ripping across the ground.
+```
+
+**Prompt (a raiz):**
+
+```text
+- Row 2, AWACS Early Warning: an E-3 AWACS plane with the big round radar disc on its back, detecting incoming threats.
+```
+
+**Prompt (a raiz):**
+
+```text
+- Row 3, Naval Gunfire: a battleship firing a full broadside of its big guns.
+```
+
+**Prompt (a raiz):**
+
+```text
+The four styles (columns, left to right), the same style for the whole column:
+```
+
+**Prompt (a raiz):**
+
+```text
+- Column 1, PAINTED PORTRAIT: a small cinematic painted scene like the classic C&C Generals power buttons, dramatic golden-hour light, smoke and fire, rich color, a thin bevelled steel frame.
+```
+
+**Prompt (a raiz):**
+
+```text
+- Column 2, SENSOR VIEW: what a military sensor sees: the A-10 run seen through a white-hot thermal camera from above, the AWACS as a glowing green radar scope sweep with the plane silhouette and incoming blips, the battleship through a grainy green night-vision periscope view with the muzzle flashes blooming; thin military targeting overlays (crosshair corners, brackets, a tracking box), no readable text.
+```
+
+**Prompt (a raiz):**
+
+```text
+- Column 3, UNIT PATCH: an embroidered military shoulder patch, shield or round shape, visible thread texture and stitched border, bold flat colors in olive, navy, sand and red, the subject as a strong embroidered emblem.
+```
+
+**Prompt (a raiz):**
+
+```text
+- Column 4, HEROIC SILHOUETTE: a bold dark silhouette of the subject cut out against a hot glowing background (orange explosion light or electric blue sky), strong rim light on the edges, like modern military shooter killstreak icons, very graphic and minimal but dramatic.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark anywhere.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/163_icones_dos_poderes_4_estilos/raiz_r1_gpt.png`
+- **Rodada 1, ramo "Gemini":** Gemini Pro: `captures/concept/163_icones_dos_poderes_4_estilos/gemini_r1_pro.jpg`
+
+---
+
+## 164_usa_os_icones_pela_regra_das_familias: USA, os ícones pela regra das famílias
+
+- **Data:** 2026-11-03 21:07 (UTC) · **proporção:** 16:9 · **pedido:** `mw16izl5s5v`
+
+**Prompt (a raiz):**
+
+```text
+A sprite sheet of 13 square ability icons for the USA faction of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality. The sheet is a grid of 5 columns and 3 rows of square cells, all the same size, separated by thin gaps of flat pure chroma green (#00FF00). The 13 icons fill the cells left to right, top to bottom; the last 2 cells (row 3, columns 4 and 5) are left empty, flat chroma green. No frames, no borders, no bevels on icons 1 to 12: the game draws the button around them. Each icon fills its whole square cell edge to edge.
+```
+
+**Prompt (a raiz):**
+
+```text
+THE RULE FOR ICONS 1 TO 12: one single subject, big (about 70% of the square), clearly cut out against a simple, uncluttered background, so it reads instantly at 46 pixels. Realistic, detailed rendering of the subject, but no busy scenery. The kind of power is told by the subject and by the light:
+```
+
+**Prompt (a raiz):**
+
+```text
+- STRIKE icons: warm fire light, orange and red glow.
+```
+
+**Prompt (a raiz):**
+
+```text
+- EYES icons: a real thermal camera image, white-hot on dark grey, black and white only, with thin white tracking brackets; no green.
+```
+
+**Prompt (a raiz):**
+
+```text
+- TROOPS icons: daylight, open sky, natural light.
+```
+
+**Prompt (a raiz):**
+
+```text
+- SUPPORT icons: cool blue light.
+```
+
+**Prompt (a raiz):**
+
+```text
+1. Spy Drone (EYES): a thermal camera view looking straight down from a drone: two enemy tanks glowing white-hot on dark ground, thin white tracking brackets around them.
+```
+
+**Prompt (a raiz):**
+
+```text
+2. Target Designation (EYES): a grainy thermal satellite view looking straight down on one enemy tank, a bright diamond-shaped laser target marker locked on it.
+```
+
+**Prompt (a raiz):**
+
+```text
+3. A-10 Strike (STRIKE): an A-10 Warthog seen from the front, very low, its nose cannon firing a bright muzzle flash, a line of impacts on the ground below, fiery orange backlight.
+```
+
+**Prompt (a raiz):**
+
+```text
+4. AC-130 Gunship (STRIKE): an AC-130 seen from the side, banking at night, four propellers, a fan of glowing orange tracers firing down from its side guns.
+```
+
+**Prompt (a raiz):**
+
+```text
+5. Naval Gunfire (STRIKE): close-up of one triple big-gun turret of a battleship at the instant of firing, three huge muzzle fireballs, dark smoke, orange light.
+```
+
+**Prompt (a raiz):**
+
+```text
+6. MOAB (STRIKE): one huge fat bomb with lattice fins hanging under a parachute, falling, a bright orange explosion glow below it.
+```
+
+**Prompt (a raiz):**
+
+```text
+7. Paradrop (TROOPS): three open military parachutes with soldiers descending against a clear blue daytime sky.
+```
+
+**Prompt (a raiz):**
+
+```text
+8. SEAL Insertion (TROOPS): a special forces soldier kneeling, wearing a helmet with a four-tube night-vision goggle flipped down, holding a demolition charge, natural light, plain background.
+```
+
+**Prompt (a raiz):**
+
+```text
+9. Forward Operating Base (TROOPS): a C-17 cargo plane landing behind a small sandbag outpost with a US flag on a pole, daytime sky.
+```
+
+**Prompt (a raiz):**
+
+```text
+10. Emergency Repair (SUPPORT): a modern battle tank with bright welding sparks on its hull and supply crates dropping by parachute next to it, cool blue light.
+```
+
+**Prompt (a raiz):**
+
+```text
+11. Guardian Angel (SUPPORT): a thin bright laser beam rising from the ground and hitting an incoming missile in the night sky, the missile bursting, cool blue light.
+```
+
+**Prompt (a raiz):**
+
+```text
+12. (empty slot is not here) Tactical icon 12: the same Paradrop rule does not apply; make icon 12 the AWACS described below.
+```
+
+**Prompt (a raiz):**
+
+```text
+12. AWACS Early Warning (PASSIVE, different from all others): NOT a button and NOT a scene. A flat engraved steel plate filling the cell: the silhouette of an E-3 AWACS plane with its round radar disc and curved radar waves, engraved into the metal and filled with deep blue enamel, brushed steel, no bevel, no relief, no glow, like a military equipment nameplate.
+```
+
+**Prompt (a raiz):**
+
+```text
+13. Leave this cell as an empty dark steel square.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark anywhere.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/164_usa_os_icones_pela_regra_das_familias/raiz_r1_gpt.png`; Gemini Pro: `captures/concept/164_usa_os_icones_pela_regra_das_familias/raiz_r1_pro.jpg`
+
+---
+
+## 166_usa_o_conserto_e_o_escudo_de_novo: USA, o conserto e o escudo de novo
+
+- **Data:** 2026-11-03 21:32 (UTC) · **proporção:** 16:9 · **pedido:** `mw17eazwn2c`
+
+**Prompt (a raiz):**
+
+```text
+Two square ability icons side by side for the USA faction of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality, realistic rendering. Each icon is a square filling its own cell edge to edge, no frame, no border. The two squares are centered on a flat pure chroma green (#00FF00) background with a clear gap of green between them and around them.
+```
+
+**Prompt (a raiz):**
+
+```text
+THE RULE: one single subject, big (about 70% of the square), clearly cut out against a simple, uncluttered background, readable instantly at 46 pixels. Both are SUPPORT powers: cool blue light.
+```
+
+**Prompt (a raiz):**
+
+```text
+Left icon, Emergency Repair (it must read instantly as REPAIR): an extreme close-up of a gloved hand gripping a big steel wrench, tightening a bolt on the track and road wheel of a modern battle tank, a few bright sparks, cool blue light, dark simple background. The wrench is the biggest and clearest shape in the icon.
+```
+
+**Prompt (a raiz):**
+
+```text
+Right icon, Guardian Angel (it must read instantly as PROTECTION, not as an attack): a glowing translucent blue protective dome covering two of our battle tanks on the ground, seen slightly from above; two incoming enemy missiles bursting harmlessly on the outside of the dome surface; cool blue light, dark night sky. The dome is the biggest and clearest shape in the icon.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/166_usa_o_conserto_e_o_escudo_de_novo/raiz_r1_gpt.png`
+
+---
+
+## 167_usa_o_conserto_claro_e_o_awacs_que_avisa: USA, o conserto claro e o AWACS que avisa
+
+- **Data:** 2026-11-03 21:40 (UTC) · **proporção:** 16:9 · **pedido:** `mw17p0a9o9r`
+
+**Prompt (a raiz):**
+
+```text
+Two square ability icons side by side for the USA faction of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality. Each icon is a square filling its own cell edge to edge, no frame, no border. The two squares are centered on a flat pure chroma green (#00FF00) background with a clear gap of green between them and around them. Both must read instantly at 46 pixels: one bold shape, strong light-dark contrast, no clutter.
+```
+
+**Prompt (a raiz):**
+
+```text
+Left icon, Emergency Repair (it must read at a glance as REPAIR): one big polished steel wrench, bright and clean, crossing the whole square diagonally from bottom-left to top-right, its jaws at the top right; behind it, slightly darker and smaller, the front of a modern battle tank turret; a few small bright sparks at the wrench jaws; the background is a clean light blue to pale white gradient, no scenery. The wrench is by far the brightest and largest shape.
+```
+
+**Prompt (a raiz):**
+
+```text
+Right icon, AWACS Early Warning (a PASSIVE power, so it is a flat engraved steel nameplate, not a scene and not a button: brushed steel, no bevel, no relief, no glow): engraved into the plate and filled with enamel, an E-3 AWACS plane seen straight from above, and its round radar disc on its back is drawn larger than real and works as a radar screen: inside the disc, on dark blue enamel, three bold red enamel arrows coming in from the edge toward the center, each ending at a small red impact cross, and a thin sweep line. The message: I see the enemy attacks coming before they land.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/167_usa_o_conserto_claro_e_o_awacs_que_avisa/raiz_r1_gpt.png`
+
+---
+
+## 168_usa_o_posto_avancado_mais_bonito: USA, o posto avançado mais bonito
+
+- **Data:** 2026-11-03 21:44 (UTC) · **proporção:** 16:9 · **pedido:** `mw17trdswqc`
+
+**Prompt (a raiz):**
+
+```text
+Two square ability icons side by side for the USA faction of a modern, serious military real-time strategy game in the spirit of C&C Generals Zero Hour, AAA quality, beautiful and cinematic but clean. Each icon is a square filling its own cell edge to edge, no frame, no border. The two squares are centered on a flat pure chroma green (#00FF00) background with a clear gap of green between them and around them. Both must read instantly at 46 pixels: one bold main shape, strong light-dark contrast, uncluttered.
+```
+
+**Prompt (a raiz):**
+
+```text
+The power is Forward Operating Base: a forward outpost lands near the front, and our reinforcements leave from it. It is a TROOPS power: daylight, open sky, warm late-afternoon sun.
+```
+
+**Prompt (a raiz):**
+
+```text
+Left icon, THE GATE: a compact forward outpost made of tan HESCO barrier walls and sandbags, a tall US flag on a pole above it waving in the wind, its gate wide open in the center, and one of our modern battle tanks rolling out of the gate straight toward the viewer, dust kicked up, low dramatic camera angle, clear blue sky with a few clouds. The open gate with the tank coming out is the main shape.
+```
+
+**Prompt (a raiz):**
+
+```text
+Right icon, SEEN FROM ABOVE: the same compact outpost seen straight from above, a bold square fort of tan HESCO walls with angled corner bastions, a helipad with a white H inside, a small US flag, two vehicles parked inside, desert sand around it, and the large dark shadow of a C-17 cargo plane passing over one corner. The square fort is the main shape.
+```
+
+**Prompt (a raiz):**
+
+```text
+No text, no letters, no numbers, no labels, no watermark.
+```
+- **Rodada 1, ramo "Raiz":** GPT (conta do ChatGPT ou API): `captures/concept/168_usa_o_posto_avancado_mais_bonito/raiz_r1_gpt.png`; Gemini Pro: `captures/concept/168_usa_o_posto_avancado_mais_bonito/raiz_r1_pro.jpg`
