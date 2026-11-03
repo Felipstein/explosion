@@ -36,3 +36,12 @@ Sessão do HUD. Ao retomar: ler isto, `FACCOES.md` (§5–8), `DECISOES.md` (§7
 - Levar o HUD aprovado pro jogo (`Game/Plugins/RTSHud`, o HUD novo atrás de -NewHud/F4) só quando os jogadores/placar forem aprovados.
 - Os 16 ícones da China na laca já estão no kit (`kit/icons/china`), ainda não vistos por ele.
 - A arte do brasão sem os tambores (USA, GLA, Rússia) entra junto com a ida pro jogo.
+
+## 03/11: os jogadores e o placar APROVADOS (no protótipo)
+- A barra do topo simétrica (duelo e dois times: o seu painel na sua cor, o outro do mesmo comprimento; 3+ times e todos contra todos:
+  vidro neutro, as fichas divididas por igual, o seu time colado em você com o traço na sua cor).
+- As superarmas na tela de jogo: a C no canto de cima à direita (até 8 linhas, "N READY", "×N"); no Tab, a coluna de todas na lista corrida
+  com as plaquinhas de prontas e de carga, agrupada por jogador e tipo, rolando dentro do placar.
+- O placar com a cor de cada jogador em faixas.
+- **Próximo passo:** levar pro HUD em C++ (`RTSHudPainter`: a barra dos times no lugar do `DrawTopMany` v1, a lista C das superarmas, o placar
+  no Tab com a coluna), provar no HUDLab com fotos das 4 facções e dos formatos, e só então pro jogo (`Game/Plugins/RTSHud`).
