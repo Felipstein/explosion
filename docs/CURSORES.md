@@ -200,3 +200,9 @@ de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
   fora do ar, a seta da borda; teste `-RTSAlertTest` e `-RTSAlertTest=radar` na cena `rally_ponto`), a marca B (`RTSOrderMarker`),
   a fila do Alt refeita, `RTSSoftDraw`, o v4 no `DrawMinimap`, o `Invalidate` dos cursores. Falta: compilar pela fila, provar
   ampliado (o v4 e a marca B: `captures/game/marca_b_v2/`; os alertas), mostrar e commitar só o aprovado.
+- **(03/11, pausa pelo limite) O que ele viu dos alertas no jogo e falta corrigir:** (1) com o radar fora do ar o minimapa ainda
+  mostrava os alertas ("isso não pode"): no `ARTSHUD::DrawMinimap`, com `bRadarOff` não desenhar os avisos nem o calor; (2) a seta
+  vermelha "não ficou guardada no canto da tela" (encostar na borda, margem pequena) e o brilho da borda ficou por baixo do HUD
+  (desenhar por cima do HUD ou fora das peças): `RTSAlerts::DrawEdgeArrows`. A cena `rally_ponto` ganhou a usina (sem ela o radar cai);
+  a prova `captures/game/alertas_v3/` estava rodando. O minimapa v4 e a marca B estão provados no jogo (`captures/game/marca_b_v2/`);
+  nada disso commitado (só o registro no APROVADOS).
