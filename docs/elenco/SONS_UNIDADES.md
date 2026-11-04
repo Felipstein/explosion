@@ -147,6 +147,11 @@ cada aviso tem **prioridade** (o maior fala, só um por vez), **o intervalo mín
   ataque, a unidade perdida), na falta de energia e na falta de dinheiro. As regras do ZH (`Eva.ini`): um aviso por vez, a maior
   prioridade primeiro, o intervalo entre dois iguais (base 30 s, unidade 15 s, energia 120 s, dinheiro 1,5 s) e a validade na fila
   (5 s). A EVA fala por cima: as falas das unidades abaixam 6 dB enquanto ela fala. Uma fala de unidade por vez (a nova corta a velha).
+- **Testado (04/11 noite):** a cena `som_teste_usa` (a voz ao selecionar o Dozer e o M1, o som da War Factory e da Barracks, a
+  "pouca energia" na usina derrubada sem dizer "unidade perdida" pelo prédio, a "unidade perdida" no Dozer morto, a fala de pronto do M1
+  treinado) e a partida automática inteira (`game.ps1 view -Folder som_base`, 400 s, 0 falhas: o clique 10×, as falas de andar e
+  atacar do M1 8×, a obra do Dozer 3×, a "base sob ataque" 2× com 34 s entre elas, a "unidade perdida" 6× sempre ≥15 s, a "pouca
+  energia" 1×).
 - **O teste pelo log:** cada som que toca escreve `RTS som: <arquivo>` no log do jogo. `rts.Audio 0` desliga, `rts.AudioVolume` muda
   o volume geral.
 - **Falta:** o "aliado sob ataque" (o jogo ainda não avisa o ataque ao aliado), a "melhoria pronta" (ainda não há melhorias), as

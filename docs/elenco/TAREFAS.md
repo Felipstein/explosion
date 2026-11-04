@@ -170,6 +170,8 @@ no jogo (16), o canto do para-lama do tanque B mal encaixado (39, achado dele à
     - o nó SetMaterialAttributes, se o mestre usa os atributos;
     - ou uma função C++ do editor (o `WorldForgeEditorLib`).
     ⏳ O próximo T0: o aquecimento antes da foto, e o PDO por um desses caminhos.
+    ✅ (04/11 noite) **O T0 deu certo** (`docs/elenco/CAVAR_O_CHAO.md` §8): a máscara + o PDO abrem o buraco com e sem o Nanite, por
+    ~+0,5 ms; o "2º erro" era a foto antes de o shader compilar. ⏳ O T1 no mestre com tesselação (o Salt2) e a decisão dele de levar o C1 pro jogo.
 23. ✅ Bandeiras com física em tudo, num sistema só e na placa (`M_FlagCloth`, `SM_FlagCloth`, `visual.flags`; a Technical migrou): ✅ vistas ondulando no jogo (as 3 do Shtab, quadro a quadro, 01/11) e a da Technical andando (o pano esticado pra trás no vento do
     carro, `captures/game/elenco_prova_tecnica`). A pintura da Technical (a camuflagem urbana do atlas) é a dele no Blender: "a cor depois a gente vê".
 24. ✅ Cada coisa já nasce pensada e otimizada (a regra; ver a memória `feedback-pensar-o-todo-nao-reagir`).
@@ -647,9 +649,10 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
 65. ✅ **Os retratos que fecham a USA** ("faltou os unit portrait da infantaria, faça isso, já joga no jogo"): os botões do Ranger e do
     Javelin v3 e os 10 cartões que faltavam (Ranger, Javelin, Stryker, Paladin, Linebacker, Tomahawk, Raptor, Comanche, Supply Truck,
     Supply Center), em 3 folhas em grade; no kit do HUD (o jogo lê de lá). Aprovado por mim, autorizado por ele (`docs/APROVADOS.md`).
-66. 🔄 **Os sons aprovados no jogo** ("os sons aprovados pode colocar no jogo"): o `URTSAudio` (o clique do HUD, a voz ao selecionar e
+66. ✅ **Os sons aprovados no jogo** ("os sons aprovados pode colocar no jogo"): o `URTSAudio` (o clique do HUD, a voz ao selecionar e
     nas ordens, o som dos prédios, a fala de pronto, a EVA das 4 facções com as regras do ZH) e o pacote `Game/GameAudio` +
-    `Config/RTS/Sounds.json` (`Game/Tools/audio_pack.py`). O como em `docs/elenco/SONS_UNIDADES.md` ("No jogo"). Compilando pela fila;
-    depois o teste pelo log (`RTS som: ...`).
+    `Config/RTS/Sounds.json` (`Game/Tools/audio_pack.py`). O como em `docs/elenco/SONS_UNIDADES.md` ("No jogo"). Compilado e
+    testado (a cena `som_teste_usa` e a partida automática inteira, 0 falhas). Os ganchos no `RTSPlayerController.cpp` e no
+    `RTSMatchSubsystem.cpp` (6 linhas) ficam sem commit até os donos desses arquivos commitarem os deles.
 67. ⏳ **Amanhã, com ele:** as vozes e os sons das outras unidades e prédios (USA primeiro) e os retratos da China, da Rússia e da GLA
     (em folha em grade). A ordem dele: "amanhã continuemos a gerar os sons das outras unidades e das construções e os unit portrait".

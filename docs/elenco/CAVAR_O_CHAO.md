@@ -277,6 +277,24 @@ subindo).
 - **O limite de cortes:** com 8, o 9º não abre (o `Push` só manda os 8 primeiros). Por isso 16.
 - **O Lumen e a colisão** veem o chão fechado sobre o buraco (§3). Fica anotado, não bloqueia.
 
+## 8. O T0 (04/11): o C1 ABRE, com e sem o Nanite, por ~+0,5 ms
+
+O teste no mestre do World_TestHills (um agente, na vez da placa; o mestre voltou ao original com o hash idêntico, conferido):
+- **o recorte zerado com o PDO** (o Pixel Depth Offset ligado num MakeMaterialAttributes) tira o chão inteiro com o Nanite ligado,
+  desligado e religado; **sem o PDO**, com o Nanite o chão fica (a Unreal tira a máscara, como o estudo leu no fonte) e sem o Nanite
+  some: o PDO é o que segura a máscara no Nanite;
+- **o "2º erro" de 01 e 02/11 (o buraco que não abria sem o Nanite) era a foto cedo demais**: o shader do raster mascarado leva de 2 a
+  45 s pra compilar na 1ª vez (aos 2 s o chão ainda está fechado; aos 45 s, aberto; depois fica no cache);
+- **o recorte de verdade do Arms Dealer**: a rampa desce até a boca do túnel, com o sol e a sombra dos muros (a prova:
+  `docs/aprovados/modelos/2026-11-04_recorte_do_chao_T0_mascara_pdo_PROVA.jpg`; as folhas em `captures/game/t0p_corte/`);
+- **o chão longe do corte não muda** (0,85/255 de diferença média, o mesmo ruído de duas rodadas do original: 0,96);
+- **o custo**: +0,3 a +0,6 ms (~2%) no Alta 1600×900, a câmera do jogo a 80 m (a 2ª rodada, A B A B de 90 s: 26,2/26,4 → 26,5/27,0 ms;
+  o p95 27,6/28,0 → 27,8/28,6).
+Os scripts: `docs/elenco/cavar_t0/` (o `t0_pdo.py` muda e desfaz o mestre; as cenas `t0p_zero`, `t0p_corte`, `t0p_custo`,
+`t0p_custo_longo` no Scenarios.json). **Falta:** o T1 num mestre com tesselação (o World_TestSalt2, o deslocamento das crateras: o
+buraco e o custo), o T2 do Média e o T3 ampliado nos 4 presets; no jogo, o PDO junto da máscara no `ground_cut.py` e na montagem do
+WorldForge (uma função de uma linha no `WorldForgeEditorLib`, igual à `ConnectMaterialDisplacement`; o WorldForge é de outra sessão).
+
 ## Fontes
 
 - Fonte da Unreal 5.8, os arquivos e as linhas acima (`Runtime/Landscape`, `Runtime/Engine/Private/Rendering/NaniteResources.cpp`,
