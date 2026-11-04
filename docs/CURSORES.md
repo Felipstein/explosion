@@ -206,3 +206,8 @@ de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
   (desenhar por cima do HUD ou fora das peças): `RTSAlerts::DrawEdgeArrows`. A cena `rally_ponto` ganhou a usina (sem ela o radar cai);
   a prova `captures/game/alertas_v3/` estava rodando. O minimapa v4 e a marca B estão provados no jogo (`captures/game/marca_b_v2/`);
   nada disso commitado (só o registro no APROVADOS).
+- **(03/11, pausa) A seta da borda, de novo reprovada no jeito:** "a seta ainda não tá no canto da tela, e a borda brilhante tá embaixo
+  do placar do HUD, bem mal feito; tem que ficar por cima do HUD mesmo". Então: a seta encostada na borda da TELA (não na peça do HUD)
+  e a seta e o brilho desenhados POR CIMA do HUD (hoje o Canvas do `ARTSHUD::DrawMarkers` sai antes das peças do HUD novo; desenhar
+  num passe depois delas, ou numa camada acima). Desfazer o desvio das peças em `RTSAlerts::DrawEdgeArrows` (o `InPiece` que empurra
+  a seta e o brilho pra dentro). O resto dos alertas, a marca B, o minimapa v4 e a fila do Alt seguem provados, sem commit.
