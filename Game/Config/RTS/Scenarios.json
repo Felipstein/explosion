@@ -33149,6 +33149,691 @@
           }
         ]
       }
+    },
+    {
+      "name": "shtab_v3",
+      "about": "(04/11) o Shtab v3 inteiro na câmera do jogo (a cebola, as ameias, o guindaste), 3 giros e de cima.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "russia_command_center",
+          "player": 0,
+          "at_m": [
+            -302.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "russia_war_factory",
+          "player": 0,
+          "at_m": [
+            -266.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "russia_supply_center",
+          "player": 0,
+          "at_m": [
+            -232.0,
+            -354.0
+          ]
+        },
+        {
+          "key": "russia_power_plant",
+          "player": 0,
+          "at_m": [
+            -304.0,
+            -316.0
+          ]
+        },
+        {
+          "key": "russia_barracks",
+          "player": 0,
+          "at_m": [
+            -274.0,
+            -316.0
+          ]
+        },
+        {
+          "key": "russia_institute",
+          "player": 0,
+          "at_m": [
+            -246.0,
+            -316.0
+          ]
+        },
+        {
+          "key": "russia_pantsir_site",
+          "player": 0,
+          "at_m": [
+            -224.0,
+            -312.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -296.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -287.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t14",
+          "at_m": [
+            -277.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_bmpt",
+          "at_m": [
+            -267.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_tos1a",
+          "at_m": [
+            -257.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_pantsir",
+          "at_m": [
+            -247.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_dozer",
+          "at_m": [
+            -238.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_supply_truck",
+          "at_m": [
+            -230.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_motostrelok",
+          "at_m": [
+            -224.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_motostrelok",
+          "at_m": [
+            -222.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_kornet",
+          "at_m": [
+            -219.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_kornet",
+          "at_m": [
+            -217.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -262.0,
+          -324.0
+        ],
+        "distance_m": 95.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 37.5
+      },
+      "shots_s": [
+        3.0
+      ],
+      "end_s": 12.200000000000001,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 4.0,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 70.0,
+            "pitch_deg": 37.5,
+            "focus_m": [
+              -302.0,
+              -352.0
+            ]
+          },
+          {
+            "t_s": 5.0,
+            "op": "shot",
+            "name": "shtab_jogo"
+          },
+          {
+            "t_s": 5.8,
+            "op": "camera",
+            "yaw_deg": 135.0,
+            "distance_m": 70.0,
+            "pitch_deg": 37.5,
+            "focus_m": [
+              -302.0,
+              -352.0
+            ]
+          },
+          {
+            "t_s": 6.8,
+            "op": "shot",
+            "name": "shtab_jogo_lado"
+          },
+          {
+            "t_s": 7.6,
+            "op": "camera",
+            "yaw_deg": 225.0,
+            "distance_m": 70.0,
+            "pitch_deg": 37.5,
+            "focus_m": [
+              -302.0,
+              -352.0
+            ]
+          },
+          {
+            "t_s": 8.6,
+            "op": "shot",
+            "name": "shtab_jogo_tras"
+          },
+          {
+            "t_s": 9.4,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 90.0,
+            "pitch_deg": 70.0,
+            "focus_m": [
+              -302.0,
+              -352.0
+            ]
+          },
+          {
+            "t_s": 10.4,
+            "op": "shot",
+            "name": "shtab_cima"
+          }
+        ]
+      }
+    },
+    {
+      "name": "t0p_zero",
+      "about": "(04/11, item 22 T0 com o PDO) o recorte ZERADO no World_TestHills: o chão inteiro tem de sumir (Nanite, sem, Nanite de novo)",
+      "map": "World_TestHills",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          0.0,
+          0.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 45.0
+      },
+      "shots_s": [
+        2.0,
+        3.05,
+        3.25
+      ],
+      "end_s": 3.6,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "z1_nanite_02s",
+            "after_real_s": 2
+          },
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "z1_nanite_45s",
+            "after_real_s": 45
+          },
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "z1_nanite_100s",
+            "after_real_s": 100
+          },
+          {
+            "t_s": 3.0,
+            "op": "pause",
+            "real_s": 101
+          },
+          {
+            "t_s": 3.1,
+            "op": "cvar",
+            "name": "landscape.RenderNanite",
+            "value": "0"
+          },
+          {
+            "t_s": 3.15,
+            "op": "shot",
+            "name": "z2_semnanite_05s",
+            "after_real_s": 5
+          },
+          {
+            "t_s": 3.15,
+            "op": "shot",
+            "name": "z2_semnanite_40s",
+            "after_real_s": 40
+          },
+          {
+            "t_s": 3.15,
+            "op": "pause",
+            "real_s": 41
+          },
+          {
+            "t_s": 3.3,
+            "op": "cvar",
+            "name": "landscape.RenderNanite",
+            "value": "1"
+          },
+          {
+            "t_s": 3.35,
+            "op": "shot",
+            "name": "z3_nanite_volta_05s",
+            "after_real_s": 5
+          },
+          {
+            "t_s": 3.35,
+            "op": "pause",
+            "real_s": 6
+          }
+        ]
+      }
+    },
+    {
+      "name": "t0p_corte",
+      "about": "(04/11, item 22 T0 com o PDO) o recorte de verdade do Arms Dealer no World_TestHills: alto, baixo, de cima; com e sem o Nanite",
+      "map": "World_TestHills",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          282.6,
+          335.7
+        ],
+        [
+          -282.6,
+          -335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "gla_command_center",
+          "player": 0,
+          "at_m": [
+            222.0,
+            308.0
+          ]
+        },
+        {
+          "key": "gla_arms_dealer",
+          "player": 0,
+          "at_m": [
+            258.0,
+            308.0
+          ]
+        }
+      ],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          254.0,
+          308.0
+        ],
+        "distance_m": 32.0,
+        "yaw_deg": 45.0,
+        "pitch_deg": 45.0
+      },
+      "shots_s": [
+        2.0,
+        3.05,
+        3.45
+      ],
+      "end_s": 3.9,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 32.0,
+            "pitch_deg": 45.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 3.0
+          },
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "c1_alto_02s",
+            "after_real_s": 2
+          },
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "c1_alto_45s",
+            "after_real_s": 45
+          },
+          {
+            "t_s": 3.0,
+            "op": "shot",
+            "name": "c1_alto_100s",
+            "after_real_s": 100
+          },
+          {
+            "t_s": 3.0,
+            "op": "pause",
+            "real_s": 101
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 26.0,
+            "pitch_deg": 22.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 3.1
+          },
+          {
+            "t_s": 3.15,
+            "op": "shot",
+            "name": "c2_baixo",
+            "after_real_s": 3
+          },
+          {
+            "t_s": 3.15,
+            "op": "pause",
+            "real_s": 4
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 40.0,
+            "pitch_deg": 75.0,
+            "focus_m": [
+              258.0,
+              300.0
+            ],
+            "t_s": 3.2
+          },
+          {
+            "t_s": 3.25,
+            "op": "shot",
+            "name": "c3_topo",
+            "after_real_s": 3
+          },
+          {
+            "t_s": 3.25,
+            "op": "pause",
+            "real_s": 4
+          },
+          {
+            "t_s": 3.3,
+            "op": "cvar",
+            "name": "landscape.RenderNanite",
+            "value": "0"
+          },
+          {
+            "t_s": 3.35,
+            "op": "shot",
+            "name": "c4_topo_semnanite_05s",
+            "after_real_s": 5
+          },
+          {
+            "t_s": 3.35,
+            "op": "shot",
+            "name": "c4_topo_semnanite_40s",
+            "after_real_s": 40
+          },
+          {
+            "t_s": 3.35,
+            "op": "pause",
+            "real_s": 41
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 32.0,
+            "pitch_deg": 45.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 3.5
+          },
+          {
+            "t_s": 3.55,
+            "op": "shot",
+            "name": "c5_alto_semnanite",
+            "after_real_s": 3
+          },
+          {
+            "t_s": 3.55,
+            "op": "pause",
+            "real_s": 4
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 26.0,
+            "pitch_deg": 22.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 3.6
+          },
+          {
+            "t_s": 3.65,
+            "op": "shot",
+            "name": "c6_baixo_semnanite",
+            "after_real_s": 3
+          },
+          {
+            "t_s": 3.65,
+            "op": "pause",
+            "real_s": 4
+          },
+          {
+            "t_s": 3.7,
+            "op": "cvar",
+            "name": "landscape.RenderNanite",
+            "value": "1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "t0p_custo",
+      "about": "(04/11, item 22 T0 com o PDO) o custo: 40 s na câmera do jogo sobre a base do Arms Dealer, sem pausa; no fim as fotos de antes/depois",
+      "map": "World_TestHills",
+      "seed": 31,
+      "fog": "off",
+      "hud": false,
+      "starts_m": [
+        [
+          282.6,
+          335.7
+        ],
+        [
+          -282.6,
+          -335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "gla_command_center",
+          "player": 0,
+          "at_m": [
+            222.0,
+            308.0
+          ]
+        },
+        {
+          "key": "gla_arms_dealer",
+          "player": 0,
+          "at_m": [
+            258.0,
+            308.0
+          ]
+        }
+      ],
+      "units": [],
+      "camera": {
+        "focus_m": [
+          258.0,
+          308.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        20.0
+      ],
+      "end_s": 42.0,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 32.0,
+            "pitch_deg": 45.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 36.0
+          },
+          {
+            "t_s": 37.0,
+            "op": "shot",
+            "name": "corte_alto"
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 26.0,
+            "pitch_deg": 22.0,
+            "focus_m": [
+              254.0,
+              308.0
+            ],
+            "t_s": 37.5
+          },
+          {
+            "t_s": 38.5,
+            "op": "shot",
+            "name": "corte_baixo"
+          },
+          {
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 80.0,
+            "pitch_deg": 45.0,
+            "focus_m": [
+              0.0,
+              0.0
+            ],
+            "t_s": 39.0
+          },
+          {
+            "t_s": 40.5,
+            "op": "shot",
+            "name": "chao"
+          }
+        ]
+      }
     }
   ]
 }

@@ -195,7 +195,9 @@ def merlon(p, m, A, d, nv, s, z, w, h, n0, n1):
         b.faces.new([fr[i], bk[i], bk[j], fr[j]])
 
 
-def merlons_on(p, pts, nface, z, closed=False, w=1.4, h=0.95, mt=0.6, gap=0.5, corner=0.45, end=0.25, skip=(), segs=None,
+# (04/11, depois de ver no jogo: de perto as ameias ainda puxavam pro castelo medieval) mais baixas e largas, como o bastião de concreto:
+# 0,72 m de altura (era 0,95), 1,6 m de largura, o vão de 0,45 m
+def merlons_on(p, pts, nface, z, closed=False, w=1.6, h=0.72, mt=0.6, gap=0.45, corner=0.45, end=0.25, skip=(), segs=None,
                m='Concrete#merl'):
     """As ameias ao longo do contorno (os segmentos de pts, anti-horário), com a face de fora em nface; coladas umas nas outras com o vão
     fixo 'gap' (a largura se ajusta ±25% pra fechar o segmento); nas quinas ficam a 'corner' da quina (as de um lado não entram nas do
@@ -642,7 +644,7 @@ def tower(p):
                 a = math.radians(yaw)
                 cc = (c[0] - math.sin(a) * du, c[1] + math.cos(a) * du, c[2])
                 p.obox('Dark#t1s', cc, (0.08, 0.26, 1.2), yaw=yaw, pitch=bat, bevel=0.0)
-    battlement(p, octo(TC, T1[1]), T1[3], closed=True, corner=0.3, w=1.1, h=0.8, mt=0.5, gap=0.4, octagon=True, tag='t1')
+    battlement(p, octo(TC, T1[1]), T1[3], closed=True, corner=0.3, w=1.25, h=0.62, mt=0.5, gap=0.38, octagon=True, tag='t1')
     # o 2º degrau
     R2 = octo_tier(p, T2, 2, 't2', rib_w=0.4)
     poly_ring(p, 'Concrete#t2top', octo(TC, T2[1]), -1.3, -0.02, T2[3] - 0.16, T2[3], bevel=0.0)

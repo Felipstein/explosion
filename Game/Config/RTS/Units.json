@@ -3845,7 +3845,7 @@
 					"scale": 1.0,
 					"seats": [
 						{
-							"at_m": [0.7, -0.42, 0.5]
+							"at_m": [0.7, -0.42, 0.95]
 						}
 					]
 				}
@@ -3933,7 +3933,7 @@
 					"scale": 1.0,
 					"seats": [
 						{
-							"at_m": [-1.9, 0.0, 1.03]
+							"at_m": [-0.25, 0.0, 0.85]
 						}
 					]
 				}
@@ -4540,17 +4540,17 @@
 					"wrecked": "/Game/Structures/russia_command_center_v3/SM_Russia_CommandCenter_Wrecked/StaticMeshes/SM_Russia_CommandCenter_Wrecked",
 					"ruin": "/Game/Structures/russia_command_center_v3/SM_Russia_CommandCenter_Ruin/StaticMeshes/SM_Russia_CommandCenter_Ruin",
 					"fire_damaged_m": [
-						[6.08, -5.5, 7.04],
-						[4.08, 12.5, 6.59],
-						[-0.92, 12.5, 6.53],
-						[-6.92, -12.5, 5.67]
+						[-4.92, -12.5, 6.24],
+						[-5.92, 5.5, 8.9],
+						[-9.92, 5.5, 8.97],
+						[5.08, 12.5, 6.3]
 					],
 					"fire_wrecked_m": [
-						[6.08, -5.5, 7.04],
-						[4.08, 12.5, 6.59],
-						[-0.92, 12.5, 6.53],
-						[-6.92, -12.5, 5.67],
-						[11.08, -5.5, 6.88]
+						[-4.92, -12.5, 6.24],
+						[-5.92, 5.5, 8.9],
+						[-9.92, 5.5, 8.97],
+						[5.08, 12.5, 6.3],
+						[-1.92, 12.5, 6.22]
 					]
 				},
 				"flags": [

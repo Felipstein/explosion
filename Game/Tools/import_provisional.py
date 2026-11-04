@@ -103,6 +103,8 @@ SLOTS = {
     # M_Plaster do plugin RTSLook chegar
     'CivPlaster': ((0.49, 0.35, 0.20), 0.9, 0.0, {'Grime': 0.3, 'ToneVariation': 1.0}),
     'CivWood': ((0.107, 0.048, 0.019), 0.8, 0.0, {'Grime': 0.2}),
+    # (04/11) a madeira velha dos postes: cinza-marrom, gasta de sol (os game shots); a CivWood é a marrom-alaranjada das tábuas novas
+    'WoodOld': ((0.085, 0.068, 0.050), 0.88, 0.0, {'Grime': 0.25}),
     'CivMetal': ((0.188, 0.181, 0.155), 0.5, 0.5, {'Grime': 0.25}),
     'CivCloth': ((0.305, 0.216, 0.122), 0.9, 0.0, {'Grime': 0.2}),
     # as carcaças e miudezas do kit (os slots do tanque do Look: carvão e ferrugem)
@@ -191,6 +193,7 @@ MASK_PARAMS['Glass'] = {'CavityDirt': 0.4, 'GlassMask': 1.0}
 # (03/11, item 47: as casas "sem textura, parece lego") o reboco da vila e da GLA envelhecido: a lavagem escura nas frestas e o tijolo de
 # adobe aparecendo onde o reboco caiu (o pé da parede, trechos das quinas, manchas soltas)
 MASK_PARAMS['CivPlaster'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.6, 'Wash': 0.6, 'BrickReveal': 1.0}
+MASK_PARAMS['WoodOld'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.6, 'Wash': 0.5}
 for _k, _v in MASK_PARAMS.items():
     SLOTS[_k][3].update(_v)
 # (31/10) os slots de cada família de modelo do elenco → a instância (o que não está aqui fica com o próprio nome)
@@ -1505,7 +1508,7 @@ def main():
     if os.environ.get('PROV_FACTION_ONLY'):
         # (31/10, o elenco das 3 facções) as instâncias dos slots novos e os modelos do FACTION_MODELS que existirem;
         # PROV_KEYS=china_type99,gla_palace: só essas pastas
-        faction_instances(['UsCore', 'PowerLine', 'UsBody', 'UsConcrete', 'UsPaint', 'GlaTent', 'GlaTankPaint', 'GlaBag', 'GlaPatch',
+        faction_instances(['WoodOld', 'UsCore', 'PowerLine', 'UsBody', 'UsConcrete', 'UsPaint', 'GlaTent', 'GlaTankPaint', 'GlaBag', 'GlaPatch',
                            'GlaRust', 'GlaWood', 'CnBronze', 'CnGranite', 'RuBlue', 'RuPaint', 'RuSteel', 'RuMetal', 'RuConcrete', 'RuRoof', 'RuRed', 'RuWhite',
                            'CnConcrete', 'CnPlinth', 'CnRoof', 'CnMetal', 'CnGold', 'Fire', 'CnTankPaint', 'CnTankCamo', 'CnTankMetal',
                            'GlaEarth', 'GlaNet', 'GlaPaint', 'GlaStripe', 'GlaTile', 'Broken', 'BrokenAdobe'])

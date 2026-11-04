@@ -408,13 +408,18 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     (`docs/elenco/CHINA_PROPAGANDA.md`): a propaganda de hoje é a TV estatal: a emissora no "arco" da sede da CCTV (o laço que lê de
     cima), o telão de LED aceso, as cornetas e as antenas no topo, as faixas de slogan; o do ZH estudado (os octógonos empilhados com as
     placas). Um agente modelando.
-47. ⏳ **Kit civil, carros e casas (NO RUMO):** "aqui já pecou [...] parece jogo de lego de novo, muitas quinas, sem detalhes"; as casas
+47. ✅ **Kit civil, carros e casas (NO RUMO; 04/11 a vila v3 com o reboco envelhecido APROVADA pra 1ª versão):** "aqui já pecou [...] parece jogo de lego de novo, muitas quinas, sem detalhes"; as casas
     "quase, muitas quinas, parece lego, sem detalhes, sem texturas". As miudezas aprovadas. (Junta com o item 20.)
     🔄 (22h15) Um agente refazendo os carros e as casas (v3, em `captures/game/models/civ_v3/`, sem tocar a v2 nem as miudezas): a
     lataria amassada e desbotada com o interior pelo vidro, a frente própria do sedã e do hatch; a mureta comida, a quina gasta, o
     reboco caído mostrando o adobe, o escorrido, a parede fora de prumo; a mesma pegada (o gerador da vila não muda).
+    (04/11 0h) **No jogo:** o kit v3 (as casas, o muro, a picape e a carcaça; re-exportado com a grade nova e a máscara em todos os
+    materiais) e o reboco envelhecido no material (`BrickReveal` + a lavagem no CivPlaster: o tijolo de adobe onde o reboco caiu, no pé
+    da parede, nos trechos de quina e em manchas). A v2 guardada em `captures/look/civil_glb_v2_guardado/`. O antes e o depois na mesma
+    cena: `captures/game/vila_rua_perto_salt2_v65/ab_vila.jpg`. Os carros novos (o sedã, o hatch, a van, o caminhão) e a casa em ruína
+    esperam o gerador da vila (o `WorldVillage.cpp`, tabela em `docs/KIT_CIVIL_V2.md` §3).
 48. ✅ **GLA, quartel (REFAZER).** (03/11 noite) O v5 (o do ZH mudado, o pedido dele) no jogo: a rachadura da cúpula alargada (lia como risco), o dano, a malha do tiro (`chain61`).
-49. ⏳ **GLA, Palace (REFAZER):** "sai um pouco dessa de tudo ser mudado [murado?] assim".
+49. ✅ **GLA, Palace (REFAZER):** (04/11, APROVADO pra 1ª versão: o v2 aberto no pódio) "sai um pouco dessa de tudo ser mudado [murado?] assim".
 50. ✅ **GLA, Stinger Site (REFAZER).** (03/11) No jogo o v5, o alçapão aprovado (o padrão, chão e ar); e o SAM Site novo (só antiaéreo).
 51. ✅ **GLA, Supply Stash (REFAZER).** (03/11) No jogo o v5, o poço do contrabando aprovado; e o Bunker novo (3 vagas). (03/11 noite, o Felipe: "no bunker do GLA lá tem que aparecer a unidade, tropa dentro") a tropa de pé no ninho do teto, mirando e
     atirando (`RTSMatchSubsystem.cpp`: no prédio o passageiro fica à mostra; no veículo segue escondido), a prova em
@@ -428,10 +433,10 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     (23h50) Os 4 da GLA prontos (`model_gla_*_v2.py`, a folha `captures/game/models/gla_v2_folha.jpg`): a tenda (a lona de pelo de
     cabra no slot novo `GlaTent`), o palácio no pódio em cruz com as 5 cúpulas, o trevo das redes, o mercado sob a rede. A minha crítica:
     o Stinger Site e o Supply Stash podem ler como moita verde de cima (a rede esconde o que tem embaixo). No jogo pelo `chain50`.
-53. ⏳ **Rússia, Kazarma (NO RUMO):** "mude algumas coisas, parece um prédio normal".
-54. ⏳ **Rússia, BMPT e T-14 (REFAZER):** "muito parecido com o outro tanque": a mesma regra do item 41 (cada blindado com a silhueta
+53. ✅ **Rússia, Kazarma (NO RUMO):** (04/11, APROVADA pra 1ª versão: a v2) "mude algumas coisas, parece um prédio normal".
+54. ✅ **Rússia, BMPT e T-14 (REFAZER):** (04/11, APROVADOS pra 1ª versão: os v2) "muito parecido com o outro tanque": a mesma regra do item 41 (cada blindado com a silhueta
     própria de cima, no casco também), contra o T-90M.
-55. ⏳ **Rússia, Shtab (REFAZER DE NOVO, 03/11: o v2 "parece uma casa civil, sem originalidade, sem criatividade, sem base, não é icônico, fugiu de tudo que tínhamos feito"; refazer pelo método dos aprovados: o QG do ZH/da família como base, o elemento-assinatura, conceito no Atelier antes do modelo):** "parece uma prisão, mas dá pra reaproveitar o modelo pra outra coisa".
+55. ✅ **Rússia, Shtab (04/11, o v3 APROVADO pra 1ª versão; REFAZER DE NOVO, 03/11: o v2 "parece uma casa civil, sem originalidade, sem criatividade, sem base, não é icônico, fugiu de tudo que tínhamos feito"; refazer pelo método dos aprovados: o QG do ZH/da família como base, o elemento-assinatura, conceito no Atelier antes do modelo):** "parece uma prisão, mas dá pra reaproveitar o modelo pra outra coisa".
     (03/11 noite) A folha das 4 assinaturas na família aprovada (a pirâmide do radar, a torre de Shukhov, o radar Big Bird, o disco
     brutalista): `captures/concept/171_shtab_da_russia_4_icones/raiz_r1_gpt.png`, enviada; a minha aposta é a 1. REPROVADAS ("um lixo ainda [...] parece que veio de outro jogo"). 3 voltas sem acertar: perguntar o rumo antes da 4ª.
     (03/11 ~19h30) A 4ª volta pelo rumo dele ("quero o Rise of the Reds e o Red Alert soviéticos pra comparar"; "claro que não é pra
@@ -442,16 +447,16 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     (03/11 noite) No jogo (`chain64`): 2 voltas do agente (as ameias baixas e largas, a lança do guindaste levantada pra ler na
     câmera, a Base de 551 pra 423 mil triângulos); o radar gira, o guindaste parado no lugar. A foto
     `captures/game/elenco_russia_tour_v64/shtab_v3_no_jogo.jpg`. Falta: as ameias ainda puxam pro castelo de perto; a estrela chata.
-56. 🔄 **USA, Strategy Center A e B (REFAZER):** "sem criatividade". (17h40) Junta com o Pentágono: o QG de inteligência = o Pentágono
+56. ✅ **USA, Strategy Center A e B (REFAZER):** (04/11, o v3 APROVADO pra 1ª versão) "sem criatividade". (17h40) Junta com o Pentágono: o QG de inteligência = o Pentágono
     melhorado com as radomos (o agente termina o campo de radomos; depois a fusão). (17h55, o Felipe vendo no jogo) "o pentágono com a
     bola ficou muito bom, dá pra usar como o centro de inteligência, mas tem que melhorar, tirar o portão, mudar algumas coisas, mais
     icônico": o Strategy Center = o Pentágono sem o portão, a radomo grande dominante no pátio e 2 menores nas alas (o agente). A ideia nova em `docs/elenco/USA_STRATEGY_CENTER.md`: o campo de radomos
     (as "bolas de golfe" geodésicas brancas da inteligência americana) com o bunker da sala de guerra; um agente modelando (v3).
-57. 🔄 **USA, Paladin (REFAZER):** "já falei sobre ele" (o item 41). O mesmo agente: `model_usa_paladin_v2.py` pela regra de
+57. ✅ **USA, Paladin (REFAZER):** (04/11, o v2 APROVADO pra 1ª versão) "já falei sobre ele" (o item 41). O mesmo agente: `model_usa_paladin_v2.py` pela regra de
     `docs/elenco/SILHUETAS_USA.md`, com a folha "quem é quem" e o teste das silhuetas pretas.
     O Linebacker B foi aprovado na galeria; o "probleminha na parte de baixo" do item 41 fica como melhoria dele.
 
-58. ⏳ (01/11 19h40, o Felipe) **o tanque da GLA (o Scorpion) do zero**: "tem bolhas que parece que está doente, não parece sacos de areia, o
+58. ✅ (01/11 19h40, o Felipe; 04/11 APROVADO pra 1ª versão) **o tanque da GLA (o Scorpion) do zero**: "tem bolhas que parece que está doente, não parece sacos de areia, o
     pneu também não está posicionado na diagonal como no game shot [...] parece que foi feito naquela versão antiga mal feita; precisa de
     uma modelagem nova, bem top, como você fez tudo até agora, nada de quinas, nada de jogo de lego, detalhes top, texturas top". O alvo:
     o game shot r1 (os tanques da GLA à esquerda) e a ficha `docs/concept/units/gla_mbt_sheet.webp`; os sacos de areia de verdade (a
@@ -561,7 +566,7 @@ alvo). A/B no `chain47`.
       - com o sol a 25° a sombra do prédio pega o telhado embaixo, mas não alcança o pano, que está mais alto.
       A prova: `captures/game/bandeira_sombra_baixo/prova_sombra_no_pano.jpg`. Se ele ainda achar claro demais: baixar a translucidez
       na sombra ou o branco do pano (0,85 → 0,75), com A/B.
-63. ⏳ (03/11) **O Supply Dock (o depósito neutro do mapa, de onde a facção tira o dinheiro) refeito, com VARIAÇÕES TOP**:
+63. ✅ (03/11; 04/11 o básico APROVADO pra 1ª versão) **O Supply Dock (o depósito neutro do mapa, de onde a facção tira o dinheiro) refeito, com VARIAÇÕES TOP**:
     - o pedido: "precisa ser muito bem legal, investido, porque o outro foi feito como se fosse um jogo de lego, feio, sem criatividade";
     - "variações tops que fazem sentido, tanto pra mapa quanto pra tamanhos": por tipo de mapa (deserto, cidade, porto, montanha...) e
       por tamanho (o pequeno, o médio, o grande, com a carga que acaba);
@@ -578,8 +583,17 @@ alvo). A/B no `chain47`.
       suprimento e ficou parado, cheio das caixas do C&C; nunca repõe) e a 1ª folha no Atelier, as 4 famílias (o cargueiro encalhado,
       o trem parado, o avião de carga caído, o pátio do pórtico): `captures/concept/160_supply_dock_4_familias/raiz_r1_gpt.png`,
       mostrada; falta ele escolher. Depois, a folha dos tamanhos (50, 150 e 400 caixas, como o ZH) da família escolhida.
-64. ⏳ (03/11) **As torres de energia e os postes do mapa refeitos** (o mesmo "lego"), junto com o kit civil v3: as variações (o poste de
+64. ✅ (03/11) **As torres de energia e os postes do mapa refeitos** (o mesmo "lego"), junto com o kit civil v3: as variações (o poste de
     madeira, o de concreto, a torre de alta tensão de treliça), mantendo os isoladores onde os fios ligam (o `RTSWireSystem`).
+    (04/11) Feitos (um agente; a folha `captures/game/models/civ_v3/folha_postes.jpg`):
+    - o poste de madeira v3 (`model_civ_pole.py`: a tora rachada e levemente torta, a cruzeta gasta, os isoladores de vidro) e o com
+      transformador, na madeira velha cinza-marrom dos game shots (o slot novo `WoodOld`);
+    - o de concreto em H com e sem a luminária (`model_civ_pole_concrete.py`), trocável com o de madeira (os mesmos 4 pontos do fio);
+    - a torre de alta tensão de treliça de 26,3 m (`model_civ_pylon.py`; os 6 fios e o cabo-guarda em `pylon_sockets.json`).
+    O de madeira e o com transformador já estão na vila (`chain67`). **Pro dono do WorldForge:**
+    - o poste de concreto na rua da cidade (`civ_pole_concrete`, a luminária em 1 a cada 2–3, virada pro asfalto);
+    - a torre no campo (`civ_pylon`, 6,8 × 6,8 m, 100–120 m entre torres, ≥30 m das casas);
+    - o `RTSWireSystem` aceitar os 7 pontos da torre (o fio mais grosso).
 
 **(19h50) A rodada grande dos itens 42 e 43** (`chain41`): os 20 modelos que já existem com a estrela aprovada e a esteira sem furos
 (a Rússia: a fábrica, o Instituto, o Pantsir fixo, o T-90M, o TOS-1A, o Pantsir, o IMR; a China: o quartel, o QG, o depósito, a fábrica,
