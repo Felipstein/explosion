@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { PROVIDERS, hasKey } from './providers.mjs';
 import os from 'node:os';
-import { readSettings, writeSettings, publicKeys, key, SETTINGS_DIR } from './settings.mjs';
+import { readSettings, writeSettings, publicKeys, key, SETTINGS_DIR, readError } from './settings.mjs';
 
 // ligado pela ponte MCP de uma sessão, o serviço pode vir com um ambiente enxuto: completa o básico pela
 // pasta do usuário, senão o Codex e o Claude (que rodam como filhos dele) não acham o login
@@ -39,8 +39,11 @@ const MODELS = {
   // som pela ElevenLabs (efeitos sonoros, até 30 s, com loop); a API cobra ~US$ 0,12 por minuto de som
   sfx:   { name: 'ElevenLabs Sound Effects', short: 'Som', provider: 'eleven', model: CONFIG.sfxModel || 'eleven_text_to_sound_v2', cost: 0.002, perSecond: true, audio: true },
   fakeaudio: { name: 'Som de teste', short: 'Teste', provider: 'fakeaudio', model: 'fake', cost: 0, audio: true },
+  // voz pela ElevenLabs: criar a voz pela descrição (uma chamada devolve algumas candidatas) e falar o texto com ela
+  vdesign: { name: 'ElevenLabs Voice Design', short: 'Voz', provider: 'elevenvoice', model: CONFIG.voiceDesignModel || 'eleven_ttv_v3', cost: 0.01, audio: true },
+  tts:   { name: 'ElevenLabs Text to Speech', short: 'Fala', provider: 'eleventts', model: 'eleven_v3', cost: 0.00008, perChar: true, audio: true },
 };
-const PAR = Object.assign({ codex: 2, gemini: 3, openai: 3, eleven: 3, fake: 4, fakeaudio: 4 }, CONFIG.parallel || {});
+const PAR = Object.assign({ codex: 2, gemini: 3, openai: 3, eleven: 3, elevenvoice: 3, eleventts: 3, fake: 4, fakeaudio: 4 }, CONFIG.parallel || {});
 
 const log = (...a) => fs.appendFileSync(path.join(DATA, 'atelier.log'), new Date().toISOString() + ' ' + a.join(' ') + '\n');
 
@@ -68,8 +71,9 @@ const status = r => r.closed ? 'closed' : items(r).some(x => x.it.st === 'q' || 
 const slug = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'pedido';
 const lines = p => Array.isArray(p) ? p : String(p || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
 // som cobra por segundo: sem duração fixada, a ElevenLabs escolhe (conta ~5 s na estimativa)
-const costOf = (m, r) => MODELS[m].perSecond ? MODELS[m].cost * ((r && r.audio && r.audio.duration) || 5) : MODELS[m].cost;
-const newItem = (m, r) => ({ m, st: 'q', seq: SEQ++, file: null, err: '', took: 0, cost: costOf(m, r), pick: false, rej: false, seen: false });
+const costOf = (m, r, text) => MODELS[m].perSecond ? MODELS[m].cost * ((r && r.audio && r.audio.duration) || 5)
+  : MODELS[m].perChar ? MODELS[m].cost * Math.max(1, String(text || (r && r.root || []).join(' ')).length) : MODELS[m].cost;
+const newItem = (m, r, text) => ({ m, st: 'q', seq: SEQ++, file: null, err: '', took: 0, cost: costOf(m, r, text), pick: false, rej: false, seen: false });
 
 const saveTimers = new Map();
 function save(r) {
@@ -92,13 +96,18 @@ function nextFolder(title, media) {
   return `captures/${folderBase(media)}/${String(Math.max(media === 'audio' ? 0 : 50, ...nums) + 1).padStart(2, '0')}_${slug(title)}/`;
 }
 
-function create(b) {
+async function create(b) {
   if (!b.title) throw new Error('falta o título');
-  if (!b.prompt) throw new Error('falta o prompt');
+  if (!b.prompt && b.kind !== 'speech') throw new Error('falta o prompt');
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  const media = b.kind === 'sound' || b.media === 'audio' ? 'audio' : 'image';
+  // voz: "voice" cria a voz pela descrição (o prompt); "speech" faz uma voz da biblioteca falar (uma fala por item)
+  const voiceMode = b.kind === 'voice' ? 'design' : b.kind === 'speech' ? 'speech' : null;
+  const media = b.kind === 'sound' || b.media === 'audio' || voiceMode ? 'audio' : 'image';
+  if (voiceMode === 'speech' && !b.voice) throw new Error('falta a voz (o id ou o nome de uma voz da biblioteca)');
+  if (voiceMode === 'speech' && !(b.items && b.items.length) && !b.prompt) throw new Error('falta o que falar');
+  if (voiceMode === 'speech' && !b.prompt) b.prompt = '{item}';
   const folder = (b.folder || nextFolder(b.title, media)).replace(/\\/g, '/').replace(/\/?$/, '/');
-  const slots = slotsOf(b.models || (media === 'audio' ? { sfx: b.variations || 4 } : { gpt: 1 }));
+  const slots = slotsOf(b.models || (voiceMode === 'design' ? { vdesign: 3 } : voiceMode === 'speech' ? { tts: b.variations || 2 } : media === 'audio' ? { sfx: b.variations || 4 } : { gpt: 1 }));
   if (slots.some(m => !!MODELS[m].audio !== (media === 'audio'))) throw new Error(media === 'audio' ? 'pedido de som só usa modelos de som' : 'modelo de som num pedido de imagem');
   const dir = abs(folder);
   fs.mkdirSync(media === 'audio' ? dir : path.join(dir, '_anexos'), { recursive: true });
@@ -122,8 +131,14 @@ function create(b) {
     r.media = 'audio';
     r.audio = { duration: dur, loop: !!b.loop, influence: b.influence != null ? Math.min(1, Math.max(0, +b.influence)) : 0.3 };
   }
+  if (voiceMode === 'design') r.voice = { mode: 'design', sample: String(b.sample || '').trim(), model: MODELS.vdesign.model };
+  if (voiceMode === 'speech') {
+    const v = await findVoice(b.voice);
+    if (!v) throw new Error('não achei essa voz na sua biblioteca da ElevenLabs: ' + b.voice);
+    r.voice = { mode: 'speech', voiceId: v.id, voiceName: v.name, model: b.ttsModel === 'eleven_v4' ? 'eleven_v4' : 'eleven_v3' };
+  }
   if (b.items && b.items.length) {
-    Object.assign(r, { kind: 'batch', slots, items: b.items.map(name => ({ name, cells: slots.map(m => newItem(m, r)) })) });
+    Object.assign(r, { kind: 'batch', slots, items: b.items.map(name => ({ name, cells: slots.map(m => newItem(m, r, name)) })) });
   } else {
     r.ramos = [{ id: 'a', name: b.branch || 'Raiz', slots, prompt: null, rounds: [] }];
     addRound(r, r.ramos[0]);
@@ -135,7 +150,8 @@ function create(b) {
 
 function slotsOf(models) {
   const map = { gpt: 'gpt', gemini_pro: 'pro', pro: 'pro', gemini_flash: 'flash', flash: 'flash', fake: 'fake', test: 'fake',
-    sfx: 'sfx', sound: 'sfx', elevenlabs: 'sfx', fakeaudio: 'fakeaudio', test_sound: 'fakeaudio' };
+    sfx: 'sfx', sound: 'sfx', elevenlabs: 'sfx', fakeaudio: 'fakeaudio', test_sound: 'fakeaudio',
+    vdesign: 'vdesign', voice: 'vdesign', tts: 'tts', speech: 'tts' };
   const out = [];
   for (const [k, n] of Object.entries(models)) { const m = map[k]; if (!m) throw new Error('modelo desconhecido: ' + k); for (let i = 0; i < Math.min(+n || 0, MODELS[m].audio ? 8 : 4); i++) out.push(m); }
   if (!out.length) throw new Error('nenhum modelo escolhido');
@@ -157,7 +173,7 @@ function promptFor(x) {
 function outBase(x) {
   const dir = abs(x.r.folder);
   const m = x.it.m;
-  if (x.r.kind === 'batch') return path.join(dir, `${slug(x.row.name)}_${m}${x.r.slots.filter(s => s === m).length > 1 ? '_' + (x.ci + 1) : ''}`);
+  if (x.r.kind === 'batch') return path.join(dir, `${x.r.voice ? String(x.ri + 1).padStart(2, '0') + '_' : ''}${slug(x.row.name).slice(0, 48)}_${m}${x.r.slots.filter(s => s === m).length > 1 ? '_' + (x.ci + 1) : ''}`);
   const same = x.rd.items.filter(i => i.m === m);
   const k = same.length > 1 ? '_' + (same.indexOf(x.it) + 1) : '';
   return path.join(dir, `${slug(x.rm.name)}_r${x.n + 1}_${m}${k}`);
@@ -176,8 +192,11 @@ function start(x) {
   const ac = new AbortController(); running.set(it, ac);
   changed(r);
   const attachments = r.att.map(a => abs(a.file));
-  PROVIDERS[M.provider]({ prompt: promptFor(x), attachments, outBase: outBase(x), model: M.model, aspect: r.aspect, audio: r.audio, signal: ac.signal })
-    .then(file => { it.st = 'd'; it.file = rel(file); it.at = Date.now(); it.took = Math.round((it.at - it.t0) / 1000); noteOk(it.m); log('pronta', x.k, it.file, it.took + 's'); })
+  // a criação de voz devolve várias candidatas numa chamada só: os itens da mesma rodada dividem a chamada
+  const group = x.rd ? `${r.id}:${x.rm.id}:${x.n}` : x.k, index = x.rd ? x.rd.items.filter(i => i.m === it.m).indexOf(it) : 0;
+  PROVIDERS[M.provider]({ prompt: promptFor(x), attachments, outBase: outBase(x), model: (r.voice && r.voice.model) || M.model, aspect: r.aspect, audio: r.audio, voice: r.voice, group, index, signal: ac.signal })
+    .then(out => { const file = typeof out === 'string' ? out : out.file; if (typeof out === 'object') Object.assign(it, out.extra || {});
+      it.st = 'd'; it.file = rel(file); it.at = Date.now(); it.took = Math.round((it.at - it.t0) / 1000); noteOk(it.m); log('pronta', x.k, it.file, it.took + 's'); })
     .catch(e => { it.st = 'f'; it.err = String(e.message || e); it.at = Date.now(); noteLimit(it.m, it.err, it.at); log('falhou', x.k, it.err); })
     .finally(() => { running.delete(it); if (R.has(r.id)) { save(r); changed(r); } pump(); });
 }
@@ -216,7 +235,8 @@ function claudeContext(r, text, selKey) {
   const L = [];
   L.push('Você é o diretor de arte dentro do Atelier, o app do Felipe pra gerar imagens no GPT e no Gemini pro jogo dele, um RTS estilo C&C Zero Hour moderno (câmera de RTS vista de cima; jogabilidade antes do realismo; ancorar sempre na raiz aprovada, nunca encadear derivadas).');
   L.push('Responda em português, curto e direto, como profissional: diga o que vê e o que mudaria, com motivo.');
-  if (r.media === 'audio') L.push('ESTE PEDIDO É DE SOM (efeitos da ElevenLabs). Você não consegue ouvir os arquivos de áudio: não tente abri-los. Ajude no prompt (em inglês, descrevendo fonte, material, distância, ambiente, ataque e cauda), na duração e no loop, e no que pedir na próxima rodada; o julgamento de ouvido é dele.');
+  if (r.voice) L.push(r.voice.mode === 'design' ? 'ESTE PEDIDO CRIA UMA VOZ pela descrição (ElevenLabs Voice Design): o prompt é a descrição da voz, em inglês (quem é, idade, timbre, sotaque, ritmo, o jeito de falar, onde ela soa: rádio, campo, sala). Você não ouve os arquivos; ajude na descrição.' : `ESTE PEDIDO FAZ A VOZ "${r.voice.voiceName}" FALAR (ElevenLabs ${r.voice.model}); cada item é uma fala, em inglês, e aceita tags de emoção entre colchetes ([shouting], [whispering], [confident], [under his breath]). Você não ouve os arquivos; ajude no texto e nas tags.`);
+  else if (r.media === 'audio') L.push('ESTE PEDIDO É DE SOM (efeitos da ElevenLabs). Você não consegue ouvir os arquivos de áudio: não tente abri-los. Ajude no prompt (em inglês, descrevendo fonte, material, distância, ambiente, ataque e cauda), na duração e no loop, e no que pedir na próxima rodada; o julgamento de ouvido é dele.');
   L.push(`\nPedido: ${r.title} (sessão ${r.src}), pasta ${r.folder}${r.audio ? ` · duração ${r.audio.duration ? r.audio.duration + ' s' : 'automática'}${r.audio.loop ? ' · loop' : ''} · fidelidade ao prompt ${r.audio.influence}` : ''}`);
   L.push('Prompt da raiz:\n' + r.root.join('\n'));
   L.push('\nAnexos, na ordem em que vão pro gerador (image 1, image 2...):');
@@ -264,10 +284,30 @@ function askClaude(r, text, selKey) {
   p.stdin.end(claudeContext(r, text, selKey));
 }
 
+/* ---------- vozes da biblioteca dele na ElevenLabs (as guardadas pelo Atelier e as prontas), lidas no máximo 1x por minuto ---------- */
+const VOICES = { at: 0, list: [] };
+async function listVoices() {
+  const k = key('elevenlabs'); if (!k) return [];
+  if (VOICES.list.length && Date.now() - VOICES.at < 60000) return VOICES.list;
+  const res = await fetch('https://api.elevenlabs.io/v2/voices?page_size=100', { headers: { 'xi-api-key': k.value } });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`ElevenLabs ${res.status}: não li as vozes`);
+  const order = { generated: 0, cloned: 1, professional: 2, premade: 3 };
+  VOICES.list = (j.voices || []).map(v => ({ id: v.voice_id, name: v.name, category: v.category, description: v.description || (v.labels ? Object.values(v.labels).join(', ') : ''), preview: v.preview_url || null }))
+    .sort((a, b) => (order[a.category] ?? 2) - (order[b.category] ?? 2) || a.name.localeCompare(b.name));
+  VOICES.at = Date.now();
+  return VOICES.list;
+}
+async function findVoice(ref) {
+  const list = await listVoices();
+  const t = String(ref).trim().toLowerCase();
+  return list.find(v => v.id === ref) || list.find(v => v.name.toLowerCase() === t) || list.find(v => v.name.toLowerCase().startsWith(t)) || null;
+}
+
 /* ---------- uso: quanto cada conta já gastou e se bateu o limite ----------
    Só a ElevenLabs diz o uso de verdade (créditos do mês). O Gemini não informa cota pela chave e a conta
    do ChatGPT não informa o %: deles vem o que o próprio Atelier contou e o aviso quando bate o limite. */
-const ACCOUNT = { gpt: 'gpt', pro: 'gemini', flash: 'gemini', sfx: 'eleven' };
+const ACCOUNT = { gpt: 'gpt', pro: 'gemini', flash: 'gemini', sfx: 'eleven', vdesign: 'eleven', tts: 'eleven' };
 const LIMITS = { gpt: null, gemini: null, eleven: null };
 let ELEVEN = { at: 0, data: null }; // o uso da conta da ElevenLabs, lido no máximo 1x por minuto
 function noteLimit(m, err, at) {
@@ -407,16 +447,32 @@ const TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'
 
 const routes = {
   'POST /api/open': b => { const r = R.get(b.id); if (!r) throw new Error('pedido não existe'); spawn('explorer.exe', [abs(r.folder).replace(/\//g, '\\')], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
-  'GET /api/health': () => ({ ok: true, pid: process.pid, boot: BOOT, repo: REPO, gptVia: readSettings().gptVia, models: Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { ...m, ready: m.provider === 'gemini' ? hasKey('gemini') : m.provider === 'openai' ? hasKey('openai') : m.provider === 'eleven' ? hasKey('elevenlabs') : m.provider === 'codex' ? CODEX.loggedIn !== false : true }])) }),
+  'GET /api/health': () => ({ ok: true, pid: process.pid, boot: BOOT, repo: REPO, gptVia: readSettings().gptVia, models: Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, { ...m, ready: m.provider === 'gemini' ? hasKey('gemini') : m.provider === 'openai' ? hasKey('openai') : /^eleven/.test(m.provider) ? hasKey('elevenlabs') : m.provider === 'codex' ? CODEX.loggedIn !== false : true }])) }),
   'GET /api/folders': (b, q) => listFolders(q.get('media')),
   'GET /api/usage': () => usage(),
+  'GET /api/voices': () => listVoices(),
+  // guarda a voz candidata escolhida na biblioteca da ElevenLabs dele; dali ela fala qualquer texto
+  'POST /api/voice/save': async b => {
+    const x = byKey(b.key); if (!x || !x.it.gvid) throw new Error('essa não é uma voz candidata');
+    if (x.it.voiceId) return { voiceId: x.it.voiceId, name: x.it.voiceName };
+    const k = key('elevenlabs'); if (!k) throw new Error('falta a chave da ElevenLabs');
+    const name = String(b.name || x.r.title).trim().slice(0, 60);
+    const others = items(x.r).filter(y => y.it.gvid && y.it !== x.it && y.it.seen).map(y => y.it.gvid);
+    const res = await fetch('https://api.elevenlabs.io/v1/text-to-voice', { method: 'POST', headers: { 'xi-api-key': k.value, 'content-type': 'application/json' },
+      body: JSON.stringify({ voice_name: name, voice_description: promptFor(x).slice(0, 1000), generated_voice_id: x.it.gvid, labels: { atelier: x.r.id }, played_not_selected_voice_ids: others }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${String((j.detail && (j.detail.message || j.detail)) || '').slice(0, 200)}`);
+    x.it.voiceId = j.voice_id; x.it.voiceName = name; x.it.pick = true;
+    VOICES.at = 0; save(x.r); changed(x.r); log('voz guardada', name, j.voice_id, 'de', x.k);
+    return { voiceId: j.voice_id, name };
+  },
   'POST /api/pick-folder': b => pickFolder(b.start),
   'GET /api/settings': async () => { await codexStatus(); return settingsView(); },
   'POST /api/settings': b => { writeSettings(b); log('configurações salvas', 'gpt via', readSettings().gptVia); for (const r of R.values()) changed(r); return settingsView(); },
   'POST /api/settings/test': b => testProvider(b.provider, b.key),
   'POST /api/codex-login': () => { spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'start', '"Codex login"', 'cmd', '/k', 'codex login'], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
   'GET /api/requests': () => [...R.values()].sort((a, b) => b.created.localeCompare(a.created)).map(view),
-  'POST /api/requests': b => view(create(b)),
+  'POST /api/requests': async b => view(await create(b)),
   'GET /api/request': (b, q) => { const r = R.get(q.get('id')); if (!r) throw new Error('pedido não existe'); return q.get('text') ? { text: summary(r) } : view(r); },
   'POST /api/round': b => { const r = R.get(b.id); if (!r || r.kind === 'batch') throw new Error('pedido não existe'); const rm = ramoOf(r, b.branch);
     if (b.prompt) rm.prompt = lines(b.prompt); addRound(r, rm, b.models ? slotsOf(b.models) : null); save(r); changed(r); return view(r); },
@@ -527,4 +583,4 @@ server.on('error', e => { if (e.code === 'EADDRINUSE') { console.log('Atelier j�
 server.listen(PORT, '127.0.0.1', () => {
   log('rodando', PORT, 'pid', process.pid, 'pedidos', R.size);
   const keys = Object.entries(publicKeys()).filter(([, v]) => v.set).map(([k]) => k);
-  log('configurações de', SETTINGS_DIR, '· chaves:', keys.join(', ') || 'nenhuma', '· GPT via', readSettings().gptVia); console.log(`Atelier em http://127.0.0.1:${PORT}`); pump(); });
+  log('configurações de', SETTINGS_DIR, '· chaves:', keys.join(', ') || 'nenhuma', '· GPT via', readSettings().gptVia, readError ? `· ERRO AO LER: ${readError}` : ''); console.log(`Atelier em http://127.0.0.1:${PORT}`); pump(); });

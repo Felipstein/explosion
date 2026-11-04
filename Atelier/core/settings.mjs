@@ -1,23 +1,41 @@
 // Configurações do Atelier: por onde o GPT sai (conta do ChatGPT pelo Codex, ou chave da API) e as
-// chaves. Ficam em %APPDATA%\Atelier\settings.json, fora do repositório; a tela nunca recebe a chave
+// chaves. Ficam em %USERPROFILE%\.atelier\settings.json, fora do repositório; a tela nunca recebe a chave
 // inteira de volta, só os 4 últimos caracteres.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// a pasta vem da pasta do usuário, não só do APPDATA: o serviço às vezes é ligado pela ponte MCP de uma
-// sessão, com um ambiente enxuto sem APPDATA, e aí as chaves "sumiam" (02/11)
-export const SETTINGS_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Atelier');
+// As configurações moram na pasta do usuário, fora do AppData (03/11). O app do Claude é empacotado e redireciona
+// o AppData de tudo o que ele abre (as sessões e o serviço ligado pela ponte MCP delas) pra uma pasta só dele
+// (AppData\Local\Packages\Claude_*\LocalCache\Roaming); o Atelier.exe aberto pelo Windows procurava no AppData de
+// verdade e não achava as chaves salvas por esse caminho. Na pasta do usuário (como o ~/.codex) os dois enxergam o
+// mesmo arquivo. O arquivo antigo do AppData, se houver, é copiado pra cá na primeira leitura.
+export const SETTINGS_DIR = path.join(os.homedir(), '.atelier');
 const DIR = SETTINGS_DIR;
 const FILE = path.join(DIR, 'settings.json');
 const LEGACY = path.join(DIR, 'keys.json');
+const OLD_DIRS = [...new Set([process.env.APPDATA, path.join(os.homedir(), 'AppData', 'Roaming')].filter(Boolean).map(d => path.join(d, 'Atelier')))];
+
+function migrateOld() {
+  if (fs.existsSync(FILE) || fs.existsSync(LEGACY)) return;
+  for (const d of OLD_DIRS) for (const name of ['settings.json', 'keys.json']) {
+    const old = path.join(d, name);
+    if (!fs.existsSync(old)) continue;
+    fs.mkdirSync(DIR, { recursive: true });
+    fs.copyFileSync(old, path.join(DIR, name));
+  }
+}
 const ENV = { gemini: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'], openai: ['OPENAI_API_KEY'], elevenlabs: ['ELEVENLABS_API_KEY', 'XI_API_KEY'] };
 
 let cache = null, readAt = 0;
+// o erro da última leitura (sem o arquivo não é erro): o serviço registra ao ligar, pra a chave "sumida" ter causa
+export let readError = null;
 export function readSettings() {
   if (cache && Date.now() - readAt < 3000) return cache;
+  try { migrateOld(); } catch {}
   let s = {};
-  try { s = JSON.parse(fs.readFileSync(FILE, 'utf8')); } catch {}
+  try { s = JSON.parse(fs.readFileSync(FILE, 'utf8')); readError = null; }
+  catch (e) { readError = e.code === 'ENOENT' ? null : `${e.code || ''} ${e.message || e}`.trim(); }
   if (!s.keys) { try { s.keys = JSON.parse(fs.readFileSync(LEGACY, 'utf8')); } catch { s.keys = {}; } }
   s.gptVia = s.gptVia === 'api' ? 'api' : 'codex';
   cache = s; readAt = Date.now();

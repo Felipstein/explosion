@@ -83,7 +83,8 @@ Fontes: [preços de imagem 2026, IntuitionLabs](https://intuitionlabs.ai/article
 - **Configurações** (botão de controles no topo, ou clicar num modelo "sem chave"): o GPT sai pela
   conta do ChatGPT (Codex) ou pela chave da API, à escolha dele; as chaves da OpenAI e do Gemini se
   colam ali, com **Testar** (lista os modelos com a chave, sem gerar imagem) e Apagar. Ficam em
-  `%APPDATA%\Atelier\settings.json`, fora do repositório (`core/settings.mjs`); a tela só recebe os
+  `%USERPROFILE%\.atelier\settings.json`, fora do repositório (`core/settings.mjs`; até 03/11 era o AppData, ver
+  "as chaves sumiram de novo"); a tela só recebe os
   4 últimos caracteres. A variável de ambiente vale se não houver chave salva.
 - **Pasta do pedido:** um seletor, não texto: a lista das pastas de `captures/concept` (a mais
   nova primeiro, com miniatura, quantidade e data, com busca), "Nova pasta" com o próximo número no
@@ -182,3 +183,66 @@ o detalhe; `GET /api/usage`):
   serviço completa `USERPROFILE`, `HOME`, `APPDATA` e `LOCALAPPDATA` pros filhos (Codex, Claude).
   Ao ligar, o registro (`captures/atelier/atelier.log`) diz de onde leu as configurações e quais
   chaves achou.
+
+## As chaves "sumiram" de novo (03/11): a causa de verdade
+
+- **Causa:** o app do Claude no Windows é empacotado e **redireciona o AppData** de tudo o que ele abre (as
+  sessões e o serviço ligado pela ponte MCP delas) pra uma pasta só dele:
+  `AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Atelier`. As chaves salvas com o serviço ligado
+  por uma sessão foram parar lá. O Atelier.exe aberto pelo Windows procura no AppData de verdade e não acha nada
+  (o registro dizia "chaves: nenhuma" no mesmo caminho em que a sessão via as três). Por isso "funcionava" quando
+  uma sessão ligava o serviço e "sumia" quando ele abria o app.
+- **Conserto:** as configurações moram em **`%USERPROFILE%\.atelier\settings.json`** (fora do AppData, como o
+  `~/.codex`), que os dois enxergam. Na primeira leitura, o arquivo antigo do AppData (se aparecer) é copiado pra
+  lá. Ao ligar, se a leitura falhar por outro motivo que não "não existe", o registro mostra `ERRO AO LER`.
+- **Conferido:** o Atelier.exe aberto pelo Windows, depois do conserto, registrou
+  `configurações de C:\Users\luisf\.atelier · chaves: gemini, openai, elevenlabs · GPT via api`.
+
+## A receita das imagens no repositório (03/11)
+
+O pedido dele: tudo o que foi criado tem de poder ser refeito ou melhorado por outra sessão ("eu incluo TUDO"). Os pedidos do Atelier
+ficam em `captures/atelier/requests/` (fora do git), e por isso o prompt de uma imagem aprovada podia se perder.
+
+- `python Atelier/tools/export_recipes.py --src <sessão> --approved docs/aprovados/<área> --out docs/<área>/RECEITAS_DAS_IMAGENS.md`
+  escreve, pra cada pedido daquela sessão:
+  - o prompt inteiro de cada rodada e de cada ramo;
+  - os modelos;
+  - os anexos na ordem (o caminho no repositório, ou uma cópia leve em `<saída>_anexos/`, uma vez só por conteúdo);
+  - o que foi escolhido ou reprovado no Atelier.
+- **Como acha a aprovada:** a aprovação quase sempre acontece na conversa, não no Atelier. Por isso o `--approved` compara cada saída
+  com as cópias aprovadas da área (miniatura em cinza, diferença média abaixo de 14) e marca "registrada" na que bate.
+- `--match` filtra pelo título.
+- Primeiro uso: as superarmas (`docs/superarmas/RECEITAS_DAS_IMAGENS.md`, 58 pedidos; 16 das 18 aprovadas ligadas, e as 2 que faltam
+  são montagens de duas imagens).
+
+## Voz: criar pela descrição e falar o texto (04/11)
+
+Pedido dele: "a parte da ElevenLabs que cria a voz pela descrição e fala o texto".
+
+**Como usar:** Novo pedido → **Voz**.
+- **Voz nova:** a descrição em inglês (quem é, idade, timbre, sotaque, ritmo, onde soa: rádio, campo) e,
+  se quiser, a frase que as candidatas falam (100 a 1000 caracteres; em branco, a ElevenLabs escreve
+  uma). Sai **uma rodada com 3 vozes candidatas** (uma chamada só; ~15 s). Ouve, compara no Ouvir
+  (com o **Rádio**, tecla R: a faixa de 300 a 3400 Hz do rádio militar, como a voz soa no jogo) e
+  **Guardar** (o marcador no quadro) põe a escolhida na biblioteca dele da ElevenLabs, com um nome
+  (usa 1 das 10 vagas de voz do plano). A guardada mostra o nome no quadro e ganha **Falar com esta voz**.
+- **Falar:** escolhe a voz (as dele primeiro, depois as prontas da ElevenLabs; o botão ao lado toca a
+  prévia), o modelo (**v3**, com emoção em colchetes, padrão; ou **v4**), as falas (uma por linha, em
+  inglês: `[confident] Moving out!`) e quantas variações de cada. Vira um lote: uma linha por fala,
+  as variações lado a lado; arquivos `NN_<começo da fala>_tts.mp3` em `captures/audio/<pasta>/`.
+
+**Como foi feito:**
+- `core/providers.mjs`: `elevenvoice` = `POST /v1/text-to-voice/design` (`eleven_ttv_v3`,
+  `output_format=mp3_44100_128`; `text` se tiver 100+ caracteres, senão `auto_generate_text`); as 3
+  candidatas da rodada dividem a mesma chamada (`group`/`index`), cada uma guarda o
+  `generated_voice_id` (`gvid`) e a frase falada (`said`). `eleventts` = `POST /v1/text-to-speech/{voice_id}`.
+- `core/atelier.mjs`: `kind: "voice"` (design) e `kind: "speech"` (fala; `voice` = nome ou id, `items`
+  = as falas, `ttsModel`); `GET /api/voices` (a biblioteca, lida 1x por minuto) e
+  `POST /api/voice/save` (`POST /v1/text-to-voice` com o `gvid`, o nome, a descrição e as candidatas
+  ouvidas e não escolhidas). Custo: a fala por letra (~US$ 0,08 por mil), contado nos medidores.
+- Sessões: `atelier_generate` com `kind: "voice"` ou `"speech"` e a ferramenta `atelier_voices`.
+- Testado em 04/11 numa cópia do serviço: a criação devolveu 3 candidatas em 15 s (22 a 26 s de fala
+  cada, 48 kHz mono); a fala "[confident] Moving out!" com a voz pronta Adam saiu em 1 s. **Guardar
+  não foi testado de verdade**, pra não ocupar uma vaga da biblioteca dele com voz de teste.
+- Modelos da conta dele (04/11): fala `eleven_v4`, `eleven_v4_turbo`, `eleven_v3`, `eleven_multilingual_v2`,
+  flash/turbo; 10 vagas de voz própria, 0 usadas.

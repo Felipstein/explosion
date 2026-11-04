@@ -42,7 +42,10 @@ const TOOLS = [
       aspect: { type: 'string', description: '16:9 (padrão), 1:1, 3:2, 9:16.' },
       items: { type: 'array', items: { type: 'string' }, description: 'Lote: um item por imagem; o prompt usa {item}.' },
       branch: { type: 'string', description: 'Nome do primeiro ramo (padrão "Raiz").' },
-      kind: { type: 'string', enum: ['image', 'sound'], description: 'image (padrão) ou sound (efeito sonoro pela ElevenLabs).' },
+      kind: { type: 'string', enum: ['image', 'sound', 'voice', 'speech'], description: 'image (padrão); sound (efeito sonoro, ElevenLabs); voice (cria uma voz: o prompt é a descrição da voz em inglês, devolve ~3 vozes candidatas pra ele ouvir e guardar); speech (uma voz da biblioteca fala: "voice" = nome ou id, "items" = as falas, uma por item, em inglês, com tags como [shouting]).' },
+      voice: { type: 'string', description: 'speech: o nome ou o id da voz na biblioteca dele (atelier_voices lista).' },
+      sample: { type: 'string', description: 'voice: a frase que as candidatas falam (100 a 1000 caracteres; sem ela, a ElevenLabs escreve uma).' },
+      ttsModel: { type: 'string', enum: ['eleven_v3', 'eleven_v4'], description: 'speech: o modelo da fala (padrão eleven_v3, o das tags de emoção).' },
       variations: { type: 'integer', description: 'Som: quantas variações por rodada (1 a 8, padrão 4).' },
       duration: { type: 'number', description: 'Som: duração em segundos (0,5 a 30). Sem ela, automática.' },
       loop: { type: 'boolean', description: 'Som: loop sem emenda (ambiente, motor, vento).' },
@@ -57,6 +60,8 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, branch: { type: 'string', description: 'Nome do ramo (padrão: o último).' }, prompt: { type: 'string' }, models: MODELS } } },
   { name: 'atelier_branch', description: 'Abre um ramo novo no pedido: outra visão com prompt próprio e os modelos que quiser (ex.: dois Gemini).',
     inputSchema: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' }, prompt: { type: 'string', description: 'Prompt inteiro do ramo, em inglês (padrão: o da raiz).' }, models: MODELS } } },
+  { name: 'atelier_voices', description: 'Lista as vozes da biblioteca dele na ElevenLabs (as criadas pelo Atelier primeiro, depois as prontas): nome, id e descrição. Use o nome em atelier_generate kind="speech".',
+    inputSchema: { type: 'object', properties: {} } },
   { name: 'atelier_list', description: 'Lista os pedidos do Atelier com o estado de cada um.',
     inputSchema: { type: 'object', properties: { open_only: { type: 'boolean' } } } },
 ];
@@ -76,6 +81,10 @@ async function call(name, a) {
     case 'atelier_status': return text(a.id);
     case 'atelier_round': await api('POST', '/api/round', a); return text(a.id);
     case 'atelier_branch': await api('POST', '/api/branch', a); return text(a.id);
+    case 'atelier_voices': {
+      const v = await api('GET', '/api/voices');
+      return v.map(x => `${x.name} · ${x.category} · ${x.id}${x.description ? ' · ' + x.description : ''}`).join('\n') || 'Nenhuma voz (falta a chave da ElevenLabs?).';
+    }
     case 'atelier_list': {
       const list = await api('GET', '/api/requests');
       const st = { gen: 'gerando', wait: 'esperando escolha', closed: 'fechado' };

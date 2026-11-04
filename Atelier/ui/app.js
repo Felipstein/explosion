@@ -31,6 +31,9 @@ const ICONS = {
   wave:'<path d="M3 12h1.5M6.5 8.5v7M10 5v14M13.5 8v8M17 10v4M20.5 11.5v1"/>',
   repeat:'<path d="M16.5 3.5l3 3-3 3M4.5 11V9.5a3 3 0 013-3h12M7.5 20.5l-3-3 3-3M19.5 13v1.5a3 3 0 01-3 3h-12"/>',
   volume:'<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.5 7.5 0 010 10.4"/>',
+  mic:'<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v2.5"/>',
+  save:'<path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/>',
+  radio:'<rect x="3.5" y="8" width="17" height="11" rx="2"/><path d="M7 8l9-4.5M7.5 13.5h4M15.5 13.5h.01"/>',
   sliders:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'
 };
 const ic = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
@@ -43,6 +46,8 @@ const M = {
   fake:  {name:'Teste (não gera de verdade)', short:'Teste', cls:'m-flash', typ:3, key:'fake'},
   sfx:   {name:'ElevenLabs Sound Effects', short:'Som', cls:'m-sfx', typ:8, key:'sfx', audio:true},
   fakeaudio: {name:'Som de teste', short:'Teste', cls:'m-sfx', typ:3, key:'fakeaudio', audio:true},
+  vdesign: {name:'ElevenLabs Voice Design', short:'Voz', cls:'m-sfx', typ:20, key:'vdesign', audio:true},
+  tts:   {name:'ElevenLabs Text to Speech', short:'Fala', cls:'m-sfx', typ:6, key:'tts', audio:true},
 };
 const isAudio = x => !!(x && M[x.it.m] && M[x.it.m].audio);
 let HEALTH = {models:{}, repo:''};
@@ -242,11 +247,12 @@ function tileHTML(x, o = {}) {
   else if (it.st === 'g') inner = `<i class="shim"></i><span class="clock mono">0:00</span><i class="prog"></i>`;
   else if (it.st === 'q') inner = o.small ? '' : `<span class="qpos mono">${qpos(it)}º na fila</span>`;
   else inner = `<span class="err">${esc(it.err)}</span><button class="mini" data-act="retry" data-k="${k}">${ic('refresh')}Tentar de novo</button>`;
-  const lab = o.small ? '' : `<span class="lab"><span class="chip ov ${m.cls}">${o.mini ? m.short.replace('Gemini ', '') : m.short}</span>${o.r ? `<span class="rtag mono">r${o.r}</span>` : ''}</span>`;
+  const lab = o.small ? '' : `<span class="lab"><span class="chip ov ${m.cls}">${o.mini ? m.short.replace('Gemini ', '') : m.short}</span>${o.r ? `<span class="rtag mono">r${o.r}</span>` : ''}${it.voiceId ? `<span class="chip ov saved" title="Guardada na sua biblioteca da ElevenLabs">${ic('save')}${esc(it.voiceName || '')}</span>` : ''}</span>`;
   const b = (a, i, t, on) => `<button data-act="${a}" data-k="${k}" title="${t}" class="${on ? 'on' : ''}">${ic(i)}</button>`;
   let acts = '';
   const cpy = au ? b('copy','copy','Copiar o caminho do arquivo (Ctrl C)') : b('copy','copy','Copiar a imagem (Ctrl C)');
-  if (it.st === 'd' && !o.small && au && !o.mini) acts = `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${b('rej','x','Reprovar (X)', it.rej)}${b('branch','branch','Ramificar daqui (B)')}${cpy}</span>`;
+  const vact = it.gvid ? (it.voiceId ? b('speak-voice', 'mic', 'Falar com esta voz') : b('save-voice', 'save', 'Guardar esta voz na sua ElevenLabs')) : '';
+  if (it.st === 'd' && !o.small && au && !o.mini) acts = `<span class="acts">${vact}${b('pick','star','Escolher (P)', it.pick)}${b('rej','x','Reprovar (X)', it.rej)}${b('branch','branch','Ramificar daqui (B)')}${cpy}</span>`;
   else if (it.st === 'd' && !o.small) acts = o.mini
     ? `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${cpy}${b('regen','refresh','Gerar de novo (R)')}</span>`
     : `<span class="acts">${b('pick','star','Escolher (P)', it.pick)}${b('rej','x','Reprovar (X)', it.rej)}${b('branch','branch','Ramificar daqui (B)')}${b('attach','clip','Usar como anexo (A)')}${b('copy','copy','Copiar a imagem (Ctrl C)')}</span>`;
@@ -290,8 +296,8 @@ function renderDesk() {
       ${spent ? `<span class="mono">${usd(spent)}</span>` : ''}${r.approved ? `<span class="dim">→ ${esc(r.approved.files.join(', '))}</span>` : ''}</div>
   </div>
   <section class="prompt ${S.openPrompt[r.id] ? 'open' : ''}" id="prompt-card">
-    <div class="p-text" data-act="expand" title="${S.openPrompt[r.id] ? 'Recolher' : 'Ver o prompt inteiro'}">${esc(r.root.join(' '))}</div>
-    ${r.media === 'audio' ? `<div class="aparams">${r.audio.duration ? `<span class="chip">${String(r.audio.duration).replace('.', ',')} s</span>` : '<span class="chip">duração automática</span>'}${r.audio.loop ? `<span class="chip">${ic('repeat')}loop</span>` : ''}<span class="chip">fidelidade ${String(r.audio.influence).replace('.', ',')}</span></div>` : `<div class="atts">${r.att.map((a, i) => `<figure class="att ${a.root ? 'root' : ''} ${a.derived ? 'derived' : ''}" title="${a.root ? 'Referência: a imagem aprovada que o resultado tem de seguir' : a.derived ? 'Saiu de uma rodada. Anexar derivada encadeia: a próxima herda o desvio dela.' : ''}"><div class="att-img" data-act="view-att" data-i="${i}"><img src="${SRC(a.file)}" alt=""><span class="n">${i + 1}</span>${a.root ? `<span class="anc">${ic('anchor')}</span>` : ''}${r.closed ? '' : `<button class="rm" data-act="detach" data-i="${i}" title="Tirar o anexo (as próximas rodadas não usam mais)">${ic('x')}</button>`}</div><figcaption>${esc(a.label)}</figcaption></figure>`).join('')}
+    <div class="p-text" data-act="expand" title="${S.openPrompt[r.id] ? 'Recolher' : 'Ver o prompt inteiro'}">${esc(r.voice && r.voice.mode === 'speech' ? (r.items || []).map(x => x.name).join(' · ') : r.root.join(' '))}</div>
+    ${r.voice ? voiceParams(r) : r.media === 'audio' ? `<div class="aparams">${r.audio.duration ? `<span class="chip">${String(r.audio.duration).replace('.', ',')} s</span>` : '<span class="chip">duração automática</span>'}${r.audio.loop ? `<span class="chip">${ic('repeat')}loop</span>` : ''}<span class="chip">fidelidade ${String(r.audio.influence).replace('.', ',')}</span></div>` : `<div class="atts">${r.att.map((a, i) => `<figure class="att ${a.root ? 'root' : ''} ${a.derived ? 'derived' : ''}" title="${a.root ? 'Referência: a imagem aprovada que o resultado tem de seguir' : a.derived ? 'Saiu de uma rodada. Anexar derivada encadeia: a próxima herda o desvio dela.' : ''}"><div class="att-img" data-act="view-att" data-i="${i}"><img src="${SRC(a.file)}" alt=""><span class="n">${i + 1}</span>${a.root ? `<span class="anc">${ic('anchor')}</span>` : ''}${r.closed ? '' : `<button class="rm" data-act="detach" data-i="${i}" title="Tirar o anexo (as próximas rodadas não usam mais)">${ic('x')}</button>`}</div><figcaption>${esc(a.label)}</figcaption></figure>`).join('')}
       <button class="att add" data-act="attach-file" title="Anexar imagem: escolher, arrastar ou colar (Ctrl V)">${ic('plus')}</button></div>
   `}
   </section>`;
@@ -306,6 +312,11 @@ function renderDesk() {
   $('#desk').innerHTML = h;
 }
 
+function voiceParams(r) {
+  const v = r.voice;
+  if (v.mode === 'design') return `<div class="aparams"><span class="chip m-sfx">${ic('plus')}voz nova</span><span class="chip">${esc(v.model)}</span>${v.sample ? `<span class="chip" title="${esc(v.sample)}">frase dele: ${esc(v.sample.slice(0, 48))}${v.sample.length > 48 ? '…' : ''}</span>` : '<span class="chip">frase escrita pela ElevenLabs</span>'}</div>`;
+  return `<div class="aparams"><span class="chip m-sfx">${ic('mic')}${esc(v.voiceName)}</span><span class="chip">${esc(v.model)}</span><span class="chip">${(r.items || []).length || 1} ${((r.items || []).length || 1) === 1 ? 'fala' : 'falas'}</span></div>`;
+}
 function selLabel() {
   const x = S.selK && byKey(S.selK);
   if (!x || x.r.id !== S.sel) return '';
@@ -390,7 +401,7 @@ function stepper(id, v, off) { return `<div class="step ${v ? '' : 'zero'}" data
 function modelRows(counts, keys = ['gpt', 'pro', 'flash']) {
   return keys.map(k => {
     const m = M[k], h = HEALTH.models[k] || {}, ready = h.ready !== false;
-    const price = !ready ? 'falta a chave' : m.audio ? 'variações · ~US$ 0,01 por segundo de som' : h.cost ? `${usd(h.cost)} · ~${m.typ} s` : `pela conta · ~${m.typ} s`;
+    const price = !ready ? 'falta a chave' : k === 'tts' ? 'variações de cada fala · ~US$ 0,08 por mil letras' : m.audio ? 'variações · ~US$ 0,01 por segundo de som' : h.cost ? `${usd(h.cost)} · ~${m.typ} s` : `pela conta · ~${m.typ} s`;
     return `<div class="mrow"><span class="mname"><span class="chip ${m.cls}">${m.short}</span><b>${m.name}</b></span><span class="mono dim">${price}</span>${stepper(k, ready ? counts[k] || 0 : 0, !ready)}</div>`;
   }).join('');
 }
@@ -405,15 +416,15 @@ const modelsBody = c => Object.fromEntries(Object.entries(c).filter(([, n]) => n
 const costOf = c => Object.entries(c).reduce((s, [k, n]) => s + ((HEALTH.models[k] || {}).cost || 0) * n, 0);
 
 let newState = null, pickTarget = null;
-async function openNew() {
+async function openNew(preset = {}) {
   if (!HEALTH.boot) await refreshHealth();
   const ready = k => (HEALTH.models[k] || {}).ready !== false;
-  const st = {counts:{gpt:1, pro:ready('pro') ? 1 : 0, flash:0}, acounts:{sfx:ready('sfx') ? 4 : 0}, att:[], batch:false, media:'image'};
+  const st = {counts:{gpt:1, pro:ready('pro') ? 1 : 0, flash:0}, acounts:{sfx:ready('sfx') ? 4 : 0}, tcounts:{tts:2}, att:[], batch:false, media:'image', vmode:'design', ttsModel:'eleven_v3', voices:[]};
   openOv('new', `<form class="sheet" id="nf" autocomplete="off">
-    <h2>Novo pedido <span class="seg" id="nf-media"><button type="button" class="on" data-media="image">Imagem</button><button type="button" data-media="audio">${ic('wave')}Som</button></span>
-      <span class="seg" style="margin-left:auto"><button type="button" class="on" data-mode="one">Um pedido</button><button type="button" data-mode="batch">Lote</button></span></h2>
+    <h2>Novo pedido <span class="seg" id="nf-media"><button type="button" class="on" data-media="image">Imagem</button><button type="button" data-media="audio">${ic('wave')}Som</button><button type="button" data-media="voice">${ic('mic')}Voz</button></span>
+      <span class="seg" id="nf-modes" style="margin-left:auto"><button type="button" class="on" data-mode="one">Um pedido</button><button type="button" data-mode="batch">Lote</button></span></h2>
     <div class="field"><input class="inp" id="nf-title" placeholder="Nome (ex.: Comanche, ficha)"></div>
-    <div class="field"><textarea class="ta" id="nf-prompt" placeholder="Prompt completo, em inglês. Uma ideia por linha deixa a diferença entre ramos legível."></textarea></div>
+    <div class="field" id="nf-prompt-f"><textarea class="ta" id="nf-prompt" placeholder="Prompt completo, em inglês. Uma ideia por linha deixa a diferença entre ramos legível."></textarea></div>
     <div class="field" id="nf-items-f" hidden><span class="flabel">Itens, um por linha: cada um vira uma imagem com o mesmo prompt, trocando {item}</span><textarea class="ta" id="nf-items" style="min-height:80px" placeholder="sell&#10;repair&#10;guard"></textarea></div>
     <div class="field" data-for="image"><div class="drop" id="nf-drop"></div></div>
     <div class="field" data-for="image" id="nf-irows">${modelRows(st.counts)}</div>
@@ -424,6 +435,20 @@ async function openNew() {
       <div class="arow"><span class="flabel">Mais livre</span><input type="range" id="nf-inf" min="0" max="1" step="0.05" value="0.3"><span class="flabel">Mais fiel ao prompt</span></div>
       ${modelRows(st.acounts, ['sfx'])}
     </div>
+    <div class="field vform" data-for="voice" hidden>
+      <span class="seg"><button type="button" class="on" data-vm="design">${ic('plus')}Voz nova</button><button type="button" data-vm="speech">${ic('mic')}Falar</button></span>
+      <div class="vsec" data-vm-for="design">
+        <textarea class="ta" id="nf-vdesc" placeholder="A voz, em inglês: quem é, a idade, o timbre, o sotaque, o ritmo e onde ela soa. Ex.: Russian tank commander, mid 40s, deep gravelly voice, calm authority, slight Russian accent, heard over a military radio"></textarea>
+        <textarea class="ta short" id="nf-vsample" placeholder="A frase que as vozes candidatas falam (100 a 1000 caracteres). Em branco, a ElevenLabs escreve uma."></textarea>
+        <span class="mono dim vcount" id="nf-vcount"></span>
+      </div>
+      <div class="vsec" data-vm-for="speech" hidden>
+        <div class="arow"><select class="inp" id="nf-voice"><option value="">Lendo as suas vozes…</option></select><button type="button" class="ghost" id="nf-vplay" title="Ouvir a voz">${ic('play')}</button></div>
+        <div class="arow"><span class="seg" id="nf-tts"><button type="button" class="on" data-tm="eleven_v3">v3 · emoção em [colchetes]</button><button type="button" data-tm="eleven_v4">v4</button></span></div>
+        <textarea class="ta" id="nf-lines" placeholder="Uma fala por linha, em inglês. Ex.:&#10;[confident] Moving out!&#10;Target acquired.&#10;[shouting] We're under fire!"></textarea>
+        <div id="nf-trows">${modelRows(st.tcounts, ['tts'])}</div>
+      </div>
+    </div>
     <div class="field fpick" id="nf-fp">
       <button type="button" class="fp-btn" id="fp-btn" title="Onde as imagens vão ficar">${ic('folder')}<span class="fp-name" id="fp-name"></span><span class="mono fp-path" id="fp-path"></span>${ic('down')}</button>
       <button type="button" class="ghost" id="fp-browse" title="Escolher qualquer pasta no seletor do Windows">Procurar…</button>
@@ -432,7 +457,20 @@ async function openNew() {
     <div class="sheet-acts"><button type="button" class="ghost" data-act="close">Cancelar</button><button type="submit" class="primary" id="nf-go">Gerar</button></div>
   </form>`);
   const f = $('#nf');
+  const lines = () => $('#nf-lines').value.split('\n').map(x => x.trim()).filter(Boolean);
   const upd = () => {
+    if (st.media === 'voice') {
+      const b = $('#nf-go'), sample = $('#nf-vsample').value.trim();
+      $('#nf-vcount').textContent = sample ? `${sample.length} de 100 a 1000 caracteres${sample.length < 100 ? ' · curta: a ElevenLabs escreve outra' : ''}` : '';
+      if (st.vmode === 'design') { b.innerHTML = `Criar 3 vozes <kbd>Ctrl Enter</kbd>`; b.disabled = !$('#nf-vdesc').value.trim(); }
+      else {
+        const ls = lines(), n = ls.length * st.tcounts.tts, chars = ls.join('').length * st.tcounts.tts;
+        b.innerHTML = `Gerar ${n} ${n === 1 ? 'fala' : 'falas'}${chars ? ' · ' + usd(chars * 0.00008) : ''} <kbd>Ctrl Enter</kbd>`;
+        b.disabled = !n || !$('#nf-voice').value;
+      }
+      if (!ready('vdesign')) { b.innerHTML = 'Falta a chave da ElevenLabs'; b.disabled = true; }
+      return;
+    }
     const au = st.media === 'audio';
     const n = Object.values(au ? st.acounts : st.counts).reduce((a, b) => a + b, 0);
     const items = st.batch ? $('#nf-items').value.split('\n').filter(s => s.trim()).length : 1;
@@ -450,12 +488,43 @@ async function openNew() {
   };
   st.redraw = drawAtt;
   drawAtt(); wireSteppers($('#nf-irows'), st.counts, upd);
-  wireSteppers(f.querySelector('.aform'), st.acounts, upd); upd();
+  wireSteppers(f.querySelector('.aform'), st.acounts, upd);
+  wireSteppers($('#nf-trows'), st.tcounts, upd); upd();
+  // as vozes da biblioteca dele (as criadas aqui primeiro); a escolhida toca a prévia
+  const loadVoices = async () => {
+    if (st.voices.length) return;
+    try { st.voices = await api('/api/voices'); } catch { st.voices = []; }
+    const mine = st.voices.filter(v => v.category !== 'premade'), stock = st.voices.filter(v => v.category === 'premade');
+    const opt = v => `<option value="${esc(v.id)}">${esc(v.name)}${v.description ? ' · ' + esc(v.description.slice(0, 60)) : ''}</option>`;
+    $('#nf-voice').innerHTML = (st.voices.length ? '' : '<option value="">Nenhuma voz: falta a chave da ElevenLabs?</option>') +
+      (mine.length ? `<optgroup label="Suas vozes">${mine.map(opt).join('')}</optgroup>` : '') + (stock.length ? `<optgroup label="Prontas da ElevenLabs">${stock.map(opt).join('')}</optgroup>` : '');
+    if (preset.voice) $('#nf-voice').value = preset.voice;
+    upd();
+  };
+  let vAudio = null;
+  $('#nf-vplay').onclick = () => {
+    const v = st.voices.find(x => x.id === $('#nf-voice').value);
+    if (vAudio) { vAudio.pause(); vAudio = null; return; }
+    if (!v || !v.preview) return toast('Essa voz não tem prévia; gere uma fala curta pra ouvir');
+    vAudio = new Audio(v.preview); vAudio.onended = () => { vAudio = null; }; vAudio.play().catch(() => toast('Não deu pra tocar a prévia'));
+  };
+  $('#nf-voice').addEventListener('change', upd);
+  ['#nf-vdesc', '#nf-vsample', '#nf-lines'].forEach(q => $(q).addEventListener('input', upd));
+  f.querySelectorAll('[data-vm]').forEach(b => b.onclick = () => {
+    st.vmode = b.dataset.vm;
+    f.querySelectorAll('[data-vm]').forEach(x => x.classList.toggle('on', x === b));
+    f.querySelectorAll('[data-vm-for]').forEach(x => x.hidden = x.dataset.vmFor !== st.vmode);
+    if (st.vmode === 'speech') loadVoices();
+    upd();
+  });
+  f.querySelectorAll('[data-tm]').forEach(b => b.onclick = () => { st.ttsModel = b.dataset.tm; f.querySelectorAll('[data-tm]').forEach(x => x.classList.toggle('on', x === b)); });
   const prompt = $('#nf-prompt'), phImg = prompt.placeholder;
   f.querySelectorAll('[data-media]').forEach(b => b.onclick = () => {
     st.media = b.dataset.media;
     f.querySelectorAll('[data-media]').forEach(x => x.classList.toggle('on', x === b));
     f.querySelectorAll('[data-for]').forEach(x => x.hidden = x.dataset.for !== st.media);
+    $('#nf-prompt-f').hidden = $('#nf-modes').hidden = st.media === 'voice';
+    if (st.media === 'voice' && st.vmode === 'speech') loadVoices();
     prompt.placeholder = st.media === 'audio' ? 'O som, em inglês: a fonte, o material, a distância, o lugar, o ataque e a cauda. Ex.: heavy tank cannon shot, close, open desert, sharp crack, deep boom, short tail' : phImg;
     st.reloadFolders && st.reloadFolders(); upd();
   });
@@ -477,6 +546,17 @@ async function openNew() {
     const body = {title:$('#nf-title').value.trim(), prompt:$('#nf-prompt').value.trim(), session:'Você', attachments:st.att, models:modelsBody(st.counts), folder:st.folder || undefined};
     if (st.media === 'audio') Object.assign(body, {kind:'sound', attachments:[], models:modelsBody(st.acounts), loop:$('#nf-loop').checked, influence:+$('#nf-inf').value, duration:st.dfix ? +$('#nf-dur').value : undefined});
     if (st.batch) body.items = $('#nf-items').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (st.media === 'voice') {
+      const v = st.voices.find(x => x.id === $('#nf-voice').value);
+      if (st.vmode === 'design') Object.assign(body, {kind:'voice', attachments:[], models:undefined, prompt:$('#nf-vdesc').value.trim(), sample:$('#nf-vsample').value.trim(),
+        title:body.title || 'Voz: ' + $('#nf-vdesc').value.trim().slice(0, 40)});
+      else Object.assign(body, {kind:'speech', attachments:[], prompt:undefined, items:lines(), voice:$('#nf-voice').value, ttsModel:st.ttsModel, models:{tts:st.tcounts.tts},
+        title:body.title || (v ? v.name : 'Voz') + ' · falas'});
+      if (st.vmode === 'design' ? !body.prompt : !body.items.length) return toast(st.vmode === 'design' ? 'Falta descrever a voz' : 'Falta o que falar');
+      $('#nf-go').disabled = true;
+      try { const r = await api('/api/requests', body); closeOv(); await load(); select(r.id); } catch { $('#nf-go').disabled = false; }
+      return;
+    }
     if (!body.title || !body.prompt) return toast('Falta o nome ou o prompt');
     $('#nf-go').disabled = true;
     try { const r = await api('/api/requests', body); closeOv(); await load(); select(r.id); } catch { $('#nf-go').disabled = false; }
@@ -484,7 +564,8 @@ async function openNew() {
   f.addEventListener('submit', go);
   f.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go(e); });
   newState = st;
-  setTimeout(() => $('#nf-title').focus(), 30);
+  if (preset.media === 'voice') { f.querySelector('[data-media="voice"]').click(); if (preset.vmode === 'speech') f.querySelector('[data-vm="speech"]').click(); }
+  setTimeout(() => $(preset.media === 'voice' ? (preset.vmode === 'speech' ? '#nf-lines' : '#nf-vdesc') : '#nf-title').focus(), 30);
 }
 /* A pasta do pedido: a lista das de captures/concept (a mais nova primeiro, com miniatura e busca),
    "Nova pasta" com o próximo número no topo, e Procurar… pro seletor do Windows. */
@@ -495,7 +576,7 @@ function wireFolderPicker(st, form) {
   const pop = $('#fp-pop'), q = $('#fp-q');
   const nextNew = () => {
     const nums = folders.map(f => +(f.name.match(/^(\d+)_/) || [])[1]).filter(Boolean);
-    const au = st.media === 'audio';
+    const au = st.media !== 'image';
     return `captures/${au ? 'audio' : 'concept'}/${String(Math.max(au ? 0 : 50, ...nums) + 1).padStart(2, '0')}_${slugOf($('#nf-title').value)}/`;
   };
   const show = () => {
@@ -510,14 +591,14 @@ function wireFolderPicker(st, form) {
     $('#fp-list').innerHTML = items.map((f, i) => {
       const chosen = f.nova ? !st.folder : st.folder === f.path;
       const pic = f.nova ? `<span class="ph">${ic('plus')}</span>` : f.thumb ? `<img src="${SRC(f.thumb)}" alt="" loading="lazy">` : `<span class="ph">${ic('folder')}</span>`;
-      const unit = st.media === 'audio' ? ['som', 'sons'] : ['imagem', 'imagens'];
+      const unit = st.media !== 'image' ? ['som', 'sons'] : ['imagem', 'imagens'];
       const sub = f.nova ? esc(nextNew()) : `${f.images} ${unit[f.images === 1 ? 0 : 1]} · ${ago(new Date(f.mtime).toISOString())}`;
       return `<button type="button" class="fp-it ${i === idx ? 'on' : ''}" data-i="${i}">${pic}<span class="fp-t"><b>${esc(f.nova ? 'Nova pasta' : f.name)}</b><span class="m">${sub}</span></span>${chosen ? ic('check') : ''}</button>`;
     }).join('');
     const on = $('#fp-list .fp-it.on'); if (on) on.scrollIntoView({block:'nearest'});
   };
   const choose = i => { const f = items[i]; if (!f) return; st.folder = f.nova ? null : f.path; show(); pop.hidden = true; $('#fp-btn').focus(); };
-  st.reloadFolders = () => { st.folder = null; folders = []; show(); api('/api/folders?media=' + st.media).then(f => { folders = f; show(); if (!pop.hidden) draw(); }); };
+  st.reloadFolders = () => { st.folder = null; folders = []; show(); api('/api/folders?media=' + (st.media === 'image' ? 'image' : 'audio')).then(f => { folders = f; show(); if (!pop.hidden) draw(); }); };
   st.reloadFolders();
   $('#fp-btn').onclick = () => { pop.hidden = !pop.hidden; if (!pop.hidden) { q.value = ''; idx = 0; draw(); q.focus(); } };
   $('#fp-list').onclick = e => { const b = e.target.closest('[data-i]'); if (b) choose(+b.dataset.i); };
@@ -532,7 +613,7 @@ function wireFolderPicker(st, form) {
   $('#nf-title').addEventListener('input', () => { if (!st.folder) show(); });
   $('#fp-browse').onclick = async () => {
     const b = $('#fp-browse'); b.disabled = true; b.textContent = 'Abrindo…';
-    try { const r = await api('/api/pick-folder', {start:st.folder || (st.media === 'audio' ? 'captures/audio' : 'captures/concept')}); if (r.path) { st.folder = r.path; show(); } }
+    try { const r = await api('/api/pick-folder', {start:st.folder || (st.media !== 'image' ? 'captures/audio' : 'captures/concept')}); if (r.path) { st.folder = r.path; show(); } }
     finally { b.disabled = false; b.textContent = 'Procurar…'; }
   };
 }
@@ -619,6 +700,25 @@ function openDelete(ids) {
   setTimeout(() => $('#df-list').focus(), 30);
 }
 
+function openSaveVoice(k) {
+  const x = byKey(k); if (!x || !x.it.gvid) return;
+  openOv('savevoice', `<form class="sheet" id="vf" autocomplete="off">
+    <h2>${ic('save')}Guardar esta voz</h2>
+    <div class="field"><input class="inp" id="vf-name" value="${esc(x.r.title.replace(/^Voz:\s*/, '').slice(0, 60))}" placeholder="Nome da voz"></div>
+    <div class="dim" style="margin:-4px 0 14px">vai pra sua biblioteca da ElevenLabs (usa 1 das suas vagas de voz)</div>
+    <div class="sheet-acts"><button type="button" class="ghost" data-act="close">Cancelar</button><button type="submit" class="primary" id="vf-go">Guardar <kbd>Enter</kbd></button></div>
+  </form>`);
+  $('#vf').addEventListener('submit', async e => {
+    e.preventDefault(); $('#vf-go').disabled = true;
+    try {
+      const r = await api('/api/voice/save', {key:k, name:$('#vf-name').value.trim()});
+      closeOv(); load();
+      toast(`Voz guardada: ${r.name}`, {label:'Falar com ela', fn:() => openNew({media:'voice', vmode:'speech', voice:r.voiceId})}, 'voice');
+    } catch { $('#vf-go').disabled = false; }
+  });
+  setTimeout(() => $('#vf-name').select(), 30);
+}
+
 function openApprove() {
   const r = cur(); const picks = allOf(r).filter(x => x.it.pick && x.it.st === 'd'); if (!picks.length) return;
   openOv('approve', `<form class="sheet" id="af">
@@ -688,7 +788,7 @@ function renderListen() {
   const list = c.list.map(byKey).filter(Boolean);
   const lbl = x => x.rm ? esc(x.rm.name) + ' · r' + (x.n + 1) : esc(x.row.name);
   $('#ov').innerHTML = `<div class="cmp listen"><div class="cmp-h"><b>Ouvir</b><span class="dim">${esc(r.title)}</span>
-    <span class="seg"><button data-act="au-norm" class="${AUD.norm ? 'on' : ''}" title="Cada som no mesmo volume, pro mais alto não parecer melhor (V)">${ic('volume')}Volume igualado <kbd>V</kbd></button><button data-act="au-loop" class="${AUD.loop ? 'on' : ''}" title="Tocar sem parar, pra ouvir a emenda (L)">${ic('repeat')}Repetir <kbd>L</kbd></button></span>
+    <span class="seg"><button data-act="au-norm" class="${AUD.norm ? 'on' : ''}" title="Cada som no mesmo volume, pro mais alto não parecer melhor (V)">${ic('volume')}Volume igualado <kbd>V</kbd></button><button data-act="au-loop" class="${AUD.loop ? 'on' : ''}" title="Tocar sem parar, pra ouvir a emenda (L)">${ic('repeat')}Repetir <kbd>L</kbd></button><button data-act="au-radio" class="${AUD.radio ? 'on' : ''}" title="Ouvir pela faixa do rádio militar, como a voz soa no jogo (R)">${ic('radio')}Rádio <kbd>R</kbd></button></span>
     <span class="sp"></span>${allOf(r).some(x => x.it.pick) && !r.closed ? `<button class="primary sm" data-act="approve">${ic('check')}Aprovar</button>` : ''}<button class="ghost sm" data-act="close">Fechar <kbd>Esc</kbd></button></div>
     <div class="au-list">${list.map((x, i) => `<figure class="au-row au ${M[x.it.m].cls} ${x.it.pick ? 'pick' : ''} ${AUD.cur && AUD.cur.key === x.k ? 'playing' : ''}" data-act="au-play" data-k="${x.k}">
       <span class="n mono">${i + 1}</span><span class="au-l"><span class="chip ${M[x.it.m].cls}">${M[x.it.m].short}</span><b>${lbl(x)}</b><span class="dur mono" data-dur="${esc(x.it.file)}"></span></span>
@@ -753,7 +853,7 @@ async function copyImage(file) {
 }
 
 /* ---------- som: decodifica, desenha a onda e toca com o volume igualado ---------- */
-const AUD = { ctx:null, cache:new Map(), cur:null, norm:true, loop:false, paused:null };
+const AUD = { ctx:null, cache:new Map(), cur:null, norm:true, loop:false, radio:false, paused:null };
 const actx = () => AUD.ctx || (AUD.ctx = new AudioContext());
 function decode(file) {
   if (!AUD.cache.has(file)) AUD.cache.set(file, fetch(SRC(file)).then(r => r.arrayBuffer()).then(b => actx().decodeAudioData(b)).then(buf => {
@@ -806,7 +906,12 @@ async function playKey(k, from = 0) {
   const src = ctx.createBufferSource(), gain = ctx.createGain();
   src.buffer = d.buf; src.loop = AUD.loop || reqLoop(k);
   gain.gain.value = AUD.norm ? d.gain : 1;
-  src.connect(gain).connect(ctx.destination);
+  // rádio: a faixa do rádio militar (300 a 3400 Hz), como a voz soa no jogo
+  if (AUD.radio) {
+    const hp = ctx.createBiquadFilter(), lp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 300; lp.type = 'lowpass'; lp.frequency.value = 3400;
+    src.connect(hp).connect(lp).connect(gain).connect(ctx.destination);
+  } else src.connect(gain).connect(ctx.destination);
   const off = Math.min(d.dur * from, Math.max(0, d.dur - 0.01));
   src.start(0, off);
   AUD.cur = { src, gain, key:k, dur:d.dur, loop:src.loop, t0:ctx.currentTime - off, d };
@@ -996,6 +1101,9 @@ document.addEventListener('click', e => {
     case 'lp-next': loupeStep(1); break;
     case 'lp-t': S.lpT = !S.lpT; renderLoupe(); break;
     case 'au-play': switchTo(k); break;
+    case 'save-voice': openSaveVoice(k); break;
+    case 'speak-voice': { const x = byKey(k); if (x) openNew({media:'voice', vmode:'speech', voice:x.it.voiceId}); break; }
+    case 'au-radio': AUD.radio = !AUD.radio; if (AUD.cur) switchTo(AUD.cur.key); renderListen(); break;
     case 'au-norm': AUD.norm = !AUD.norm; if (AUD.cur) AUD.cur.gain.gain.value = AUD.norm ? AUD.cur.d.gain : 1; renderListen(); break;
     case 'au-loop': AUD.loop = !AUD.loop; if (AUD.cur) AUD.cur.src.loop = AUD.cur.loop = AUD.loop || reqLoop(AUD.cur.key); renderListen(); break;
     case 'view-att': openAtt(+t.dataset.i); break;
@@ -1077,6 +1185,7 @@ document.addEventListener('keydown', e => {
     if (e.key === ' ') { e.preventDefault(); if (AUD.cur) { AUD.paused = { key:AUD.cur.key, pos:posOf() }; stopAudio(); } else if (AUD.paused) playKey(AUD.paused.key, AUD.paused.pos); else if (l[0]) playKey(l[0]); }
     if (kk === 'l') $('[data-act="au-loop"]').click();
     if (kk === 'v') $('[data-act="au-norm"]').click();
+    if (kk === 'r') $('[data-act="au-radio"]').click();
     if (kk === 'p' && (AUD.cur || AUD.paused)) togglePick((AUD.cur || AUD.paused).key);
     return;
   }

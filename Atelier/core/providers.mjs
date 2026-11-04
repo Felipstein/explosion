@@ -187,5 +187,53 @@ async function fakeaudio({ outBase, audio = {}, signal }) {
   return file;
 }
 
-export const PROVIDERS = { codex, gemini, openai, fake, eleven, fakeaudio };
+/* ElevenLabs, criar voz pela descrição: uma chamada devolve algumas vozes candidatas (cada uma com o seu
+   generated_voice_id, que guarda a escolhida na biblioteca). Os itens da mesma rodada dividem a chamada.
+   A frase de teste precisa de 100 a 1000 caracteres; mais curta, a própria ElevenLabs escreve uma. */
+const designCalls = new Map();
+async function elevenvoice({ prompt, outBase, model, voice = {}, group, index, signal }) {
+  const k = key('elevenlabs');
+  if (!k) throw new Error('falta a chave da ElevenLabs (Configurações)');
+  if (!designCalls.has(group)) {
+    const sample = String(voice.sample || '');
+    const body = { voice_description: prompt.slice(0, 1000), model_id: model || 'eleven_ttv_v3' };
+    if (sample.length >= 100) body.text = sample.slice(0, 1000); else body.auto_generate_text = true;
+    designCalls.set(group, (async () => {
+      const r = await fetch('https://api.elevenlabs.io/v1/text-to-voice/design?output_format=mp3_44100_128', {
+        method: 'POST', signal, headers: { 'xi-api-key': k, 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(`ElevenLabs ${r.status}: ${String((j.detail && (j.detail.message || JSON.stringify(j.detail))) || '').slice(0, 240)}`);
+      return { previews: j.previews || [], text: j.text || '' };
+    })());
+    setTimeout(() => designCalls.delete(group), 10 * 60 * 1000);
+  }
+  const { previews, text } = await designCalls.get(group);
+  const p = previews[index];
+  if (!p) throw new Error(`a ElevenLabs devolveu ${previews.length} ${previews.length === 1 ? 'voz' : 'vozes'} nesta rodada`);
+  const file = outBase + '.mp3';
+  fs.writeFileSync(file, Buffer.from(p.audio_base_64, 'base64'));
+  return { file, extra: { gvid: p.generated_voice_id, said: text } };
+}
+
+/* ElevenLabs, falar: a voz escolhida (da biblioteca) lê o texto. O v3 aceita tags de emoção entre colchetes. */
+async function eleventts({ prompt, outBase, model, voice = {}, signal }) {
+  const k = key('elevenlabs');
+  if (!k) throw new Error('falta a chave da ElevenLabs (Configurações)');
+  if (!voice.voiceId) throw new Error('o pedido não tem voz escolhida');
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice.voiceId)}?output_format=mp3_44100_128`, {
+    method: 'POST', signal, headers: { 'xi-api-key': k, 'content-type': 'application/json' },
+    body: JSON.stringify({ text: prompt, model_id: model || 'eleven_v3' }),
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    let msg = t; try { const j = JSON.parse(t); msg = (j.detail && (j.detail.message || j.detail.status || j.detail)) || t; } catch {}
+    throw new Error(`ElevenLabs ${r.status}: ${String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 240)}`);
+  }
+  const file = outBase + '.mp3';
+  fs.writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+  return file;
+}
+
+export const PROVIDERS = { codex, gemini, openai, fake, eleven, fakeaudio, elevenvoice, eleventts };
 export const hasKey = name => !!key(name);
