@@ -23,11 +23,13 @@
 #include "Misc/Paths.h"
 #include "Rendering/SlateRenderer.h"
 #include "RTSHudKit.h"
+#include "RTSChat.h"
 #include "RTSHudPainter.h"
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
-#include "Sim/World.h"   // (v5) o estado de voo no painel do ar
+#include "Sim/World.h"
+#include "UnrealClient.h"   // (03/11) FScreenshotRequest: o -RTSTab abre o placar no quadro da foto   // (v5) o estado de voo no painel do ar
 
 #define LOCTEXT_NAMESPACE "RTSHUD"
 
@@ -142,10 +144,73 @@ void ARTSHUD::FillNewHud(ARTSPlayerController* PC, URTSMatchSubsystem* Match, FR
 		{
 			H.bShowEco = true;
 			H.Money = Money(Match->Money(P));
-			H.PowerUsed = Match->PowerUsed(P);
-			H.PowerMade = Match->PowerMade(P);
 		}
+		// (03/11) a barra dos times e o placar do Tab (o pintor só mostra a economia sua, dos aliados e dos espionados)
+		H.Team = Match->TeamOf(P);
+		H.PowerUsed = Match->PowerUsed(P);
+		H.PowerMade = Match->PowerMade(P);
+		{
+			const FString Fac = Match->FactionOf(P);
+			const int32 Rank = FMath::Clamp(Match->PlayerRank(P), 1, 5);
+			H.RankIcon = Fac == TEXT("usa") ? FName(*FString::Printf(TEXT("skin:rank_usa_%d"), Rank))
+				: FName(*FString::Printf(TEXT("skin:%s/rank_%s_%d"), *Fac, *Fac, Rank));
+		}
+		const URTSMatchSubsystem::FPlayerStats Stats = Match->StatsOf(P);
+		H.Score = int32(FMath::Min<int64>(Stats.Score(), MAX_int32));
+		H.Destroyed = Stats.UnitsDestroyed + Stats.BuildingsDestroyed;
+		H.Lost = Stats.UnitsLost + Stats.BuildingsLost;
+		H.Cash = Match->Money(P);
+		H.Income = Match->IncomeLastMinute(P);
 		S.Players.Add(H);
+	}
+	// (03/11) a pele da facção (as aprovadas em 01–02/11) e o placar: segurar o Tab abre (menos digitando no chat)
+	{
+		const FString MyFac = Match->FactionOf(Me);
+		S.SkinFaction = MyFac == TEXT("usa") ? NAME_None : FName(*MyFac);
+	}
+	// -RTSTab: o teste fotografa o placar aberto (só no quadro da foto: nos outros o robô segue clicando no HUD)
+	static const bool bTabTest = FParse::Param(FCommandLine::Get(), TEXT("RTSTab"));
+	const bool bTabHeld = PC->IsInputKeyDown(EKeys::Tab) && !RTSChat::IsTyping();
+	S.bScoreboard = bTabHeld || (bTabTest && FScreenshotRequest::IsScreenshotRequested());
+	S.bScoreboardPassive = !bTabHeld;   // o da foto não segura o clique (o robô do teste clica no quadro seguinte)
+	if (S.bScoreboard)
+	{
+		// o exército: o valor das unidades vivas de cada um (o custo da ficha)
+		TArray<FRTSUnitState> Units;
+		Match->GetUnits(Units);
+		TMap<uint8, int32> Army;
+		for (const FRTSUnitState& U : Units)
+		{
+			FRTSDefInfo Def;
+			if (U.Hp > 0 && !U.bStructure && Match->GetDef(U.Def, Def))
+			{
+				Army.FindOrAdd(U.Owner) += Def.Cost;
+			}
+		}
+		for (int32 I = 0; I < S.Players.Num(); ++I)
+		{
+			S.Players[I].Army = Army.FindRef(Order[I]);
+		}
+		// o formato: os tamanhos dos times ("2 vs 2"), ou todos contra todos
+		TArray<uint8> Teams;
+		TArray<int32> Sizes;
+		for (const FRTSHudPlayer& H : S.Players)
+		{
+			const int32 T = Teams.AddUnique(uint8(H.Team));
+			Sizes.SetNum(Teams.Num());
+			++Sizes[T];
+		}
+		if (S.Players.Num() > 2 && Teams.Num() == S.Players.Num())
+		{
+			S.ModeLabel = LOCTEXT("ModeFfa", "Free for all").ToString();
+		}
+		else
+		{
+			for (int32 T = 0; T < Sizes.Num(); ++T)
+			{
+				S.ModeLabel += (T ? TEXT(" vs ") : TEXT("")) + FString::FromInt(Sizes[T]);
+			}
+		}
 	}
 	const int32 Seconds = int32(Match->MatchSeconds());
 	S.Clock = FString::Printf(TEXT("%d:%02d"), Seconds / 60, Seconds % 60);

@@ -515,6 +515,26 @@ public:
 	float SecondsSinceEnd() const;
 	int32 UnitsLost() const { return Lost; }
 	int32 UnitsKilled() const { return Killed; }
+	/**
+	 * (03/11, o placar do Tab) As contas de cada jogador, as do ScoreKeeper do ZH: as unidades e os prédios feitos, os dos outros
+	 * destruídos e os seus perdidos, e o dinheiro ganho (os caminhões e a zona do avião de carga; vender não conta). Só desenho: saem
+	 * dos eventos do passo, iguais em todos os PCs.
+	 */
+	struct FPlayerStats
+	{
+		int32 UnitsBuilt = 0;
+		int32 BuildingsBuilt = 0;
+		int32 UnitsDestroyed = 0;
+		int32 BuildingsDestroyed = 0;
+		int32 UnitsLost = 0;
+		int32 BuildingsLost = 0;
+		int64 MoneyEarned = 0;
+		/** A pontuação do ZH (ScoreKeeper::calculateScore): 100 por unidade e prédio feitos e destruídos, mais o dinheiro ganho. */
+		int64 Score() const { return int64(UnitsBuilt + BuildingsBuilt + UnitsDestroyed + BuildingsDestroyed) * 100 + MoneyEarned; }
+	};
+	FPlayerStats StatsOf(uint8 Player) const { return PlayerStats.IsValidIndex(Player) ? PlayerStats[Player] : FPlayerStats(); }
+	/** O dinheiro ganho no último minuto de partida (a renda por minuto do placar). */
+	int32 IncomeLastMinute(uint8 Player) const;
 	/** Cor de cada jogador no HUD (anel, barra de vida). */
 	static FLinearColor PlayerColor(uint8 Player);
 	/** As 8 cores da sala (o índice que cada um escolhe). */
@@ -1044,6 +1064,9 @@ private:
 	int32 ShotsFired = 0;
 	int32 Lost = 0;
 	int32 Killed = 0;
+	TArray<FPlayerStats> PlayerStats;
+	/** (03/11) o dinheiro ganho de cada jogador com o tempo de partida em que entrou (só o último minuto fica). */
+	TArray<TArray<TPair<float, int32>>> IncomeLog;
 	double StartWorldSeconds = 0.0;
 	double EndWorldSeconds = -1.0;
 	double LastDeathWorldSeconds = 0.0;

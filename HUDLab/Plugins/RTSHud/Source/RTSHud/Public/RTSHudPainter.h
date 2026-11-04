@@ -77,6 +77,8 @@ private:
 	void DrawCommandPanel(const FRTSHudState& State);
 	/** A altura (na planta) do painel central: 180 com 9 colunas, mais alto com as casas maiores. */
 	static float CommandPanelHeight(const FRTSHudState& State);
+	/** (v4) O relógio (FRTSHudTimer) no lugar da grade principal: de Left até o sulco Right, na planta, no painel PTop/PH. */
+	void DrawTimer(const FRTSHudState& State, float Left, float Right, float PTop, float PH);
 	void DrawCard(const FRTSHudState& State);
 	void DrawTooltip(const FRTSHudState& State);
 

@@ -582,7 +582,9 @@ void FRTSHudPainter::DrawSuperweaponList(const FRTSHudState& State)
 		return;
 	}
 	const int32 Rows = FMath::Min(8, Gs.Num()), More = Gs.Num() - Rows;
-	const float X = SX(1676.0f, EAnchor::Right), Y = SY(8.0f, false), W = 232.0f * S;
+	// no canto de cima; enquanto o painel do dinheiro antigo morar ali (o jogo, até o console da energia), logo abaixo dele
+	const float Top = State.Money.IsEmpty() ? 8.0f : 6.0f + (State.Stars >= 0 ? 97.0f : 60.0f) + 8.0f;
+	const float X = SX(1676.0f, EAnchor::Right), Y = SY(Top, false), W = 232.0f * S;
 	const float H = (3.0f + Rows * 24.0f + (More > 0 ? 15.0f : 0.0f) + 5.0f) * S;
 	RoundRect(X - 3 * S, Y + 1 * S, W + 6 * S, H + 5 * S, 8 * S, FLinearColor(0, 0, 0, 0.10f));
 	RoundRect(X - 1 * S, Y + 1.5f * S, W + 2 * S, H + 2.5f * S, 6 * S, FLinearColor(0, 0, 0, 0.14f));
@@ -680,11 +682,22 @@ void FRTSHudPainter::DrawScoreboard(const FRTSHudState& State)
 		}
 	}
 
-	// a janela: 1540 de largura; a altura sai do conteúdo; o meio da tela um pouco acima (o translate(-50%, -48%) do protótipo)
+	// as superarmas de todos (as suas e as dos aliados também), as que têm prontas em cima. Nenhuma na partida (03/11, ele: "não mostra
+	// nada mesmo"): a coluna não existe e a janela fica só com os jogadores
+	TArray<FSwGroup> Gs = GroupSuperweapons(Ps, [](const FRTSHudPlayer& P) { return !P.bDead; });
+	Gs.StableSort([](const FSwGroup& A, const FSwGroup& B)
+	{
+		if ((A.Ready > 0) != (B.Ready > 0)) return A.Ready > 0;
+		if (A.Ready != B.Ready) return A.Ready > B.Ready;
+		return A.Next < B.Next;
+	});
+	const bool bSide = Gs.Num() > 0;
+
+	// a janela: 1540 de largura (1172 sem a coluna); a altura sai do conteúdo; o meio da tela um pouco acima (o translate(-50%, -48%) do protótipo)
 	float GridH = 24.0f;
 	for (const FBlock& B : Blocks) GridH += 22.0f + B.Rows.Num() * 42.0f + (B.Rows.Num() - 1) * 4.0f;
-	const float BodyH = FMath::Max(GridH, 300.0f);
-	const float BoxW = 1540.0f, BoxH = 34.0f + 34.0f + 22.0f + BodyH + 36.0f;
+	const float BodyH = bSide ? FMath::Max(GridH, 300.0f) : GridH;   // a altura mínima é da coluna (a lista que rola)
+	const float BoxW = bSide ? 1540.0f : 1172.0f, BoxH = 34.0f + 34.0f + 22.0f + BodyH + 36.0f;
 	const float PX0 = 960.0f - BoxW * 0.5f, PY0 = 540.0f - BoxH * 0.48f;
 	auto PX = [&](float V) { return SX(PX0 + V, EAnchor::Center); };
 	auto PY = [&](float V) { return SY(PY0 + V, false); };
@@ -709,7 +722,10 @@ void FRTSHudPainter::DrawScoreboard(const FRTSHudState& State)
 			const float FW = (BoxW + (L + Ri) * 0.64f) * S, FH = (BoxH + (T + Bo) * 0.64f) * S;
 			Skin(FrameTex, BX - L * 0.64f * S, BY - T * 0.64f * S, FW, FH, FMargin(CW, CH), FW / FT->GetSurfaceWidth());
 		}
-		Bg(BX, BY, BW, BH);
+		if (!State.bScoreboardPassive)
+		{
+			Bg(BX, BY, BW, BH);
+		}
 	}
 
 	// o cabeçalho: o título e a linha do formato
@@ -818,16 +834,13 @@ void FRTSHudPainter::DrawScoreboard(const FRTSHudState& State)
 	}
 
 	// a coluna das superarmas
+	if (!bSide)
+	{
+		return;
+	}
 	const float SideX = 84.0f - 40.0f + 1084.0f + 26.0f;   // o fio da coluna (a grade termina em 44 + 1084)
 	const float ListX = SideX + 24.0f, ListW = 318.0f;
 	Rect(PX(SideX), PY(BodyY), FMath::Max(1.0f, S), BodyH * S, Hex(0xc8d4e0, 0.12f));
-	TArray<FSwGroup> Gs = GroupSuperweapons(Ps, [](const FRTSHudPlayer& P) { return !P.bDead; });
-	Gs.StableSort([](const FSwGroup& A, const FSwGroup& B)
-	{
-		if ((A.Ready > 0) != (B.Ready > 0)) return A.Ready > 0;
-		if (A.Ready != B.Ready) return A.Ready > B.Ready;
-		return A.Next < B.Next;
-	});
 	int32 Total = 0, TotalReady = 0;
 	for (const FSwGroup& G : Gs)
 	{
@@ -851,11 +864,6 @@ void FRTSHudPainter::DrawScoreboard(const FRTSHudState& State)
 		}
 	}
 	const float ListY = BodyY + 34.0f, ListH = BodyH - 34.0f;
-	if (Gs.Num() == 0)
-	{
-		TextMid(TEXT("No superweapons"), PX(ListX + 2), PY(ListY + 20), 15.0f, Hex(0xc8d4e0, 0.5f), EWeight::SemiBold, EAlign::Left, false);
-		return;
-	}
 	const int32 Fits = FMath::Max(1, FMath::FloorToInt((ListH + 4.0f) / 54.0f));
 	const bool bScroll = Gs.Num() > Fits;
 	const int32 First = FMath::Clamp(State.ScoreSwScroll, 0, FMath::Max(0, Gs.Num() - Fits));

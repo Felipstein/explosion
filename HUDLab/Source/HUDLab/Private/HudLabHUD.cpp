@@ -94,6 +94,14 @@ void AHudLabHUD::DrawHUD()
 			FParse::Value(FCommandLine::Get(), TEXT("Me="), MeHex);
 			ApplyHudLabFormat(State, Format, SkinFaction.IsNone() ? FString(TEXT("usa")) : SkinFaction.ToString(), FParse::Param(FCommandLine::Get(), TEXT("Abuse")), MeHex);
 		}
+		if (FParse::Param(FCommandLine::Get(), TEXT("NoSw")))
+		{
+			// -NoSw: a partida sem nenhuma superarma (a lista C some e o placar fica sem a coluna)
+			for (FRTSHudPlayer& P : State.Players)
+			{
+				P.Superweapons.Reset();
+			}
+		}
 		State.bScoreboard = FParse::Param(FCommandLine::Get(), TEXT("Tab")) || (PlayerOwner && PlayerOwner->IsInputKeyDown(EKeys::Tab));
 		FParse::Value(FCommandLine::Get(), TEXT("Scroll="), State.ScoreSwScroll);
 	}

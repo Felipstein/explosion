@@ -1408,6 +1408,9 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 	ShotsFired = 0;
 	Lost = 0;
 	Killed = 0;
+	PlayerStats.Init(FPlayerStats(), int32(Setup.Players.size()));
+	IncomeLog.Reset();
+	IncomeLog.SetNum(int32(Setup.Players.size()));
 	StartWorldSeconds = GetWorld()->GetTimeSeconds();
 	LastDeathWorldSeconds = StartWorldSeconds;
 	bReady = false;
@@ -3579,6 +3582,23 @@ void URTSMatchSubsystem::HandleEvents()
 			const FVector2D At = RTS::ToWorld(E.Point);
 			TObjectPtr<ARTSUnitActor>* View = Views.Find(E.Target);
 			ARTSUnitActor* Actor = View ? View->Get() : nullptr;
+			{
+				// (03/11) o placar: o dono perdeu, quem matou destruiu (o matador pela vista do passo: ele pode ter morrido junto)
+				const bool bBuilding = Actor && Actor->IsStructure();
+				if (PlayerStats.IsValidIndex(Owner))
+				{
+					++(bBuilding ? PlayerStats[Owner].BuildingsLost : PlayerStats[Owner].UnitsLost);
+				}
+				const Sim::UnitView* Killer = S.Curr.Find(E.Source);
+				if (!Killer)
+				{
+					Killer = S.Prev.Find(E.Source);
+				}
+				if (Killer && Killer->Owner != Owner && PlayerStats.IsValidIndex(Killer->Owner))
+				{
+					++(bBuilding ? PlayerStats[Killer->Owner].BuildingsDestroyed : PlayerStats[Killer->Owner].UnitsDestroyed);
+				}
+			}
 			Sim::World::CrashView Crash;
 			if (Actor && Actor->IsAircraft() && S.World.FindCrash(E.Target, Crash))
 			{
@@ -3684,6 +3704,22 @@ void URTSMatchSubsystem::HandleEvents()
 		}
 		case Sim::EventType::SupplyDelivered:
 		{
+			{
+				// (03/11) o placar: o dinheiro ganho, do dono do caminhão ou da zona do avião (o mesmo evento)
+				const Sim::UnitView* From = S.Curr.Find(E.Source);
+				if (!From)
+				{
+					From = S.Prev.Find(E.Source);
+				}
+				if (From && E.Value > 0 && PlayerStats.IsValidIndex(From->Owner))
+				{
+					const float Now = MatchSeconds();
+					PlayerStats[From->Owner].MoneyEarned += E.Value;
+					TArray<TPair<float, int32>>& Log = IncomeLog[From->Owner];
+					Log.RemoveAll([Now](const TPair<float, int32>& X) { return Now - X.Key > 60.0f; });
+					Log.Add({ Now, int32(E.Value) });
+				}
+			}
 			// o "+$300" do ZH (SupplyCenterDockUpdate): só pro dono do caminhão
 			const Sim::UnitView* Truck = S.Curr.Find(E.Source);
 			const Sim::UnitView* Center = S.Curr.Find(E.Target);
@@ -3696,6 +3732,14 @@ void URTSMatchSubsystem::HandleEvents()
 			}
 			break;
 		}
+		case Sim::EventType::UnitProduced:
+		case Sim::EventType::StructureCompleted:
+			// (03/11) o placar: o que cada jogador fez (Value = o dono)
+			if (PlayerStats.IsValidIndex(int32(E.Value)))
+			{
+				++(E.Type == Sim::EventType::UnitProduced ? PlayerStats[E.Value].UnitsBuilt : PlayerStats[E.Value].BuildingsBuilt);
+			}
+			break;
 		case Sim::EventType::StructureSelling:
 			// (v4, 23/10) a desmontagem começou: o desenho é a obra ao contrário (GetUnit: o andaime, o corte descendo e a solda)
 			UE_LOG(LogTemp, Log, TEXT("RTS vender: o prédio %u começou a desmontar (%d passos)"), E.Target, E.Value);
@@ -9994,4 +10038,19 @@ void URTSMatchSubsystem::AirBurstSmoke(const FVector& AtCm, float SigmaM, float 
 	{
 		FlakPuffs.RemoveAt(0, FlakPuffs.Num() - 96);
 	}
+}
+
+int32 URTSMatchSubsystem::IncomeLastMinute(uint8 Player) const
+{
+	if (!IncomeLog.IsValidIndex(Player))
+	{
+		return 0;
+	}
+	const float Now = MatchSeconds();
+	int32 Sum = 0;
+	for (const TPair<float, int32>& X : IncomeLog[Player])
+	{
+		Sum += Now - X.Key <= 60.0f ? X.Value : 0;
+	}
+	return Sum;
 }

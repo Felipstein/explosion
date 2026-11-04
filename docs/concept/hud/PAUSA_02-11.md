@@ -55,3 +55,17 @@ Sessão do HUD. Ao retomar: ler isto, `FACCOES.md` (§5–8), `DECISOES.md` (§7
 - 03/11, depois: as fotos todas feitas e iguais ao protótipo (lado a lado em `captures/hudlab/ab_*.png`, as 4 facções em
   `folha_topo_faccoes.jpg` e `folha_placar_faccoes.jpg`); os anéis finos com a beira suave (`SoftArc`, o Canvas não suaviza triângulo).
   Mostrado a ele; falta o "aprovado" e depois levar pro jogo (Game/Plugins/RTSHud, a rodinha rolando a coluna, o Tab segurado).
+
+## 03/11, 16h: PAUSA (limite de tokens), no meio de levar pro jogo
+- Aprovado e commitado: o HUD dos jogadores no HUDLab (`be8a4c9`, com push).
+- **No jogo, SEM commit (compilado e passando):** `Game/Plugins/RTSHud` = cópia do `HUDLab/Plugins/RTSHud` (a fonte única; juntei nele o
+  relógio da Drop Zone e o botão do trabalhador que só o jogo tinha); `RTSHUDNew.cpp` preenche o time, a patente, as contas, a pele da
+  facção e o Tab segurado (`-RTSTab` abre o placar só no quadro da foto do teste); `RTSMatchSubsystem` conta por jogador pelos eventos
+  (`StatsOf`, `IncomeLastMinute`; a pontuação do ZH). Sem superarma, a lista C some e o placar fica sem a coluna (ele: "não mostra nada").
+  Também sem commit no HUDLab: a coluna vazia (`bSide`) e `hudlab.ps1 shot -NoSw`.
+- Provado no jogo (03/11, à noite): o teste base inteiro com o HUD novo, 0 falhas (`hud_novo_base`), e com o placar nas fotos, 0 falhas
+  (`captures/game/hud_jogadores_tab3/`: na batalha, 4/11 contra 11/4, a renda e a pontuação andando). O placar da foto do teste não
+  segura o clique (`bScoreboardPassive`); com o Tab segurado, segura. Mostrado a ele; falta o "aprovado" pro commit do jogo.
+- **Falta:** ver a barra dos times no jogo (o teste da sala com times quebra no passo `lan_times`, de outra sessão; ou um skirmish com
+  mais IAs à mão); as superarmas na simulação; a rodinha rolando a coluna (mexe no controle, que outra sessão edita); o commit do jogo
+  quando ele aprovar no jogo.

@@ -116,6 +116,23 @@ struct FRTSHudCard
 	FString PlateKills;       // "KILLS  Units 31 · Buildings 6"
 };
 
+/**
+ * (v4, 23/10) O relógio de um prédio que trabalha sozinho (a Supply Drop Zone e o avião de carga; o CB_CONTEXT_OCL_TIMER do
+ * ZH): com ele, a esquerda do painel do meio fica sem a grade principal e mostra o medalhão, o rótulo, o tempo, a linha e a
+ * barra (a imagem 4 do GPT que o Felipe escolheu); a grade de ações da direita fica igual.
+ */
+struct FRTSHudTimer
+{
+	bool bShow = false;
+	FName Medallion;          // "skin:timer_medallion_airlift" (o medalhão redondo com o emblema)
+	FString Title;            // "NEXT AIRLIFT" (maiúsculas: vai espaçado)
+	FString Time;             // "0:42"
+	FString Line;             // "4 pallets  ·  +$1,200"
+	float Fill = 0.0f;        // 0..1, a barra (quem preenche já manda em degraus de 1 s, como o ZH)
+	bool bInbound = false;    // o avião a caminho: o rótulo em âmbar e a luz respirando
+	bool bPaused = false;     // sem energia: o rótulo em âmbar, a barra parada em âmbar, a luz apagada
+};
+
 struct FRTSHudState
 {
 	// o tempo (segundos, qualquer origem): as pulsações (READY, superarma perto, energia faltando)
@@ -132,6 +149,7 @@ struct FRTSHudState
 
 	// o placar (Tab aberto): a janela no meio com a moldura da facção; a lista C das superarmas some (está toda nele)
 	bool bScoreboard = false;
+	bool bScoreboardPassive = false; // só pra olhar (a foto do teste): desenha, mas não segura o clique de quem joga
 	FString ModeLabel;               // "3 vs 5 vs 8", "Free for all"
 	int32 ScoreSwScroll = 0;         // a coluna das superarmas rolada (linhas; o jogo soma com a rodinha, o pintor limita)
 
@@ -155,6 +173,8 @@ struct FRTSHudState
 	// grupos 1–0
 	TArray<FRTSHudGroup> Groups;     // 10
 	bool bGroupsAtBottom = false;    // nada selecionado: descem pra borda
+	int32 IdleWorkers = -1;          // (01/11) o botão do trabalhador: os construtores parados (−1 = o botão de antes, sem o jogo dizer)
+	FName WorkerImage;               // e a foto do construtor da facção
 
 	// painel central
 	bool bCommandPanel = false;
@@ -162,6 +182,7 @@ struct FRTSHudState
 	/** Colunas da grade principal: 9 (a planta) ou menos, com as casas maiores do clássico (em teste, 13/10). */
 	int32 MainColumns = 9;
 	TArray<FRTSHudSlot> Actions;     // 6 (2 × 3)
+	FRTSHudTimer Timer;              // (v4) com bShow, no lugar da grade principal
 
 	FRTSHudCard Card;
 
