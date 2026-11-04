@@ -654,5 +654,13 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
     `Config/RTS/Sounds.json` (`Game/Tools/audio_pack.py`). O como em `docs/elenco/SONS_UNIDADES.md` ("No jogo"). Compilado e
     testado (a cena `som_teste_usa` e a partida automática inteira, 0 falhas). Os ganchos no `RTSPlayerController.cpp` e no
     `RTSMatchSubsystem.cpp` (6 linhas) ficam sem commit até os donos desses arquivos commitarem os deles.
-67. ⏳ **Amanhã, com ele:** as vozes e os sons das outras unidades e prédios (USA primeiro) e os retratos da China, da Rússia e da GLA
+67. ⏳ **Amanhã, com ele** (preparado na noite, nada gerado):
+    - os retratos da China, da Rússia e da GLA: `docs/elenco/retratos/retratos_faccoes_req.py` (48 peças em 14 folhas; as referências
+      conferidas, a infantaria v3 recortada em `captures/concept/_attach/retratos_infantaria_v3/`). **Falta a decisão dele: a cor de
+      cada facção nos retratos** (a da Rússia e a da GLA estão em aberto);
+    - as vozes das 10 unidades da USA que faltam: `docs/elenco/sons/vozes_usa_req.py` (a amostra de cada uma já leva todas as falas da
+      ficha; `--dry` mostra). A ficha do Comanche fala "Apache" nas falas: decidir o nome;
+    - a seleção dos prédios da USA que faltam (usina, Supply Center, Patriot, Airfield, Strategy Center, Drop Zone), pela receita da
+      War Factory; o do Command Center (a sala de operações) espera o veredito dele.
+    O pedido: as vozes e os sons das outras unidades e prédios (USA primeiro) e os retratos da China, da Rússia e da GLA
     (em folha em grade). A ordem dele: "amanhã continuemos a gerar os sons das outras unidades e das construções e os unit portrait".
