@@ -24,6 +24,27 @@ def src(*p):
     return os.path.join(CAP, *p)
 
 
+CATS = {'selecionado': 'select', 'andando': 'move', 'atacando': 'attack', 'pronto': 'ready'}
+
+
+def doc_pools(fac, key, folder, skip=()):
+    """(04/11) As falas de uma unidade recortadas da amostra aprovada (captures/audio/<pasta>/falas/NN_<fala>.wav, Game/Tools/voice_cut.py
+    --texts), nos grupos da ficha (docs/elenco/<facção>/<chave>.md, a seção 8: selecionado, andando, atacando, pronto). skip = os
+    pedaços que saíram fora da curva no recorte (a duração contra o texto)."""
+    import re
+    text = open(os.path.join(REPO, 'docs', 'elenco', fac, key + '.md'), encoding='utf-8').read()
+    talk = text.split('## 8.', 1)[1].split(chr(10) + '## ', 1)[0].split('**As falas**', 1)[1].split('- **O corpo', 1)[0]
+    files = sorted(os.listdir(src(folder, 'falas')))
+    pools, n = {}, 0
+    for cat, body in re.findall(r'^\s+- ([a-z ]+):(.*?)(?=^\s+- [a-z ]+:|\Z)', talk, re.S | re.M):
+        for _ in re.findall(r'"([^"]+)"', body):
+            n += 1
+            f = next(x for x in files if x.startswith('%02d_' % n))
+            if cat.strip() in CATS and not any(k in f for k in skip):
+                pools.setdefault(CATS[cat.strip()], []).append(src(folder, 'falas', f))
+    return pools
+
+
 # --- o que entra (a chave do jogo -> os arquivos; cada lista é sorteada sem repetir a última) ---
 UI = {'click': [os.path.join(REPO, 'docs', 'aprovados', 'sons', '2026-11-04_hud_clique_APROVADO.wav')]}
 STRUCTURES = {
@@ -41,6 +62,10 @@ UNITS = {
     'usa_dozer': {'select': [src('07_dozer_as_falas', f) for f in DZ[0:4]], 'move': [src('07_dozer_as_falas', f) for f in DZ[4:8]],
                   'build': [src('07_dozer_as_falas', f) for f in DZ[8:12]], 'repair': [src('07_dozer_as_falas', f) for f in DZ[12:16]],
                   'ready': [src('07_dozer_as_falas', f) for f in DZ[20:24]]},
+    # (04/11) as vozes aprovadas ("o Ranger e o Javelin tá até que aprovado"), as falas recortadas da amostra pelo texto; no Ranger,
+    # "Hostiles down." e "Take cover!" saíram emendadas no recorte e ficam fora
+    'usa_ranger': doc_pools('usa', 'usa_ranger', '39_usa_ranger_a_voz', skip=('hostiles_down', 'take_cover')),
+    'usa_javelin': doc_pools('usa', 'usa_javelin', '40_usa_javelin_a_voz'),
 }
 E_USA, E_CHN, E_RUS, E_GLA = (src('23_usa_eva_falas_da_amostra_aprovada'), src('31_china_eva_falas_da_amostra_aprovada'),
                               src('32_russia_eva_falas_da_amostra_aprovada'), src('38_gla_eva_falas_das_amostras'))

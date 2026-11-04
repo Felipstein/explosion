@@ -34,16 +34,14 @@ def runs(mask):
 
 
 def cells(img):
+    """As linhas pelas calhas da largura inteira (uma faixa escura dentro de uma célula não corta a linha: o BMPT na sombra, 04/11) e,
+    dentro de cada linha, as colunas (a célula preta vazia no fim da folha some sozinha)."""
     g = np.asarray(img.convert('L'), dtype=np.float32)
-    cols = [r for r in runs(g.mean(axis=0) >= 22) if r[1] - r[0] > 60]
     out = []
-    for x0, x1 in cols:
-        rows = [r for r in runs(g[:, x0:x1].mean(axis=1) >= 22) if r[1] - r[0] > 60]
-        out.append([(x0, y0, x1, y1) for y0, y1 in rows])
-    # a ordem de leitura: as linhas (pela altura) e, dentro delas, as colunas
-    flat = [c for col in out for c in col]
-    flat.sort(key=lambda c: (round(c[1] / 50), c[0]))
-    return flat
+    for y0, y1 in [r for r in runs(g.mean(axis=1) >= 6) if r[1] - r[0] > 60]:   # a calha é preta (~0–3); a linha com células pretas vazias fica acima de 6
+        for x0, x1 in [r for r in runs(g[y0:y1].mean(axis=0) >= 22) if r[1] - r[0] > 60]:
+            out.append((x0, y0, x1, y1))
+    return out
 
 
 def main():

@@ -75,6 +75,57 @@
     "units/usa_dozer/ready_3.wav",
     "units/usa_dozer/ready_4.wav"
    ]
+  },
+  "usa_ranger": {
+   "select": [
+    "units/usa_ranger/select_1.wav",
+    "units/usa_ranger/select_2.wav",
+    "units/usa_ranger/select_3.wav",
+    "units/usa_ranger/select_4.wav"
+   ],
+   "move": [
+    "units/usa_ranger/move_1.wav",
+    "units/usa_ranger/move_2.wav",
+    "units/usa_ranger/move_3.wav",
+    "units/usa_ranger/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_ranger/attack_1.wav",
+    "units/usa_ranger/attack_2.wav",
+    "units/usa_ranger/attack_3.wav"
+   ],
+   "ready": [
+    "units/usa_ranger/ready_1.wav",
+    "units/usa_ranger/ready_2.wav",
+    "units/usa_ranger/ready_3.wav",
+    "units/usa_ranger/ready_4.wav"
+   ]
+  },
+  "usa_javelin": {
+   "select": [
+    "units/usa_javelin/select_1.wav",
+    "units/usa_javelin/select_2.wav",
+    "units/usa_javelin/select_3.wav",
+    "units/usa_javelin/select_4.wav"
+   ],
+   "move": [
+    "units/usa_javelin/move_1.wav",
+    "units/usa_javelin/move_2.wav",
+    "units/usa_javelin/move_3.wav",
+    "units/usa_javelin/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_javelin/attack_1.wav",
+    "units/usa_javelin/attack_2.wav",
+    "units/usa_javelin/attack_3.wav",
+    "units/usa_javelin/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_javelin/ready_1.wav",
+    "units/usa_javelin/ready_2.wav",
+    "units/usa_javelin/ready_3.wav",
+    "units/usa_javelin/ready_4.wav"
+   ]
   }
  },
  "eva": {

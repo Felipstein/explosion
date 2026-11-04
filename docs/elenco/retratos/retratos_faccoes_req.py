@@ -17,7 +17,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 KIT = os.path.join(REPO, 'docs', 'concept', 'hud', 'kit', 'photos')
 MODELS = os.path.join(REPO, 'captures', 'game', 'models')
 INF = os.path.join(REPO, 'captures', 'concept', '_attach', 'retratos_infantaria_v3')
-TEAM = {'china': 'deep red', 'russia': None, 'gla': None}   # a China: o vermelho (a cor do time dela no jogo; 04/11, "monta todos unit portrait da China")
+TEAM = {'china': 'deep red', 'russia': 'red, exactly as the red parts of the reference (the cage nets, tarps and stripes), on the graphite steel grey paint of our models, never olive or green', 'gla': 'brass amber'}   # a China: o vermelho (APROVADA em 04/11); a GLA: o âmbar de latão (a pele dela no HUD, DECISOES §6: "o GLA não é verde"); a Rússia:
+# o cinza-aço dos nossos modelos com as peças da cor do time em vermelho, como nas prévias. A 1ª volta da Rússia saiu OLIVA porque eu
+# pedi oliva (ele: "por que estão verdes os da Rússia?"): errado, o retrato tem de ser o modelo do jogo (cinza-grafite)
 
 # a chave do jogo, a pasta do modelo (a prévia em <pasta>/preview/three_quarter_masks_game.png) e o que é, em inglês
 PIECES = {
@@ -160,3 +162,56 @@ def fix_china_cc():
         'square stone fortress with the battlements, the three-tiered green pagoda roof in the middle, the stairs climbing the side wall, '
         'the lattice radio mast and the radar dish, the red banners and the red star. It is NOT a tall tower with loudspeakers. '
         'The team markings are deep red. No text, no labels, no numbers in the image.')
+
+
+# (04/11) o conserto da Rússia: os veículos saíram oliva (eu pedi oliva; os nossos são cinza-aço), o T-90M com a caixa do TOS em cima, a
+# infantaria sentada (o botão) e em pé de braços abertos (a pose A da folha de referência, no cartão) e o cartão do Shtab com outro
+# prédio. Uma folha de botões (7) e uma de cartões (5) só com essas
+RU_FIX_BUTTONS = ['russia_t90m', 'russia_bmpt', 'russia_pantsir', 'russia_tos1a', 'russia_t14', 'russia_motostrelok', 'russia_kornet']
+RU_FIX_CARDS = ['russia_command_center', 'russia_tos1a', 'russia_t14', 'russia_motostrelok', 'russia_kornet']
+RU_NOTES = {
+    'russia_t90m': ' (a classic main battle tank with a round turret and a long gun; it carries NO rocket launcher box)',
+    'russia_command_center': (' (the square fortress with the swallow-tail battlements on the outer walls, the octagonal tower in the '
+                              'middle crowned by the white geodesic onion-dome radar, the armored gate with the round medallion and the '
+                              'red star, the red crane in the yard; it is NOT a mansion)'),
+    'russia_motostrelok': ' (standing naturally in a relaxed ready stance, the rifle held in both hands, never arms spread out)',
+    'russia_kornet': ' (standing naturally, the Kornet launcher tube carried on the back, never arms spread out)',
+}
+
+
+def fix_russia():
+    pieces = {k: (k, f, d) for k, f, d in PIECES['russia']}
+    grey = ('The vehicles keep the graphite steel grey paint of their references, never olive or green; their red parts (cage nets, '
+            'tarps, stripes) stay red. The soldiers keep the green camouflage uniform of their reference. ')
+    for kind, keys in (('buttons', RU_FIX_BUTTONS), ('cards', RU_FIX_CARDS)):
+        if not keys:
+            continue
+        part = [pieces[k] for k in keys]
+        n = len(part)
+        cells = '; '.join(f'{i + 1}. {d}{RU_NOTES.get(k, "")} of image {i + 1}' for i, (k, _, d) in enumerate(part))
+        if kind == 'buttons':
+            atts = [(ref(k, f), k) for k, f, _ in part] + [(os.path.join(KIT, 'buttons', 'usa_battle_tank.png'), 'estilo_botao_m1')]
+            req('Retratos russia, botões (conserto)', '1:1', atts,
+                f'A sheet of {n} game unit portrait icons for a modern real-time strategy game, laid out as a grid of 3 columns and 3 rows of '
+                f'equal square cells separated by thin black gutters (cells after the {n}th stay plain black). Every cell is a separate icon in '
+                f'the exact style of image {n + 1}: one subject alone, a photorealistic AAA game asset render with rich, weathered materials, '
+                f'three-quarter view from slightly above with the front pointing to the left, the whole subject inside its cell with a small '
+                f'margin (soldiers framed from the knees up, standing), on a plain dark charcoal studio background with a soft lighter '
+                f'gradient behind the subject and a soft contact shadow, warm key light from the upper left and a cool rim light. ' + grey +
+                f'Keep each design exactly as in its reference from our game, do not add or remove parts.' + chr(10) +
+                f'In reading order: {cells}.' + chr(10) + 'No text, no labels, no numbers in the image.')
+        else:
+            atts = [(ref(k, f), k) for k, f, _ in part] + [(os.path.join(KIT, 'buttons', 'russia_command_center.png'), 'shtab_botao_certo'),
+                                                          (os.path.join(KIT, 'card', 'usa_battle_tank.png'), 'estilo_cartao_m1'),
+                                                          (os.path.join(KIT, 'card', 'usa_dozer.png'), 'estilo_cartao_dozer')]
+            req('Retratos russia, cartões (conserto)', '3:2', atts,
+                f'A sheet of {n} selection portraits for a modern real-time strategy game, laid out as a grid of 2 columns and 3 rows of equal '
+                f'wide panoramic cells (each cell about 2.4 times wider than tall), separated by thin black gutters (cells after the {n}th '
+                f'stay plain black). Every cell is a separate portrait in the exact style and with the same standard background as images '
+                f'{n + 2} and {n + 3}: one subject alone, standing still, no action; a flat dusty desert plain with small dry bushes and pebbles '
+                f'in focus in front, strongly blurred distant hills and a faint village on the horizon (shallow depth of field), hazy warm '
+                f'light, pale dusty sky; a low camera, three-quarter view from the front-left; the subject centered slightly left, nothing '
+                f'touching the top or bottom edge of its cell (soldiers full-length, filling about two thirds of the cell height). The '
+                f'fortress of cell 1 looks exactly like image {n + 1}. ' + grey + f'Keep each design exactly as in its reference from our '
+                f'game, do not add or remove parts.' + chr(10) + f'In reading order: {cells}.' + chr(10) +
+                'No text, no labels, no numbers in the image.')
