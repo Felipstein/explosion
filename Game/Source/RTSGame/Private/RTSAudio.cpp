@@ -3,7 +3,14 @@
 
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+// os alertas do minimapa (RTSAlerts, 03/11, de outra sessão): enquanto não estão no git, o som compila sem eles (sem a EVA dos avisos
+// do minimapa); com eles no disco, entra tudo
+#if __has_include("RTSAlerts.h")
 #include "RTSAlerts.h"
+#define RTS_AUDIO_ALERTS 1
+#else
+#define RTS_AUDIO_ALERTS 0
+#endif
 #include "Components/AudioComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/Engine.h"
@@ -478,6 +485,7 @@ void URTSAudio::TickWatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match, d
 	}
 	LastSelection = Sel;
 	bSelectClick = false;
+#if RTS_AUDIO_ALERTS
 	// os avisos que o minimapa acabou de pôr (RTSAlerts: a base sob ataque, a unidade perdida); a idade zero = deste quadro
 	for (const FRTSMinimapPing& P : PC->GetMinimapPings())
 	{
@@ -504,6 +512,7 @@ void URTSAudio::TickWatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match, d
 			}
 		}
 	}
+#endif
 	// a falta de energia: quando a produção começa a andar devagar (o "LOW POWER" do HUD)
 	const bool bLow = Match->ProductionSpeed(Match->LocalPlayer()) < 0.999f;
 	if (bLow && !bLowPower && !bFirst)
