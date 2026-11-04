@@ -84,7 +84,7 @@ e a garagem do Dozer na frente com o pórtico amarelo. É a primeira coisa que o
 
 - **Seleção (variantes):** o clique do rádio digital limpo + o bipe curto de dois tons; o motor da antena com o rolamento; o
   zumbido grave dos geradores; a porta da garagem destravando.
-- **As falas** (o operador da base no rádio, em inglês; voz madura, calma, com o leve chiado digital e o "roger" seco):
+- **As falas** (a operadora da base no rádio, a EVA da USA, a mesma voz dos avisos (04/11, `docs/elenco/SONS_UNIDADES.md`); em inglês; calma, seca, com o leve chiado digital e o "roger" seco):
   - selecionado: "Command, go ahead." / "Headquarters on the line." / "Command post, listening." / "All stations, standing ready."
   - produzindo: "Dozer rolling out." / "Engineering detail dispatched." / "Builder on the pad." / "Another hand for the base."
   - sob ataque: "Hostiles at the gate." / "We're taking fire, Command." / "Perimeter breach, respond." / "Hold them off the HQ."

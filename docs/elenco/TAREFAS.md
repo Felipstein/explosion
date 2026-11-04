@@ -642,3 +642,14 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
 - **O C++ desta sessão sem commit** (vai com os donos do código, que seguram o commit até o teste dele):
   - o bunker (`WorldTransport.cpp`, `TestGarrison`, a tropa à mostra);
   - as variações do depósito (`RTSGameData`, `RTSDockActor`, `RTSMatchSubsystem`).
+
+**(04/11 ~03h30, a noite sozinho: "vou dormir, quando eu acordar quero revisar tudo, testar tudo, quero tudo pronto, tudo bem feito")**
+65. ✅ **Os retratos que fecham a USA** ("faltou os unit portrait da infantaria, faça isso, já joga no jogo"): os botões do Ranger e do
+    Javelin v3 e os 10 cartões que faltavam (Ranger, Javelin, Stryker, Paladin, Linebacker, Tomahawk, Raptor, Comanche, Supply Truck,
+    Supply Center), em 3 folhas em grade; no kit do HUD (o jogo lê de lá). Aprovado por mim, autorizado por ele (`docs/APROVADOS.md`).
+66. 🔄 **Os sons aprovados no jogo** ("os sons aprovados pode colocar no jogo"): o `URTSAudio` (o clique do HUD, a voz ao selecionar e
+    nas ordens, o som dos prédios, a fala de pronto, a EVA das 4 facções com as regras do ZH) e o pacote `Game/GameAudio` +
+    `Config/RTS/Sounds.json` (`Game/Tools/audio_pack.py`). O como em `docs/elenco/SONS_UNIDADES.md` ("No jogo"). Compilando pela fila;
+    depois o teste pelo log (`RTS som: ...`).
+67. ⏳ **Amanhã, com ele:** as vozes e os sons das outras unidades e prédios (USA primeiro) e os retratos da China, da Rússia e da GLA
+    (em folha em grade). A ordem dele: "amanhã continuemos a gerar os sons das outras unidades e das construções e os unit portrait".

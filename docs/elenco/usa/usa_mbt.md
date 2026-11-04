@@ -91,8 +91,7 @@ do jogo e a régua de todas.
 
 ## 8. O som
 
-- **Seleção (variantes):** a turbina subindo (o assovio que vira ronco); o servo elétrico da torre (o "zzzum" curto e limpo); a
-  escotilha batendo; o rádio digital com o bipe.
+- **Seleção: só a voz** (04/11, o Felipe: "acho que só a voz da unidade na hora que seleciona mesmo"; como o ZH, o StarCraft e o Company of Heroes). O efeito da turbina por baixo da fala foi testado e saiu.
 - **As falas** (o comandante do tanque; voz firme, média, rádio limpo, frases curtas):
   - selecionado: "Armor, ready." / "Tank one, go ahead." / "Gun's up." / "Awaiting orders."
   - andando: "Moving." / "Rolling out." / "Copy, advancing." / "On the way."

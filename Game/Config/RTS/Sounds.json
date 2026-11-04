@@ -1,0 +1,208 @@
+{
+ "_about": "(gerado por Game/Tools/audio_pack.py, não editar à mão) Os sons aprovados do jogo: os caminhos são relativos a Game/GameAudio/. ui = a interface (igual nas 4 facções); structures = o som de selecionar o prédio; units = as falas de cada unidade (select ao selecionar, move/attack nas ordens, ready ao sair da fábrica); eva = os avisos da partida por facção; eva_rules = [prioridade, intervalo mínimo s, validade na fila s] (o Eva.ini do ZH). Receitas: docs/elenco/SONS_UNIDADES.md.",
+ "ui": {
+  "click": [
+   "ui/hud/click_1.wav"
+  ]
+ },
+ "structures": {
+  "usa_war_factory": {
+   "select": [
+    "structures/usa_war_factory/select_1.wav"
+   ]
+  },
+  "usa_barracks": {
+   "select": [
+    "structures/usa_barracks/select_1.wav"
+   ]
+  }
+ },
+ "units": {
+  "usa_mbt": {
+   "select": [
+    "units/usa_mbt/select_1.wav",
+    "units/usa_mbt/select_2.wav",
+    "units/usa_mbt/select_3.wav",
+    "units/usa_mbt/select_4.wav"
+   ],
+   "move": [
+    "units/usa_mbt/move_1.wav",
+    "units/usa_mbt/move_2.wav",
+    "units/usa_mbt/move_3.wav",
+    "units/usa_mbt/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_mbt/attack_1.wav",
+    "units/usa_mbt/attack_2.wav",
+    "units/usa_mbt/attack_3.wav",
+    "units/usa_mbt/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_mbt/ready_1.wav",
+    "units/usa_mbt/ready_2.wav",
+    "units/usa_mbt/ready_3.wav",
+    "units/usa_mbt/ready_4.wav"
+   ]
+  },
+  "usa_dozer": {
+   "select": [
+    "units/usa_dozer/select_1.wav",
+    "units/usa_dozer/select_2.wav",
+    "units/usa_dozer/select_3.wav",
+    "units/usa_dozer/select_4.wav"
+   ],
+   "move": [
+    "units/usa_dozer/move_1.wav",
+    "units/usa_dozer/move_2.wav",
+    "units/usa_dozer/move_3.wav",
+    "units/usa_dozer/move_4.wav"
+   ],
+   "build": [
+    "units/usa_dozer/build_1.wav",
+    "units/usa_dozer/build_2.wav",
+    "units/usa_dozer/build_3.wav",
+    "units/usa_dozer/build_4.wav"
+   ],
+   "repair": [
+    "units/usa_dozer/repair_1.wav",
+    "units/usa_dozer/repair_2.wav",
+    "units/usa_dozer/repair_3.wav",
+    "units/usa_dozer/repair_4.wav"
+   ],
+   "ready": [
+    "units/usa_dozer/ready_1.wav",
+    "units/usa_dozer/ready_2.wav",
+    "units/usa_dozer/ready_3.wav",
+    "units/usa_dozer/ready_4.wav"
+   ]
+  }
+ },
+ "eva": {
+  "usa": {
+   "base_attack": [
+    "eva/usa/base_attack_1.wav"
+   ],
+   "ally_attack": [
+    "eva/usa/ally_attack_1.wav"
+   ],
+   "unit_lost": [
+    "eva/usa/unit_lost_1.wav"
+   ],
+   "money": [
+    "eva/usa/money_1.wav"
+   ],
+   "low_power": [
+    "eva/usa/low_power_1.wav"
+   ],
+   "upgrade": [
+    "eva/usa/upgrade_1.wav"
+   ]
+  },
+  "china": {
+   "base_attack": [
+    "eva/china/base_attack_1.wav"
+   ],
+   "ally_attack": [
+    "eva/china/ally_attack_1.wav"
+   ],
+   "unit_lost": [
+    "eva/china/unit_lost_1.wav"
+   ],
+   "money": [
+    "eva/china/money_1.wav"
+   ],
+   "low_power": [
+    "eva/china/low_power_1.wav"
+   ],
+   "upgrade": [
+    "eva/china/upgrade_1.wav"
+   ]
+  },
+  "russia": {
+   "base_attack": [
+    "eva/russia/base_attack_1.wav"
+   ],
+   "ally_attack": [
+    "eva/russia/ally_attack_1.wav"
+   ],
+   "unit_lost": [
+    "eva/russia/unit_lost_1.wav"
+   ],
+   "money": [
+    "eva/russia/money_1.wav"
+   ],
+   "low_power": [
+    "eva/russia/low_power_1.wav"
+   ],
+   "upgrade": [
+    "eva/russia/upgrade_1.wav"
+   ]
+  },
+  "gla": {
+   "base_attack": [
+    "eva/gla/base_attack_1.wav",
+    "eva/gla/base_attack_2.wav",
+    "eva/gla/base_attack_3.wav",
+    "eva/gla/base_attack_4.wav"
+   ],
+   "ally_attack": [
+    "eva/gla/ally_attack_1.wav",
+    "eva/gla/ally_attack_2.wav",
+    "eva/gla/ally_attack_3.wav",
+    "eva/gla/ally_attack_4.wav"
+   ],
+   "unit_lost": [
+    "eva/gla/unit_lost_1.wav",
+    "eva/gla/unit_lost_2.wav",
+    "eva/gla/unit_lost_3.wav",
+    "eva/gla/unit_lost_4.wav",
+    "eva/gla/unit_lost_5.wav"
+   ],
+   "money": [
+    "eva/gla/money_1.wav",
+    "eva/gla/money_2.wav",
+    "eva/gla/money_3.wav",
+    "eva/gla/money_4.wav",
+    "eva/gla/money_5.wav"
+   ],
+   "upgrade": [
+    "eva/gla/upgrade_1.wav",
+    "eva/gla/upgrade_2.wav",
+    "eva/gla/upgrade_3.wav",
+    "eva/gla/upgrade_4.wav"
+   ]
+  }
+ },
+ "eva_rules": {
+  "base_attack": [
+   7,
+   30.0,
+   5.0
+  ],
+  "ally_attack": [
+   6,
+   30.0,
+   5.0
+  ],
+  "upgrade": [
+   3,
+   0.0,
+   5.0
+  ],
+  "money": [
+   3,
+   1.5,
+   2.0
+  ],
+  "low_power": [
+   2,
+   120.0,
+   5.0
+  ],
+  "unit_lost": [
+   1,
+   15.0,
+   5.0
+  ]
+ }
+}
