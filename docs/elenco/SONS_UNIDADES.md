@@ -166,6 +166,11 @@ cada aviso tem **prioridade** (o maior fala, só um por vez), **o intervalo mín
 ## Como gerar (o Atelier, serviço 127.0.0.1:8140)
 - a voz: `kind: "voice"`, a descrição do temperamento da ficha, `models: {"vdesign": 1}`, a frase de amostra com as falas;
   guardar com `POST /api/voice/save`;
+- **a amostra lida de corrido** (04/11, o Ranger, o Javelin e a Stryker: pausas de 150 a 400 ms entre as falas, o corte pela pausa
+  não separa): `voice_cut.py --texts <falas.txt>` alinha pelo texto (as fronteiras nas pausas que fazem cada fala durar o que as letras
+  pedem); conferir a duração de cada fala contra o texto (ms por letra) e deixar de fora a que sair fora da curva (no Ranger, "Take
+  cover!" e "Hostiles down." emendadas). **O crédito da ElevenLabs acabou em 04/11** no meio das vozes da USA (32.900 do plano; a voz
+  custa ~400): saíram o Ranger, o Javelin e a Stryker; as outras 7 esperam o crédito.
 - **as falas saem da AMOSTRA da voz** (04/11: "por que você gerou uma por uma de novo?"): a frase de amostra do Voice Design leva
   TODAS as falas daquela voz (até 1000 caracteres); aprovada a voz, as falas são recortadas da própria amostra nas pausas
   (`captures/audio/23_usa_eva_falas_da_amostra_aprovada/cut_eva.py`). O que faltar: UM pedido `kind: "speech"` com todas as

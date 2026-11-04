@@ -17,7 +17,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 KIT = os.path.join(REPO, 'docs', 'concept', 'hud', 'kit', 'photos')
 MODELS = os.path.join(REPO, 'captures', 'game', 'models')
 INF = os.path.join(REPO, 'captures', 'concept', '_attach', 'retratos_infantaria_v3')
-TEAM = {'china': None, 'russia': None, 'gla': None}   # ex.: 'deep red' — a decisão dele
+TEAM = {'china': 'deep red', 'russia': None, 'gla': None}   # a China: o vermelho (a cor do time dela no jogo; 04/11, "monta todos unit portrait da China")
 
 # a chave do jogo, a pasta do modelo (a prévia em <pasta>/preview/three_quarter_masks_game.png) e o que é, em inglês
 PIECES = {
@@ -143,3 +143,20 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# (04/11) o conserto: na 1ª folha de botões da China o GPT desenhou o Command Center igual ao Propaganda Center (a torre com as
+# faixas). Um botão só, com a prévia do QG, o cartão certo dele (a mesma fortaleza) e o estilo do botão do M1:
+#   python -c "import importlib.util as u; s=u.spec_from_file_location('r','docs/elenco/retratos/retratos_faccoes_req.py'); m=u.module_from_spec(s); s.loader.exec_module(m); m.fix_china_cc()"
+def fix_china_cc():
+    atts = [(ref('china_command_center', 'china_command_center'), 'china_command_center'),
+            (os.path.join(KIT, 'card', 'china_command_center.png'), 'cartao_certo'),
+            (os.path.join(KIT, 'buttons', 'usa_battle_tank.png'), 'estilo_botao_m1')]
+    req('Retratos china, botão do Command Center (conserto)', '1:1', atts,
+        'One single game unit portrait icon for a modern real-time strategy game, in the exact style of image 3: a photorealistic AAA game '
+        'asset render on a plain dark charcoal studio background with a soft lighter gradient behind the subject and a soft contact '
+        'shadow, three-quarter view from slightly above, the whole building inside the frame with a small margin, warm key light from the '
+        'upper left and a cool rim light. The subject is the Chinese Command Center of image 1, exactly as it looks in image 2: the wide '
+        'square stone fortress with the battlements, the three-tiered green pagoda roof in the middle, the stairs climbing the side wall, '
+        'the lattice radio mast and the radar dish, the red banners and the red star. It is NOT a tall tower with loudspeakers. '
+        'The team markings are deep red. No text, no labels, no numbers in the image.')
