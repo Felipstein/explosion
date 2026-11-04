@@ -732,7 +732,7 @@ def roof_fan(p, x, y, z, r=0.42):
 
 # ===================================================================================================== estrela e letreiros
 
-def ru_star(p, F, u, z, r, n=0.0, m='Red', rim='White', t=0.03, w=0.1, disc=None, disc_r=None):
+def ru_star(p, F, u, z, r, n=0.0, m='Red', rim='White', t=0.03, w=0.1, disc=None, disc_r=None, relief=0.0):
     """(01/11, APROVADA com a imagem `docs/aprovados/modelos/2026-11-01_estrelas_russia_china_APROVADAS.jpg`) a estrela da Rússia: a
     estrela vermelha com as bordas BRANCA, AZUL e VERMELHA (a insígnia das Forças Armadas russas nos aviões de hoje), na parede F em
     (u, z), saindo de n; r = o raio da estrela vermelha do meio. disc: o medalhão redondo atrás (o material), de raio disc_r."""
@@ -746,7 +746,24 @@ def ru_star(p, F, u, z, r, n=0.0, m='Red', rim='White', t=0.03, w=0.1, disc=None
     for k, (mat, k_r) in enumerate((('Red', 1.53), ('Navy', 1.37), ('White', 1.2), ('Red', 1.0))):
         rr = r * k_r
         pts = star_points(0.0, 0.0, rr, rr * (0.42 if k < 3 else 0.382), rot_deg=90.0)
+        if k == 3 and relief > 0.0:
+            ru_star_relief(p, F, u, z, rr, n + k * t * 0.5 + t * 0.5, relief * rr)
+            continue
         face_prism(p, mat, F, [(u + x, z + y) for (x, y) in pts], n + k * t * 0.5, n + (k + 1) * t * 0.5 + t * 0.5, bevel=0.0)
+
+
+def ru_star_relief(p, F, u, z, r, n, h, m='Red#relief', r_in=0.382):
+    """(04/11) A estrela vermelha do meio em RELEVO FACETADO, como a estrela de metal das Forças Armadas (e a do Kremlin): as 10 faces
+    sobem das pontas e dos vãos até o centro, a h da base. A luz pega uma face de cada ponta e a outra fica na sombra: deixa de ser a
+    estrela "chata" (o Felipe sobre o Shtab v3: "falta [...] a estrela chata"). O sólido fecha atrás (a base), sem chanfro (as arestas
+    vivas é que desenham a estrela)."""
+    bb = p.bm(m, 0.0)
+    pts = star_points(0.0, 0.0, r, r * r_in, rot_deg=90.0)
+    rim = [bb.verts.new(V(*F.pt(u + x, z + y, n))) for (x, y) in pts]
+    apex = bb.verts.new(V(*F.pt(u, z, n + h)))
+    for i in range(10):
+        bb.faces.new([rim[i], rim[(i + 1) % 10], apex])
+    bb.faces.new(list(reversed(rim)))
 
 
 # os traços de cada letra numa caixa 1 × 1 (u, z); letras cirílicas reais, em ordem que não forma palavra; nunca Z nem V

@@ -45,7 +45,7 @@ Peças (origem no chão, no centro do lote; coordenadas da Unreal, X frente, Y d
   SM_Russia_CommandCenter_Radar: a antena de vigilância que gira (gira em Z; origem no eixo, no topo do mastro: RADAR_AT; 6 rpm como a do v2);
   SM_Russia_CommandCenter_Scaffold: o andaime da obra.
 Materiais (os slots da Rússia): Concrete, Roof (o verde), Metal, Red, White, Paint, Team (as faixas e as bandeiras), Navy (a borda azul da
-estrela), Hazard (o pátio), Glass, Light, Dark, Wood, Rubber (as juntas), Beacon.
+estrela; (04/11) a do meio em relevo facetado, ru_star_relief: "falta [...] a estrela chata"), Hazard (o pátio), Glass, Light, Dark, Wood, Rubber (as juntas), Beacon.
 """
 import math
 import os
@@ -310,7 +310,7 @@ def banner(p, face, at, u, ztop, zbot, w=1.15):
         p.cyl('Paint#bar', F.pt(u, zz, n + 0.04), ax, 0.04, w + 0.22, seg=8, bevel=0.0)
     for du in (-w / 2 - 0.05, w / 2 + 0.05):                                  # os ganchos na cornija
         wbox(p, 'Metal#hook', F, u + du - 0.03, u + du + 0.03, ztop, ztop + 0.25, 0.0, n + 0.06, bevel=0.0)
-    ru_star(p, WallFace(face, at + s * (n + 0.07), 0.0), u, ztop - (ztop - zbot) * 0.3, 0.27 * w / 1.15, n=0.0, t=0.012)
+    ru_star(p, WallFace(face, at + s * (n + 0.07), 0.0), u, ztop - (ztop - zbot) * 0.3, 0.27 * w / 1.15, n=0.0, t=0.012, relief=0.25)
 
 
 def keep(p):
@@ -430,7 +430,7 @@ def gate_block(p):
     p.box('Concrete#medb', 10.5, 11.05, -0.75, 0.75, GZ + 0.3, zc + 0.2, bevel=0.06)
     p.cyl('Concrete#med', (11.07, 0.0, zc), 'x', 1.05, 0.5, seg=36, bevel=0.06)
     p.torus('White#ring', (11.33, 0.0, zc), 'x', 0.93, 0.05, seg=40, rseg=6)
-    ru_star(p, WallFace('+x', 11.32, 0.0), 0.0, zc - 0.03, 0.52, n=0.0, t=0.03)
+    ru_star(p, WallFace('+x', 11.32, 0.0), 0.0, zc - 0.03, 0.52, n=0.0, t=0.03, relief=0.25)
     # a laje de aço da saída (as chapas com as frestas, a beirada de perigo no fim do lote)
     for (ya, yb) in zip(splits(-3.4, 3.4, 1.15)[:-1], splits(-3.4, 3.4, 1.15)[1:]):
         p.box('Metal#apron', GATEB[1] + 0.02, 12.6, ya + 0.025, yb - 0.025, -0.1, 0.08, bevel=0.02)
@@ -774,7 +774,7 @@ def spire_star(p, c, r, d=0.1):
     vp.prism(p, 'Red#score', [(u, v) for (u, v) in pts], Vector((cx - d / 2, cy, cz)), Vector((0, 1, 0)), Vector((0, 0, 1)),
              Vector((1, 0, 0)), d)
     for face, at in (('+x', cx + d / 2), ('-x', cx - d / 2)):
-        ru_star(p, WallFace(face, at, 0.0), cy, cz, r, n=0.0, t=0.03)
+        ru_star(p, WallFace(face, at, 0.0), cy, cz, r, n=0.0, t=0.03, relief=0.22)
 
 
 # ===================================================================================================== o pátio de obra

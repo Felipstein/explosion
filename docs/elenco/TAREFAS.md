@@ -639,7 +639,7 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
   vila e pros prédios da GLA. Comparar na foto da vila e no tour da GLA `_v63` contra o `_v61`/`_v62`.
 - **Os postes (item 64):** o agente foi parado na pausa. Retomar: o poste de madeira v3, o de concreto e a torre de alta tensão
   (`captures/game/models/civ_v3/pole` e `pylon`); o briefing está no histórico da sessão.
-- **O Shtab v3:** no jogo; falta baixar as ameias (de perto ainda lê como castelo) e a estrela chata.
+- ✅ **O Shtab v3:** no jogo; (04/11 noite) as ameias mais baixas e a estrela em relevo facetado (`ru_star_relief`), vistos no jogo.
 - **O crash do menu** (o RTSShell da sessão das Telas, `SRTSMenu::PaintTracks`): já consertado no código dela, falta a compilação dela.
 - **O C++ desta sessão sem commit** (vai com os donos do código, que seguram o commit até o teste dele):
   - o bunker (`WorldTransport.cpp`, `TestGarrison`, a tropa à mostra);
