@@ -611,3 +611,20 @@ Agora (13h45, pela ordem dele "o que já ia fazer, depois isso"):
   Os testes da simulação passaram (o mesmo FINAL_HASH nas 3 compilações).
 - O kit do adobe (`adobe_block` em `model_building_parts.py`) sobrepõe as paredes nas quinas e deve piscar na Unreal: conferir nos prédios
   que usam o kit.
+
+**(03/11 ~23h, PAUSA pelo limite de tokens, 2ª) Onde parou e o que roda sozinho:**
+- **Rodando sem gastar token** (scripts no scratchpad da sessão):
+  - `chain63`: a importação em 6 lotes dos 58 modelos re-exportados com o conserto da sujeira (a grade que divide a face de muitos
+    lados + a máscara em todos os materiais) e os tours `_v63`;
+  - `chain65`: o kit civil v3 na vila (as casas, o muro e os carros; a v2 guardada em `captures/look/civil_glb_v2_guardado/`), a
+    importação do kit e a foto `vila_rua_perto_salt2_v65`; o A é o `_v56`.
+  - Ao voltar: ver as fotos `_v63` e `_v65` e mostrar. Se a vila v3 ficar pior, voltar os GLB guardados e importar o kit de novo.
+- **O reboco envelhecido** (a lavagem e o tijolo de adobe onde o reboco caiu) entrou no material (`BrickReveal` no CivPlaster): vale pra
+  vila e pros prédios da GLA. Comparar na foto da vila e no tour da GLA `_v63` contra o `_v61`/`_v62`.
+- **Os postes (item 64):** o agente foi parado na pausa. Retomar: o poste de madeira v3, o de concreto e a torre de alta tensão
+  (`captures/game/models/civ_v3/pole` e `pylon`); o briefing está no histórico da sessão.
+- **O Shtab v3:** no jogo; falta baixar as ameias (de perto ainda lê como castelo) e a estrela chata.
+- **O crash do menu** (o RTSShell da sessão das Telas, `SRTSMenu::PaintTracks`): já consertado no código dela, falta a compilação dela.
+- **O C++ desta sessão sem commit** (vai com os donos do código, que seguram o commit até o teste dele):
+  - o bunker (`WorldTransport.cpp`, `TestGarrison`, a tropa à mostra);
+  - as variações do depósito (`RTSGameData`, `RTSDockActor`, `RTSMatchSubsystem`).

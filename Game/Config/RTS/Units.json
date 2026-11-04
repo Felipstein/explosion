@@ -5488,7 +5488,14 @@
 					}
 				},
 				"impact_crater": "A",
-				"mass_t": 44
+				"mass_t": 44,
+				"damage_states": {
+					"damaged": "/Game/Units/russia_tos1a/SM_Russia_TOS1A_Hull_Damaged/StaticMeshes/SM_Russia_TOS1A_Hull_Damaged",
+					"wrecked": "/Game/Units/russia_tos1a/SM_Russia_TOS1A_Hull_Wrecked/StaticMeshes/SM_Russia_TOS1A_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/russia_tos1a/SM_Russia_TOS1A_Turret_Damaged/StaticMeshes/SM_Russia_TOS1A_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/russia_tos1a/SM_Russia_TOS1A_Turret_Wrecked/StaticMeshes/SM_Russia_TOS1A_Turret_Wrecked",
+					"engine_m": [-2.4, 0.0, 1.42]
+				}
 			}
 		},
 		{
@@ -5543,7 +5550,14 @@
 				"impact_crater": "A",
 				"near_miss": 0.2,
 				"mass_t": 55,
-				"_mesh_B": "(01/11, item 55: \"muito parecido com o outro tanque\") a v2 de Game/Tools/model_russia_t14_v2.py; a de antes: ['/Game/Units/russia_t14/SM_Russia_T14_Hull/StaticMeshes/SM_Russia_T14_Hull', '/Game/Units/russia_t14/SM_Russia_T14_Wheels/StaticMeshes/wheel_*', '/Game/Units/russia_t14/SM_Russia_T14_Track_l/StaticMeshes/SM_Russia_T14_Track_l', '/Game/Units/russia_t14/SM_Russia_T14_Track_r/StaticMeshes/SM_Russia_T14_Track_r']"
+				"_mesh_B": "(01/11, item 55: \"muito parecido com o outro tanque\") a v2 de Game/Tools/model_russia_t14_v2.py; a de antes: ['/Game/Units/russia_t14/SM_Russia_T14_Hull/StaticMeshes/SM_Russia_T14_Hull', '/Game/Units/russia_t14/SM_Russia_T14_Wheels/StaticMeshes/wheel_*', '/Game/Units/russia_t14/SM_Russia_T14_Track_l/StaticMeshes/SM_Russia_T14_Track_l', '/Game/Units/russia_t14/SM_Russia_T14_Track_r/StaticMeshes/SM_Russia_T14_Track_r']",
+				"damage_states": {
+					"damaged": "/Game/Units/russia_t14_v2/SM_Russia_T14_Hull_Damaged/StaticMeshes/SM_Russia_T14_Hull_Damaged",
+					"wrecked": "/Game/Units/russia_t14_v2/SM_Russia_T14_Hull_Wrecked/StaticMeshes/SM_Russia_T14_Hull_Wrecked",
+					"turret_damaged": "/Game/Units/russia_t14_v2/SM_Russia_T14_Turret_Damaged/StaticMeshes/SM_Russia_T14_Turret_Damaged",
+					"turret_wrecked": "/Game/Units/russia_t14_v2/SM_Russia_T14_Turret_Wrecked/StaticMeshes/SM_Russia_T14_Turret_Wrecked",
+					"engine_m": [-3.47, 0.0, 1.77]
+				}
 			}
 		},
 		{
