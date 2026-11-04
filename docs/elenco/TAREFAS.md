@@ -416,7 +416,9 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
 48. ✅ **GLA, quartel (REFAZER).** (03/11 noite) O v5 (o do ZH mudado, o pedido dele) no jogo: a rachadura da cúpula alargada (lia como risco), o dano, a malha do tiro (`chain61`).
 49. ⏳ **GLA, Palace (REFAZER):** "sai um pouco dessa de tudo ser mudado [murado?] assim".
 50. ✅ **GLA, Stinger Site (REFAZER).** (03/11) No jogo o v5, o alçapão aprovado (o padrão, chão e ar); e o SAM Site novo (só antiaéreo).
-51. ✅ **GLA, Supply Stash (REFAZER).** (03/11) No jogo o v5, o poço do contrabando aprovado; e o Bunker novo (3 vagas).
+51. ✅ **GLA, Supply Stash (REFAZER).** (03/11) No jogo o v5, o poço do contrabando aprovado; e o Bunker novo (3 vagas). (03/11 noite, o Felipe: "no bunker do GLA lá tem que aparecer a unidade, tropa dentro") a tropa de pé no ninho do teto, mirando e
+    atirando (`RTSMatchSubsystem.cpp`: no prédio o passageiro fica à mostra; no veículo segue escondido), a prova em
+    `captures/game/gla_defesas_v5c/bunker_tropa.jpg`; a entrada pela borda do prédio (`WorldTransport.cpp`, o teste `TestGarrison`).
 52. ⏳ **GLA, Worker (NO RUMO):** "parece que ele tá segurando uma arma".
     (21h50) O Worker é o boneco da infantaria (`T_Soldier_GLA_WORKER`): fica com a sessão da infantaria (o Felipe vê com ela).
     **48 a 51, o plano (21h50):** `docs/elenco/GLA_PREDIOS.md`: sem muro em volta, uma forma por prédio: o quartel = a tenda beduína
@@ -437,6 +439,9 @@ e o Javelin: ficam as do jogo. As 17 que voltam (a folha `docs/aprovados/modelos
     facetado do Armata, 176 a fortaleza do Kremlin com o radome e o guindaste). Ele saiu e deixou a decisão comigo ("não dependa de
     mim"): ESCOLHI a 176, com o radome em cúpula de cebola (`docs/concept/buildings/russia_shtab_kremlin_radar_ESCOLHIDO.png`). Um agente
     modelando `model_russia_command_center_v3.py`.
+    (03/11 noite) No jogo (`chain64`): 2 voltas do agente (as ameias baixas e largas, a lança do guindaste levantada pra ler na
+    câmera, a Base de 551 pra 423 mil triângulos); o radar gira, o guindaste parado no lugar. A foto
+    `captures/game/elenco_russia_tour_v64/shtab_v3_no_jogo.jpg`. Falta: as ameias ainda puxam pro castelo de perto; a estrela chata.
 56. 🔄 **USA, Strategy Center A e B (REFAZER):** "sem criatividade". (17h40) Junta com o Pentágono: o QG de inteligência = o Pentágono
     melhorado com as radomos (o agente termina o campo de radomos; depois a fusão). (17h55, o Felipe vendo no jogo) "o pentágono com a
     bola ficou muito bom, dá pra usar como o centro de inteligência, mas tem que melhorar, tirar o portão, mudar algumas coisas, mais
@@ -566,6 +571,9 @@ alvo). A/B no `chain47`.
     - (03/11 noite) Ele deixou a decisão comigo: as 4 do básico (`docs/concept/buildings/supply_basico_4_tamanhos_ESCOLHIDO.png`): a pilha
       pequena (50), a pilha (150), a doca (400, o telhado só no terço de trás) e o armazém da vila (400, o estoque no pátio da frente).
       Um agente modelando, com as vagas do estoque por variação (`stock_layout.json`); depois o jogo lê uma variação por depósito.
+      (03/11 noite) Modelados (a folha `captures/game/models/supply_folha.jpg`) e ligados no jogo: o `kind` de cada depósito do
+      village.json escolhe o desenho, o estoque modelado some caixa a caixa, a simulação deixa a faixa dos caminhões livre (o formato
+      e o pedido pro WorldForge em `docs/elenco/SUPPLY_DOCK_ESTUDO.md`). A prova no jogo: `chain64`, a cena `supply_variacoes`.
     - (03/11 tarde) o estudo em `docs/elenco/SUPPLY_DOCK_ESTUDO.md` ("a carga que a guerra deixou": o veículo ou o lugar que trazia
       suprimento e ficou parado, cheio das caixas do C&C; nunca repõe) e a 1ª folha no Atelier, as 4 famílias (o cargueiro encalhado,
       o trem parado, o avião de carga caído, o pátio do pórtico): `captures/concept/160_supply_dock_4_familias/raiz_r1_gpt.png`,

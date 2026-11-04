@@ -73,3 +73,22 @@ variação de supply mais básico, mais parecido com C&C ZH também, e mais pare
   pros mapas de litoral e com ferrovia. O avião caído e o pórtico cabem no deserto de hoje, mas vêm depois do básico.
 - Agora: o Supply básico (a folha 161), os 4 tamanhos do ZH na linguagem da vila: a pilha pequena (50), a pilha (150), o armazém da
   vila (400) e a doca clássica (400).
+
+## 03/11 noite: no jogo (decisão minha, com a delegação dele)
+- Os modelos (um agente): `Game/Tools/model_supply_pile_small.py`, `model_supply_pile.py`, `model_supply_dock_v2.py`,
+  `model_supply_warehouse.py`, as peças em comum em `model_supply_basic_parts.py` e a caixa do estoque em `model_supply_stock_crate.py`.
+  A folha: `captures/game/models/supply_folha.jpg`.
+- **O formato:** cada depósito do `village.json` (o `supply_docks` do WorldForge) ganha `"kind"`: `pile_small` (50 caixas), `pile`
+  (150), `dock` (400) ou `warehouse` (400, o armazém da vila); sem `kind`, a doca. O `Units.json` tem o desenho de cada uma em
+  `supply_dock_visuals`:
+  - `stock_m`: as caixas do estoque, com o giro, na ordem em que somem;
+  - `sim_rect_m`: a área que a simulação bloqueia, deslocada no desenho; a faixa dos caminhões em +X fica livre;
+  - `boxes`: as caixas quando o mapa não diz.
+  O `yaw_deg` (em quartos de volta) gira o desenho e a área juntos. O código: `RTSGameData` (`DockVisuals`), `RTSDockActor`
+  (o estoque modelado) e `RTSMatchSubsystem` (o `kind` e o giro de cada depósito; o cliente da LAN lê o mesmo arquivo).
+- **Nos mapas:**
+  - no `World_TestSalt2`: a doca nas bases (o do jogador 1 girado 180°, a faixa virada pra base) e o armazém nos 4 das mini vilas;
+  - no `World_TestHills` (o de teste): uma de cada, a cena `supply_variacoes`.
+- **Pro dono do WorldForge:** o gerador passa a escrever o `kind` (e as caixas de cada um): a doca perto das bases, o armazém
+  dentro da mini vila, as pilhas soltas no campo como as do ZH (`SupplyPile` e `SupplyPileSmall`). Hoje o `kind` foi escrito à mão
+  nos 2 arquivos; gerar a vila de novo apaga.

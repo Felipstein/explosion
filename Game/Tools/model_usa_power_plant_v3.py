@@ -59,7 +59,7 @@ from model_usa_power_plant_v2 import (CPart, chamfer_rect, poly_slab, poly_band,
                                       plan_walls, plan_pillars, check, preview_spec, X, Y, Z)
 
 PREFIX = 'SM_USA_PowerPlant'
-COLORS.update({'Rubber': (32, 32, 31), 'Core': (150, 200, 255)})
+COLORS.update({'Rubber': (32, 32, 31), 'Core': (150, 200, 255), 'PowerLine': (22, 22, 24)})   # (03/11) o cabo do pulso precisa da cor de conferência
 
 HX, HY = 4.64, 6.32               # o lote 9,28 × 12,64
 FLOOR = 0.12                      # o topo da laje do módulo

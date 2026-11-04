@@ -188,6 +188,9 @@ MASK_PARAMS['Body'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 0.8, 'Wash'
 MASK_PARAMS['UsBody'] = {'Wear': 0.35, 'CavityDirt': 0.2, 'PanelTone': 1.0, 'Wash': 1.0, 'Chip': 0.5}   # (02/11) sem a areia
 MASK_PARAMS['UsConcrete'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.8, 'Wash': 0.6}   # (02/11) sem a areia
 MASK_PARAMS['Glass'] = {'CavityDirt': 0.4, 'GlassMask': 1.0}
+# (03/11, item 47: as casas "sem textura, parece lego") o reboco da vila e da GLA envelhecido: a lavagem escura nas frestas e o tijolo de
+# adobe aparecendo onde o reboco caiu (o pé da parede, trechos das quinas, manchas soltas)
+MASK_PARAMS['CivPlaster'] = {'Wear': 0.35, 'CavityDirt': 0.6, 'PanelTone': 0.6, 'Wash': 0.6, 'BrickReveal': 1.0}
 for _k, _v in MASK_PARAMS.items():
     SLOTS[_k][3].update(_v)
 # (31/10) os slots de cada família de modelo do elenco → a instância (o que não está aqui fica com o próprio nome)
@@ -365,11 +368,20 @@ FACTION_MODELS = [
     ('gla_stinger_site_v5', 'SM_GLA_StingerSite_*.glb', '/Game/Structures/gla_stinger_site_v5', GLA_BUILDING_SLOTS),
     ('gla_sam_site', 'SM_GLA_SamSite_*.glb', '/Game/Structures/gla_sam_site', GLA_BUILDING_SLOTS),
     ('gla_bunker', 'SM_GLA_Bunker_*.glb', '/Game/Structures/gla_bunker', GLA_BUILDING_SLOTS),
+    # (03/11, item 63) o Supply básico: a caixa do estoque e as 4 variações do depósito (docs/elenco/SUPPLY_DOCK_ESTUDO.md); os slots
+    # da vila e da GLA (a lona olive no Net, o chão batido no Earth)
+    ('supply_stock_crate', 'SM_SupplyStockCrate.glb', '/Game/Structures/supply_stock_crate', GLA_BUILDING_SLOTS),
+    ('supply_pile_small', 'SM_SupplyPileSmall_*.glb', '/Game/Structures/supply_pile_small', GLA_BUILDING_SLOTS),
+    ('supply_pile', 'SM_SupplyPile_*.glb', '/Game/Structures/supply_pile', GLA_BUILDING_SLOTS),
+    ('supply_dock_v2', 'SM_SupplyDock_*.glb', '/Game/Structures/supply_dock_v2', GLA_BUILDING_SLOTS),
+    ('supply_warehouse', 'SM_SupplyWarehouse_*.glb', '/Game/Structures/supply_warehouse', GLA_BUILDING_SLOTS),
     # (01/11, itens 53, 54, 55) a Rússia refeita: o BMPT e o T-14 com a silhueta própria (longe do T-90M), o Shtab da torre em degraus
     # com a agulha (não a "prisão") e a Kazarma com o plaç pintado e o KPP
     ('russia_bmpt_v2', 'SM_Russia_BMPT_*.glb', '/Game/Units/russia_bmpt_v2', RUSSIA_VEHICLE_SLOTS),
     ('russia_t14_v2', 'SM_Russia_T14_*.glb', '/Game/Units/russia_t14_v2', RUSSIA_VEHICLE_SLOTS),
     ('russia_command_center_v2', 'SM_Russia_CommandCenter_*.glb', '/Game/Structures/russia_command_center_v2', RUSSIA_BUILDING_SLOTS),
+    # (03/11 noite) o Shtab v3: a fortaleza do Kremlin com o radar de cebola e o guindaste
+    ('russia_command_center_v3', 'SM_Russia_CommandCenter_*.glb', '/Game/Structures/russia_command_center_v3', RUSSIA_BUILDING_SLOTS),
     ('russia_barracks_v2', 'SM_Russia_Barracks_*.glb', '/Game/Structures/russia_barracks_v2', RUSSIA_BUILDING_SLOTS),
     ('russia_supply_truck', 'SM_Russia_SupplyTruck_*.glb', '/Game/Units/russia_supply_truck', RUSSIA_VEHICLE_SLOTS),
     ('russia_t90m', 'SM_Russia_T90M_*.glb', '/Game/Units/russia_t90m', RUSSIA_VEHICLE_SLOTS),
@@ -572,6 +584,36 @@ float creaseM = 0.0;   // (01/11) a fresta (as quinas de dentro dos vãos e as j
         base = lerp(base, float3(0.40, 0.31, 0.21) * lerp(0.82, 1.08, gr), dust * lerp(0.75, 1.0, gr));
         Rough = lerp(Rough, 0.93, dust);
         Metal *= 1.0 - dust;
+    }
+    // (03/11, item 47: as casas "sem textura, parece lego") o reboco caído mostrando o tijolo de adobe: no pé da parede (a umidade que
+    // sobe), em trechos das quinas (a máscara de quina) e em manchas soltas; a borda rasgada com a sombra da espessura do reboco. É o
+    // jeito dos jogos AAA (a mistura por altura de duas camadas, reboco por cima do tijolo, recortada por ruído: o HeightLerp da Epic, a
+    // mistura por cor de vértice da Naughty Dog), aqui sem textura: o tijolo desenhado no espaço da peça
+    if (BrickReveal > 0.0)
+    {
+        float3 bnv = abs(normalize(cross(ddx(Lq), ddy(Lq)) + 1e-7));
+        float bWall = 1.0 - smoothstep(0.35, 0.6, bnv.z);
+        float bAlong = bnv.x > bnv.y ? Lq.y : Lq.x;
+        float pn = Nz.N(float3(bAlong * 0.9, bAlong * 0.9, Lq.z * 1.3) + 21.3);
+        float pn2 = Nz.N(float3(bAlong * 1.7, bAlong * 1.7, Lq.z * 1.7) + 8.6);
+        float bFoot = 1.0 - smoothstep(0.1, 0.55 + 0.5 * pn, Lq.z);
+        float reveal = saturate(0.75 * bFoot + 0.8 * edgeM * smoothstep(0.4, 0.7, pn2) + 0.9 * smoothstep(0.66, 0.86, pn)) * bWall * BrickReveal;
+        float rag = Nz.N(float3(bAlong, bAlong, Lq.z) / 0.05 + 4.2) - 0.5;
+        float bt = reveal + 0.3 * rag;
+        float hole = smoothstep(0.52, 0.56, bt);
+        float rim = smoothstep(0.44, 0.52, bt) * (1.0 - hole);
+        // o adobe: 30 x 10 cm em amarração corrida, a junta de barro de 1,5 cm, cada tijolo um tom
+        float2 bp = float2(bAlong / 0.30, Lq.z / 0.10);
+        bp.x += 0.5 * step(0.5, frac(floor(bp.y) * 0.5));
+        float2 bf = frac(bp);
+        float2 bj = min(bf, 1.0 - bf) * float2(0.30, 0.10);
+        float joint = 1.0 - smoothstep(0.006, 0.012, min(bj.x, bj.y));
+        float bid = frac(sin(dot(floor(bp), float2(12.9898, 78.233))) * 43758.5453);
+        float3 brick = float3(0.36, 0.25, 0.16) * lerp(0.82, 1.12, bid);
+        float3 adobe = lerp(brick, float3(0.30, 0.24, 0.17), joint);
+        base = lerp(base, adobe, hole);
+        base *= 1.0 - 0.4 * rim;
+        Rough = lerp(Rough, 0.97, hole);
     }
 }
 #endif
@@ -837,6 +879,7 @@ SCALARS = [('Roughness', 0.6), ('Metallic', 0.0), ('PlayerMask', 0.0), ('Concret
            ('GlassMask', 0.0),   # (01/11) 1 = o slot de vidro (a vidraça quebra no prédio ferido)
            ('CamoScale', 1.1),   # (01/11) o tamanho da mancha (m): 1,1 o digital da China; ~1,8 as manchas grandes da Rússia
            ('DustCoat', 0.0), ('Wash', 0.0), ('Chip', 0.0),
+           ('BrickReveal', 0.0),   # (03/11, item 47) o reboco caído mostrando o tijolo de adobe (0 = nada muda)
            ('Pulse', 0.0)]   # (01/11) o pulso que corre no cabo de alta tensão (voltas/s)   # (01/11, item 40) a poeira de baixo, a lavagem escura e a lasca escura
 VECTORS = [('BaseColor', (0.5, 0.5, 0.5)), ('EmissiveColor', (0.0, 0.0, 0.0)), ('CamoColor', (0.04, 0.048, 0.028)),
            ('CamoColor2', (0.3, 0.3, 0.3))]
