@@ -12,26 +12,38 @@ import sys
 import urllib.request
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-TAIL = ' General American accent. Clean, dry studio recording.'
+TAIL = ' Clean, dry studio recording.'
 # a pessoa de cada ficha (o temperamento em português na ficha; aqui em inglês, sem efeito nenhum)
+# (04/11, a 2ª volta) "o Stryker já começou a ficar muito repetido e parecido, sem variação na voz, tudo parecendo igual [...] presta
+# atenção no que eu falei" (o que ele pediu na GLA: "cada um uma voz um pouco diferente, com diferentes pesos, sentindo peso nas frases").
+# O elenco da USA, lado a lado, pra nenhuma voz cair em cima da outra (idade, timbre, sotaque, energia), e cada voz com a VARIAÇÃO
+# de tom entre as falas (calma ao ser selecionada, firme andando, forte atacando, tensa sob fogo). Já aprovados: o M1 (fim dos 30,
+# médio, firme, americano neutro), o Dozer (40 e tantos, rouco, operário), o Ranger (20 e poucos, grave baixo, disciplinado), o Javelin
+# (30, calmo, técnico, humor seco); a EVA (mulher, operadora). A ficha de cada um (docs/elenco/usa/) dá o temperamento; o resto é contraste.
+RANGE = (' His delivery changes a lot with each line: relaxed and conversational when acknowledging, focused when moving, punchy and loud '
+         'when attacking, strained and urgent under fire, proud when reporting ready.')
 VOICES = {
-    'usa_ranger': 'American male US Army Ranger squad leader, mid twenties, young, firm and low voice, disciplined and focused, short clipped '
-                  'orders, steady under fire.',
+    'usa_stryker': 'American male US Army Stryker vehicle commander, mid twenties, bright quick tenor, fast-talking and cocky with a grin in '
+                   'his voice, wisecracking, New York Bronx accent.' + RANGE,
+    'usa_avenger': ('American female US Army air-defense battery commander, late twenties, sharp clear alto, fast, aggressive and '
+                    'hyper-alert, always scanning the sky, clipped and intense, Midwestern accent. Her delivery changes a lot with each '
+                    'line: crisp when acknowledging, quick when moving, fierce when engaging, urgent under fire.'),
+    'usa_paladin': 'American male US Army artillery section chief, mid fifties, very deep gravelly bass, slow, solemn and heavy, every word '
+                   'deliberate, like a sermon, soft Texas drawl.' + RANGE,
+    'usa_tomahawk': 'American male US Navy missile fire-control technician, late thirties, flat dry nasal voice, precise and mechanical, '
+                    'reads numbers and grids like a machine, barely any emotion except a cold satisfaction on launch, Boston accent.' + RANGE,
+    'usa_comanche': 'American male US Army attack helicopter gunner, early thirties, low cold voice, quiet and almost whispered, laconic '
+                    'and menacing, slow Louisiana drawl, bored calm right before the kill.' + RANGE,
+    'usa_raptor': 'American male US Air Force fighter pilot, mid thirties, smooth charismatic baritone, cocky and playful, cool Californian '
+                  'swagger, a confident half-laugh in his voice.' + RANGE,
+    'usa_chinook': 'American male US Army heavy-lift helicopter pilot, mid fifties, warm husky voice, easygoing and unhurried, dry folksy '
+                   'humor, Kentucky drawl.' + RANGE,
+    'usa_supply_truck': 'American male US Army truck driver, early twenties, high energetic voice, cheerful, chatty and always in a hurry, '
+                        'thick Georgia Southern accent.' + RANGE,
+    'usa_ranger': 'American male US Army Ranger squad leader, mid twenties, young, firm and low voice, disciplined and focused, short '
+                  'clipped orders, steady under fire. General American accent.',
     'usa_javelin': 'American male US Army anti-tank gunner, early thirties, calm and technical, measured delivery with a light dry humor, '
-                   'never rushed.',
-    'usa_stryker': 'American male US Army Stryker vehicle commander, mid twenties, young, quick and confident, a little humor in his voice, '
-                   'energetic but in control.',
-    'usa_avenger': 'American male US Army air-defense battery commander, mid twenties, young, fast and aggressive, sharp and alert, always '
-                   'watching the sky.',
-    'usa_paladin': 'American male US Army artillery section chief, late forties, deep and solemn voice, unhurried and heavy, every word '
-                   'deliberate.',
-    'usa_tomahawk': 'American male US Navy missile launcher operator, mid thirties, dry and technical, flat precise delivery of someone '
-                    'reading numbers and coordinates.',
-    'usa_comanche': 'American male US Army attack helicopter gunner, early thirties, low and cold voice, rhythmic and almost bored, calm '
-                    'before the kill.',
-    'usa_raptor': 'American male US Air Force fighter pilot, mid thirties, calm and assured, slightly ironic, cool professional confidence.',
-    'usa_chinook': 'American male US Army transport helicopter pilot, mid forties, deep and easygoing voice, relaxed with a dry humor.',
-    'usa_supply_truck': 'American male US Army truck driver, late twenties, upbeat and cheerful, a folksy road-trip drawl, always in a hurry.',
+                   'never rushed. General American accent.',
 }
 
 
@@ -47,7 +59,8 @@ def main():
     keys = [a for a in sys.argv[1:] if not a.startswith('--')] or list(VOICES)
     for k in keys:
         ls = lines_of(k)
-        sample = ' '.join(l if l[-1] in '.!?' else l + '.' for l in ls)[:1000]
+        # as reticências entre as falas: a pausa clara pro recorte e a fala seguinte começa de novo (o tom não emenda)
+        sample = ' ... '.join(l if l[-1] in '.!?' else l + '.' for l in ls)[:1000]
         if '--dry' in sys.argv:
             print(f'{k}: {len(ls)} falas, {len(sample)} caracteres: {sample[:160]}...')
             continue

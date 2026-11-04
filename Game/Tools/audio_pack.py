@@ -36,12 +36,13 @@ def doc_pools(fac, key, folder, skip=()):
     talk = text.split('## 8.', 1)[1].split(chr(10) + '## ', 1)[0].split('**As falas**', 1)[1].split('- **O corpo', 1)[0]
     files = sorted(os.listdir(src(folder, 'falas')))
     pools, n = {}, 0
-    for cat, body in re.findall(r'^\s+- ([a-z ]+):(.*?)(?=^\s+- [a-z ]+:|\Z)', talk, re.S | re.M):
+    for cat, body in re.findall(r'^\s+- ([^:\n]+):(.*?)(?=^\s+- [^:\n]+:|\Z)', talk, re.S | re.M):
         for _ in re.findall(r'"([^"]+)"', body):
             n += 1
             f = next(x for x in files if x.startswith('%02d_' % n))
             if cat.strip() in CATS and not any(k in f for k in skip):
                 pools.setdefault(CATS[cat.strip()], []).append(src(folder, 'falas', f))
+    assert n == len(files), (key, n, len(files))   # cada fala da ficha tem o seu pedaço recortado
     return pools
 
 
@@ -66,6 +67,15 @@ UNITS = {
     # "Hostiles down." e "Take cover!" saíram emendadas no recorte e ficam fora
     'usa_ranger': doc_pools('usa', 'usa_ranger', '39_usa_ranger_a_voz', skip=('hostiles_down', 'take_cover')),
     'usa_javelin': doc_pools('usa', 'usa_javelin', '40_usa_javelin_a_voz'),
+    # (04/11) as 8 vozes da 2ª volta, cada uma com a sua identidade (docs/elenco/sons/vozes_usa_req.py): "todos aprovados"
+    'usa_stryker': doc_pools('usa', 'usa_stryker', '58_usa_stryker_a_voz'),
+    'usa_avenger': doc_pools('usa', 'usa_avenger', '59_usa_avenger_a_voz'),
+    'usa_paladin': doc_pools('usa', 'usa_paladin', '60_usa_paladin_a_voz'),
+    'usa_tomahawk': doc_pools('usa', 'usa_tomahawk', '61_usa_tomahawk_a_voz'),
+    'usa_comanche': doc_pools('usa', 'usa_comanche', '62_usa_comanche_a_voz'),
+    'usa_raptor': doc_pools('usa', 'usa_raptor', '63_usa_raptor_a_voz'),
+    'usa_chinook': doc_pools('usa', 'usa_chinook', '64_usa_chinook_a_voz'),
+    'usa_supply_truck': doc_pools('usa', 'usa_supply_truck', '65_usa_supply_truck_a_voz'),
 }
 E_USA, E_CHN, E_RUS, E_GLA = (src('23_usa_eva_falas_da_amostra_aprovada'), src('31_china_eva_falas_da_amostra_aprovada'),
                               src('32_russia_eva_falas_da_amostra_aprovada'), src('38_gla_eva_falas_das_amostras'))

@@ -126,6 +126,202 @@
     "units/usa_javelin/ready_3.wav",
     "units/usa_javelin/ready_4.wav"
    ]
+  },
+  "usa_stryker": {
+   "select": [
+    "units/usa_stryker/select_1.wav",
+    "units/usa_stryker/select_2.wav",
+    "units/usa_stryker/select_3.wav",
+    "units/usa_stryker/select_4.wav"
+   ],
+   "move": [
+    "units/usa_stryker/move_1.wav",
+    "units/usa_stryker/move_2.wav",
+    "units/usa_stryker/move_3.wav",
+    "units/usa_stryker/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_stryker/attack_1.wav",
+    "units/usa_stryker/attack_2.wav",
+    "units/usa_stryker/attack_3.wav",
+    "units/usa_stryker/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_stryker/ready_1.wav",
+    "units/usa_stryker/ready_2.wav",
+    "units/usa_stryker/ready_3.wav",
+    "units/usa_stryker/ready_4.wav"
+   ]
+  },
+  "usa_avenger": {
+   "select": [
+    "units/usa_avenger/select_1.wav",
+    "units/usa_avenger/select_2.wav",
+    "units/usa_avenger/select_3.wav",
+    "units/usa_avenger/select_4.wav"
+   ],
+   "move": [
+    "units/usa_avenger/move_1.wav",
+    "units/usa_avenger/move_2.wav",
+    "units/usa_avenger/move_3.wav",
+    "units/usa_avenger/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_avenger/attack_1.wav",
+    "units/usa_avenger/attack_2.wav",
+    "units/usa_avenger/attack_3.wav",
+    "units/usa_avenger/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_avenger/ready_1.wav",
+    "units/usa_avenger/ready_2.wav",
+    "units/usa_avenger/ready_3.wav",
+    "units/usa_avenger/ready_4.wav"
+   ]
+  },
+  "usa_paladin": {
+   "select": [
+    "units/usa_paladin/select_1.wav",
+    "units/usa_paladin/select_2.wav",
+    "units/usa_paladin/select_3.wav",
+    "units/usa_paladin/select_4.wav"
+   ],
+   "move": [
+    "units/usa_paladin/move_1.wav",
+    "units/usa_paladin/move_2.wav",
+    "units/usa_paladin/move_3.wav",
+    "units/usa_paladin/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_paladin/attack_1.wav",
+    "units/usa_paladin/attack_2.wav",
+    "units/usa_paladin/attack_3.wav",
+    "units/usa_paladin/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_paladin/ready_1.wav",
+    "units/usa_paladin/ready_2.wav",
+    "units/usa_paladin/ready_3.wav",
+    "units/usa_paladin/ready_4.wav"
+   ]
+  },
+  "usa_tomahawk": {
+   "select": [
+    "units/usa_tomahawk/select_1.wav",
+    "units/usa_tomahawk/select_2.wav",
+    "units/usa_tomahawk/select_3.wav",
+    "units/usa_tomahawk/select_4.wav"
+   ],
+   "move": [
+    "units/usa_tomahawk/move_1.wav",
+    "units/usa_tomahawk/move_2.wav",
+    "units/usa_tomahawk/move_3.wav",
+    "units/usa_tomahawk/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_tomahawk/attack_1.wav",
+    "units/usa_tomahawk/attack_2.wav",
+    "units/usa_tomahawk/attack_3.wav",
+    "units/usa_tomahawk/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_tomahawk/ready_1.wav",
+    "units/usa_tomahawk/ready_2.wav",
+    "units/usa_tomahawk/ready_3.wav",
+    "units/usa_tomahawk/ready_4.wav"
+   ]
+  },
+  "usa_comanche": {
+   "select": [
+    "units/usa_comanche/select_1.wav",
+    "units/usa_comanche/select_2.wav",
+    "units/usa_comanche/select_3.wav",
+    "units/usa_comanche/select_4.wav"
+   ],
+   "move": [
+    "units/usa_comanche/move_1.wav",
+    "units/usa_comanche/move_2.wav",
+    "units/usa_comanche/move_3.wav",
+    "units/usa_comanche/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_comanche/attack_1.wav",
+    "units/usa_comanche/attack_2.wav",
+    "units/usa_comanche/attack_3.wav",
+    "units/usa_comanche/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_comanche/ready_1.wav",
+    "units/usa_comanche/ready_2.wav",
+    "units/usa_comanche/ready_3.wav",
+    "units/usa_comanche/ready_4.wav"
+   ]
+  },
+  "usa_raptor": {
+   "select": [
+    "units/usa_raptor/select_1.wav",
+    "units/usa_raptor/select_2.wav",
+    "units/usa_raptor/select_3.wav",
+    "units/usa_raptor/select_4.wav"
+   ],
+   "move": [
+    "units/usa_raptor/move_1.wav",
+    "units/usa_raptor/move_2.wav",
+    "units/usa_raptor/move_3.wav",
+    "units/usa_raptor/move_4.wav"
+   ],
+   "attack": [
+    "units/usa_raptor/attack_1.wav",
+    "units/usa_raptor/attack_2.wav",
+    "units/usa_raptor/attack_3.wav",
+    "units/usa_raptor/attack_4.wav"
+   ],
+   "ready": [
+    "units/usa_raptor/ready_1.wav",
+    "units/usa_raptor/ready_2.wav",
+    "units/usa_raptor/ready_3.wav",
+    "units/usa_raptor/ready_4.wav"
+   ]
+  },
+  "usa_chinook": {
+   "select": [
+    "units/usa_chinook/select_1.wav",
+    "units/usa_chinook/select_2.wav",
+    "units/usa_chinook/select_3.wav",
+    "units/usa_chinook/select_4.wav"
+   ],
+   "move": [
+    "units/usa_chinook/move_1.wav",
+    "units/usa_chinook/move_2.wav",
+    "units/usa_chinook/move_3.wav",
+    "units/usa_chinook/move_4.wav"
+   ],
+   "ready": [
+    "units/usa_chinook/ready_1.wav",
+    "units/usa_chinook/ready_2.wav",
+    "units/usa_chinook/ready_3.wav",
+    "units/usa_chinook/ready_4.wav"
+   ]
+  },
+  "usa_supply_truck": {
+   "select": [
+    "units/usa_supply_truck/select_1.wav",
+    "units/usa_supply_truck/select_2.wav",
+    "units/usa_supply_truck/select_3.wav",
+    "units/usa_supply_truck/select_4.wav"
+   ],
+   "move": [
+    "units/usa_supply_truck/move_1.wav",
+    "units/usa_supply_truck/move_2.wav",
+    "units/usa_supply_truck/move_3.wav",
+    "units/usa_supply_truck/move_4.wav"
+   ],
+   "ready": [
+    "units/usa_supply_truck/ready_1.wav",
+    "units/usa_supply_truck/ready_2.wav",
+    "units/usa_supply_truck/ready_3.wav",
+    "units/usa_supply_truck/ready_4.wav"
+   ]
   }
  },
  "eva": {
