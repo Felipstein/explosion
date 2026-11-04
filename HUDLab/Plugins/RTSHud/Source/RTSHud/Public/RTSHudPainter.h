@@ -70,6 +70,10 @@ private:
 	/** O contorno por dentro da faixa arredondada (a borda fina), T de espessura. */
 	void RoundRectRing(float X, float Y, float W, float H, float R, float T, const FLinearColor& C);
 	void DrawCommander(const FRTSHudState& State);
+	/** (RTSHudPainterConsole.cpp) O console aprovado: as abas dos grupos, o brasão do dinheiro, a espinha de energia, o cubo e o tubo da patente. */
+	void DrawConsole(const FRTSHudState& State);
+	/** A peça da pele da facção (skin:<facção>/<peça>) quando existe; senão a da USA. */
+	FName FacSkin(const TCHAR* Piece) const;
 	void DrawAlerts(const FRTSHudState& State);
 	void DrawPowers(const FRTSHudState& State);
 	void DrawMinimap(const FRTSHudState& State);

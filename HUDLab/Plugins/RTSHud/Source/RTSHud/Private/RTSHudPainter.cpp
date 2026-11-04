@@ -638,13 +638,13 @@ void FRTSHudPainter::Draw(UCanvas* InCanvas, const FRTSHudState& State, TArray<F
 
 	DrawMinimap(State);
 	DrawCommandPanel(State);
-	DrawGroups(State);
 	DrawCard(State);
+	// (04/11) o console aprovado no lugar das abas e do painel do dinheiro de antes (DrawGroups, DrawCommander)
+	DrawConsole(State);
 	DrawAlerts(State);
 	DrawPowers(State);
 	DrawTop(State);
 	DrawSuperweaponList(State);
-	DrawCommander(State);
 	DrawTooltip(State);
 	DrawScoreboard(State);
 	// o fundo de cada peça segura o clique (não vai pro mundo); vem no fim, depois dos botões de verdade:
@@ -1021,10 +1021,18 @@ void FRTSHudPainter::DrawCommandPanel(const FRTSHudState& State)
 	// a peça comprida da pele: as pontas entram por baixo do minimapa e do cartão (encosta nos dois)
 	const float PH = CommandPanelHeight(State), PTop = 1072.0f - PH;
 	const float X0 = SX(378, EAnchor::Left), X1 = SX(1520, EAnchor::Right), Y = SY(PTop, true) + PanelDrop(State), H = PH * S;
-	// a moldura das outras facções é mais grossa: o painel desce até a beira da tela (os 8 px de baixo), pra borda não passar por trás das casas
-	const float Foot = (Cur && !Cur->SkinFaction.IsNone()) ? 8.0f * S : 0.0f;
-	Skin(SkPanelLong, X0, Y, X1 - X0, H + Foot, SkMPanelLong, 0.22f * S);
-	Bg(X0, Y, X1 - X0, H + Foot);
+	// (04/11, ele: "as bordas estão esticadas e a borda inferior tá ficando por baixo dos slots", na GLA) a moldura de cada facção tem
+	// uma espessura (medida na arte: onde o miolo começa, e os enfeites dos cantos, como o pano da GLA): os cortes da peça são os dela,
+	// pra moldura não esticar, e o painel cresce pra cima e pra baixo até a moldura ficar por fora das casas (2 px de folga)
+	const FName Fac = Cur ? Cur->SkinFaction : NAME_None;
+	const FMargin M = Fac == TEXT("china") ? FMargin(100.0f, 28.0f, 100.0f, 27.0f) : Fac == TEXT("gla") ? FMargin(100.0f, 51.0f, 130.0f, 54.0f)
+		: Fac == TEXT("russia") ? FMargin(100.0f, 55.0f, 100.0f, 51.0f) : FMargin(100.0f, 39.0f, 100.0f, 37.0f);
+	const float K = 0.22f;
+	const float PadY0 = 10.0f, SlotTop = PTop + PadY0, SlotBottom = PTop + PH - PadY0;
+	const float BoxTop = FMath::Min(PTop, SlotTop - M.Top * K - 2.0f), BoxBottom = FMath::Max(PTop + PH, SlotBottom + M.Bottom * K + 2.0f);
+	const float BY = Y - (PTop - BoxTop) * S, BH = (BoxBottom - BoxTop) * S;
+	Skin(SkPanelLong, X0, BY, X1 - X0, BH, M, K * S);
+	Bg(X0, BY, X1 - X0, BH);
 	// as casas: a grade principal (MC colunas) e a de ações (3), com 6 px de vão e um sulco entre as duas
 	const int32 MC = FMath::Clamp(State.MainColumns, 5, 9);
 	const float Left = 408, Right = 1492, Sep = 10, Gap = 6, PadY = 10, GapY = 8;
@@ -1354,7 +1362,9 @@ void FRTSHudPainter::DrawTooltip(const FRTSHudState& State)
 	float BY = Box->Min.Y - BH - 6 * S;
 	if (State.bCommandPanel && !State.bGroupsAtBottom)
 	{
-		BY = FMath::Min(BY, SY(1072.0f - CommandPanelHeight(State) - 50.0f, true) - BH - 4 * S);
+		// (01/11, aprovado) acima da fileira do console (o brasão do dinheiro, as abas e a energia): nunca tampa o dinheiro na compra
+		const float RowTop = 784.0f + (1072.0f - CommandPanelHeight(State) - 868.0f);
+		BY = FMath::Min(BY, SY(RowTop, true) + PanelDrop(State) - BH);
 	}
 	Skin(SkPanelWide, BX, BY, BW, BH, SkMPanelWide, 0.2f * S);
 	float TX = BX + Pad;

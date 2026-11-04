@@ -58,8 +58,9 @@ namespace
 	{
 		St.Clock = TEXT("12:34");
 		St.Money = TEXT("$ 4,250");
-		St.PowerMade = 120;
-		St.PowerUsed = bEightPlayers ? 130 : 95;
+		// (04/11) uma célula por ponto de energia (o console aprovado): 4 de 10, como no protótipo; o de 8 jogadores faltando
+		St.PowerMade = 10;
+		St.PowerUsed = bEightPlayers ? 12 : 4;
 		St.Stars = 3; St.Xp = 0.62f; St.Promote = 1;
 		St.Alerts.Add({ TEXT("Unit under attack"), PRed });
 		if (bEightPlayers)
@@ -220,6 +221,20 @@ FRTSHudState MakeHudLabState(int32 Index, int32 MainColumns)
 		St.Card.FactionName = TEXT("UNITED STATES"); St.Card.FactionEmblem = TEXT("emblem:usa");
 		St.Card.PlateLine = TEXT("Army 24 · Buildings 9");
 		St.Card.PlateKills = TEXT("KILLS   Units 31 · Buildings 6");
+	}
+	// (04/11) as plaquetas do console: faltando energia no de 8 jogadores, o dinheiro que não paga no Dozer, a patente nova no prédio
+	if (Index == 5)
+	{
+		St.PlateTitle = TEXT("LOW POWER"); St.PlateLine = TEXT("Production 50% · Patriot offline");
+	}
+	else if (Index == 3)
+	{
+		St.bLowMoney = true;
+		St.PlateTitle = TEXT("INSUFFICIENT FUNDS"); St.PlateLine = TEXT("Need $1,050 more · airlift in 0:42");
+	}
+	else if (Index == 4)
+	{
+		St.PromotedRank = TEXT("General");
 	}
 	St.MainColumns = FMath::Clamp(MainColumns, 5, 9);
 	if (St.MainColumns < 9)

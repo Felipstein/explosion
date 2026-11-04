@@ -160,6 +160,14 @@ struct FRTSHudState
 	int32 Stars = -1;                // a patente (0 a 5); -1 = o jogo ainda não tem patente: o painel fica numa linha só
 	float Xp = 0.0f;
 	int32 Promote = 0;               // pontos pra gastar (0 = sem botão)
+	// (04/11) as plaquetas do console: a vermelha que nasce em cima do brasão (LOW POWER, INSUFFICIENT FUNDS: o título e a linha do
+	// que falta) e a dourada do PROMOTED em cima do cubo (o nome da patente nova); Age = segundos desde que nasceu (a mola)
+	FString PlateTitle;
+	FString PlateLine;
+	float PlateAge = 99.0f;
+	FString PromotedRank;
+	float PromotedAge = 99.0f;
+	bool bLowMoney = false;          // o dinheiro não paga o que foi pedido: o mostrador em vermelho
 
 	TArray<FRTSHudAlert> Alerts;
 	bool bOffscreenArrow = false;

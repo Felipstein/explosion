@@ -582,8 +582,8 @@ void FRTSHudPainter::DrawSuperweaponList(const FRTSHudState& State)
 		return;
 	}
 	const int32 Rows = FMath::Min(8, Gs.Num()), More = Gs.Num() - Rows;
-	// no canto de cima; enquanto o painel do dinheiro antigo morar ali (o jogo, até o console da energia), logo abaixo dele
-	const float Top = State.Money.IsEmpty() ? 8.0f : 6.0f + (State.Stars >= 0 ? 97.0f : 60.0f) + 8.0f;
+	// no canto de cima (o dinheiro mora no console desde 04/11: o canto ficou livre)
+	const float Top = 8.0f;
 	const float X = SX(1676.0f, EAnchor::Right), Y = SY(Top, false), W = 232.0f * S;
 	const float H = (3.0f + Rows * 24.0f + (More > 0 ? 15.0f : 0.0f) + 5.0f) * S;
 	RoundRect(X - 3 * S, Y + 1 * S, W + 6 * S, H + 5 * S, 8 * S, FLinearColor(0, 0, 0, 0.10f));
