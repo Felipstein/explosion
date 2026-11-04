@@ -47,16 +47,26 @@ public:
 		{
 			return;
 		}
-		PreLoadHandle = FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString&)
+		PreLoadHandle = FCoreUObjectDelegates::PreLoadMap.AddLambda([](const FString& Map)
 		{
 			if (!GetMoviePlayer()->IsInitialized())
 			{
 				return;
 			}
+			// (04/11, Telas) o mapa do menu (FrontEnd, vazio) abre em instantes: o escuro da abertura, sem o "LOADING" (reprovado)
+			const bool bFrontEnd = Map.Contains(TEXT("FrontEnd"));
 			FLoadingScreenAttributes Screen;
 			Screen.bAutoCompleteWhenLoadingCompletes = true;
-			Screen.MinimumLoadingScreenDisplayTime = 0.4f;
-			Screen.WidgetLoadingScreen = MakeLoadingWidget();
+			Screen.MinimumLoadingScreenDisplayTime = bFrontEnd ? 0.0f : 0.4f;
+			if (bFrontEnd)
+			{
+				TSharedRef<SBorder> Dark = SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.003f, 0.004f, 0.0033f, 1.0f));
+				Screen.WidgetLoadingScreen = Dark;
+			}
+			else
+			{
+				Screen.WidgetLoadingScreen = MakeLoadingWidget();
+			}
 			GetMoviePlayer()->SetupLoadingScreen(Screen);
 		});
 	}

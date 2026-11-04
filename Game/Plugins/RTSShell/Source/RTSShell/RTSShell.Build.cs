@@ -10,7 +10,7 @@ public class RTSShell : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "InputCore", "WebBrowser", "Projects" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "InputCore", "WebBrowser", "Projects", "RHI", "Json", "UMG", "RenderCore" });
 		RuntimeDependencies.Add(Path.Combine(PluginDirectory, "Resources", "UI", "..."), StagedFileType.NonUFS);
 	}
 }

@@ -113,12 +113,12 @@ void URTSSessionSubsystem::ReturnToMenu()
 	{
 		Net->Leave();   // a partida em rede acabou: sai da sala
 	}
-	UGameplayStatics::OpenLevel(GetGameInstance(), FName(*SkirmishMapName()), true, TEXT("game=/Script/RTSGame.RTSMenuGameMode"));
+	UGameplayStatics::OpenLevel(GetGameInstance(), FName(TEXT("FrontEnd")), true, TEXT("game=/Script/RTSGame.RTSMenuGameMode"));   // (04/11, Telas) o menu mora no mapa vazio
 }
 
 void URTSSessionSubsystem::ReturnToLobby()
 {
-	UGameplayStatics::OpenLevel(GetGameInstance(), FName(*SkirmishMapName()), true, TEXT("game=/Script/RTSGame.RTSMenuGameMode"));
+	UGameplayStatics::OpenLevel(GetGameInstance(), FName(TEXT("FrontEnd")), true, TEXT("game=/Script/RTSGame.RTSMenuGameMode"));   // (04/11, Telas) o menu mora no mapa vazio
 }
 
 void URTSSessionSubsystem::Quit(APlayerController* PC)

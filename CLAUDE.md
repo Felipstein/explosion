@@ -25,9 +25,14 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   desenha (`Source/RTSGame`, `Source/BlastFx` = a explosão do BlastLab).
   `Tools/game.ps1` faz tudo (setup, view, teste `-Folder`, vídeo `-Record`);
   `Tools/simtest.ps1` testa a simulação sem a Unreal. Arquitetura em `docs/JOGO.md`.
-  **As telas fora da partida** (menu, skirmish, opções) são as páginas aprovadas no plugin
-  `RTSShell`. Pra abrir uma cena de teste à mão: `game.ps1 view -Scenario <nome>`, depois
-  SCRIPT no menu e Enter. O teste automático (`-Folder`) segue no menu antigo. Guia: `docs/TELAS_NO_JOGO.md`.
+  **As telas fora da partida** estão no plugin `RTSShell`.
+  - **Menu principal:** nativo em Slate (`SRTSMenu`).
+    - O jogo abre num mapa vazio (`/Game/Maps/FrontEnd`) e mostra a abertura aprovada só na 1ª vez do processo.
+    - `-RTSNoBoot` pula a abertura; `-RTSScenario`, `-RTSAutoTest` e as fotos nunca passam por ela.
+  - **Skirmish, multiplayer e opções:** ainda são páginas do navegador, até cada uma ficar nativa.
+  - **Cena de teste à mão:** `game.ps1 view -Scenario <nome>`, depois SCRIPT no menu e Enter.
+  - **Teste automático (`-Folder`):** segue no menu antigo.
+  - Guia: `docs/TELAS_NO_JOGO.md`.
   **A lista viva da base jogável** (multiplayer, War Factory, névoa, minimapa, visual
   final; o que é de cada sessão) é `docs/BASE_JOGAVEL.md`: quem mexer num item marca lá.
 - `Atelier/`: o **app de imagens e sons** (desde 01/11): fila do GPT (pela conta do ChatGPT dele, via

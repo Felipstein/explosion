@@ -15,6 +15,17 @@
 #include "IWebBrowserSchemeHandler.h"
 #include "IWebBrowserWindow.h"
 #include "SWebBrowser.h"
+#include "Containers/Ticker.h"
+#include "SRTSMenu.h"
+#include "RTSShellAudio.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "ImageUtils.h"
+#include "Misc/CommandLine.h"
+#include "RenderingThread.h"
+#include "Slate/WidgetRenderer.h"
+#include "TextureResource.h"
+#include "HAL/FileManager.h"
+#include "Misc/App.h"
 
 namespace
 {
@@ -24,6 +35,114 @@ namespace
 	TSharedPtr<SWebBrowser> GBrowser;
 	TStrongObjectPtr<URTSShellBridge> GBridge;
 	bool GShown = false;
+	// (03/11) o menu principal nativo (SRTSMenu); as outras telas seguem no navegador até a vez delas
+	TSharedPtr<SRTSMenu> GMenu;
+	bool GMenuShown = false;
+	// (04/11) a abertura: só na 1ª vez que o menu aparece no processo; os testes nunca passam por ela
+	bool GBootDone = false;
+	FString GLastPage;
+
+	bool BootAllowed()
+	{
+		const TCHAR* Cmd = FCommandLine::Get();
+		FString Unused;
+		return !FParse::Param(Cmd, TEXT("RTSNoBoot")) && !FParse::Value(Cmd, TEXT("-RTSMenuShot="), Unused) && !FParse::Value(Cmd, TEXT("-RTSMenuT="), Unused)
+			&& !FParse::Value(Cmd, TEXT("-RTSAutoTest="), Unused) && !FParse::Value(Cmd, TEXT("-RTSScenario="), Unused);
+	}
+
+	/** A 1ª vez neste PC (a abertura inteira); as outras, a curta. A marca fica no Saved do jogo. */
+	bool BootFirstEver()
+	{
+		const FString Mark = FPaths::ProjectSavedDir() / TEXT("RTSShell") / TEXT("boot_seen");
+		const bool bFirst = !IFileManager::Get().FileExists(*Mark);
+		if (bFirst)
+		{
+			FFileHelper::SaveStringToFile(TEXT("04/11"), *Mark);
+		}
+		return bFirst;
+	}
+
+	/** A foto do menu nativo pro teste (-RTSMenuShot=<arquivo.png>): o menu desenhado numa textura de 1920 × 1080 (o palco do mockup,
+	 *  sem escala) e salvo em PNG, pra comparar pixel a pixel com o mockup no Chrome. Não depende da janela (vale com -RenderOffScreen). */
+	void ShotMenu(const FString& Path)
+	{
+		if (!GMenu.IsValid())
+		{
+			return;
+		}
+		// a textura linear (não sRGB), como a imagem da janela do Windows: o shader da Slate já corrige a gama, uma vez. O
+		// CreateTargetFor(…, true) faz a textura sRGB e a cor saía corrigida duas vezes (a foto clara de 03/11; IsSRGB() =
+		// !bForceLinearGamma em TextureRenderTarget2D.cpp)
+		UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>();
+		Target->ClearColor = FLinearColor::Transparent;
+		Target->InitCustomFormat(1920, 1080, PF_B8G8R8A8, true);
+		Target->UpdateResourceImmediate(true);
+		Target->AddToRoot();
+		FWidgetRenderer* Renderer = new FWidgetRenderer(true, true);
+		Renderer->DrawWidget(Target, GMenu.ToSharedRef(), FVector2D(1920, 1080), 0.0f);
+		FlushRenderingCommands();
+		TArray<FColor> Pixels;
+		if (FTextureRenderTargetResource* Res = Target->GameThread_GetRenderTargetResource())
+		{
+			Res->ReadPixels(Pixels);
+		}
+		delete Renderer;
+		Target->RemoveFromRoot();
+		if (Pixels.Num() == 1920 * 1080)
+		{
+			for (FColor& C : Pixels)
+			{
+				C.A = 255;
+			}
+			TArray64<uint8> Png;
+			FImageUtils::PNGCompressImageArray(1920, 1080, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+			FFileHelper::SaveArrayToFile(Png, *Path);
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS telas: foto do menu nativo em %s"), *Path);
+	}
+	/** A abertura quadro a quadro (-RTSBootFrames=<pasta>): a inteira, com o passo fixo de 1/30 s, na textura linear da foto do menu;
+	 *  o Tools/boot_video.py monta o vídeo com os sons nos instantes do log. */
+	void RenderBootFrames(const FString& Dir)
+	{
+		if (!GMenu.IsValid())
+		{
+			return;
+		}
+		IFileManager::Get().MakeDirectory(*Dir, true);
+		UTextureRenderTarget2D* Target = NewObject<UTextureRenderTarget2D>();
+		Target->ClearColor = FLinearColor::Transparent;
+		Target->InitCustomFormat(1920, 1080, PF_B8G8R8A8, true);
+		Target->UpdateResourceImmediate(true);
+		Target->AddToRoot();
+		FWidgetRenderer* Renderer = new FWidgetRenderer(true, true);
+		GMenu->StartBoot(true);
+		const float Dt = 1.0f / 30.0f;
+		const int32 N = FMath::CeilToInt((GMenu->BootRevealAt() + 2.4f) / Dt);
+		TArray<FColor> Pixels;
+		for (int32 K = 0; K < N; ++K)
+		{
+			GMenu->Tick(GMenu->GetCachedGeometry(), FApp::GetCurrentTime(), Dt);
+			Renderer->DrawWidget(Target, GMenu.ToSharedRef(), FVector2D(1920, 1080), 0.0f);
+			FlushRenderingCommands();
+			if (FTextureRenderTargetResource* Res = Target->GameThread_GetRenderTargetResource())
+			{
+				Res->ReadPixels(Pixels);
+			}
+			if (Pixels.Num() == 1920 * 1080)
+			{
+				for (FColor& C : Pixels)
+				{
+					C.A = 255;
+				}
+				TArray64<uint8> Png;
+				FImageUtils::PNGCompressImageArray(1920, 1080, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+				FFileHelper::SaveArrayToFile(Png, *(Dir / FString::Printf(TEXT("boot_%03d.png"), K)));
+			}
+		}
+		delete Renderer;
+		Target->RemoveFromRoot();
+		UE_LOG(LogTemp, Log, TEXT("RTS telas: quadros da abertura: %d em %s, o golpe em %.2f s"), N, *Dir, GMenu->BootRevealAt());
+	}
 	FString GPendingPage;
 
 	const TCHAR* MimeOf(const FString& Path)
@@ -197,7 +316,72 @@ void FRTSShell::Show(const FString& Page)
 	{
 		return;
 	}
-	const FString Url = FString(Origin) + Page;
+	// a abertura (só a 1ª vez do menu): a música entra no golpe dela, não aqui
+	const bool bBoot = Page.StartsWith(TEXT("menu.html")) && !GBootDone && BootAllowed();
+	if (!bBoot)
+	{
+		using RTSShellAudio::EMusic;
+		const bool bMatch = Page.StartsWith(TEXT("screens.html")) && (Page.Contains(TEXT("s=esc")) || Page.Contains(TEXT("s=net")) || Page.Contains(TEXT("s=res")));
+		const bool bTalk = Page.StartsWith(TEXT("skirmish.html")) || Page.StartsWith(TEXT("multiplayer.html")) || Page.StartsWith(TEXT("script.html"));
+		RTSShellAudio::SetMusic(bMatch ? EMusic::Off : (bTalk ? EMusic::Duck : EMusic::Menu));
+	}
+	// a entrada no skirmish e no multiplayer vinda do menu: o golpe grave por uns segundos enquanto a música abaixa
+	if ((Page.StartsWith(TEXT("skirmish.html")) || Page.StartsWith(TEXT("multiplayer.html"))) && GLastPage.StartsWith(TEXT("menu.html")))
+	{
+		RTSShellAudio::Play(RTSShellAudio::EUi::Enter);
+	}
+	GLastPage = Page;
+	if (Page.StartsWith(TEXT("menu.html")))
+	{
+		// o menu nativo: sai o navegador (se estava), entra o SRTSMenu recomeçado
+		if (GBrowser.IsValid())
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
+			GBrowser->LoadURL(TEXT("about:blank"));
+		}
+		if (!GMenu.IsValid())
+		{
+			SAssignNew(GMenu, SRTSMenu);
+		}
+		else
+		{
+			GMenu->Restart();
+		}
+		FString FramesDir;
+		const bool bFrames = !GBootDone && FParse::Value(FCommandLine::Get(), TEXT("-RTSBootFrames="), FramesDir);
+		if (bBoot && !bFrames)
+		{
+			GMenu->StartBoot(BootFirstEver());
+		}
+		GBootDone = true;
+		if (bFrames)
+		{
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([FramesDir](float) { RenderBootFrames(FramesDir); return false; }), 1.0f);
+		}
+		GEngine->GameViewport->RemoveViewportWidgetContent(GMenu.ToSharedRef());
+		GEngine->GameViewport->AddViewportWidgetContent(GMenu.ToSharedRef(), 1000);
+		GEngine->GameViewport->bDisableWorldRendering = true;
+		GShown = true;
+		GMenuShown = true;
+		if (FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().SetAllUserFocus(GMenu, EFocusCause::SetDirectly);
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS telas: menu.html (nativo)"));
+		FString ShotPath;
+		if (FParse::Value(FCommandLine::Get(), TEXT("-RTSMenuShot="), ShotPath))
+		{
+			// a foto do teste: 4 s depois (o radar aquecido, as transições do hover terminadas)
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([ShotPath](float) { ShotMenu(ShotPath); return false; }), 4.0f);
+		}
+		return;
+	}
+	if (GMenuShown && GMenu.IsValid())
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(GMenu.ToSharedRef());
+		GMenuShown = false;
+	}
+	const FString Url = FString(Origin) + Page + (Page.Contains(TEXT("?")) ? TEXT("&nomusic=1") : TEXT("?nomusic=1"));
 	if (!GBrowser.IsValid())
 	{
 		IWebBrowserSingleton* Singleton = IWebBrowserModule::Get().GetSingleton();
@@ -223,6 +407,20 @@ void FRTSShell::Show(const FString& Page)
 			.BackgroundColor(FColor(10, 13, 11, 255))
 			.BrowserFrameRate(60)
 			.OnSuppressContextMenu_Lambda([]() { return true; })
+			// as páginas que voltam pro menu (o BACK, o Esc) caem no menu nativo, no próximo quadro
+			.OnBeforeNavigation_Lambda([](const FString& Url, const FWebNavigationRequest&)
+			{
+				// o menu é nativo; as outras páginas passam pelo Show (a música da tela e o nomusic=1 da página), inclusive as que uma
+				// página abre sozinha
+				const int32 At = Url.Find(TEXT("rts.ui/"));
+				if (At != INDEX_NONE && (Url.Contains(TEXT("rts.ui/menu.html")) || !Url.Contains(TEXT("nomusic=1"))))
+				{
+					const FString Page = Url.Mid(At + 7);
+					FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Page](float) { FRTSShell::Show(Page); return false; }));
+					return true;
+				}
+				return false;
+			})
 			.OnConsoleMessage_Lambda([](const FString& Message, const FString& Source, int32 Line, EWebBrowserConsoleLogSeverity Severity)
 			{
 				if (Severity >= EWebBrowserConsoleLogSeverity::Warning)
@@ -268,8 +466,14 @@ void FRTSShell::Hide()
 		{
 			GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
 		}
+		if (GMenu.IsValid())
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(GMenu.ToSharedRef());
+		}
 		GEngine->GameViewport->bDisableWorldRendering = false;
 	}
+	GMenuShown = false;
+	RTSShellAudio::SetMusic(RTSShellAudio::EMusic::Off);
 	if (GBrowser.IsValid())
 	{
 		GBrowser->LoadURL(TEXT("about:blank"));   // a música e o radar param junto
@@ -297,6 +501,13 @@ public:
 		{
 			GEngine->GameViewport->RemoveViewportWidgetContent(GBrowser.ToSharedRef());
 		}
+		if (GMenu.IsValid() && GEngine && GEngine->GameViewport)
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(GMenu.ToSharedRef());
+		}
+		GMenu.Reset();
+		RTSShellAudio::Shutdown();
+		GMenuShown = false;
 		GBrowser.Reset();
 		GBridge.Reset();
 		GShown = false;
