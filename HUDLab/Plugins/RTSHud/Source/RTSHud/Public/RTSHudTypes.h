@@ -133,6 +133,93 @@ struct FRTSHudTimer
 	bool bPaused = false;     // sem energia: o rótulo em âmbar, a barra parada em âmbar, a luz apagada
 };
 
+/** (04/11) Um poder da árvore do general (Game/Config/RTS/GeneralTrees.json, exportado de docs/poderes/tela/<facção>.js). */
+struct FRTSHudGenNode
+{
+	FName Id;
+	FString Name;             // "Naval Gunfire"
+	FString Level;            // "II" (vazio = sem níveis)
+	FName Icon;               // "doc:poderes/tela/icones/usa_naval_esc"
+	int32 Rank = 1;           // a patente que abre (1..5): a coluna
+	int32 Row = 0;            // a linha (sem rótulo: o tipo se lê no ícone)
+	int32 Cost = 1;
+	FString Cooldown;         // "3:00", "Passive"
+	FString Desc;
+	FName Req;                // o nível anterior, que precisa estar comprado
+};
+
+/** Uma comenda da faixa de baixo da tela do general. */
+struct FRTSHudGenMedal
+{
+	FString Name;             // "Tank Killer"
+	FString Line;             // "10 vehicles · 7 / 10"
+	float Progress = -1.0f;   // 0..1 a barra; < 0 sem barra
+	bool bDone = false;
+	int32 Xp = 0;             // "+300"
+	FName Icon;               // "skin:medal_tank_killer" (a da facção, se houver)
+};
+
+/**
+ * (04/11) A tela do general (General's Command, aprovada em 02 e 03/11: a moldura de cada facção, a linha do tempo das patentes, a árvore
+ * calma sem as linhas por tipo, o detalhe à direita e as comendas embaixo). Abre pelo cubo da patente; a batalha não para.
+ */
+struct FRTSHudGeneral
+{
+	bool bOpen = false;
+	bool bLegible = false;           // (05/11, ele: "não consigo decifrar e ler tudo") a versão B: ícone grande, nome em destaque, o custo em losangos
+	int32 Rank = 1;                  // 1..5
+	float NextFrac = 0.0f;           // o XP feito rumo à próxima patente (0..1)
+	FString XpLine;                  // "1,750 / 5,000 XP"
+	int32 PointsLeft = 0;
+	int32 PointsPerRank[5] = { 1, 1, 2, 2, 3 };
+	FString RankAbbr[5];             // "LTG"
+	FString RankName[5];             // "Lieutenant General"
+	int32 Rows = 4;
+	TArray<FRTSHudGenNode> Nodes;
+	TArray<FName> Owned;
+	TArray<FName> Soon;              // (05/11) os poderes que o jogo ainda não tem (a simulação não conhece o nó): aparecem apagados e não compram
+	TArray<FRTSHudGenMedal> Medals;
+	FName Shake;                     // o poder que tentou comprar sem poder (treme)
+	float ShakeAge = 99.0f;
+
+	/** A árvore da facção, os nomes das patentes e os pontos por patente, de Game/Config/RTS/GeneralTrees.json. Falso se não achou. */
+	RTSHUD_API bool LoadTree(const FString& JsonPath, const FString& Faction);
+	/** Os pontos que sobram na patente Rank com os comprados (os pontos de cada patente somados, menos o custo do que já tem). */
+	RTSHUD_API int32 PointsLeftFor(int32 InRank) const;
+	/** Pode comprar agora (a patente, o nível de antes e os pontos)? */
+	RTSHUD_API bool CanBuy(FName Id) const;
+};
+
+/** (05/11) O dinheiro que entra ou sai voando perto do mostrador: "+$1,200" (verde, voa pela curva até o número) ou "−$900" (vermelho, cai). */
+struct FRTSHudMoneyChip
+{
+	FString Text;
+	bool bIn = true;
+	float Age = 0.0f;
+};
+
+/** (04/11) Uma linha do chat: quem fala (vazio no sistema), o texto, a cor do jogador, ALLIES e a idade (entra em 0,3 s, some aos 12 s). */
+struct FRTSHudChatLine
+{
+	FString Who;
+	FString Text;
+	FLinearColor Color = FLinearColor(FColor(230, 236, 243));
+	bool bAllies = false;
+	bool bSystem = false;            // a linha do jogo (fulano foi derrotado): cinza, sem nome
+	float Age = 0.0f;
+};
+
+/** (04/11) O chat: as linhas (a mais nova no fim; o pintor mostra as 6 últimas) e a caixa de digitar (Enter abre). */
+struct FRTSHudChat
+{
+	TArray<FRTSHudChatLine> Lines;
+	bool bTyping = false;
+	bool bAllies = true;             // a aba escolhida na caixa
+	FString Draft;
+	float TypingAge = 0.0f;          // desde que a caixa abriu (a entrada e o cursor piscando)
+	float PingAge = 99.0f;           // desde a última mensagem que chegou: o botão do chat no minimapa pisca (2 vezes, 1 s cada)
+};
+
 struct FRTSHudState
 {
 	// o tempo (segundos, qualquer origem): as pulsações (READY, superarma perto, energia faltando)
@@ -140,6 +227,8 @@ struct FRTSHudState
 	// o botão debaixo do mouse e o que está sendo apertado (ids da lista de botões do último quadro)
 	FName HoverId;
 	FName PressedId;
+	float HoverAge = 99.0f;          // (04/11) segundos desde que o mouse entrou no HoverId (a mola, a luz que passa)
+	float PressAge = 99.0f;          // e desde que apertou
 	float PanelIn = 1.0f;            // 0..1: o painel central e o cartão sobem da borda quando algo é selecionado
 	FName SkinFaction;               // a pele do HUD: "china" ou "gla" (kit/skin/<facção>/); vazio = a da USA
 
@@ -149,6 +238,7 @@ struct FRTSHudState
 
 	// o placar (Tab aberto): a janela no meio com a moldura da facção; a lista C das superarmas some (está toda nele)
 	bool bScoreboard = false;
+	FRTSHudGeneral General;          // (04/11) a tela do general
 	bool bScoreboardPassive = false; // só pra olhar (a foto do teste): desenha, mas não segura o clique de quem joga
 	FString ModeLabel;               // "3 vs 5 vs 8", "Free for all"
 	int32 ScoreSwScroll = 0;         // a coluna das superarmas rolada (linhas; o jogo soma com a rodinha, o pintor limita)
@@ -167,7 +257,16 @@ struct FRTSHudState
 	float PlateAge = 99.0f;
 	FString PromotedRank;
 	float PromotedAge = 99.0f;
+	FString PromotedTitle;           // (05/11) vazio = PROMOTED; na patente 1 (o começo da partida, como no ZH) FIRST POWER, sem o nome
 	bool bLowMoney = false;          // o dinheiro não paga o que foi pedido: o mostrador em vermelho
+	bool bCleanSlots = false;        // (05/11, pedido dele: "o HUD muito sujo") as casas sem a letra do atalho e sem o preço: a dica mostra
+	bool bHideEmptySlots = false;    // (05/11, pedido dele) as casas vazias somem: no painel só aparece o que existe
+	float PlateLife = 0.0f;          // (05/11) > 0: a plaqueta vermelha sai aos PlateLife s (a mola ao contrário, 0,25 s); 0 = fica
+	FName FlashId;                   // (05/11) a casa clicada sem dinheiro pisca em vermelho (0,9 s desde FlashAge = 0)
+	float FlashAge = 99.0f;
+	float CrestShakeAge = 99.0f;     // (05/11) e o brasão do dinheiro treme (0,45 s)
+	float BrownAge = -1.0f;          // (05/11) >= 0: faltando energia há BrownAge s: o apagão do console (o tranco, o lembrete a cada 12 s) e o raio
+	TArray<FRTSHudMoneyChip> MoneyChips;   // (05/11) o dinheiro voando (o jogo some com eles depois de 1,3 s)
 
 	TArray<FRTSHudAlert> Alerts;
 	bool bOffscreenArrow = false;
@@ -191,6 +290,7 @@ struct FRTSHudState
 	int32 MainColumns = 9;
 	TArray<FRTSHudSlot> Actions;     // 6 (2 × 3)
 	FRTSHudTimer Timer;              // (v4) com bShow, no lugar da grade principal
+	FRTSHudChat Chat;                // (04/11) o chat da partida
 
 	FRTSHudCard Card;
 

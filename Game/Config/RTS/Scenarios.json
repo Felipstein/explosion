@@ -33834,6 +33834,923 @@
           }
         ]
       }
+    },
+    {
+      "name": "hud_completo_usa",
+      "about": "(04/11, HUD) Todos os estados do HUD novo na USA, pra as fotos que ele pediu antes do commit: nada selecionado, o construtor, a fábrica produzindo, as unidades, o placar (Tab), a patente nova (PROMOTED) e, quem tem usina, a energia baixa (a usina derrubada). Rodar: game.ps1 view -Scenario hud_completo_<facção> -Folder <pasta> -Res 1920x1080 -Extra '-NewHud -RTSTab -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_command_center",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_barracks",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -370.0
+          ]
+        },
+        {
+          "key": "usa_supply_center",
+          "player": 0,
+          "at_m": [
+            -268.0,
+            -368.0
+          ]
+        },
+        {
+          "key": "usa_power_plant",
+          "player": 0,
+          "at_m": [
+            -245.0,
+            -368.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "usa_dozer",
+          "at_m": [
+            -282.0,
+            -350.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -284.0,
+            -310.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -277.0,
+            -310.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -270.0,
+            -310.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            282.6,
+            335.7
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -276.0,
+          -345.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 14.5,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 1.0,
+            "op": "money",
+            "player": 0,
+            "amount": 20000
+          },
+          {
+            "t_s": 1.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 80.0,
+            "focus_m": [
+              -276.0,
+              -345.0
+            ]
+          },
+          {
+            "t_s": 2.5,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 3.5,
+            "op": "shot",
+            "name": "usa_1_nada_selecionado"
+          },
+          {
+            "t_s": 4.0,
+            "op": "select",
+            "key": "usa_dozer"
+          },
+          {
+            "t_s": 5.2,
+            "op": "shot",
+            "name": "usa_2_construtor"
+          },
+          {
+            "t_s": 5.8,
+            "op": "select",
+            "key": "usa_war_factory"
+          },
+          {
+            "t_s": 6.0,
+            "op": "train",
+            "at_m": [
+              -265.0,
+              -330.0
+            ],
+            "player": 0,
+            "key": "usa_mbt",
+            "count": 3
+          },
+          {
+            "t_s": 7.2,
+            "op": "shot",
+            "name": "usa_3_fabrica_produzindo"
+          },
+          {
+            "t_s": 7.8,
+            "op": "select",
+            "key": "usa_mbt"
+          },
+          {
+            "t_s": 9.0,
+            "op": "shot",
+            "name": "usa_4_unidades"
+          },
+          {
+            "t_s": 9.6,
+            "op": "shot",
+            "name": "usa_5_tab_placar"
+          },
+          {
+            "t_s": 10.2,
+            "op": "rank",
+            "player": 0,
+            "rank": 3
+          },
+          {
+            "t_s": 11.0,
+            "op": "shot",
+            "name": "usa_6_promovido"
+          },
+          {
+            "t_s": 11.3,
+            "op": "shot",
+            "name": "usa_6b_general"
+          },
+          {
+            "t_s": 11.6,
+            "op": "kill",
+            "at_m": [
+              -245.0,
+              -368.0
+            ],
+            "player": 0
+          },
+          {
+            "t_s": 13.0,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 13.8,
+            "op": "shot",
+            "name": "usa_7_energia_baixa"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hud_completo_china",
+      "about": "(04/11, HUD) Todos os estados do HUD novo na CHINA, pra as fotos que ele pediu antes do commit: nada selecionado, o construtor, a fábrica produzindo, as unidades, o placar (Tab), a patente nova (PROMOTED) e, quem tem usina, a energia baixa (a usina derrubada). Rodar: game.ps1 view -Scenario hud_completo_<facção> -Folder <pasta> -Res 1920x1080 -Extra '-NewHud -RTSTab -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "china_command_center",
+          "player": 0,
+          "at_m": [
+            -302.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "china_war_factory",
+          "player": 0,
+          "at_m": [
+            -266.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "china_supply_center",
+          "player": 0,
+          "at_m": [
+            -232.0,
+            -354.0
+          ]
+        },
+        {
+          "key": "china_power_plant",
+          "player": 0,
+          "at_m": [
+            -304.0,
+            -316.0
+          ]
+        },
+        {
+          "key": "china_barracks",
+          "player": 0,
+          "at_m": [
+            -274.0,
+            -316.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "china_dozer",
+          "at_m": [
+            -245.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "china_type99",
+          "at_m": [
+            -292.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "china_type99",
+          "at_m": [
+            -284.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "china_type99",
+          "at_m": [
+            -276.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            282.6,
+            335.7
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -272.0,
+          -330.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 14.5,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 1.0,
+            "op": "money",
+            "player": 0,
+            "amount": 20000
+          },
+          {
+            "t_s": 1.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 80.0,
+            "focus_m": [
+              -272.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 2.5,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 3.5,
+            "op": "shot",
+            "name": "china_1_nada_selecionado"
+          },
+          {
+            "t_s": 4.0,
+            "op": "select",
+            "key": "china_dozer"
+          },
+          {
+            "t_s": 5.2,
+            "op": "shot",
+            "name": "china_2_construtor"
+          },
+          {
+            "t_s": 5.8,
+            "op": "select",
+            "key": "china_war_factory"
+          },
+          {
+            "t_s": 6.0,
+            "op": "train",
+            "at_m": [
+              -266.0,
+              -352.0
+            ],
+            "player": 0,
+            "key": "china_type99",
+            "count": 3
+          },
+          {
+            "t_s": 7.2,
+            "op": "shot",
+            "name": "china_3_fabrica_produzindo"
+          },
+          {
+            "t_s": 7.8,
+            "op": "select",
+            "key": "china_type99"
+          },
+          {
+            "t_s": 9.0,
+            "op": "shot",
+            "name": "china_4_unidades"
+          },
+          {
+            "t_s": 9.6,
+            "op": "shot",
+            "name": "china_5_tab_placar"
+          },
+          {
+            "t_s": 10.2,
+            "op": "rank",
+            "player": 0,
+            "rank": 3
+          },
+          {
+            "t_s": 11.0,
+            "op": "shot",
+            "name": "china_6_promovido"
+          },
+          {
+            "t_s": 11.3,
+            "op": "shot",
+            "name": "china_6b_general"
+          },
+          {
+            "t_s": 11.6,
+            "op": "kill",
+            "at_m": [
+              -304.0,
+              -316.0
+            ],
+            "player": 0
+          },
+          {
+            "t_s": 13.0,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 13.8,
+            "op": "shot",
+            "name": "china_7_energia_baixa"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hud_completo_gla",
+      "about": "(04/11, HUD) Todos os estados do HUD novo na GLA, pra as fotos que ele pediu antes do commit: nada selecionado, o construtor, a fábrica produzindo, as unidades, o placar (Tab), a patente nova (PROMOTED) e, quem tem usina, a energia baixa (a usina derrubada). Rodar: game.ps1 view -Scenario hud_completo_<facção> -Folder <pasta> -Res 1920x1080 -Extra '-NewHud -RTSTab -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          282.6,
+          335.7
+        ],
+        [
+          -282.6,
+          -335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "gla_command_center",
+          "player": 0,
+          "at_m": [
+            222.0,
+            308.0
+          ]
+        },
+        {
+          "key": "gla_arms_dealer",
+          "player": 0,
+          "at_m": [
+            258.0,
+            308.0
+          ]
+        },
+        {
+          "key": "gla_supply_stash",
+          "player": 0,
+          "at_m": [
+            288.0,
+            306.0
+          ]
+        },
+        {
+          "key": "gla_barracks",
+          "player": 0,
+          "at_m": [
+            226.0,
+            346.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "gla_worker",
+          "at_m": [
+            279.0,
+            370.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "gla_tank",
+          "at_m": [
+            232.0,
+            370.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "gla_tank",
+          "at_m": [
+            240.0,
+            370.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "gla_tank",
+          "at_m": [
+            248.0,
+            370.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -282.6,
+            -335.7
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          252.0,
+          336.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 12.0,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 1.0,
+            "op": "money",
+            "player": 0,
+            "amount": 20000
+          },
+          {
+            "t_s": 1.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 80.0,
+            "focus_m": [
+              252.0,
+              336.0
+            ]
+          },
+          {
+            "t_s": 2.5,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 3.5,
+            "op": "shot",
+            "name": "gla_1_nada_selecionado"
+          },
+          {
+            "t_s": 4.0,
+            "op": "select",
+            "key": "gla_worker"
+          },
+          {
+            "t_s": 5.2,
+            "op": "shot",
+            "name": "gla_2_construtor"
+          },
+          {
+            "t_s": 5.8,
+            "op": "select",
+            "key": "gla_arms_dealer"
+          },
+          {
+            "t_s": 6.0,
+            "op": "train",
+            "at_m": [
+              258.0,
+              308.0
+            ],
+            "player": 0,
+            "key": "gla_tank",
+            "count": 3
+          },
+          {
+            "t_s": 7.2,
+            "op": "shot",
+            "name": "gla_3_fabrica_produzindo"
+          },
+          {
+            "t_s": 7.8,
+            "op": "select",
+            "key": "gla_tank"
+          },
+          {
+            "t_s": 9.0,
+            "op": "shot",
+            "name": "gla_4_unidades"
+          },
+          {
+            "t_s": 9.6,
+            "op": "shot",
+            "name": "gla_5_tab_placar"
+          },
+          {
+            "t_s": 10.2,
+            "op": "rank",
+            "player": 0,
+            "rank": 3
+          },
+          {
+            "t_s": 11.0,
+            "op": "shot",
+            "name": "gla_6_promovido"
+          },
+          {
+            "t_s": 11.3,
+            "op": "shot",
+            "name": "gla_6b_general"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hud_completo_russia",
+      "about": "(04/11, HUD) Todos os estados do HUD novo na RUSSIA, pra as fotos que ele pediu antes do commit: nada selecionado, o construtor, a fábrica produzindo, as unidades, o placar (Tab), a patente nova (PROMOTED) e, quem tem usina, a energia baixa (a usina derrubada). Rodar: game.ps1 view -Scenario hud_completo_<facção> -Folder <pasta> -Res 1920x1080 -Extra '-NewHud -RTSTab -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "russia_command_center",
+          "player": 0,
+          "at_m": [
+            -302.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "russia_war_factory",
+          "player": 0,
+          "at_m": [
+            -266.0,
+            -352.0
+          ]
+        },
+        {
+          "key": "russia_supply_center",
+          "player": 0,
+          "at_m": [
+            -232.0,
+            -354.0
+          ]
+        },
+        {
+          "key": "russia_power_plant",
+          "player": 0,
+          "at_m": [
+            -304.0,
+            -316.0
+          ]
+        },
+        {
+          "key": "russia_barracks",
+          "player": 0,
+          "at_m": [
+            -274.0,
+            -316.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "russia_dozer",
+          "at_m": [
+            -238.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -296.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -287.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 0,
+          "key": "russia_t90m",
+          "at_m": [
+            -278.0,
+            -290.0
+          ],
+          "facing_deg": 90.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            282.6,
+            335.7
+          ],
+          "facing_deg": 0.0
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -272.0,
+          -330.0
+        ],
+        "distance_m": 80.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        2.0
+      ],
+      "end_s": 14.5,
+      "lab": {
+        "panel": false,
+        "ops": [
+          {
+            "t_s": 1.0,
+            "op": "money",
+            "player": 0,
+            "amount": 20000
+          },
+          {
+            "t_s": 1.5,
+            "op": "camera",
+            "yaw_deg": 45.0,
+            "distance_m": 80.0,
+            "focus_m": [
+              -272.0,
+              -330.0
+            ]
+          },
+          {
+            "t_s": 2.5,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 3.5,
+            "op": "shot",
+            "name": "russia_1_nada_selecionado"
+          },
+          {
+            "t_s": 4.0,
+            "op": "select",
+            "key": "russia_dozer"
+          },
+          {
+            "t_s": 5.2,
+            "op": "shot",
+            "name": "russia_2_construtor"
+          },
+          {
+            "t_s": 5.8,
+            "op": "select",
+            "key": "russia_war_factory"
+          },
+          {
+            "t_s": 6.0,
+            "op": "train",
+            "at_m": [
+              -266.0,
+              -352.0
+            ],
+            "player": 0,
+            "key": "russia_t90m",
+            "count": 3
+          },
+          {
+            "t_s": 7.2,
+            "op": "shot",
+            "name": "russia_3_fabrica_produzindo"
+          },
+          {
+            "t_s": 7.8,
+            "op": "select",
+            "key": "russia_t90m"
+          },
+          {
+            "t_s": 9.0,
+            "op": "shot",
+            "name": "russia_4_unidades"
+          },
+          {
+            "t_s": 9.6,
+            "op": "shot",
+            "name": "russia_5_tab_placar"
+          },
+          {
+            "t_s": 10.2,
+            "op": "rank",
+            "player": 0,
+            "rank": 3
+          },
+          {
+            "t_s": 11.0,
+            "op": "shot",
+            "name": "russia_6_promovido"
+          },
+          {
+            "t_s": 11.3,
+            "op": "shot",
+            "name": "russia_6b_general"
+          },
+          {
+            "t_s": 11.6,
+            "op": "kill",
+            "at_m": [
+              -304.0,
+              -316.0
+            ],
+            "player": 0
+          },
+          {
+            "t_s": 13.0,
+            "op": "select",
+            "key": "nenhuma_unidade"
+          },
+          {
+            "t_s": 13.8,
+            "op": "shot",
+            "name": "russia_7_energia_baixa"
+          }
+        ]
+      }
+    },
+    {
+      "name": "hud_completo_4p",
+      "about": "(05/11, HUD) A barra do topo com 4 jogadores (cada um contra todos) e o placar (Tab) com os 4: a prova no jogo de que o topo e o placar servem pra N jogadores. Rodar: game.ps1 view -Scenario hud_completo_4p -Folder <pasta> -Res 1920x1080 -Extra '-NewHud -RTSTab'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [[-282.6, -335.7], [282.6, 335.7], [-282.6, 335.7], [282.6, -335.7]],
+      "units_per_player": [],
+      "structures": [{"key": "usa_command_center", "player": 0, "at_m": [-300.0, -330.0]}, {"key": "usa_war_factory", "player": 0, "at_m": [-265.0, -330.0]}, {"key": "usa_power_plant", "player": 0, "at_m": [-245.0, -368.0]}],
+      "units": [{"player": 0, "key": "usa_dozer", "at_m": [-282.0, -350.0], "facing_deg": 90.0}, {"player": 0, "key": "usa_mbt", "at_m": [-284.0, -310.0], "facing_deg": 90.0}, {"player": 0, "key": "usa_mbt", "at_m": [-277.0, -310.0], "facing_deg": 90.0}, {"player": 1, "key": "usa_mbt", "at_m": [282.6, 335.7], "facing_deg": 0.0}, {"player": 2, "key": "usa_mbt", "at_m": [-282.6, 335.7], "facing_deg": 0.0}, {"player": 3, "key": "usa_mbt", "at_m": [282.6, -335.7], "facing_deg": 0.0}],
+      "camera": {"focus_m": [-276.0, -345.0], "distance_m": 80.0, "yaw_deg": 45.0},
+      "shots_s": [2.0],
+      "end_s": 8.0,
+      "lab": {"panel": false, "ops": [{"t_s": 1.0, "op": "money", "player": 0, "amount": 20000}, {"t_s": 1.5, "op": "camera", "yaw_deg": 45.0, "distance_m": 80.0, "focus_m": [-276.0, -345.0]}, {"t_s": 2.5, "op": "select", "key": "nenhuma_unidade"}, {"t_s": 3.5, "op": "shot", "name": "4p_1_topo"}, {"t_s": 4.0, "op": "select", "key": "usa_mbt"}, {"t_s": 5.0, "op": "shot", "name": "4p_2_unidades"}, {"t_s": 5.6, "op": "shot", "name": "4p_3_tab_placar"}]}
     }
   ]
 }

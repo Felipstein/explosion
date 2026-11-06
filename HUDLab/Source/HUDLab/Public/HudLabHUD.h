@@ -46,5 +46,10 @@ private:
 	FName SkinFaction;     // -Faction=china|gla: a pele da facção
 	double DrawMs = 0.0;   // o custo do HUD: a soma do tempo de CPU do Draw (vai pro log ao fechar a foto)
 	int32 DrawCount = 0;
+	FName LastHoverId, LastPressId;   // (04/11) o tempo do hover na janela
+	bool bLabClean = false;           // (05/11) na janela: C troca a versão das casas (A como está / B limpa)
+	bool bLabPoor = false;            // (05/11) na janela: M deixa o dinheiro curto ($900)
+	bool bLabHideEmpty = false;       // (05/11) na janela: V some com as casas vazias
+	float HoverSince = 0.0f, PressSince = 0.0f;
 	bool bMeasure = false; // -Measure: a foto espera 300 quadros, pra média do custo sair sem a leitura das imagens  // -Time=t: o tempo das pulsações numa foto
 };

@@ -61,7 +61,7 @@ namespace
 		// (04/11) uma célula por ponto de energia (o console aprovado): 4 de 10, como no protótipo; o de 8 jogadores faltando
 		St.PowerMade = 10;
 		St.PowerUsed = bEightPlayers ? 12 : 4;
-		St.Stars = 3; St.Xp = 0.62f; St.Promote = 1;
+		St.Stars = 3; St.Xp = 0.62f; St.Promote = 0;
 		St.Alerts.Add({ TEXT("Unit under attack"), PRed });
 		if (bEightPlayers)
 		{
@@ -158,6 +158,11 @@ FRTSHudState MakeHudLabState(int32 Index, int32 MainColumns)
 		St.Main[4] = Build(TEXT("eco_produce_ambulance"), 'T', TEXT("Ambulance"), TEXT("$600"), TEXT("btn:usa_ambulance"));
 		St.Main[5] = Build(TEXT("eco_produce_aa"), 'Y', TEXT("Anti-Air"), TEXT("$1,000"), TEXT("btn:usa_anti_air"));
 		St.Main[6] = Build(TEXT("eco_produce_drone"), 'U', TEXT("Drone"), TEXT("$500"), TEXT("btn:usa_drone"));
+		// (05/11, pedido dele: ver todos os casos juntos) o que o dinheiro não paga mas dá pra fazer, e o trancado pelo limite
+		FRTSHudSlot Paladin = Build(TEXT("eco_produce_paladin"), 'I', TEXT("Paladin"), TEXT("$4,800"), TEXT("btn:usa_heavy_tank"));
+		Paladin.bNoMoney = true;
+		St.Main[7] = Paladin;
+		St.Main[8] = Locked(Build(TEXT("eco_produce_tomahawk"), 'O', TEXT("Tomahawk"), TEXT("$1,200"), TEXT("btn:usa_rocket_launcher")));
 		St.Main[9] = Locked(Build(TEXT("eco_produce_ew_tank"), 'Z', TEXT("EW Tank"), TEXT("$800"), TEXT("btn:usa_ew_tank")));
 		FRTSHudSlot Kit = Upgrade(Build(TEXT("upg_missile_kit"), 'X', TEXT("Missile Kit"), FString(), TEXT("btn:upg_missile_kit"))); Kit.bDone = true;
 		St.Main[10] = Kit;
@@ -229,12 +234,34 @@ FRTSHudState MakeHudLabState(int32 Index, int32 MainColumns)
 	}
 	else if (Index == 3)
 	{
+		// (05/11) o clique sem dinheiro numa casa que dá pra fazer (antes caía no Airfield, que está trancado: trancado nunca diz
+		// INSUFFICIENT FUNDS): com $450, a Power Plant ($800) e as outras caras ficam sem dinheiro
+		St.Money = TEXT("$ 450");
+		for (FRTSHudSlot& Sl : St.Main)
+		{
+			const int32 Cost = FCString::Atoi(*Sl.Price.Replace(TEXT("$"), TEXT("")).Replace(TEXT(","), TEXT("")));
+			Sl.bNoMoney = !Sl.bEmpty && !Sl.bLocked && Cost > 450;
+		}
+		St.TooltipFor = TEXT("eco_build_power");
+		St.TooltipTitle = TEXT("Power Plant"); St.TooltipKey = TEXT("W"); St.TooltipCost = TEXT("$800 · 0:10");
+		St.TooltipLine = TEXT("Not enough money: need $350 more"); St.bTooltipLineRed = true;
 		St.bLowMoney = true;
-		St.PlateTitle = TEXT("INSUFFICIENT FUNDS"); St.PlateLine = TEXT("Need $1,050 more · airlift in 0:42");
+		St.PlateTitle = TEXT("INSUFFICIENT FUNDS"); St.PlateLine = TEXT("Need $350 more · airlift in 0:42");
+		St.FlashId = St.TooltipFor;
+		St.FlashAge = 0.1f; St.CrestShakeAge = 0.1f;
+		FParse::Value(FCommandLine::Get(), TEXT("FlashAge="), St.FlashAge);
+		FParse::Value(FCommandLine::Get(), TEXT("FlashAge="), St.CrestShakeAge);
 	}
 	else if (Index == 4)
 	{
+		// (05/11) a patente nova: 2 pontos pra gastar (a moeda e o cubo brilhando), como na foto aprovada; -FirstPower: o começo da partida
+		St.Promote = 2;
 		St.PromotedRank = TEXT("General");
+		St.PromotedAge = 2.0f;
+		if (FParse::Param(FCommandLine::Get(), TEXT("FirstPower")))
+		{
+			St.Stars = 1; St.Promote = 1; St.PromotedRank.Empty(); St.PromotedTitle = TEXT("FIRST POWER");
+		}
 	}
 	St.MainColumns = FMath::Clamp(MainColumns, 5, 9);
 	if (St.MainColumns < 9)
@@ -280,6 +307,35 @@ namespace
 	{
 		return int32(FMath::FloorToDouble(V + 0.5));
 	}
+}
+
+bool HudLabSlotTip(FName Id, FString& Cost, FString& Line, bool& bRed)
+{
+	struct FTip { const TCHAR* Id; const TCHAR* Cost; const TCHAR* Line; bool bRed; };
+	static const FTip Tips[] = {
+		{ TEXT("eco_produce_usa_battle_tank"), TEXT("$900 · 0:12"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_humvee"), TEXT("$700 · 0:10"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_rocket"), TEXT("$1,200 · 0:15"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_ambulance"), TEXT("$600 · 0:08"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_aa"), TEXT("$1,000 · 0:12"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_drone"), TEXT("$500 · 0:06"), TEXT("Left-click +1 · Shift-click +5 · Right-click −1"), false },
+		{ TEXT("eco_produce_paladin"), TEXT("$4,800 · 0:30"), TEXT("Not enough money: need $550 more"), true },
+		{ TEXT("eco_produce_heavy_tank"), TEXT("$1,100 · 0:15"), TEXT("Requires: Strategy Center"), true },
+		{ TEXT("eco_produce_tomahawk"), TEXT("$1,200 · 0:18"), TEXT("Limit reached: 2 / 2"), true },
+		{ TEXT("eco_produce_ew_tank"), TEXT("$800 · 0:12"), TEXT("Requires: Major General (rank 2)"), true },
+		{ TEXT("upg_missile_kit"), TEXT(""), TEXT("Purchased"), false },
+		{ TEXT("upg_battle_drone"), TEXT("$100 · 0:20"), TEXT("Each Humvee carries a battle drone."), false },
+		{ TEXT("cmd_rally"), TEXT(""), TEXT("Where new units go."), false },
+	};
+	for (const FTip& T : Tips)
+	{
+		if (Id == FName(T.Id))
+		{
+			Cost = T.Cost; Line = T.Line; bRed = T.bRed;
+			return true;
+		}
+	}
+	return false;
 }
 
 bool ApplyHudLabFormat(FRTSHudState& St, const FString& Format, const FString& MyFaction, bool bAbuse, const FString& MeHex)

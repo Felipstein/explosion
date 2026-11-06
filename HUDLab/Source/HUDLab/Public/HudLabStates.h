@@ -15,3 +15,7 @@ FRTSHudState MakeHudLabState(int32 Index, int32 MainColumns = 7);
  * números de lá; bAbuse dá 240 superarmas a um inimigo; MeHex troca a sua cor. Falso se o formato não existe.
  */
 bool ApplyHudLabFormat(FRTSHudState& St, const FString& Format, const FString& MyFaction, bool bAbuse, const FString& MeHex);
+
+/** (05/11) A dica de cada casa dos estados (o preço com o tempo e a linha de baixo; bRed = o motivo de não poder), pra janela mostrar a
+ *  certa debaixo do mouse. Falso se a casa não tem dica própria. */
+bool HudLabSlotTip(FName Id, FString& Cost, FString& Line, bool& bRed);

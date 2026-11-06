@@ -221,7 +221,7 @@ void FRTSHudPainter::Image(FName Name, float X, float Y, float W, float H, const
 			UV0.Y = (1 - V) * 0.5f; UV1.Y = 1 - UV0.Y;
 		}
 	}
-	FCanvasTileItem Item(FVector2D(X, Y), Tex->GetResource(), FVector2D(W, H), UV0, UV1, Tint);
+	FCanvasTileItem Item(FVector2D(X, Y), Tex->GetResource(), FVector2D(W, H), UV0, UV1, Tint * DrawTint);
 	Item.BlendMode = SE_BLEND_Translucent;
 	Canvas->DrawItem(Item);
 }
@@ -246,7 +246,7 @@ void FRTSHudPainter::ImageInset(FName Name, float X, float Y, float W, float H, 
 		Rect(X, Y, W, H, FLinearColor(FColor(40, 34, 28)));
 		return;
 	}
-	FCanvasTileItem Item(FVector2D(X, Y), Tex->GetResource(), FVector2D(W, H), FVector2D(Inset, Inset), FVector2D(1 - Inset, 1 - Inset), Tint);
+	FCanvasTileItem Item(FVector2D(X, Y), Tex->GetResource(), FVector2D(W, H), FVector2D(Inset, Inset), FVector2D(1 - Inset, 1 - Inset), Tint * DrawTint);
 	Item.BlendMode = SE_BLEND_Translucent;
 	Canvas->DrawItem(Item);
 }
@@ -256,9 +256,10 @@ void FRTSHudPainter::Skin(FName Name, float X, float Y, float W, float H, const 
 	UTexture* Tex = nullptr;
 	if (Lookup && Cur && !Cur->SkinFaction.IsNone())
 	{
-		// a pele da facção (skin:<facção>/<peça>), quando a peça existe; senão a da USA
+		// a pele da facção (skin:<facção>/<peça>), quando a peça existe; senão a da USA. (05/11) A peça que já vem da facção (FacSkin)
+		// não ganha a facção de novo (procurava skin:china/china/<peça>)
 		FString Piece = Name.ToString();
-		if (Piece.RemoveFromStart(TEXT("skin:")))
+		if (Piece.RemoveFromStart(TEXT("skin:")) && !Piece.Contains(TEXT("/")))
 		{
 			Tex = Lookup(FName(*FString::Printf(TEXT("skin:%s/%s"), *Cur->SkinFaction.ToString(), *Piece)));
 		}
@@ -287,13 +288,14 @@ void FRTSHudPainter::Skin(FName Name, float X, float Y, float W, float H, const 
 	const float Ys[4] = { Y, Y + MT, Y + H - MB, Y + H };
 	const float Us[4] = { float(Src.Min.X) / TW, float(Src.Min.X + M.Left) / TW, float(Src.Max.X - M.Right) / TW, float(Src.Max.X) / TW };
 	const float Vs[4] = { float(Src.Min.Y) / TH, float(Src.Min.Y + M.Top) / TH, float(Src.Max.Y - M.Bottom) / TH, float(Src.Max.Y) / TH };
+	const FLinearColor TintD = Tint * DrawTint;
 	TArray<FCanvasUVTri> List;
 	auto AddTri = [&](const FVector2D& P0, const FVector2D& U0, const FVector2D& P1, const FVector2D& U1, const FVector2D& P2, const FVector2D& U2)
 	{
 		FCanvasUVTri Tr;
-		Tr.V0_Pos = P0; Tr.V0_UV = U0; Tr.V0_Color = Tint;
-		Tr.V1_Pos = P1; Tr.V1_UV = U1; Tr.V1_Color = Tint;
-		Tr.V2_Pos = P2; Tr.V2_UV = U2; Tr.V2_Color = Tint;
+		Tr.V0_Pos = P0; Tr.V0_UV = U0; Tr.V0_Color = TintD;
+		Tr.V1_Pos = P1; Tr.V1_UV = U1; Tr.V1_Color = TintD;
+		Tr.V2_Pos = P2; Tr.V2_UV = U2; Tr.V2_Color = TintD;
 		List.Add(Tr);
 	};
 	for (int32 J = 0; J < 3; ++J)
@@ -590,29 +592,9 @@ float FRTSHudPainter::Pulse(float Hz) const
 
 void FRTSHudPainter::HoverPress(FName Id, float X, float Y, float W, float H, const FLinearColor& Rim)
 {
-	if (!Cur || Id.IsNone())
-	{
-		return;
-	}
-	if (Cur->PressedId == Id)
-	{
-		// apertado: afunda (sombra por dentro em cima e à esquerda) e escurece
-		FillPoly(ChamferPoly(X, Y, W, H, 5 * S), [](const FVector2D&) { return FLinearColor(0.0f, 0.0f, 0.0f, 0.28f); });
-		Rect(X + 3 * S, Y + 3 * S, W - 6 * S, 2 * S, FLinearColor(0, 0, 0, 0.55f));
-		Rect(X + 3 * S, Y + 3 * S, 2 * S, H - 6 * S, FLinearColor(0, 0, 0, 0.55f));
-	}
-	else if (Cur->HoverId == Id)
-	{
-		// o mouse em cima: um véu claro e a moldura acesa na cor do aro
-		FillPoly(ChamferPoly(X, Y, W, H, 5 * S), [](const FVector2D&) { return FLinearColor(1.0f, 1.0f, 1.0f, 0.07f); });
-		const FLinearColor Lit = FMath::Lerp(Rim, FLinearColor::White, 0.45f);
-		const TArray<FVector2D> Pts = ChamferPoly(X + 1 * S, Y + 1 * S, W - 2 * S, H - 2 * S, 5 * S);
-		for (int32 K = 0; K < Pts.Num(); ++K)
-		{
-			Line(Pts[K], Pts[(K + 1) % Pts.Num()], 3.5f * S, WithA(Lit, 0.30f));
-			Line(Pts[K], Pts[(K + 1) % Pts.Num()], 1.5f * S, WithA(Lit, 0.95f));
-		}
-	}
+	// (04/11) o hover aprovado, sem subir (os botões que já foram desenhados): a cor do tipo pela cor do aro de quem chama
+	const EHoverKind Kind = Rim.Equals(KGold, 0.01f) ? EHoverKind::Gold : Rim.Equals(KGreen, 0.01f) ? EHoverKind::Action : EHoverKind::Normal;
+	HoverFx(Id, Kind, X, Y, W, H, 5.0f * S);
 }
 
 FLinearColor FRTSHudPainter::HealthColor(float H)
@@ -638,15 +620,17 @@ void FRTSHudPainter::Draw(UCanvas* InCanvas, const FRTSHudState& State, TArray<F
 
 	DrawMinimap(State);
 	DrawCommandPanel(State);
-	DrawGroups(State);
 	DrawCard(State);
+	// (04/11) o console aprovado no lugar das abas e do painel do dinheiro de antes (DrawGroups, DrawCommander)
+	DrawConsole(State);
 	DrawAlerts(State);
 	DrawPowers(State);
+	DrawChat(State);
 	DrawTop(State);
 	DrawSuperweaponList(State);
-	DrawCommander(State);
 	DrawTooltip(State);
 	DrawScoreboard(State);
+	DrawGeneral(State);
 	// o fundo de cada peça segura o clique (não vai pro mundo); vem no fim, depois dos botões de verdade:
 	// quem procura o botão debaixo do mouse pega o primeiro da lista que contém o ponto
 	for (const FBox2D& Box : BgBoxes)
@@ -845,13 +829,16 @@ void FRTSHudPainter::DrawPowers(const FRTSHudState& State)
 	// a placa do minimapa (as mesmas contas do DrawMinimap): borda esquerda em 46 e topo em 120 da textura
 	const float PodK = 0.534f * S;
 	const float PodX = SX(8, EAnchor::Left), PodY = SY(1072, true) - 620 * PodK;
-	const float W = 64 * S, Gap = 6 * S;
-	const float X = PodX + 46 * PodK, Bottom = PodY + 120 * PodK - Gap;
+	const float W0 = 64 * S, Gap = 6 * S;
+	const float X0 = PodX + 46 * PodK, Bottom = PodY + 120 * PodK - Gap;
 	for (int32 I = 0; I < State.Powers.Num(); ++I)
 	{
 		const FRTSHudPower& P = State.Powers[I];
-		const float Y = Bottom - W - I * (W + Gap);
 		const bool bReady = P.Remaining <= 0.0f;
+		const FName PId(*FString::Printf(TEXT("power_%d"), I));
+		const float Y0 = Bottom - W0 - I * (W0 + Gap);
+		float X = X0, Y = Y0, W = W0, WH = W0;
+		HoverXform(PId, bReady ? EHoverKind::Gold : EHoverKind::Normal, X, Y, W, WH, 5.0f * S);
 		Skin(SkGroupOff, X, Y, W, W, SkMGroup, 0.3f * S);
 		const float In = 6 * S, IW = W - 2 * In;
 		ImageInset(P.Icon, X + In, Y + In, IW, IW, 0.1f);
@@ -876,9 +863,8 @@ void FRTSHudPainter::DrawPowers(const FRTSHudState& State)
 		{
 			TextMid(TEXT("READY"), X + W * 0.5f, Y + W - In - 9 * S, 14.0f, KGoldText, EWeight::Bold, EAlign::Center);
 		}
-		const FName PId(*FString::Printf(TEXT("power_%d"), I));
-		HoverPress(PId, X, Y, W, W, bReady ? KGold : Accent());
-		Buttons->Add({ PId, FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + W)) });
+		HoverFx(PId, bReady ? EHoverKind::Gold : EHoverKind::Normal, X, Y, W, W, 5.0f * S);
+		Buttons->Add({ PId, FBox2D(FVector2D(X0, Y0), FVector2D(X0 + W0, Y0 + W0)) });
 	}
 }
 
@@ -969,6 +955,19 @@ void FRTSHudPainter::DrawMinimap(const FRTSHudState& State)
 			continue;
 		}
 		ImageInset(FName(Icons[I]), BX + 4 * K, BY + 4 * K, BW - 8 * K, BH - 8 * K, 0.1f);
+		if (I == 3 && State.Chat.PingAge < 2.0f)
+		{
+			// (04/11) chegou mensagem: o botão do chat pisca duas vezes (o .hs.ping do protótipo: o aro azul por dentro afinando e a onda
+			// que sai até 14 px e apaga, 1 s cada, ease-out)
+			const float E = Bezier(0.0f, 0.0f, 0.58f, 1.0f, FMath::Fmod(State.Chat.PingAge, 1.0f));
+			const FLinearColor Blue(FColor(73, 170, 255));
+			const float Sp = 14.0f * S * E;
+			if (Sp > 0.5f)
+			{
+				RoundRectRing(BX - Sp, BY - Sp, BW + 2 * Sp, BH + 2 * Sp, 5.0f * S + Sp, Sp, FLinearColor(Blue.R, Blue.G, Blue.B, 0.8f * (1.0f - E)));
+			}
+			RoundRectRing(BX, BY, BW, BH, 5.0f * S, FMath::Lerp(2.0f, 1.0f, E) * S, FLinearColor(Blue.R, Blue.G, Blue.B, FMath::Lerp(1.0f, 0.3f, E)));
+		}
 		HoverPress(FName(Ids[I]), BX, BY, BW, BH, Accent());
 		Buttons->Add({ FName(Ids[I]), FBox2D(FVector2D(BX, BY), FVector2D(BX + BW, BY + BH)) });
 	}
@@ -1021,10 +1020,18 @@ void FRTSHudPainter::DrawCommandPanel(const FRTSHudState& State)
 	// a peça comprida da pele: as pontas entram por baixo do minimapa e do cartão (encosta nos dois)
 	const float PH = CommandPanelHeight(State), PTop = 1072.0f - PH;
 	const float X0 = SX(378, EAnchor::Left), X1 = SX(1520, EAnchor::Right), Y = SY(PTop, true) + PanelDrop(State), H = PH * S;
-	// a moldura das outras facções é mais grossa: o painel desce até a beira da tela (os 8 px de baixo), pra borda não passar por trás das casas
-	const float Foot = (Cur && !Cur->SkinFaction.IsNone()) ? 8.0f * S : 0.0f;
-	Skin(SkPanelLong, X0, Y, X1 - X0, H + Foot, SkMPanelLong, 0.22f * S);
-	Bg(X0, Y, X1 - X0, H + Foot);
+	// (04/11, ele: "as bordas estão esticadas e a borda inferior tá ficando por baixo dos slots", na GLA) a moldura de cada facção tem
+	// uma espessura (medida na arte: onde o miolo começa, e os enfeites dos cantos, como o pano da GLA): os cortes da peça são os dela,
+	// pra moldura não esticar, e o painel cresce pra cima e pra baixo até a moldura ficar por fora das casas (2 px de folga)
+	const FName Fac = Cur ? Cur->SkinFaction : NAME_None;
+	const FMargin M = Fac == TEXT("china") ? FMargin(100.0f, 28.0f, 100.0f, 27.0f) : Fac == TEXT("gla") ? FMargin(100.0f, 51.0f, 130.0f, 54.0f)
+		: Fac == TEXT("russia") ? FMargin(100.0f, 55.0f, 100.0f, 51.0f) : FMargin(100.0f, 39.0f, 100.0f, 37.0f);
+	const float K = 0.22f;
+	const float PadY0 = 10.0f, SlotTop = PTop + PadY0, SlotBottom = PTop + PH - PadY0;
+	const float BoxTop = FMath::Min(PTop, SlotTop - M.Top * K - 2.0f), BoxBottom = FMath::Max(PTop + PH, SlotBottom + M.Bottom * K + 2.0f);
+	const float BY = Y - (PTop - BoxTop) * S, BH = (BoxBottom - BoxTop) * S;
+	Skin(SkPanelLong, X0, BY, X1 - X0, BH, M, K * S);
+	Bg(X0, BY, X1 - X0, BH);
 	// as casas: a grade principal (MC colunas) e a de ações (3), com 6 px de vão e um sulco entre as duas
 	const int32 MC = FMath::Clamp(State.MainColumns, 5, 9);
 	const float Left = 408, Right = 1492, Sep = 10, Gap = 6, PadY = 10, GapY = 8;
@@ -1130,6 +1137,14 @@ void FRTSHudPainter::DrawTimer(const FRTSHudState& State, float Left, float Righ
 
 void FRTSHudPainter::DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W, float H)
 {
+	if (Slot.bEmpty && Cur && Cur->bHideEmptySlots && !bDrawingQueue)
+	{
+		return;   // (05/11) as casas vazias somem (o painel mostra só o que existe)
+	}
+	// (04/11) o hover aprovado: o tipo da casa dá a cor; a casa sobe e cresce antes de ser desenhada
+	const EHoverKind HoverKind = Slot.bEmpty ? EHoverKind::Empty : Slot.bLocked ? EHoverKind::Locked : Slot.bAction ? EHoverKind::Action
+		: (Slot.bUpgrade || Slot.bCaptain) ? EHoverKind::Gold : (Slot.bNoMoney && !Slot.Price.IsEmpty()) ? EHoverKind::Poor : EHoverKind::Normal;
+	HoverXform(Slot.Id, HoverKind, X, Y, W, H, 5.0f * H / 74.0f, true);
 	// U: pixels da tela por pixel do botão grande (74 de altura); Z: o mesmo pros tamanhos de letra
 	const float U = H / 74.0f, Z = U / S;
 	const float Sc = 0.17f * U;          // a moldura da pele (198×189) fina, como as casas da peça aprovada
@@ -1149,24 +1164,65 @@ void FRTSHudPainter::DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W
 	const FName FrameSkin = Slot.bCaptain ? SkSlotCaptain : (Slot.bAction ? SkSlotAction : (Slot.bLocked ? SkSlotLocked : SkSlotNormal));
 	Skin(FrameSkin, X, Y, W, H, SkMSlot, Sc);
 	const float IX = X + In, IY = Y + In, IW = W - 2 * In, IH = H - 2 * In;
-	const bool bShowPrice = !Slot.Price.IsEmpty() && Slot.Health < 0.0f && Slot.Progress < 0.0f;
+	// (05/11, a versão limpa: bCleanSlots) sem a faixa do preço e sem a letra do atalho; a foto ocupa a janela inteira e a casa que o dinheiro
+	// não paga sai apagada e sem cor (o dim35 da tela do general aprovada: saturate .35, brightness .7)
+	const bool bClean = Cur && Cur->bCleanSlots;
+	const bool bShowPrice = !bClean && !Slot.Price.IsEmpty() && Slot.Health < 0.0f && Slot.Progress < 0.0f;
 	const float Band = bShowPrice ? 17 * U : 0.0f;
+	const bool bPoorDim = bClean && Slot.bNoMoney && !Slot.bLocked && !Slot.Price.IsEmpty() && Slot.Progress < 0.0f;
+	const FName SlotImage = bPoorDim && !Slot.Image.IsNone() ? FName(*(TEXT("dim35:") + Slot.Image.ToString())) : Slot.Image;
 	if (!Slot.Image.IsNone())
 	{
 		if (Slot.Image.ToString().StartsWith(TEXT("icon:")))
 		{
 			// o ícone quadrado, sem a moldura dele, no meio da janela
 			const float IS = FMath::Min(IW, IH - Band) * 0.82f;
-			ImageInset(Slot.Image, IX + (IW - IS) * 0.5f, IY + (IH - Band - IS) * 0.5f + 2 * U, IS, IS, 0.1f);
+			ImageInset(SlotImage, IX + (IW - IS) * 0.5f, IY + (IH - Band - IS) * 0.5f + 2 * U, IS, IS, 0.1f);
 		}
 		else
 		{
-			Image(Slot.Image, IX, IY, IW, IH - Band);
+			Image(SlotImage, IX, IY, IW, IH - Band);
 		}
 	}
 	else if (!Slot.Label.IsEmpty())
 	{
-		TextMid(Slot.Label, X + W * 0.5f, IY + IH * 0.4f, 13.0f * Z, KTextMain, EWeight::SemiBold, EAlign::Center);
+		// sem foto, o nome cabe na casa (04/11: "Gas Power Plant" e "Research Institute" passavam da borda): quebra em duas linhas no
+		// espaço mais equilibrado e, se ainda não couber, encolhe até 10
+		const float MaxW = IW - 8 * U;
+		float Px = 13.0f * Z;
+		TArray<FString> Lines = { Slot.Label };
+		if (Measure(Slot.Label, Px, EWeight::SemiBold).X > MaxW)
+		{
+			int32 Best = INDEX_NONE;
+			float BestW = TNumericLimits<float>::Max();
+			for (int32 I = 0; I < Slot.Label.Len(); ++I)
+			{
+				if (Slot.Label[I] == TEXT(' '))
+				{
+					const float Wider = FMath::Max(Measure(Slot.Label.Left(I), Px, EWeight::SemiBold).X, Measure(Slot.Label.Mid(I + 1), Px, EWeight::SemiBold).X);
+					if (Wider < BestW)
+					{
+						BestW = Wider;
+						Best = I;
+					}
+				}
+			}
+			if (Best != INDEX_NONE)
+			{
+				Lines = { Slot.Label.Left(Best), Slot.Label.Mid(Best + 1) };
+			}
+		}
+		auto Widest = [&]() { float Wd = 0.0f; for (const FString& L : Lines) Wd = FMath::Max(Wd, Measure(L, Px, EWeight::SemiBold).X); return Wd; };
+		while (Px > 10.0f * Z && Widest() > MaxW)
+		{
+			Px -= 0.5f * Z;
+		}
+		const float LineH = Measure(TEXT("Ag"), Px, EWeight::SemiBold).Y * 0.92f;
+		const float CY0 = IY + (IH - Band) * 0.5f - (Lines.Num() - 1) * LineH * 0.5f;
+		for (int32 L = 0; L < Lines.Num(); ++L)
+		{
+			TextMid(Ellipsize(Lines[L], Px, EWeight::SemiBold, MaxW), X + W * 0.5f, CY0 + L * LineH, Px, KTextMain, EWeight::SemiBold, EAlign::Center);
+		}
 	}
 	if (bShowPrice)
 	{
@@ -1201,7 +1257,7 @@ void FRTSHudPainter::DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W
 		DashedBorder(IX, IY, IW, IH, 2 * U, 6 * U, KGold);
 	}
 
-	if (Slot.Key != 0)
+	if (Slot.Key != 0 && !bClean)
 	{
 		Text(FString::Chr(Slot.Key), IX + 3 * U, IY - 1 * U, 17.0f * Z, KKey, EWeight::Bold);
 	}
@@ -1218,7 +1274,40 @@ void FRTSHudPainter::DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W
 		const FLinearColor PC = Slot.bNoMoney ? KRed : (Slot.bLocked ? KTextDim : KGoldText);
 		TextMid(Slot.Price, X + W * 0.5f, IY + IH - Band * 0.5f, 15.0f * Z, PC, EWeight::Bold, EAlign::Center);
 	}
-	HoverPress(Slot.Id, X, Y, W, H, Slot.bCaptain ? KGold : (Slot.bAction ? KGreen : Accent()));
+	// (05/11) clicou sem dinheiro: a casa pisca em vermelho (o hflash do protótipo, 0,9 s: o aro de 3 px por dentro e a luz de 16 px em
+	// 0% e 60%; aos 30% só o aro, apagado a 0,2; some no fim). A curva "ease" do CSS em cada trecho
+	if (!Cur->FlashId.IsNone() && Slot.Id == Cur->FlashId && Cur->FlashAge < 0.9f)
+	{
+		const float T = FMath::Max(0.0f, Cur->FlashAge) / 0.9f;
+		const auto Ease = [](float V) { return Bezier(0.25f, 0.1f, 0.25f, 1.0f, V); };
+		const float Ring = T < 0.3f ? FMath::Lerp(1.0f, 0.2f, Ease(T / 0.3f)) : T < 0.6f ? FMath::Lerp(0.2f, 1.0f, Ease((T - 0.3f) / 0.3f)) : FMath::Lerp(1.0f, 0.0f, Ease((T - 0.6f) / 0.4f));
+		const float Halo = T < 0.3f ? 1.0f - Ease(T / 0.3f) : T < 0.6f ? Ease((T - 0.3f) / 0.3f) : 1.0f - Ease((T - 0.6f) / 0.4f);
+		// (05/11, ele: "as bordas dos cards com hover estão saindo do HUD") contido na casa: a luz de 16 px vem por dentro, não por fora
+		const float Rr = 5.0f * U;
+		GridFill(X, Y, W, H, 8, 8, [=, this](const FVector2D& P)
+		{
+			const float D = FMath::Min(FMath::Min(P.X - X, X + W - P.X), FMath::Min(P.Y - Y, Y + H - P.Y));
+			return FLinearColor(1.0f, 0.231f, 0.173f, 0.5f * Halo * FMath::Clamp(1.0f - D / (16.0f * S), 0.0f, 1.0f));
+		});
+		RoundRectRing(X, Y, W, H, Rr, 3.0f * U, FLinearColor(1.0f, 0.231f, 0.173f, Ring));
+	}
+	// (05/11) sem energia: a casa em produção ganha o raio (mais lento): o círculo escuro de 30 com o aro vermelho de 2 px e a luz de 10 px,
+	// no canto de baixo à direita (o em.sl do protótipo: 60, 51 numa casa de 98 × 86), e o raio vermelho de 15 × 19 dentro
+	if (Cur->BrownAge >= 0.0f && Slot.Progress >= 0.0f)
+	{
+		const FVector2D C(X + W * 75.0f / 98.0f, Y + H * 66.0f / 86.0f);
+		const float Rr = 15.0f * H / 86.0f, K2 = H / 86.0f;
+		const FLinearColor Red(1.0f, 0.231f, 0.173f, 1.0f);
+		Arc(C, Rr + 2.0f * K2, Rr + 7.0f * K2, 0.0f, 1.0f, FLinearColor(Red.R, Red.G, Red.B, 0.4f), FLinearColor(Red.R, Red.G, Red.B, 0.0f));
+		FillCircle(C, Rr, FLinearColor(FColor(23, 6, 6)), FLinearColor(FColor(23, 6, 6)), 24);
+		SoftArc(C, Rr, Rr + 2.0f * K2, 0.0f, 1.0f, Red);
+		// o raio do protótipo (M6 0 1 7h3l-1 5 6-8H6l1-4z, viewBox 10 × 12, em 15 × 19): duas partes convexas
+		const float BW = 15.0f * K2, BH = 19.0f * K2;
+		const auto Pt = [&](float Px, float Py) { return FVector2D(C.X - BW * 0.5f + Px / 10.0f * BW, C.Y - BH * 0.5f + Py / 12.0f * BH); };
+		FillPoly({ Pt(6, 0), Pt(1, 7), Pt(4, 7), Pt(6, 4), Pt(7, 0) }, [Red](const FVector2D&) { return Red; });
+		FillPoly({ Pt(4, 7), Pt(3, 12), Pt(9, 4), Pt(6, 4) }, [Red](const FVector2D&) { return Red; });
+	}
+	HoverFx(Slot.Id, HoverKind, X, Y, W, H, 5.0f * U, true);
 	if (Slot.bCancelMark)
 	{
 		const float CX = IX + IW - 17 * U, CY = IY + 1 * U;
@@ -1268,7 +1357,9 @@ void FRTSHudPainter::DrawCard(const FRTSHudState& State)
 		for (int32 I = 0; I < Cd.Queue.Num() && I < 5; ++I)
 		{
 			const float QX = X + (22 + I * 72) * S, QSY = QY + 9 * S, QW = 66 * S, QSH = 54 * S;
+			bDrawingQueue = true;
 			DrawSlot(Cd.Queue[I], QX, QSY, QW, QSH);
+			bDrawingQueue = false;
 			if (!Cd.Queue[I].bEmpty)
 			{
 				Buttons->Add({ FName(*FString::Printf(TEXT("queue_%d"), I)), FBox2D(FVector2D(QX, QSY), FVector2D(QX + QW, QSY + QSH)) });
@@ -1284,11 +1375,16 @@ void FRTSHudPainter::DrawCard(const FRTSHudState& State)
 	}
 	else
 	{
+		// sem retrato (04/11: a GLA e a Rússia ainda sem as fotos): o fundo escuro e o emblema da facção apagado no meio, em vez da janela
+		// azul vazia
 		const float Y0 = W0.Y, HH = W1.Y - W0.Y;
 		FillPoly({ W0, FVector2D(W1.X, W0.Y), W1, FVector2D(W0.X, W1.Y) }, [=](const FVector2D& P)
 		{
-			return FMath::Lerp(FLinearColor(FColor(26, 40, 62)), FLinearColor(FColor(8, 12, 20)), FMath::Clamp((P.Y - Y0) / HH, 0.0f, 1.0f));
+			return FMath::Lerp(FLinearColor(FColor(24, 30, 38)), FLinearColor(FColor(7, 9, 12)), FMath::Clamp((P.Y - Y0) / HH, 0.0f, 1.0f));
 		});
+		const FString Fac = Cur && !Cur->SkinFaction.IsNone() ? Cur->SkinFaction.ToString() : FString(TEXT("usa"));
+		const float ES = HH * 0.78f;
+		Image(FName(*FString::Printf(TEXT("emblem:%s"), *Fac)), (W0.X + W1.X - ES) * 0.5f, W0.Y + (HH - ES) * 0.5f, ES, ES, FLinearColor(1, 1, 1, 0.22f), false);
 	}
 	Skin(SkUnitCard, X, Y, W, H);
 	Bg(X, Y, W, H);
@@ -1354,7 +1450,12 @@ void FRTSHudPainter::DrawTooltip(const FRTSHudState& State)
 	float BY = Box->Min.Y - BH - 6 * S;
 	if (State.bCommandPanel && !State.bGroupsAtBottom)
 	{
-		BY = FMath::Min(BY, SY(1072.0f - CommandPanelHeight(State) - 50.0f, true) - BH - 4 * S);
+		// (01/11, aprovado) acima da fileira do console (o brasão do dinheiro, as abas e a energia): nunca tampa o dinheiro na compra
+		// (05/11) com a plaqueta vermelha na tela (INSUFFICIENT FUNDS, LOW POWER), a dica sobe acima dela, 8 de folga (o showTip do
+		// protótipo: 748 − th − 8): o clique sem dinheiro acontece com o mouse na casa, e a dica tampava o "quanto falta"
+		const bool bPlate = !State.PlateTitle.IsEmpty() && (State.PlateLife <= 0.0f || State.PlateAge < State.PlateLife + 0.25f);
+		const float RowTop = (bPlate ? 739.0f : 784.0f) + (1072.0f - CommandPanelHeight(State) - 868.0f);
+		BY = FMath::Min(BY, SY(RowTop, true) + PanelDrop(State) - BH);
 	}
 	Skin(SkPanelWide, BX, BY, BW, BH, SkMPanelWide, 0.2f * S);
 	float TX = BX + Pad;

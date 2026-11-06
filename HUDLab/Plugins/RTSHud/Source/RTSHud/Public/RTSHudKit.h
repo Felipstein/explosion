@@ -12,6 +12,9 @@
 //   emblem:<f>   → <Extra>/emblem_<f>.png      (o emblema da facção)
 //   minimap      → <Extra>/minimap.png         (no jogo: a textura do minimapa de verdade)
 //   bg           → <Extra>/background.png      (só o laboratório)
+//   doc:<caminho> → docs/<caminho>.png          (04/11: os ícones dos poderes do general, docs/poderes/tela/icones)
+//   dim35:<nome>, dim90:<nome>, mono:<nome>     a imagem do <nome> apagada no carregar, como os filtros do protótipo: saturate(.35)
+//                brightness(.7) (o poder sem dinheiro), grayscale(.9) brightness(.5) (o trancado), grayscale(1) brightness(.55) (a medalha)
 
 #include "CoreMinimal.h"
 #include "UObject/StrongObjectPtr.h"
@@ -29,7 +32,7 @@ public:
 	FString Resolve(FName Name) const;
 
 	/** O PNG com a cadeia de mipmaps (a média de cada 2×2 pesa a cor pelo alfa). */
-	static UTexture2D* LoadPngWithMips(const FString& Path);
+	static UTexture2D* LoadPngWithMips(const FString& Path, float Saturation = 1.0f, float Brightness = 1.0f);
 
 private:
 	FString KitDir, ExtraDir;

@@ -390,3 +390,26 @@ Primeiro a folha do visual de cada facção (China e GLA); a Rússia depois da p
 - **GLA sem usina: a barra de energia não existe.** A GLA não tem energia própria; só constrói usina roubando a tecnologia de outra facção.
   Sem nenhuma energia construída, a barra some. As outras facções começam em zero mas já mostram a barra (podem construir desde o início).
   No `RTSHudPainter::DrawCommander` hoje a energia some com `PowerMade == 0` em todas: no jogo, só a GLA some.
+
+- **05/11, escolhidas: as casas limpas e sem as vazias** (o pedido dele: "o HUD sempre muito sujo"): a casa mostra só a foto; a tecla,
+  o preço, o tempo e o motivo de não poder ficam na dica. Dois jeitos de bloqueio, como ele pediu: sem dinheiro mas possível = a foto
+  cinza e escura (o dim35 da tela do general); trancada de verdade (tecnologia, patente, limite) = o cadeado. As casas vazias do painel
+  somem; a fila de fabricação do cartão mantém os 5 espaços. As duas são opções do jogo (aba GAME), o padrão é este. O hover das casas do
+  painel e do cartão fica dentro da casa (não sobe, não cresce, sem halo por fora: "as bordas dos cards com hover estão saindo do HUD");
+  o pisca do clique sem dinheiro também, com a luz por dentro. A coluna de poderes (solta, fora do painel) mantém o hover inteiro.
+
+- **05/11, noite; APROVADA em 06/11 ("vai, bem melhor"): a tela do general legível (versão B)**. Pedido dele: "eu olho e não consigo decifrar e ler
+  tudo, acho que as imagens podem estar muito pequenas, o nome delas muito mais chamativo". A medida da A (a aprovada em 03/11, calma +
+  linha do tempo): casa ~212×107 com o ícone de 55 px (26% da largura), o nome em 13 px cinza, a moeda do custo de 38 px brilhando mais
+  que o nome em todas as casas, os trancados quase pretos (contraste < 2:1) e o painel da direita (375 px) vazio sem o mouse.
+  A B (com a segunda opinião; referências: Diablo IV, Path of Exile, CoH3 battlegroups, RA3; XAG 101 e WCAG 2.x pros mínimos):
+  - o ícone de 84 px (o dobro da área), o nome em 18 px bold branco (16 se não couber), o nível numa plaquinha no canto do ícone;
+  - o custo em losangos de 13 px (cheio = ponto que você tem, vazado = o que falta) no lugar da moeda grande;
+  - um sinal só por estado: o fio dourado pulsando só em volta do ícone que dá pra comprar; o check verde no comprado (com o fundo um tom
+    mais claro); o que falta (patente, nível, ainda não no jogo) sem cor (mono:) mas legível, o nome em #9AA5B0; sem cadeado em cada casa;
+  - as patentes que faltam a 62% (era 38%): é o que o jogador mira;
+  - o painel da direita nunca vazio: sem o mouse, o 1º poder que dá pra comprar (senão o 1º da patente de agora);
+  - fica tudo o que foi aprovado: as colunas das patentes, a linha do tempo, as linhas entre os níveis, as molduras, as comendas.
+  Código: `FRTSHudGeneral::bLegible` (o bloco `if (G.bLegible)` em `RTSHudPainterGeneral.cpp`); laboratório: `-General -GenB`. Fotos A/B:
+  `captures/hudlab/gen_a_<facção>.png` e `gen_b_<facção>.png`; as aprovadas em `docs/aprovados/hud/2026-11-06_tela_general_legivel_B_*.jpg`.
+  No jogo a B é a tela (06/11).

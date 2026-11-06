@@ -7,6 +7,7 @@ public class RTSHud : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "SlateCore" });
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "RenderCore", "ImageCore" });
+		// Json: a árvore de poderes do general (Game/Config/RTS/GeneralTrees.json), lida pelo laboratório e pelo jogo do mesmo jeito
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "RenderCore", "ImageCore", "Json" });
 	}
 }

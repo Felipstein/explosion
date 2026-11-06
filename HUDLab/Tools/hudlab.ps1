@@ -7,9 +7,11 @@
 #   hudlab.ps1 shot [-State 1..6|all] [-Res 2560x1080] [-Faction china|gla] [-NoQueue] # foto 1920×1080 sem tomar a tela: captures\hudlab\state_N.png; -Colors E6C629,3CB043 troca a cor de você e do adversário
 #                                    (-NoQueue: sem a fila da placa; a foto do HUD é leve, só Canvas, sem cena 3D)
 #                                    -Format duel|2v2|3v5|8v8|ffa6|ffa16|4x4|3v5v8: os jogadores de um formato do protótipo aprovado (03/11);
-#                                    -Tab o placar aberto; -Abuse 240 superarmas num inimigo; -NoSw nenhuma superarma; -Me 4D8FE0 a sua cor; -Scroll N a coluna rolada
+#                                    -Tab o placar aberto; -Abuse 240 superarmas num inimigo; -NoSw nenhuma superarma; -General a tela do general (-GenRank 3 -Own drone,para1 -Hover desig); -Me 4D8FE0 a sua cor; -Scroll N a coluna rolada
 #
 # O HUD lê o kit direto de docs\concept\hud\kit\ (ícones e fotos) e as fontes de HUDLab\Fonts\.
+# (05/11) -AssetGatherAll=false: o laboratório não usa nenhum arquivo da Unreal (o kit vem dos PNGs), e a varredura do registro
+# (9 mil arquivos do motor, sem cache no modo jogo) levava 8 s com a máquina livre e 270 s com os Blenders das outras sessões.
 param(
   [Parameter(Mandatory = $true)][string]$Command,
   [string]$State = '1',
@@ -25,6 +27,10 @@ param(
   [switch]$Tab,
   [switch]$Abuse,
   [switch]$NoSw,
+  [switch]$General,
+  [int]$GenRank = 3,
+  [string]$Own = '',
+  [string]$Hover = '',
   [string]$Me = '',
   [int]$Scroll = 0,
   [switch]$Measure
@@ -79,7 +85,7 @@ switch ($Command) {
       foreach ($s in $states) {
         $file = Join-Path $out "state_$s$Suffix.png"
         if (Test-Path $file) { Remove-Item $file }
-        $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=$($Res.Split('x')[0]) -ResY=$($Res.Split('x')[1]) -ForceRes -RenderOffScreen -nosplash -unattended -State=$s -Cols=$Cols -Res=$Res -Faction=$Faction $(if ($Colors) { "-Colors=$Colors" }) $(if ($Bg) { '-Bg' }) -TopEmblem=$TopEmblem $(if ($Format) { "-Format=$Format" }) $(if ($Tab) { '-Tab' }) $(if ($Abuse) { '-Abuse' }) $(if ($NoSw) { '-NoSw' }) $(if ($Me) { "-Me=$Me" }) -Scroll=$Scroll $(if ($Measure) { '-Measure' }) -Shot=`"$file`""
+        $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=$($Res.Split('x')[0]) -ResY=$($Res.Split('x')[1]) -ForceRes -RenderOffScreen -nosplash -unattended -AssetGatherAll=false -State=$s -Cols=$Cols -Res=$Res -Faction=$Faction $(if ($Colors) { "-Colors=$Colors" }) $(if ($Bg) { '-Bg' }) -TopEmblem=$TopEmblem $(if ($Format) { "-Format=$Format" }) $(if ($Tab) { '-Tab' }) $(if ($Abuse) { '-Abuse' }) $(if ($NoSw) { '-NoSw' }) $(if ($General) { "-General -GenRank=$GenRank" }) $(if ($Own) { "-Own=$Own" }) $(if ($Hover) { "-Hover=$Hover" }) $(if ($Me) { "-Me=$Me" }) -Scroll=$Scroll $(if ($Measure) { '-Measure' }) -Shot=`"$file`""
         if (-not $p.WaitForExit(240000)) { Stop-Process -Id $p.Id -Force; Write-Host "estado ${s}: passou do tempo" }
         if (Test-Path $file) { Write-Host "ok $file" } else { Write-Host "FALHOU estado $s (sem foto)" }
       }
@@ -93,7 +99,7 @@ switch ($Command) {
     New-Item -ItemType Directory -Force $frames | Out-Null
     EnterGpu 'video'
     try {
-      $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=1920 -ResY=1080 -ForceRes -RenderOffScreen -nosplash -unattended -State=$State -Cols=$Cols -Seq=90 -Shot=`"$(Join-Path $frames 'f.png')`""
+      $p = Start-Process $Editor -PassThru -ArgumentList "`"$Project`" -game -windowed -ResX=1920 -ResY=1080 -ForceRes -RenderOffScreen -nosplash -unattended -AssetGatherAll=false -State=$State -Cols=$Cols -Seq=90 -Shot=`"$(Join-Path $frames 'f.png')`""
       if (-not $p.WaitForExit(600000)) { Stop-Process -Id $p.Id -Force; Write-Host 'passou do tempo' }
     } finally { LeaveGpu }
     $ffmpeg = & python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"

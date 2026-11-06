@@ -26,6 +26,7 @@ FString FRTSHudKit::Resolve(FName Name) const
 	if (Prefix == TEXT("emblem")) return ExtraDir / FString::Printf(TEXT("emblem_%s.png"), *Rest);
 	if (Prefix == TEXT("minimap")) return ExtraDir / TEXT("minimap.png");
 	if (Prefix == TEXT("bg")) return ExtraDir / TEXT("background.png");
+	if (Prefix == TEXT("doc")) return KitDir / TEXT("../../..") / Rest + TEXT(".png");
 	return FString();
 }
 
@@ -43,8 +44,14 @@ UTexture2D* FRTSHudKit::Get(FName Name)
 	{
 		return nullptr;
 	}
-	const FString Path = Resolve(Name);
-	UTexture2D* Tex = (!Path.IsEmpty() && IFileManager::Get().FileExists(*Path)) ? LoadPngWithMips(Path) : nullptr;
+	// as variantes apagadas: o filtro do CSS do protótipo aplicado uma vez, no carregar
+	FString Inner = Name.ToString();
+	float Sat = 1.0f, Bright = 1.0f;
+	if (Inner.RemoveFromStart(TEXT("dim35:"))) { Sat = 0.35f; Bright = 0.7f; }
+	else if (Inner.RemoveFromStart(TEXT("dim90:"))) { Sat = 0.1f; Bright = 0.5f; }
+	else if (Inner.RemoveFromStart(TEXT("mono:"))) { Sat = 0.0f; Bright = 0.55f; }
+	const FString Path = Resolve(FName(*Inner));
+	UTexture2D* Tex = (!Path.IsEmpty() && IFileManager::Get().FileExists(*Path)) ? LoadPngWithMips(Path, Sat, Bright) : nullptr;
 	if (!Tex)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("RTSHud: imagem que falta: %s (%s)"), *Name.ToString(), *Path);
@@ -58,7 +65,7 @@ UTexture2D* FRTSHudKit::Get(FName Name)
 // O PNG com a cadeia de mipmaps: a pele do HUD sai bem menor que a textura (uma moldura de 198 px vira
 // um botão de 86), e sem mips a redução serrilha. A média de cada 2×2 pesa a cor pelo alfa, pra borda
 // recortada não puxar a cor do fundo transparente.
-UTexture2D* FRTSHudKit::LoadPngWithMips(const FString& Path)
+UTexture2D* FRTSHudKit::LoadPngWithMips(const FString& Path, float Saturation, float Brightness)
 {
 	FImage Loaded;
 	if (!FImageUtils::LoadImage(*Path, Loaded))
@@ -67,6 +74,16 @@ UTexture2D* FRTSHudKit::LoadPngWithMips(const FString& Path)
 	}
 	FImage Img;
 	Loaded.CopyTo(Img, ERawImageFormat::BGRA8, EGammaSpace::sRGB);
+	if (Saturation != 1.0f || Brightness != 1.0f)
+	{
+		// os filtros saturate() e brightness() do CSS: no sRGB, a luminância com os pesos do Rec. 709
+		for (FColor& C : Img.AsBGRA8())
+		{
+			const float L = 0.2126f * C.R + 0.7152f * C.G + 0.0722f * C.B;
+			auto F = [&](uint8 V) { return uint8(FMath::Clamp(FMath::RoundToInt((L + Saturation * (V - L)) * Brightness), 0, 255)); };
+			C = FColor(F(C.R), F(C.G), F(C.B), C.A);
+		}
+	}
 	TArray<TArray64<FColor>> Levels;
 	{
 		const TArrayView64<FColor> View = Img.AsBGRA8();

@@ -867,6 +867,7 @@ void FRTSHudPainter::DrawScoreboard(const FRTSHudState& State)
 	const int32 Fits = FMath::Max(1, FMath::FloorToInt((ListH + 4.0f) / 54.0f));
 	const bool bScroll = Gs.Num() > Fits;
 	const int32 First = FMath::Clamp(State.ScoreSwScroll, 0, FMath::Max(0, Gs.Num() - Fits));
+	LastSwMaxScroll = FMath::Max(0, Gs.Num() - Fits);
 	const float RowW = bScroll ? 306.0f : 312.0f;
 	if (bScroll)
 	{

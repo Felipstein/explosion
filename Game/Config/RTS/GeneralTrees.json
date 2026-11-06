@@ -1,0 +1,969 @@
+{
+ "_about": "Gerado por docs/poderes/tela/export_game.py a partir de docs/poderes/tela/<facção>.js. Não editar à mão.",
+ "points_per_rank": [
+  1,
+  1,
+  2,
+  2,
+  3
+ ],
+ "factions": {
+  "usa": {
+   "approved_icons": true,
+   "rows": 4,
+   "ranks": [
+    [
+     "BG",
+     "Brigadier General"
+    ],
+    [
+     "MG",
+     "Major General"
+    ],
+    [
+     "LTG",
+     "Lieutenant General"
+    ],
+    [
+     "GEN",
+     "General"
+    ],
+    [
+     "GA",
+     "General of the Army"
+    ]
+   ],
+   "nodes": [
+    {
+     "id": "drone",
+     "name": "Spy Drone",
+     "level": "",
+     "rank": 1,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "1:30",
+     "desc": "A stealth drone circles the point for 40 s, sees 66 m and reveals hidden units. It can be shot down.",
+     "req": "",
+     "type": "intel",
+     "icon": "doc:poderes/tela/icones/usa_drone_esc"
+    },
+    {
+     "id": "desig",
+     "name": "Target Designation",
+     "level": "",
+     "rank": 2,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "1:30",
+     "desc": "A satellite paints a 30 m circle for 20 s. Hidden units are revealed and enemies inside take 25% more damage. The enemy sees the laser dots.",
+     "req": "",
+     "type": "intel",
+     "icon": "doc:poderes/tela/icones/usa_desig_esc"
+    },
+    {
+     "id": "a10_1",
+     "name": "A-10 Strike",
+     "level": "I",
+     "rank": 3,
+     "row": 0,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "One A-10 makes a pass: six Mavericks and the 30 mm cannon along an 80 m strip. It can be shot down.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_a10_esc"
+    },
+    {
+     "id": "a10_2",
+     "name": "A-10 Strike",
+     "level": "II",
+     "rank": 4,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Two A-10s side by side.",
+     "req": "a10_1",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_a10_esc"
+    },
+    {
+     "id": "ac130",
+     "name": "AC-130 Gunship",
+     "level": "",
+     "rank": 5,
+     "row": 0,
+     "cost": 3,
+     "cooldown": "6:00",
+     "desc": "Orbits the area for 12 s and fires where you click: the 105 mm howitzer and the 25 mm cannon.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_ac130_esc"
+    },
+    {
+     "id": "para1",
+     "name": "Paradrop",
+     "level": "I",
+     "rank": 1,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Three Rangers and two Javelins drop at the target. $650 per drop.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/usa_para_esc"
+    },
+    {
+     "id": "para2",
+     "name": "Paradrop",
+     "level": "II",
+     "rank": 2,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Six Rangers and four Javelins. $1,300 per drop.",
+     "req": "para1",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/usa_para_esc"
+    },
+    {
+     "id": "seal",
+     "name": "SEAL Insertion",
+     "level": "",
+     "rank": 4,
+     "row": 1,
+     "cost": 2,
+     "cooldown": "4:00",
+     "desc": "An Osprey lands four hidden SEALs. Their charges bring a building down from where they were planted. $600 per insertion.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/usa_seal_esc"
+    },
+    {
+     "id": "para3",
+     "name": "Paradrop",
+     "level": "III",
+     "rank": 3,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "HALO jump: ten Rangers and six Javelins from high altitude, where only long-range air defense reaches the plane. $2,000 per drop.",
+     "req": "para2",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/usa_para_esc"
+    },
+    {
+     "id": "naval1",
+     "name": "Naval Gunfire",
+     "level": "I",
+     "rank": 2,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "A destroyer offshore walks a line of twelve 127 mm shells across the target. Everyone hears the guns first.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_naval_esc"
+    },
+    {
+     "id": "naval2",
+     "name": "Naval Gunfire",
+     "level": "II",
+     "rank": 3,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Three destroyers, three lines of shells side by side.",
+     "req": "naval1",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_naval_esc"
+    },
+    {
+     "id": "naval3",
+     "name": "Naval Gunfire",
+     "level": "III",
+     "rank": 4,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "5:00",
+     "desc": "The battleship: one broadside of nine 406 mm shells. Every player hears it, then the shells come in like a freight train.",
+     "req": "naval2",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_naval_esc"
+    },
+    {
+     "id": "moab",
+     "name": "MOAB",
+     "level": "",
+     "rank": 5,
+     "row": 2,
+     "cost": 3,
+     "cooldown": "7:00",
+     "desc": "The biggest bomb, dropped from an MC-130 by parachute. The mark stays on the ground for 12 s.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/usa_moab_esc"
+    },
+    {
+     "id": "repair1",
+     "name": "Emergency Repair",
+     "level": "I",
+     "rank": 1,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Vehicles in the area get back 30% of their health and take 25% less damage for 15 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/usa_repair_esc"
+    },
+    {
+     "id": "awacs",
+     "name": "AWACS Early Warning",
+     "level": "",
+     "rank": 3,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "Passive",
+     "desc": "Every enemy power shows its type, route and target the moment it is called, for you and your allies.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/usa_awacs_esc"
+    },
+    {
+     "id": "repair2",
+     "name": "Emergency Repair",
+     "level": "II",
+     "rank": 2,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "50% back, and buildings too.",
+     "req": "repair1",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/usa_repair_esc"
+    },
+    {
+     "id": "angel",
+     "name": "Guardian Angel",
+     "level": "",
+     "rank": 4,
+     "row": 3,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "For 20 s, lasers and interceptors shoot down missiles, rockets, shells and bombs over a 40 m circle. Not superweapons.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/usa_angel_esc"
+    },
+    {
+     "id": "fob",
+     "name": "Forward Base",
+     "level": "",
+     "rank": 5,
+     "row": 3,
+     "cost": 3,
+     "cooldown": "6:00",
+     "desc": "A C-17 lands and sets up a forward base in 20 s. Reinforcements can leave from it, and it repairs vehicles around it. One at a time.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/usa_fob_esc"
+    }
+   ]
+  },
+  "china": {
+   "approved_icons": false,
+   "rows": 4,
+   "ranks": [
+    [
+     "SHJ",
+     "Shao Jiang"
+    ],
+    [
+     "ZHJ",
+     "Zhong Jiang"
+    ],
+    [
+     "SGJ",
+     "Shang Jiang"
+    ],
+    [
+     "DJ",
+     "Da Jiang"
+    ],
+    [
+     "YS",
+     "Yuan Shuai"
+    ]
+   ],
+   "nodes": [
+    {
+     "id": "treino",
+     "name": "Mass Training",
+     "level": "",
+     "rank": 1,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "Infantry and the Type 99 are born veterans: +20% fire rate and +10% damage.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:concept/hud/prototipo/a/armor_upgrade"
+    },
+    {
+     "id": "balloon",
+     "name": "Surveillance Balloon",
+     "level": "",
+     "rank": 1,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "A balloon drifts across the map with the wind and reveals a wide strip below it. Slow, visible, and it can be shot down.",
+     "req": "",
+     "type": "intel",
+     "icon": "doc:poderes/tela/icones/china_balloon_gemini"
+    },
+    {
+     "id": "desvio1",
+     "name": "Funds Diversion",
+     "level": "I",
+     "rank": 3,
+     "row": 0,
+     "cost": 2,
+     "cooldown": "4:00",
+     "desc": "Takes $1,000 straight to you from an enemy supply center. Never more than half of what he has.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_desvio_gpt"
+    },
+    {
+     "id": "desvio2",
+     "name": "Funds Diversion",
+     "level": "II",
+     "rank": 4,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Takes $2,000 straight to you.",
+     "req": "desvio1",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_desvio_gpt"
+    },
+    {
+     "id": "desvio3",
+     "name": "Funds Diversion",
+     "level": "III",
+     "rank": 5,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Takes $4,000 straight to you.",
+     "req": "desvio2",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_desvio_gpt"
+    },
+    {
+     "id": "militia",
+     "name": "Militia Call-up",
+     "level": "",
+     "rank": 2,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Up to four of your buildings each send out two militiamen. $150 per call.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/china_militia_gemini"
+    },
+    {
+     "id": "draft",
+     "name": "Restoration",
+     "level": "",
+     "rank": 3,
+     "row": 1,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "For 30 s, every unit of yours that dies in the area comes back on the same spot with half its health. It costs half the price of each unit. No limit on the number.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/china_draft_gemini"
+    },
+    {
+     "id": "y20drop",
+     "name": "Y-20 Armor Drop",
+     "level": "",
+     "rank": 4,
+     "row": 1,
+     "cost": 3,
+     "cooldown": "6:00",
+     "desc": "Two Y-20 transports drop two Type 99 and two Gattling Tanks at the target by parachute. If a plane is shot down, its tanks fall with it. $1,600 per drop.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/china_y20drop_gemini"
+    },
+    {
+     "id": "fuel",
+     "name": "Fuel Drop",
+     "level": "",
+     "rank": 2,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "2:30",
+     "desc": "A transport sprays an 80 m strip of diesel that stays for 90 s. Any fire turns it into a wall of flame.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/china_fuel_gemini"
+    },
+    {
+     "id": "rocket1",
+     "name": "Incendiary Rockets",
+     "level": "I",
+     "rank": 3,
+     "row": 2,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "A PHL-16 launcher fires ten 300 mm incendiary rockets from beyond your edge.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/china_rocket_gemini"
+    },
+    {
+     "id": "rocket2",
+     "name": "Incendiary Rockets",
+     "level": "II",
+     "rank": 4,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Two launchers, sixteen rockets.",
+     "req": "rocket1",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/china_rocket_gemini"
+    },
+    {
+     "id": "h6",
+     "name": "H-6 Carpet Bomb",
+     "level": "",
+     "rank": 5,
+     "row": 2,
+     "cost": 3,
+     "cooldown": "4:00",
+     "desc": "Three H-6 bombers lay a line of ten explosive bombs of 300 damage each, 20 m across.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/china_h6_gemini"
+    },
+    {
+     "id": "prop1",
+     "name": "Propaganda",
+     "level": "I",
+     "rank": 2,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Instant, like the ZH Frenzy: your units in a 53 m radius deal 10% more damage for 10 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_prop_gemini"
+    },
+    {
+     "id": "prop2",
+     "name": "Propaganda",
+     "level": "II",
+     "rank": 3,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "+20% damage for 20 s.",
+     "req": "prop1",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_prop_gemini"
+    },
+    {
+     "id": "emp",
+     "name": "EMP Pulse",
+     "level": "",
+     "rank": 5,
+     "row": 3,
+     "cost": 3,
+     "cooldown": "6:00",
+     "desc": "A pulse in 53 m shuts down vehicles and buildings for 20 s, yours too. Unshielded aircraft fall.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/china_emp_gemini"
+    },
+    {
+     "id": "blackout",
+     "name": "Grid Blackout",
+     "level": "",
+     "rank": 4,
+     "row": 3,
+     "cost": 2,
+     "cooldown": "4:00",
+     "desc": "A sabotage marker appears on an enemy power plant for 10 s. If no builder reaches it, the whole enemy base goes dark for 20 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_blackout_gemini"
+    },
+    {
+     "id": "deserc",
+     "name": "Defection",
+     "level": "",
+     "rank": 5,
+     "row": 1,
+     "cost": 3,
+     "cooldown": "5:00",
+     "desc": "Converts idle enemy units in the area. Each unit costs money, there is a cap, and units in combat do not defect. The victim gets a radar warning.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/china_deserc_gpt"
+    }
+   ]
+  },
+  "gla": {
+   "approved_icons": false,
+   "rows": 4,
+   "ranks": [
+    [
+     "CL",
+     "Cell Leader"
+    ],
+    [
+     "FC",
+     "Field Commander"
+    ],
+    [
+     "WL",
+     "Warlord"
+    ],
+    [
+     "HW",
+     "High Warlord"
+    ],
+    [
+     "SW",
+     "Supreme Warlord"
+    ]
+   ],
+   "nodes": [
+    {
+     "id": "treino",
+     "name": "Technical Training",
+     "level": "",
+     "rank": 1,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "Passive: technical vehicles are born veterans: +20% fire rate and +10% damage.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/gla_treino_gemini"
+    },
+    {
+     "id": "recompensa1",
+     "name": "Cash Bounty",
+     "level": "I",
+     "rank": 3,
+     "row": 0,
+     "cost": 2,
+     "cooldown": "passive",
+     "desc": "Passive: you get 5% of the cost of each enemy unit or building you destroy.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/gla_recompensa_gemini"
+    },
+    {
+     "id": "recompensa2",
+     "name": "Cash Bounty",
+     "level": "II",
+     "rank": 4,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "You get 10% of the cost of each enemy unit or building you destroy.",
+     "req": "recompensa1",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/gla_recompensa_gemini"
+    },
+    {
+     "id": "recompensa3",
+     "name": "Cash Bounty",
+     "level": "III",
+     "rank": 5,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "You get 20% of the cost of each enemy unit or building you destroy.",
+     "req": "recompensa2",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/gla_recompensa_gemini"
+    },
+    {
+     "id": "conserto",
+     "name": "Scrap Repair",
+     "level": "I",
+     "rank": 1,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Repairs vehicles in a 30 m area over 15 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/gla_conserto_gemini"
+    },
+    {
+     "id": "remontagem",
+     "name": "Wreck Rebuild",
+     "level": "",
+     "rank": 2,
+     "row": 1,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "Instantly turns a recent enemy wreck nearby into one of yours at 35% health. The wreck is only usable for 45 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/gla_remontagem_gemini"
+    },
+    {
+     "id": "emboscada",
+     "name": "Rebel Ambush",
+     "level": "",
+     "rank": 3,
+     "row": 1,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "Rebels hidden in a zone jump out when an enemy crosses it.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/gla_emboscada_gemini"
+    },
+    {
+     "id": "tunel",
+     "name": "Attack Tunnel",
+     "level": "",
+     "rank": 4,
+     "row": 1,
+     "cost": 2,
+     "cooldown": "4:00",
+     "desc": "A tunnel opens at the chosen point and links to your network.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/gla_tunel_gemini"
+    },
+    {
+     "id": "camuflagem",
+     "name": "Camouflage Field",
+     "level": "",
+     "rank": 5,
+     "row": 1,
+     "cost": 3,
+     "cooldown": "once",
+     "desc": "Your units in a chosen area stay invisible until they fire. Permanent in the area.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/gla_camuflagem_gemini"
+    },
+    {
+     "id": "armadilha",
+     "name": "Booby Trap",
+     "level": "",
+     "rank": 3,
+     "row": 2,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "Bombs hidden in the ruins and wrecks of the area stay armed for 60 s and explode when an enemy passes.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/gla_armadilha_gemini"
+    },
+    {
+     "id": "cargueiro",
+     "name": "Kamikaze Cargo",
+     "level": "",
+     "rank": 5,
+     "row": 2,
+     "cost": 3,
+     "cooldown": "5:00",
+     "desc": "An old cargo plane loaded with fuel flies in from off the map and dives onto the target. It explodes big and sets everything around it on fire. Shot down, it explodes smaller on the way.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/gla_cargueiro_gemini"
+    },
+    {
+     "id": "surto",
+     "name": "Poison Outbreak",
+     "level": "",
+     "rank": 3,
+     "row": 3,
+     "cost": 3,
+     "cooldown": "4:00",
+     "desc": "Pours a river of toxic sludge across the marked line for 20 s. Enemies in it are poisoned, and the poison jumps from one enemy to the next, twice.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/gla_surto_gemini"
+    },
+    {
+     "id": "antraz",
+     "name": "Anthrax",
+     "level": "",
+     "rank": 5,
+     "row": 3,
+     "cost": 3,
+     "cooldown": "5:00",
+     "desc": "An old cargo plane flies in from off the map and drops gas. The poison field lasts 60 s.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/gla_antraz_gemini"
+    }
+   ]
+  },
+  "russia": {
+   "approved_icons": false,
+   "rows": 5,
+   "ranks": [
+    [
+     "GM",
+     "General-Mayor"
+    ],
+    [
+     "GL",
+     "General-Leytenant"
+    ],
+    [
+     "GP",
+     "General-Polkovnik"
+    ],
+    [
+     "GA",
+     "General Armii"
+    ],
+    [
+     "MSL",
+     "Marshal"
+    ]
+   ],
+   "nodes": [
+    {
+     "id": "orlan",
+     "name": "Orlan Recon",
+     "level": "",
+     "rank": 1,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "1:30",
+     "desc": "A drone flies over the point for 40 s and clears the fog of war there, like the Spy Drone.",
+     "req": "",
+     "type": "intel",
+     "icon": "doc:poderes/tela/icones/russia_orlan_gemini"
+    },
+    {
+     "id": "armor",
+     "name": "Armor Plating",
+     "level": "",
+     "rank": 2,
+     "row": 0,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "Passive: your vehicles take 10% less damage. Bolted armour plates in your colour show on the hulls, and sparks flash off the armour on each hit.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/russia_armor_gemini"
+    },
+    {
+     "id": "krasukha",
+     "name": "Krasukha Jamming",
+     "level": "",
+     "rank": 3,
+     "row": 0,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "You call a jamming truck to a point. For 30 s in a 40 m area, enemy guided missiles that enter have a 50% chance to miss, and enemy drones and aircraft lose their target. The truck is visible and can be attacked.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/russia_krasukha_gemini"
+    },
+    {
+     "id": "glide",
+     "name": "Glide Bomb Strike",
+     "level": "",
+     "rank": 4,
+     "row": 0,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "A Su-25 drops glide bombs from far away. The aircraft can be shot down.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_glide_gemini"
+    },
+    {
+     "id": "tornado",
+     "name": "Tornado-S Salvo",
+     "level": "",
+     "rank": 5,
+     "row": 0,
+     "cost": 3,
+     "cooldown": "7:00",
+     "desc": "Six heavy rockets fall along a line you draw: you pick the start and the direction, not each rocket. The 40 × 60 m strip is hit without warning. The launcher stays hidden.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_tornado_gemini"
+    },
+    {
+     "id": "repair1",
+     "name": "Emergency Repair",
+     "level": "I",
+     "rank": 1,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Vehicles in a 26 m area come back to 30% health at once and take 25% less damage for 15 s.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/russia_repair_gemini"
+    },
+    {
+     "id": "repair2",
+     "name": "Emergency Repair",
+     "level": "II",
+     "rank": 2,
+     "row": 1,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Vehicles come back to 50% health, and so do buildings.",
+     "req": "repair1",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/russia_repair_gemini"
+    },
+    {
+     "id": "fortified",
+     "name": "Fortified Line",
+     "level": "",
+     "rank": 1,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Engineers raise a wall of dragon teeth and trench along any path you draw, up to 120 m long. It takes 5 s to rise, stands 5 min, and is very hard to break through. At the end it sinks, and the trench stays as relief.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/russia_fortified_gemini"
+    },
+    {
+     "id": "scrap",
+     "name": "Scrap Salvage",
+     "level": "",
+     "rank": 2,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "passive",
+     "desc": "Passive: each enemy vehicle you destroy gives $100, up to $500 per minute. The amount pops up over the kill.",
+     "req": "",
+     "type": "pas",
+     "icon": "doc:poderes/tela/icones/russia_scrap_gemini"
+    },
+    {
+     "id": "smoke",
+     "name": "Smoke Screen",
+     "level": "",
+     "rank": 3,
+     "row": 2,
+     "cost": 1,
+     "cooldown": "2:00",
+     "desc": "Volumetric smoke fills an area for 40 s. The enemy cannot see inside it; your units still show.",
+     "req": "",
+     "type": "sup",
+     "icon": "doc:poderes/tela/icones/russia_smoke_gemini"
+    },
+    {
+     "id": "mining",
+     "name": "Remote Mining",
+     "level": "",
+     "rank": 4,
+     "row": 2,
+     "cost": 2,
+     "cooldown": "3:00",
+     "desc": "Rockets lay anti-tank mines in a strip, with no warning.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_mining_gemini"
+    },
+    {
+     "id": "barrage1",
+     "name": "Artillery Barrage",
+     "level": "I",
+     "rank": 2,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Artillery from off the map, invisible. Eight shells walk across the target, and the craters slow anyone who crosses them.",
+     "req": "",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_barrage1_gemini"
+    },
+    {
+     "id": "barrage2",
+     "name": "Artillery Barrage",
+     "level": "II",
+     "rank": 3,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Sixteen shells per pass, twice as many.",
+     "req": "barrage1",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_barrage2_gemini"
+    },
+    {
+     "id": "barrage3",
+     "name": "Artillery Barrage",
+     "level": "III",
+     "rank": 4,
+     "row": 3,
+     "cost": 1,
+     "cooldown": "4:00",
+     "desc": "Sixteen shells over a strip 50% longer. The craters burn for 20 s.",
+     "req": "barrage2",
+     "type": "atk",
+     "icon": "doc:poderes/tela/icones/russia_barrage3_gemini"
+    },
+    {
+     "id": "vdv1",
+     "name": "VDV Drop",
+     "level": "I",
+     "rank": 2,
+     "row": 4,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Five paratroopers drop on the marked point. Their canopies have your player colour, so the drop reads from above.",
+     "req": "",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/russia_vdv_gemini"
+    },
+    {
+     "id": "vdv2",
+     "name": "VDV Drop",
+     "level": "II",
+     "rank": 3,
+     "row": 4,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Ten paratroopers.",
+     "req": "vdv1",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/russia_vdv_gemini"
+    },
+    {
+     "id": "vdv3",
+     "name": "VDV Drop",
+     "level": "III",
+     "rank": 4,
+     "row": 4,
+     "cost": 1,
+     "cooldown": "3:00",
+     "desc": "Twelve paratroopers and a BMD airborne vehicle under a parachute.",
+     "req": "vdv2",
+     "type": "troop",
+     "icon": "doc:poderes/tela/icones/russia_vdv_gemini"
+    }
+   ]
+  }
+ }
+}

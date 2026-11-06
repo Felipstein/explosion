@@ -28,6 +28,10 @@ public:
 	 * pixels da tela. O jogo desenha o minimapa de verdade ali, por baixo da moldura.
 	 */
 	static void MinimapHole(float ClipX, float ClipY, FVector2D& OutCenter, float& OutHalfDiagonal);
+	/** (05/11) Quantas linhas a coluna das superarmas do placar rola no último quadro (0 = cabe tudo): o jogo limita a rodinha por ele. */
+	int32 LastSwMaxScroll = 0;
+	/** O cubic-bezier(x1, y1, x2, y2) do CSS no tempo T (0..1): as curvas do protótipo, iguais. */
+	static float Bezier(float X1, float Y1, float X2, float Y2, float T);
 
 	/**
 	 * A escala e a faixa da planta na tela: a planta (1920×1080) cabe inteira (a menor das duas escalas), e
@@ -56,6 +60,16 @@ private:
 	void DrawSuperweaponList(const FRTSHudState& State);
 	/** O placar (Tab): uma faixa na cor de cada jogador, os times separados, e a coluna de todas as superarmas. */
 	void DrawScoreboard(const FRTSHudState& State);
+	/** (RTSHudPainterGeneral.cpp, 04/11) A tela do general: a janela da facção, a trilha das patentes, a árvore, o detalhe e as comendas. */
+	void DrawGeneral(const FRTSHudState& State);
+	/** O texto quebrado em linhas de até MaxW (px da tela); MaxLines > 0 corta com "…" na última. */
+	TArray<FString> WrapLines(const FString& Str, float Px, EWeight W, float MaxW, int32 MaxLines) const;
+	/** O ✓ do protótipo, centrado em C, Size de largura e T de espessura (px da tela). */
+	void CheckMark(FVector2D C, float Size, float T, const FLinearColor& Col);
+	/** A ficha de ponto: 0 a dourada, 1 a escura, 2 a verde do comprado (com o ✓); Num no meio. */
+	void GenToken(int32 Kind, float X, float Y, float W, float H, const FString& Num, float Px);
+	/** O ⛓: dois elos, centrados em C. */
+	void ChainGlyph(FVector2D C, float Size, const FLinearColor& Col);
 	/** A ficha de um jogador: o encaixe escuro, o aro na cor dele e a silhueta do emblema na cor dele clareada. */
 	void Chip(const FRTSHudPlayer& P, FVector2D C, float D, float Alpha = 1.0f);
 	/** Um anel (ou arco) entre os raios R0 e R1, de A0 a A1 (em voltas: 0 = em cima, no sentido do relógio), a cor de dentro e a de fora. */
@@ -70,6 +84,10 @@ private:
 	/** O contorno por dentro da faixa arredondada (a borda fina), T de espessura. */
 	void RoundRectRing(float X, float Y, float W, float H, float R, float T, const FLinearColor& C);
 	void DrawCommander(const FRTSHudState& State);
+	/** (RTSHudPainterConsole.cpp) O console aprovado: as abas dos grupos, o brasão do dinheiro, a espinha de energia, o cubo e o tubo da patente. */
+	void DrawConsole(const FRTSHudState& State);
+	/** A peça da pele da facção (skin:<facção>/<peça>) quando existe; senão a da USA. */
+	FName FacSkin(const TCHAR* Piece) const;
 	void DrawAlerts(const FRTSHudState& State);
 	void DrawPowers(const FRTSHudState& State);
 	void DrawMinimap(const FRTSHudState& State);
@@ -83,8 +101,24 @@ private:
 	void DrawTooltip(const FRTSHudState& State);
 
 	void DrawSlot(const FRTSHudSlot& Slot, float X, float Y, float W, float H);
-	/** O mouse em cima (moldura acesa) e o aperto (afunda e escurece) de um botão qualquer. */
+	/** O mouse em cima e o aperto de um botão qualquer (o hover aprovado, sem subir: HoverFx com o tipo pela cor do aro). */
 	void HoverPress(FName Id, float X, float Y, float W, float H, const FLinearColor& Rim);
+	// (RTSHudPainterHover.cpp, 04/11) o hover aprovado: o tipo do botão dá a cor (a da facção, a ação, a melhoria, o bloqueado, sem dinheiro)
+	enum class EHoverKind : uint8 { Normal, Action, Gold, Locked, Poor, Empty };
+	/** Antes de desenhar o botão: sobe e cresce com a mola, a sombra embaixo e o brilho (DrawTint). Muda a caixa; falso se não está no mouse. */
+	bool HoverXform(FName Id, EHoverKind Kind, float& X, float& Y, float& W, float& H, float Corner, bool bContained = false);
+	/** Depois de desenhar: a luz por dentro, o fio, o halo e a luz que passa no metal (cada facção a sua); o aperto. Zera o DrawTint. */
+	void HoverFx(FName Id, EHoverKind Kind, float X, float Y, float W, float H, float Corner, bool bContained = false);
+	/** (05/11) A fila do cartão está sendo desenhada: as casas vazias dela ficam (a linha de fabricação mostra os espaços). */
+	bool bDrawingQueue = false;
+	/** A luz de cada facção (o --lt do protótipo). */
+	FLinearColor FactionLight() const;
+	/** (RTSHudPainterChat.cpp, 04/11) o chat da partida: as linhas perto do minimapa e a caixa de digitar. */
+	void DrawChat(const FRTSHudState& State);
+	/** A cor ponto a ponto numa grade Nx × Ny (os degradês que andam). */
+	void GridFill(float X, float Y, float W, float H, int32 Nx, int32 Ny, const TFunction<FLinearColor(const FVector2D&)>& ColorAt);
+	/** O brilho do botão no mouse: multiplica a cor das imagens e da pele enquanto ele é desenhado. */
+	FLinearColor DrawTint = FLinearColor::White;
 	/** 0..1, uma pulsação suave de Hz por segundo. */
 	float Pulse(float Hz) const;
 	/** A cor do neon da pele da facção (o mouse em cima acende nela). */
