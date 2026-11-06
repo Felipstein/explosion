@@ -48,7 +48,11 @@ profundidade, [realtimevfx](https://realtimevfx.com/t/found-an-easy-way-to-creat
 - A interface (`FSpec`, `Show`, `Hide`) ficou igual: a sessão dos poderes e a das superarmas não mudam nada.
 - **Teste:** `game.ps1 view -Folder <pasta> -Scenario mira_poderes -Extra '-RTSPowerPreviewAt=-262,-326' -Record` (as 6 formas,
   2,5 s cada, em 3 voltas: a válida; a válida com o apoio acendendo os 3 tanques dentro e os olhos no lugar da órbita; a inválida).
-  O fluxo de verdade: a cena `mira_conserto` da sessão dos poderes (o op `aim_power`).
+  **O fluxo de verdade, provado (06/11, `captures/game/mira_conserto_v3`):** a cena `mira_conserto_cursores` mira o Emergency Repair
+  pelo botão (o op `aim_power`, o `BeginTargeting` de verdade) no grupo (o círculo de 26 m e o anel debaixo dos 4 tanques; o de fora
+  sem anel), depois 13 m além do tanque de fora (só ele com o anel) e usa. A imagem:
+  `docs/aprovados/ui/2026-11-06_mira_conserto_pelo_fluxo_de_verdade.jpg`. A `mira_conserto` da sessão dos poderes caía na recarga
+  ("Ready in 0:03") e a 2ª mira ficava fora do quadro; a minha mira aos 126 s e 130 s, com a câmera a 95 m pegando os dois.
 - A v1 no Canvas (reprovada por mim em 06/11, pelo pedido dele): o código inteiro em `docs/poderes/mira_v1_canvas.cpp` (as linhas
   amostradas a cada 1 m e projetadas na tela, o véu em faixas, as setas simétricas na tela).
 
