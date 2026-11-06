@@ -28,6 +28,7 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "RTSPowerPreview.h"   // (05/11) a mira nova dos poderes substitui o círculo do DrawPowerTarget
 #include "Sim/World.h"
 #include "UnrealClient.h"   // (03/11) FScreenshotRequest: o -RTSTab abre o placar no quadro da foto   // (v5) o estado de voo no painel do ar
 
@@ -895,6 +896,12 @@ void ARTSHUD::DrawPowerTarget(ARTSPlayerController* PC, URTSMatchSubsystem* Matc
 	URTSMatchSubsystem::FPowerInfo P;
 	FVector Ground;
 	if (Power < 0 || !Map || !Match->GetPowerInfo(Power, P) || !PC->GetCursorGround(Ground))
+	{
+		return;
+	}
+	// (05/11) com a mira nova no quadro (RTSPowerPreview, docs/poderes/MIRA.md), ela desenha tudo: a área do tamanho de verdade, o
+	// estilhaço, quem o apoio pega e o motivo quando não vale. O título e a dica do mouse saem junto (a regra da UI: sem legenda)
+	if (RTSPowerPreview::IsShown())
 	{
 		return;
 	}

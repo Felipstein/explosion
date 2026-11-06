@@ -10,7 +10,8 @@ namespace
 		TEXT("scroll_n"), TEXT("scroll_ne"), TEXT("scroll_e"), TEXT("scroll_se"), TEXT("scroll_s"), TEXT("scroll_sw"), TEXT("scroll_w"), TEXT("scroll_nw"),
 		TEXT("pan"), TEXT("invalid"), TEXT("move"), TEXT("queue"), TEXT("attack"), TEXT("cant"), TEXT("force"), TEXT("ground"), TEXT("amove"),
 		TEXT("guard"), TEXT("escort"), TEXT("patrol"), TEXT("enter"), TEXT("rally"), TEXT("build"), TEXT("nobuild"),
-		TEXT("repair"), TEXT("resume"), TEXT("salvage"), TEXT("gather"), TEXT("sell"), TEXT("strike"), TEXT("support") };
+		TEXT("repair"), TEXT("resume"), TEXT("salvage"), TEXT("gather"), TEXT("sell"), TEXT("strike"), TEXT("support"),
+		TEXT("rotate_00") };
 	static_assert(UE_ARRAY_COUNT(CursorNames) == int32(ERTSCursor::Count), "um nome de arquivo pra cada cursor");
 
 	// (01/11, aprovado) as ordens que entram na fila do Alt: cada uma tem a ficha com o número da vez (q_<ordem>_<1..9|plus>)
@@ -93,15 +94,33 @@ bool FRTSCursors::Load(int32 Px)
 			QueueFiles += QueueHandles[Q][N] ? 1 : 0;
 		}
 	}
+	// (04/11) o girar: as 24 posições da volta (a 1ª já veio acima, como o cursor Rotate)
+	for (int32 K = 0; K < RotateSteps; ++K)
+	{
+		RotateHandles[K] = Platform->CreateCursorFromFile(Dir / FString::Printf(TEXT("rotate_%02d"), K), FVector2D::ZeroVector);
+	}
 	LoadedPx = Px;
 	Shown = ERTSCursor::Count;
+	ShownRotate = -1;
 	ShownQueue = 0;
 	Platform->SetTypeShape(EMouseCursor::Default, Handles[int32(ERTSCursor::Pointer)]);
 	UE_LOG(LogTemp, Log, TEXT("RTS: os cursores prontos (%d px, %d arquivos e %d fichas da fila)"), Px, int32(ERTSCursor::Count), QueueFiles);
 	return true;
 }
 
-EMouseCursor::Type FRTSCursors::Apply(ERTSCursor C, int32 ScreenHeight, int32 QueueN)
+void FRTSCursors::Invalidate()
+{
+	Shown = ERTSCursor::Count;
+	ShownQueue = 0;
+	ShownRotate = -1;
+	const TSharedPtr<ICursor> Platform = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetPlatformCursor() : nullptr;
+	if (LoadedPx > 0 && Platform.IsValid())
+	{
+		Platform->SetTypeShape(EMouseCursor::Default, Handles[int32(ERTSCursor::Pointer)]);
+	}
+}
+
+EMouseCursor::Type FRTSCursors::Apply(ERTSCursor C, int32 ScreenHeight, int32 QueueN, float RotateDeg)
 {
 	const int32 Px = ScreenHeight > 1800 ? 96 : (ScreenHeight > 1200 ? 64 : 48);
 	if (Px != LoadedPx && Px != FailedPx && !Load(Px))
@@ -116,15 +135,19 @@ EMouseCursor::Type FRTSCursors::Apply(ERTSCursor C, int32 ScreenHeight, int32 Qu
 	const int32 Slot = QueueN > 0 ? QueueSlot(C) : -1;
 	void* QueueHandle = Slot >= 0 ? QueueHandles[Slot][FMath::Clamp(QueueN, 1, QueueNumbers) - 1] : nullptr;
 	const int32 Queue = QueueHandle ? QueueN : 0;
-	if (C != Shown || Queue != ShownQueue)
+	// girar a obra: a volta na posição mais perto da direção do arraste
+	const int32 Turn = C == ERTSCursor::Rotate ? (FMath::RoundToInt32(FMath::Fmod(RotateDeg + 360.0f, 360.0f) / (360.0f / RotateSteps)) % RotateSteps) : -1;
+	void* RotateHandle = Turn >= 0 ? RotateHandles[Turn] : nullptr;
+	if (C != Shown || Queue != ShownQueue || Turn != ShownRotate)
 	{
 		Shown = C;
 		ShownQueue = Queue;
+		ShownRotate = Turn;
 		if (C != ERTSCursor::Pointer)
 		{
 			if (const TSharedPtr<ICursor> Platform = FSlateApplication::IsInitialized() ? FSlateApplication::Get().GetPlatformCursor() : nullptr)
 			{
-				Platform->SetTypeShape(EMouseCursor::Custom, QueueHandle ? QueueHandle : Handles[int32(C)]);
+				Platform->SetTypeShape(EMouseCursor::Custom, QueueHandle ? QueueHandle : (RotateHandle ? RotateHandle : Handles[int32(C)]));
 			}
 		}
 	}

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cursor de girar a obra</title>
+<style>
+  :root { --W: #F3F1EC; --Wd: #CFC9BD; --A: #FFB21F; --D: #0B0E11; }
+  html, body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1180px; padding: 16px 20px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #9a968c; margin: 0 0 10px; }
+  .row { display: flex; gap: 16px; margin-bottom: 18px; }
+  .card { width: 370px; }
+  .cap { font-weight: 700; margin: 0 0 4px; }
+  .note { color: #9a968c; font-size: 12.5px; margin-top: 4px; }
+  .sizes { display: flex; gap: 14px; align-items: flex-end; background: #0f1113; border-radius: 6px; padding: 12px; height: 110px; }
+  .game { position: relative; height: 210px; border-radius: 6px; overflow: hidden; background: url(bg.jpg) -620px -420px / 1600px 900px; margin-top: 8px; }
+  svg { overflow: visible; filter: drop-shadow(0 1.2px 1.4px rgba(0,0,0,.55)); }
+  @keyframes rock { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rock { animation: rock 1.6s ease-in-out infinite; transform-origin: 32px 32px; transform-box: view-box; }
+  .spin { animation: spin 2.4s linear infinite; transform-origin: 32px 32px; transform-box: view-box; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Cursor de girar a obra</h1>
+  <p class="sub">Aparece segurando o clique em cima do lugar da obra (o C&amp;C): arrastar gira o prédio. Nasce do cursor de construir (os cantos brancos da grade e a cruzinha do meio), no mesmo traço: o contorno escuro e a luz de cima. Grade de 64, o ponto do clique no meio. Nos tamanhos do jogo (48, 64 e 96 px) e em cima do chão.</p>
+  <div class="row" id="row"></div>
+</div>
+<script>
+const NS = "http://www.w3.org/2000/svg";
+// o traço com o contorno: a cópia escura mais grossa embaixo, a cor por cima (a mesma regra do cursors.html)
+const E = 2.67;
+const ink = (d, w, color, extra = "") => `<path d="${d}" fill="none" stroke="var(--D)" stroke-width="${w + 2 * E}" stroke-linecap="square" stroke-linejoin="round" ${extra}/>`
+  + `<path d="${d}" fill="none" stroke="url(#L${color})" stroke-width="${w}" stroke-linecap="square" stroke-linejoin="round" ${extra}/>`;
+const head = (pts, color) => `<polygon points="${pts}" fill="var(--D)" stroke="var(--D)" stroke-width="${2 * E}" stroke-linejoin="miter" stroke-miterlimit="2.2"/>`
+  + `<polygon points="${pts}" fill="url(#L${color})"/>`;
+const defs = `<defs>${["W", "A"].map(c => `<linearGradient id="L${c}" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="60"><stop offset="0" style="stop-color:color-mix(in srgb, var(--${c}), white 30%)"/><stop offset=".45" style="stop-color:var(--${c})"/><stop offset="1" style="stop-color:color-mix(in srgb, var(--${c}), black 16%)"/></linearGradient>`).join("")}</defs>`;
+const CORNERS = "M14 22V14H22M42 14H50V22M50 42V50H42M22 50H14V42";
+const PLUS = "M32 27V37M27 32H37";
+const pt = (r, deg) => { const a = deg * Math.PI / 180; return [32 + r * Math.cos(a), 32 + r * Math.sin(a)]; };
+const f = n => +n.toFixed(2);
+function arc(r, a0, a1) { const [x0, y0] = pt(r, a0), [x1, y1] = pt(r, a1); const large = Math.abs(a1 - a0) > 180 ? 1 : 0; return `M${f(x0)} ${f(y0)}A${r} ${r} 0 ${large} 1 ${f(x1)} ${f(y1)}`; }
+// a ponta de seta tangente ao arco no ângulo a (sentido do relógio)
+function tip(r, a, size = 7.5) {
+  const [x, y] = pt(r, a), t = (a + 90) * Math.PI / 180, n = a * Math.PI / 180;
+  const T = [Math.cos(t), Math.sin(t)], N = [Math.cos(n), Math.sin(n)];
+  const P = (k, s) => `${f(x + T[0] * k + N[0] * s)},${f(y + T[1] * k + N[1] * s)}`;
+  return `${P(size, 0)} ${P(-size * 0.4, size * 0.85)} ${P(0, 0)} ${P(-size * 0.4, -size * 0.85)}`;
+}
+const OPTS = [
+  ["A · os cantos que giram (a recomendada)", "os cantos do construir balançam pra um lado e pro outro, como o prédio na mão; a cruzinha fica parada no ponto. Lê \"construir\" e \"girar\" de uma vez, sem seta",
+    `<g class="rock">${ink(CORNERS, 4, "W")}</g>${ink(PLUS, 3, "W")}`],
+  ["B · a seta em volta", "a cruzinha do construir com a volta de 270° e a ponta farpada (o \"girar\" de todo programa); parada",
+    `${ink(arc(20, -60, 200), 4, "W")}${head(tip(20, 200), "W")}${ink(PLUS, 3, "W")}`],
+  ["C · as duas setas", "as duas meias-voltas que se perseguem em volta da cruzinha, girando devagar (o girar com os dois sentidos)",
+    `<g class="spin">${ink(arc(20, -20, 130), 4, "W")}${head(tip(20, 130), "W")}${ink(arc(20, 160, 310), 4, "W")}${head(tip(20, 310), "W")}</g>${ink(PLUS, 3, "W")}`],
+];
+const row = document.getElementById("row");
+OPTS.forEach(([cap, note, inner]) => {
+  const card = document.createElement("div"); card.className = "card";
+  const svgAt = (px) => `<svg width="${px}" height="${px}" viewBox="0 0 64 64">${defs}${inner}</svg>`;
+  card.innerHTML = `<div class="cap">${cap}</div><div class="sizes">${svgAt(48)}${svgAt(64)}${svgAt(96)}</div>`
+    + `<div class="game"><div style="position:absolute;left:150px;top:70px">${svgAt(64)}</div></div><div class="note">${note}</div>`;
+  row.appendChild(card);
+});
+const T = /t=([\d.]+)/.exec(location.hash);
+if (T) { const st = document.createElement("style"); st.textContent = `* { animation-play-state: paused !important; animation-delay: -${T[1]}s !important; }`; document.head.appendChild(st); }
+</script>
+</body>
+</html>

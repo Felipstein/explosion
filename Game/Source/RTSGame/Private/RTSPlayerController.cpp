@@ -12,7 +12,9 @@
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 #include "RTSCameraPawn.h"
+#include "RTSAlerts.h"
 #include "RTSChat.h"
+#include "RTSOrderMarker.h"
 #include "LookDirector.h"
 #include "EngineUtils.h"
 #include "RTSGameData.h"
@@ -46,7 +48,7 @@ namespace
 	constexpr float RotateRefPx = 180.0f;
 	constexpr float RotateMaxFactor = 2.5f;
 	constexpr float KeyboardZoomStepsPerSec = 6.0f;
-	constexpr float MarkerSeconds = 0.7f;
+	constexpr float MarkerSeconds = 1.0f;   // (03/11) a marca da ordem no chão dura 1 s (RTSOrderMarker::Seconds)
 	constexpr float PickHeightCm = 150.0f;
 	// (v4, 23/10) a linha dos dois botões (o acorde): o segundo botão ainda forma o acorde até 0,2 s depois do esquerdo (a
 	// caixa ainda não fez nada); soltar os dois tem 0,25 s de folga (a mão nunca solta no mesmo quadro: 1 a 5 quadros); a
@@ -87,6 +89,7 @@ void ARTSPlayerController::BeginPlay()
 	if (!bMenu)
 	{
 		RTSChat::Attach(this);   // (17/10) o chat da partida: o Enter abre a caixa (RTSChat.h)
+		Cursors.Invalidate();   // (03/11) o navegador do menu (RTSShell) troca o Custom da aplicação: a partida repõe os dela
 	}
 	// a primeira vez que o jogo abre num PC (14/10, o notebook do pai do Felipe): a Média, a que rodou bem na v1; depois,
 	// o que o jogador escolheu no Esc fica no GameUserSettings.ini e a Unreal já abre nele (o teste, com o -ExecCmds
@@ -1054,6 +1057,7 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 	const float EdgeX = !bHasMouse || ViewW <= 0 ? 0.0f : (Mouse.X <= EdgeScrollPx ? -1.0f : (Mouse.X >= ViewW - 1 - EdgeScrollPx ? 1.0f : 0.0f));
 	const float EdgeY = !bHasMouse || ViewH <= 0 ? 0.0f : (Mouse.Y <= EdgeScrollPx ? 1.0f : (Mouse.Y >= ViewH - 1 - EdgeScrollPx ? -1.0f : 0.0f));
 	ERTSCursor Cursor = ERTSCursor::Pointer;
+	float RotateDeg = 0.0f;   // (04/11) girando a obra: a direção do arraste (o cursor de girar acompanha)
 	FRTSUnitState Hovered;
 	const bool bHovered = HoverId != 0 && M->GetUnit(HoverId, Hovered);
 	TArray<uint32> Dozers;
@@ -1087,6 +1091,10 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		const bool bFits = GroundUnderCursor(Mouse, Ground)
 			&& M->CanPlace(uint16(PlacingDef), PlacingDir, FVector2D(Ground.X, Ground.Y), Center, Half) == ERTSPlace::Ok;
 		Cursor = bFits ? ERTSCursor::Build : ERTSCursor::NoBuild;   // o fantasma verde ou vermelho faz o resto
+		if (IsRotatingPlacement(RotateDeg))
+		{
+			Cursor = ERTSCursor::Rotate;   // (04/11) arrastando: a volta gira com o arraste
+		}
 	}
 	else if (bLabTool)
 	{
@@ -1186,7 +1194,7 @@ void ARTSPlayerController::TickMatch(float DeltaTime)
 		QueueN += 1;
 	}
 	const ERTSCursor Before = Cursors.GetShown();
-	CurrentMouseCursor = Cursors.Apply(Cursor, ViewH, QueueN);
+	CurrentMouseCursor = Cursors.Apply(Cursor, ViewH, QueueN, RotateDeg);
 	// -RTSCursorLog: cada troca no log, com o mouse (a prova dos testes: o cursor do Windows não sai na captura do jogo)
 	static const bool bCursorLog = FParse::Param(FCommandLine::Get(), TEXT("RTSCursorLog"));
 	if (bCursorLog && Cursors.GetShown() != Before)
@@ -1476,7 +1484,7 @@ void ARTSPlayerController::TickAlerts(float DeltaTime)
 	for (int32 I = MinimapPings.Num() - 1; I >= 0; --I)
 	{
 		MinimapPings[I].Age += DeltaTime;
-		if (MinimapPings[I].Age > 4.0f)
+		if (MinimapPings[I].Age > MinimapPings[I].Life)
 		{
 			MinimapPings.RemoveAt(I);
 		}
@@ -1494,8 +1502,16 @@ void ARTSPlayerController::TickAlerts(float DeltaTime)
 	ARTSHUD* HUD = GetRTSHUD();
 	const FRTSBakedMap* Map = M->BakedMap();
 	const double Now = FPlatformTime::Seconds();
+	// (03/11, os alertas aprovados) a base ou a unidade sob ataque: o que é seu ali (o prédio pesa mais no minimapa)
+	TArray<FRTSUnitState> Mine;
+	if (Hits.Num())
+	{
+		M->GetUnits(Mine);
+		Mine.RemoveAll([&](const FRTSUnitState& U) { return U.Owner != M->LocalPlayer(); });
+	}
 	for (const FVector2D& Cm : Hits)
 	{
+		RTSAlerts::FeedHeat(Cm);   // o calor da batalha, também à vista
 		// só o que você não está vendo: fora da tela, ou embaixo do minimapa
 		FVector2D S;
 		const bool bOnScreen = ProjectWorldLocationToScreen(FVector(Cm.X, Cm.Y, Map ? Map->GroundZCm(Cm) : 0.0f), S)
@@ -1514,7 +1530,19 @@ void ARTSPlayerController::TickAlerts(float DeltaTime)
 		{
 			continue;
 		}
-		MinimapPings.Add({ Cm, 0.0f });
+		FRTSMinimapPing Ping;
+		Ping.Cm = Cm;
+		Ping.Kind = RTSAlerts::UnitAttacked;
+		for (const FRTSUnitState& U : Mine)
+		{
+			if (U.bStructure && FVector2D::Distance(U.PosCm, Cm) < 1500.0)
+			{
+				Ping.Kind = RTSAlerts::BaseAttacked;
+				break;
+			}
+		}
+		Ping.Life = RTSAlerts::LifeOf(Ping.Kind);
+		MinimapPings.Add(Ping);
 		LastAlertCm = Cm;
 		LastAlertTime = Now;
 		bHasAlert = true;
@@ -1539,12 +1567,19 @@ void ARTSPlayerController::TickAlerts(float DeltaTime)
 		if (++SameAt > LastStrikeNoticeCount)
 		{
 			LastStrikeNoticeCount = SameAt;
-			MinimapPings.Add({ N.Cm, 0.0f });
+			FRTSMinimapPing Ping;
+			Ping.Cm = N.Cm;
+			Ping.Kind = RTSAlerts::StrikeIncoming;
+			Ping.RadiusCm = N.RadiusCm;
+			Ping.Life = RTSAlerts::LifeOf(Ping.Kind);
+			MinimapPings.Add(Ping);
 			LastAlertCm = N.Cm;
 			LastAlertTime = Now;
 			bHasAlert = true;
 		}
 	}
+	// (03/11) a superarma pronta, a doca que acabou, a carga a caminho, o primeiro contato e a unidade perdida (RTSAlerts.h)
+	RTSAlerts::Watch(M, MinimapPings);
 }
 
 // ---------------------------------------------------------------- (v4, 23/10) a mira do poder do general
@@ -1713,7 +1748,7 @@ bool ARTSPlayerController::TickGuard(const FVector2D& Mouse, bool bHasMouse)
 		if (GuardPressTarget != 0 && M->GetUnit(GuardPressTarget, U))
 		{
 			M->OrderGuard(Selected, U.PosCm, GuardPressTarget, 0.0f);
-			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), false);
+			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), 0, GuardPressTarget);   // a escolta: em volta dele
 			UE_LOG(LogTemp, Log, TEXT("RTS guarda: %d unidades escoltam %u"), Selected.Num(), GuardPressTarget);
 		}
 		else
@@ -1745,7 +1780,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 		if (!Selected.IsEmpty() && GroundUnderCursor(Mouse, Ground))
 		{
 			M->OrderPatrol(Selected, FVector2D(Ground.X, Ground.Y));
-			AddMarker(Ground, true);
+			AddMarker(Ground, false);   // (03/11) a patrulha é verde, como o cursor dela
 			++Orders;
 		}
 		bPatrolArmed = false;
@@ -1775,7 +1810,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 		if (Target != 0 && M->GetUnit(Target, TU) && !(Selected.Num() == 1 && Selected.Contains(Target)))
 		{
 			M->OrderAttack(Selected, Target, /*bForced=*/true);
-			AddMarker(FVector(TU.PosCm.X, TU.PosCm.Y, Map ? Map->GroundZCm(TU.PosCm) : 0.0f), true);
+			AddMarker(FVector(TU.PosCm.X, TU.PosCm.Y, Map ? Map->GroundZCm(TU.PosCm) : 0.0f), 1, Target);
 			++Orders;
 			return;
 		}
@@ -1783,7 +1818,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 		if (GroundUnderCursor(Mouse, Ground))
 		{
 			M->OrderAttackGround(Selected, FVector2D(Ground.X, Ground.Y));
-			AddMarker(Ground, true);
+			AddMarker(Ground, 1, 0, /*bCross=*/true);   // o X do cursor de atirar no chão
 			++Orders;
 		}
 		return;
@@ -1803,7 +1838,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 			M->OrderEnter(Selected, Hit);
 			++Orders;
 			const FRTSBakedMap* Map = M->BakedMap();
-			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), false);
+			AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), 0, Hit);   // entrar: em volta do transporte
 			return;
 		}
 		if (U.Owner == M->LocalPlayer())
@@ -1832,7 +1867,7 @@ void ARTSPlayerController::HandleLeftClick(const FVector2D& Mouse)
 				M->OrderAttack(Selected, Hit);
 				++Orders;
 				const FRTSBakedMap* Map = M->BakedMap();
-				AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), true);
+				AddMarker(FVector(U.PosCm.X, U.PosCm.Y, Map ? Map->GroundZCm(U.PosCm) : 0.0f), 1, Hit);   // atacar: em volta do alvo
 			}
 			return;
 		}
@@ -2276,9 +2311,17 @@ void ARTSPlayerController::PruneSelection()
 
 void ARTSPlayerController::AddMarker(const FVector& At, bool bAttack)
 {
+	AddMarker(At, uint8(bAttack ? 1 : 0), 0);
+}
+
+void ARTSPlayerController::AddMarker(const FVector& At, uint8 Kind, uint32 Target, bool bCross, float RadiusCm)
+{
 	FRTSOrderMarker Marker;
 	Marker.World = At;
-	Marker.bAttack = bAttack;
+	Marker.bAttack = Kind == 1;
+	Marker.Kind = Kind;
+	Marker.RadiusCm = Target != 0 ? RTSOrderMarker::RadiusOf(GetWorld() ? GetWorld()->GetSubsystem<URTSMatchSubsystem>() : nullptr, Target) : RadiusCm;
+	Marker.bCross = bCross;
 	Markers.Add(Marker);
 }
 

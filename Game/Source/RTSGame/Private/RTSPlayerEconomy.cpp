@@ -75,12 +75,14 @@ void ARTSPlayerController::BeginPlacing(int32 Def)
 	bAttackMoveArmed = false;
 	// a frente do prédio pra quem joga (pra baixo da tela), como a vista 3/4 do ZH
 	PlacingDir = PlayerCameraManager ? RTS::DirFacingViewer(PlayerCameraManager->GetCameraRotation().Yaw) : 0;
+	bPlaceHeld = bPlaceRotating = false;
 }
 
 bool ARTSPlayerController::TickPlacement(const FVector2D& Mouse, bool bHasMouse)
 {
 	if (PlacingDef < 0)
 	{
+		bPlaceHeld = bPlaceRotating = false;
 		return false;
 	}
 	URTSMatchSubsystem* M = Match();
@@ -97,22 +99,58 @@ bool ARTSPlayerController::TickPlacement(const FVector2D& Mouse, bool bHasMouse)
 	{
 		PlacingDir = (PlacingDir + 1) & 3;
 	}
+	// (04/11) soltou em cima do HUD (o soltar não chegou aqui): o lugar preso solta sem pôr a obra
+	if (bPlaceHeld && !IsInputKeyDown(EKeys::LeftMouseButton) && !WasInputKeyJustReleased(EKeys::LeftMouseButton))
+	{
+		bPlaceHeld = bPlaceRotating = false;
+	}
 	const ARTSHUD* HUD = GetRTSHUD();
 	if ((HUD && !HUD->ButtonAt(Mouse).IsNone()) || bOverMinimap)
 	{
 		return false;   // os botões do painel e o minimapa seguem valendo
 	}
+	// (04/11, ele: "vai ter que girar no mouse, não pela tecla R"; o C&C) o clique prende o lugar; arrastando mais de 10 px o prédio
+	// vira pro lado do mouse e o cursor de girar acompanha; soltar põe. Por enquanto nos 4 lados da simulação (o 45° e o livre com o
+	// Ctrl esperam a sessão da simulação dar o ângulo ao prédio)
 	if (WasInputKeyJustPressed(EKeys::LeftMouseButton) && bHasMouse)
 	{
-		FVector Ground;
-		if (GroundUnderCursor(Mouse, Ground))
+		FVector Press;
+		if (GroundUnderCursor(Mouse, Press))
+		{
+			bPlaceHeld = true;
+			bPlaceRotating = false;
+			PlaceAnchor = Press;
+			PlacePressPx = Mouse;
+		}
+	}
+	if (bPlaceHeld && IsInputKeyDown(EKeys::LeftMouseButton))
+	{
+		const FVector2D Drag = Mouse - PlacePressPx;
+		if (bPlaceRotating || Drag.Size() > 10.0f)
+		{
+			bPlaceRotating = true;
+			PlaceRotateDeg = FMath::RadiansToDegrees(FMath::Atan2(Drag.Y, Drag.X));
+			FVector Toward;
+			if (GroundUnderCursor(Mouse, Toward) && FVector2D::Distance(FVector2D(Toward.X, Toward.Y), FVector2D(PlaceAnchor.X, PlaceAnchor.Y)) > 50.0)
+			{
+				// a frente do prédio pro lado do mouse (0 +X, 1 +Y, 2 −X, 3 −Y)
+				const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(float(Toward.Y - PlaceAnchor.Y), float(Toward.X - PlaceAnchor.X)));
+				PlacingDir = FMath::RoundToInt32(FMath::Fmod(Yaw + 360.0f, 360.0f) / 90.0f) & 3;
+			}
+		}
+	}
+	if (bPlaceHeld && WasInputKeyJustReleased(EKeys::LeftMouseButton))
+	{
+		bPlaceHeld = false;
+		bPlaceRotating = false;
+		const FVector Ground = PlaceAnchor;
 		{
 			FVector2D Center;
 			FVector2D Half;
 			if (M->CanPlace(uint16(PlacingDef), PlacingDir, FVector2D(Ground.X, Ground.Y), Center, Half) == ERTSPlace::Ok)
 			{
 				M->OrderBuild(Dozers, uint16(PlacingDef), PlacingDir, Center);
-				AddMarker(FVector(Center.X, Center.Y, Ground.Z), false);
+				AddMarker(FVector(Center.X, Center.Y, Ground.Z), 2, 0, false, float(FMath::Max(Half.X, Half.Y)));   // (03/11) a obra: o âmbar em volta da planta
 				++Orders;
 				if (!IsInputKeyDown(EKeys::LeftShift) && !IsInputKeyDown(EKeys::RightShift))
 				{
@@ -128,8 +166,8 @@ void ARTSPlayerController::UpdateGhost()
 {
 	URTSMatchSubsystem* M = Match();
 	const FRTSBakedMap* Map = M ? M->BakedMap() : nullptr;
-	FVector Ground;
-	if (!Map || PlacingDef < 0 || !GetCursorGround(Ground))
+	FVector Ground = PlaceAnchor;   // (04/11) girando: o fantasma fica preso no lugar do clique
+	if (!Map || PlacingDef < 0 || (!bPlaceHeld && !GetCursorGround(Ground)))
 	{
 		if (Ghost)
 		{
@@ -243,6 +281,8 @@ bool ARTSPlayerController::HandleEconomyClick(const FVector2D& Mouse, uint32 Hit
 	if (bHit && !Dozers.IsEmpty() && HitUnit.Owner == M->LocalPlayer() && HitUnit.bStructure && HitUnit.BuildFraction < 1.0f)
 	{
 		M->OrderResumeBuild(Dozers, Hit);   // ZH: o Dozer retoma a obra parada
+		const FRTSBakedMap* Map = M->BakedMap();
+		AddMarker(FVector(HitUnit.PosCm.X, HitUnit.PosCm.Y, Map ? Map->GroundZCm(HitUnit.PosCm) : 0.0f), 2, Hit);   // (03/11) a marca do trabalho
 		++Orders;
 		return true;
 	}
@@ -251,7 +291,7 @@ bool ARTSPlayerController::HandleEconomyClick(const FVector2D& Mouse, uint32 Hit
 		// (v4, 23/10) o Dozer conserta o prédio avariado (o ZH: o cursor da chave sobre o prédio, o clique manda; o dele ou o do aliado)
 		M->OrderRepair(Dozers, Hit);
 		const FRTSBakedMap* Map = M->BakedMap();
-		AddMarker(FVector(HitUnit.PosCm.X, HitUnit.PosCm.Y, Map ? Map->GroundZCm(HitUnit.PosCm) : 0.0f), false);
+		AddMarker(FVector(HitUnit.PosCm.X, HitUnit.PosCm.Y, Map ? Map->GroundZCm(HitUnit.PosCm) : 0.0f), 2, Hit);   // (03/11) o âmbar em volta do prédio
 		++Orders;
 		return true;
 	}
@@ -270,7 +310,7 @@ bool ARTSPlayerController::HandleEconomyClick(const FVector2D& Mouse, uint32 Hit
 	if (!Trucks.IsEmpty() && Dock >= 0)
 	{
 		M->OrderGather(Trucks, Dock);
-		AddMarker(Ground, false);
+		AddMarker(Ground, 2, 0);
 		++Orders;
 		return true;
 	}

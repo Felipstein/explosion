@@ -133,6 +133,10 @@ private:
 	struct FBarChip { float From = 0.0f; double At = -1.0; };
 	TMap<uint32, FBarChip> BarChips;
 	TMap<uint32, float> BarLastRatio;
+	/** (04/11) A resposta ao selecionar: quem estava selecionado no quadro anterior e quando cada um entrou (o clarão e o estalo da barra). */
+	TSet<uint32> LastSelectedIds;
+	TMap<uint32, double> SelectPopAt;
+	double LastFlashTestAt = 0.0;
 	/** Texto com sombra; Size em pontos do Slate. Devolve o tamanho desenhado (px). */
 	FVector2D DrawLabel(const FString& Text, float X, float Y, int32 Size, const FLinearColor& Color, bool bCenter = false, bool bBold = false);
 	FVector2D MeasureLabel(const FString& Text, int32 Size, bool bBold) const;

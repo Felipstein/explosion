@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>A mira dos poderes</title>
+<style>
+  :root { --STRIKE: #FF3B30; --SUPPORT: #59B2FF; --TROOPS: #7FE6FF; --EYES: #F3F1EC; --OFF: #9AA0A6; --D: #0A0B0C; }
+  html, body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1560px; padding: 16px 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #9a968c; margin: 0 0 10px; max-width: 1500px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .cell { width: 760px; }
+  .cap { font-weight: 700; margin: 0 0 3px; }
+  .note { color: #9a968c; font-size: 12.5px; margin: 3px 0 12px; min-height: 36px; }
+  .fr { position: relative; width: 760px; height: 360px; overflow: hidden; border-radius: 6px; background: url(fundo_jogo.jpg) -380px -200px / 1600px 900px; }
+  svg { position: absolute; left: 0; top: 0; overflow: visible; }
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+<script>
+// (05/11) A mira dos poderes do general: as 6 formas (docs/poderes/MIRA.md). A língua é a dos cursores: o contorno escuro por fora
+// e a linha clara por dentro; a cor pelo tipo do ícone (golpe quente, apoio frio, tropas o céu, olhos a térmica); a área no chão do
+// tamanho de verdade, a borda nítida, o miolo um véu (nunca chapado: o raio-X reprovado); o inválido em cinza, cortado, com o
+// motivo. O fundo: um quadro do jogo sem HUD (a cena v5_ground_video, 25/10). O chão: a câmera deita o círculo (0,6) e 1 m ≈ 12 px
+// (o tanque de 9 m tem ~110 px nesse quadro). #t=2.4 congela no instante.
+const f = n => +n.toFixed(2);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const PX = 12, FLAT = 0.6, LOOP = 6;
+const T = /t=([\d.]+)/.exec(location.hash);
+// o chão: metros (x pra direita, y pra longe da câmera) → a tela
+const G = (cx, cy) => (x, y) => [cx + x * PX, cy - y * PX * FLAT];
+// o traço com o contorno escuro embaixo
+const ink = (d, color, w, extra = "", op = 1) => `<g opacity="${f(op)}"><path d="${d}" fill="none" stroke="var(--D)" stroke-width="${f(w + 2.4)}" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`
+  + `<path d="${d}" fill="none" stroke="${color}" stroke-width="${f(w)}" stroke-linecap="round" stroke-linejoin="round" ${extra}/></g>`;
+const poly = pts => pts.map((p, k) => (k ? "L" : "M") + f(p[0]) + " " + f(p[1])).join("") ;
+const ringPts = (g, ox, oy, rx, ry, n = 72, a0 = 0, a1 = Math.PI * 2) => Array.from({ length: n + 1 }, (_, k) => { const a = a0 + (a1 - a0) * k / n; return g(ox + Math.cos(a) * rx, oy + Math.sin(a) * ry); });
+// o véu: mais forte na borda, quase nada no miolo
+let gid = 0;
+function veil(g, ox, oy, rx, ry, color, op) {
+  const id = "v" + (gid++), c = g(ox, oy);
+  return `<defs><radialGradient id="${id}"><stop offset="0" stop-color="${color}" stop-opacity="${f(0.05 * op)}"/><stop offset="0.75" stop-color="${color}" stop-opacity="${f(0.09 * op)}"/><stop offset="1" stop-color="${color}" stop-opacity="${f(0.2 * op)}"/></radialGradient></defs>`
+    + `<ellipse cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(rx * PX)}" ry="${f(ry * PX * FLAT)}" fill="url(#${id})"/>`;
+}
+// o cursor do mouse: a mira do poder (4 traços e o ponto), o branco com o contorno escuro
+function reticle(x, y, color = "var(--EYES)", s = 1) {
+  let d = "";
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) d += `M${f(x + dx * 6 * s)} ${f(y + dy * 6 * s)}L${f(x + dx * 13 * s)} ${f(y + dy * 13 * s)}`;
+  return ink(d, color, 2.2) + `<circle cx="${f(x)}" cy="${f(y)}" r="2.6" fill="var(--D)"/><circle cx="${f(x)}" cy="${f(y)}" r="1.5" fill="${color}"/>`;
+}
+const label = (x, y, text, color) => `<g font-family="Segoe UI, sans-serif" font-weight="700" font-size="12" letter-spacing="1"><text x="${f(x)}" y="${f(y)}" stroke="var(--D)" stroke-width="3.2" fill="none">${text}</text><text x="${f(x)}" y="${f(y)}" fill="${color}">${text}</text></g>`;
+const breathe = t => 0.88 + 0.12 * Math.sin(t * Math.PI * 2 / 1.6);
+
+// 1. o círculo num ponto (o golpe: a MOAB, 18 m) e o espalhamento tracejado; aos 4 s o mouse entra na névoa: inválido
+function circle(t) {
+  const off = t > 4.2;
+  const mx = off ? 470 + (t - 4.2) * 60 : 300 + Math.sin(t * 0.9) * 40, my = 190 + Math.cos(t * 0.7) * 12;
+  const g = G(mx, my), C = off ? "var(--OFF)" : "var(--STRIKE)", b = breathe(t), R = 12;
+  let s = veil(g, 0, 0, R, R, C, b);
+  s += ink(poly(ringPts(g, 0, 0, R, R)), C, 2.4, off ? `stroke-dasharray="5 6"` : "", b);
+  // o espalhamento: onde as bombas podem cair (o 2º anel, tracejado, girando devagar)
+  if (!off) s += ink(poly(ringPts(g, 0, 0, R * 0.62, R * 0.62, 72, t * 0.25, t * 0.25 + Math.PI * 2)), C, 1.4, `stroke-dasharray="9 8"`, 0.8);
+  // os 4 dentes da borda giram devagar (golpe: a mira está viva)
+  if (!off) for (let k = 0; k < 4; ++k) { const a = t * 0.35 + k * Math.PI / 2; s += ink(poly(ringPts(g, 0, 0, R + 1.6, R + 1.6, 6, a - 0.12, a + 0.12)), C, 3.2, "", 1); }
+  s += reticle(mx, my, off ? "var(--OFF)" : "var(--EYES)");
+  if (off) { s += ink(`M${f(mx - 9)} ${f(my + 9)}L${f(mx + 9)} ${f(my - 9)}`, "var(--OFF)", 2.4); s += label(mx + 16, my + 28, "NO VISION", "var(--OFF)"); }
+  return s;
+}
+// 2. a faixa com direção (o A-10: clicar o início e arrastar; a passada de 50 × 10 m), as setas de onde o avião vem
+function strip(t) {
+  const sx = 150, sy = 270, k = ease((t - 0.4) / 1.6), ang = -0.15 + 0.5 * k;   // o arraste gira a faixa
+  const g = G(sx, sy), L = 40, W = 4, C = "var(--STRIKE)", b = breathe(t);
+  const u = [Math.cos(ang), Math.sin(ang)], n = [-u[1], u[0]];
+  const P = (a, c) => g(u[0] * a + n[0] * c, u[1] * a + n[1] * c);
+  let s = `<path d="${poly([P(0, -W), P(L, -W), P(L, W), P(0, W)])}Z" fill="${C}" fill-opacity="${f(0.1 * b)}"/>`;
+  s += ink(poly([P(0, -W), P(L, -W), P(L, W), P(0, W), P(0, -W)]), C, 2.4, "", b);
+  // as setas correndo no sentido do voo
+  for (let j = 0; j < 4; ++j) { const a = ((t * 9 + j * L / 4) % L); s += ink(poly([P(a - 1.8, -1.8), P(a, 0), P(a - 1.8, 1.8)]), C, 2, "", clamp(Math.min(a, L - a) / 6)); }
+  // a fileira de impactos do canhão no eixo
+  for (let j = 1; j < 12; ++j) { const p = P(j * L / 12, 0); s += `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="2" fill="var(--D)"/><circle cx="${f(p[0])}" cy="${f(p[1])}" r="1.2" fill="${C}"/>`; }
+  const m = P(L * (0.25 + 0.75 * k), 0);
+  s += reticle(sx, sy) + (k < 1 ? ink(`M${f(sx)} ${f(sy)}L${f(m[0])} ${f(m[1])}`, "var(--EYES)", 1.4, `stroke-dasharray="4 5"`, 0.8) : "");
+  return s;
+}
+// 3. o traçado livre (a Fortified Line: até 120 m, desenhada arrastando), a régua do que falta
+function path(t) {
+  const g = G(80, 250), C = "var(--SUPPORT)", k = clamp(t / 4.2);
+  const pts = []; for (let j = 0; j <= 80; ++j) { const x = j * 0.68; pts.push([x, 6 * Math.sin(x / 11) + x * 0.12]); }
+  const n = Math.max(2, Math.round(pts.length * k)), used = pts.slice(0, n);
+  let s = ink(poly(used.map(p => g(p[0], p[1]))), C, 3);
+  // os postes a cada 4 m
+  for (let j = 0; j < n; j += 5) { const p = g(used[j][0], used[j][1]); s += `<rect x="${f(p[0] - 3)}" y="${f(p[1] - 3)}" width="6" height="6" fill="var(--D)"/><rect x="${f(p[0] - 2)}" y="${f(p[1] - 2)}" width="4" height="4" fill="${C}"/>`; }
+  const e = g(used[n - 1][0], used[n - 1][1]), m = Math.round(120 * k * 0.58);
+  s += reticle(e[0], e[1]) + label(e[0] + 16, e[1] + 26, `${m} / 120 m`, C);
+  return s;
+}
+// 4. o ponto de queda (o Paradrop III: 9 paraquedistas), o espalhamento e um ponto pra cada um
+function drop(t) {
+  const mx = 430, my = 200, g = G(mx, my), C = "var(--TROOPS)", b = breathe(t), R = 9;
+  let s = veil(g, 0, 0, R, R, C, b) + ink(poly(ringPts(g, 0, 0, R, R)), C, 2.2, `stroke-dasharray="10 6"`, b);
+  const spots = [[0, 0], [5, 2], [-4, 4], [2, -6], [-6, -3], [7, -4], [-2, 8], [8, 6], [-8, 2]];
+  spots.forEach(([x, y], j) => { const k = ease((t - 0.3 - j * 0.12) / 0.4), p = g(x, y); s += `<g opacity="${f(k)}"><ellipse cx="${f(p[0])}" cy="${f(p[1])}" rx="5" ry="3" fill="var(--D)" opacity=".55"/><circle cx="${f(p[0])}" cy="${f(p[1] - 6 * (1 - k))}" r="3.4" fill="var(--D)"/><circle cx="${f(p[0])}" cy="${f(p[1] - 6 * (1 - k))}" r="2.3" fill="${C}"/></g>`; });
+  s += reticle(mx, my - 46, "var(--EYES)", 0.9) + ink(`M${f(mx)} ${f(my - 33)}L${f(mx)} ${f(my - 6)}`, "var(--EYES)", 1.4, `stroke-dasharray="3 4"`, 0.8);
+  return s;
+}
+// 5. o alvo único (o Booby Trap, a Defection): os cantos do C&C fecham no alvo válido; fora dele, o proibido
+function target(t) {
+  const U = { x: 485 - 380, y: 362 - 200, w: 120, h: 56 }, on = (t % LOOP) < 3.6, C = "var(--STRIKE)";
+  let s = "";
+  if (on) {
+    const k = ease((t % LOOP) / 0.25), sc = 1.4 - 0.4 * k, hw = U.w * 0.62 * sc, hh = U.h * 0.78 * sc, L = Math.min(hw, hh) * 0.45;
+    let d = ""; [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([a, c]) => { d += `M${f(U.x + a * hw)} ${f(U.y + c * (hh - L))}L${f(U.x + a * hw)} ${f(U.y + c * hh)}L${f(U.x + a * (hw - L))} ${f(U.y + c * hh)}`; });
+    s += ink(d, C, 2.6) + reticle(U.x + 10, U.y - 4);
+  } else {
+    const x = 420, y = 170;
+    s += reticle(x, y, "var(--OFF)") + `<circle cx="${x}" cy="${y}" r="15" fill="none" stroke="var(--D)" stroke-width="5"/><circle cx="${x}" cy="${y}" r="15" fill="none" stroke="var(--OFF)" stroke-width="2.4"/>`
+      + ink(`M${x - 10} ${y + 10}L${x + 10} ${y - 10}`, "var(--OFF)", 2.4) + label(x + 22, y + 30, "NO TARGET", "var(--OFF)");
+  }
+  return s;
+}
+// 6. a órbita (o AC-130): o anel grande fica enquanto o poder dura, o avião dá a volta, cada clique é um tiro dentro
+function orbit(t) {
+  const g = G(390, 185), C = "var(--STRIKE)", R = 20, b = breathe(t);
+  let s = veil(g, 0, 0, R, R, C, b * 0.35) + ink(poly(ringPts(g, 0, 0, R, R, 96)), C, 2.2, `stroke-dasharray="14 7"`, b);
+  const a = t * 0.7, p = g(Math.cos(a) * R, Math.sin(a) * R), q = g(Math.cos(a + 0.08) * R, Math.sin(a + 0.08) * R);
+  const ang = Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI;
+  s += `<g transform="translate(${f(p[0])} ${f(p[1])}) rotate(${f(ang)})"><path d="M10 0L-6 -6L-3 0L-6 6Z" fill="var(--D)" stroke="var(--D)" stroke-width="3" stroke-linejoin="round"/><path d="M10 0L-6 -6L-3 0L-6 6Z" fill="var(--EYES)"/></g>`;
+  const mx = 380 + Math.sin(t * 0.8) * 90, my = 185 + Math.cos(t * 1.1) * 40;
+  s += reticle(mx, my, "var(--EYES)", 1.1);
+  const shot = (t * 1.25) % 1; if (shot < 0.25) s += `<circle cx="${f(mx)}" cy="${f(my)}" r="${f(6 + 26 * shot)}" fill="none" stroke="${C}" stroke-width="2" opacity="${f(1 - shot * 4)}"/>`;
+  return s;
+}
+const OPTS = [
+  ["1 · Círculo num ponto (golpe: MOAB, A-10 I, barragem, EMP; apoio: conserto, Guardian Angel; olhos: o raio de visão)", "o anel no raio de verdade, o véu mais forte na borda, o espalhamento tracejado girando e os 4 dentes vivos do golpe. Aos 4 s o mouse entra na névoa: cinza, tracejado, cortado e o motivo", circle],
+  ["2 · Faixa com direção (A-10 II, Tornado-S, Naval I–II, Carpet Bomb, Remote Mining)", "clicar o início e arrastar a direção: o retângulo da passada, as setas de onde o avião vem e a fileira de impactos no eixo", strip],
+  ["3 · Traçado livre (a Fortified Line da Rússia, até 120 m)", "a linha segue o mouse com um poste a cada 4 m e a régua do que já gastou", path],
+  ["4 · Ponto de queda (Paradrop I–III, VDV, Militia, SEAL, Rebel Ambush)", "o espalhamento tracejado e um ponto pra cada tropa, caindo um a um; a mira fica acima, ligada ao chão", drop],
+  ["5 · Alvo único (Defection, Funds Diversion, Booby Trap, Wreck Rebuild)", "os cantos do C&C (os do selecionar) fecham no alvo válido na cor do tipo; fora de um alvo, o proibido em cinza com o motivo", target],
+  ["6 · Órbita (o AC-130)", "o anel da órbita fica enquanto o poder dura, o avião dá a volta e cada clique é um tiro dentro do anel", orbit],
+];
+const page = document.getElementById("page");
+page.insertAdjacentHTML("beforeend", `<h1>A mira dos poderes</h1><p class="sub">As 6 formas que cobrem os ~65 poderes das 4 árvores, na língua dos cursores. A cor diz o tipo: <b style="color:#FF3B30">golpe</b>, <b style="color:#59B2FF">apoio</b>, <b style="color:#7FE6FF">tropas</b>, <b style="color:#F3F1EC">olhos</b>; o <b style="color:#9AA0A6">cinza</b> é o inválido, sempre com o motivo. A área tem o tamanho de verdade do poder; a borda é nítida e o miolo é um véu, pra não esconder as unidades embaixo.</p><div class="row" id="row"></div>`);
+const row = document.getElementById("row"), svgs = [];
+OPTS.forEach(([cap, note]) => { row.insertAdjacentHTML("beforeend", `<div class="cell"><div class="cap">${cap}</div><div class="fr"><svg width="760" height="360"><g class="g"></g></svg></div><div class="note">${note}</div></div>`); svgs.push(row.lastChild.querySelector(".g")); });
+function draw(t) { gid = 0; OPTS.forEach(([, , fn], k) => { svgs[k].innerHTML = fn(t % LOOP); }); }
+if (T) draw(+T[1]); else { const t0 = performance.now(); const tick = n => { draw((n - t0) / 1000); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+</script>
+</body>
+</html>

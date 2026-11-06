@@ -26868,6 +26868,15 @@
   "units": [
    {
     "player": 0,
+    "key": "usa_power_plant",
+    "at_m": [
+     -273.76,
+     -317.59
+    ],
+    "facing_deg": -90.0
+   },
+   {
+    "player": 0,
     "key": "usa_war_factory",
     "at_m": [
      -295.67,
@@ -27336,6 +27345,312 @@
      }
     ]
    }
+  },
+ {
+  "name": "mira_poderes",
+  "about": "(05/11, os cursores; a mira dos poderes do general, docs/poderes/MIRA.md) A câmera parada no ponto do teste: com -RTSPowerPreviewAt=-262,-326 as 6 formas (círculo, faixa, traçado, queda, alvo, órbita) uma a cada 2,5 s em 3 voltas: a válida, a válida com o círculo de apoio de 26 m acendendo os 3 veículos de dentro (o 4º, a 34 m, fica de fora), e a inválida com o motivo. A usina no meio pra ver a mira passando por cima de um prédio. game.ps1 view -Folder X -Scenario mira_poderes -Extra '-RTSPowerPreviewAt=-262,-326' -Record",
+  "map": "World_TestSalt2",
+  "seed": 28,
+  "fog": "off",
+  "hud": true,
+  "starts_m": [
+   [
+    -292.86,
+    -307.51
+   ],
+   [
+    -249.26,
+    -398.06
+   ]
+  ],
+  "units_per_player": [],
+  "units": [
+   {
+    "player": 0,
+    "key": "usa_power_plant",
+    "at_m": [
+     -273.76,
+     -317.59
+    ],
+    "facing_deg": -90.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -252.0,
+     -334.0
+    ],
+    "facing_deg": -60.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -266.0,
+     -342.0
+    ],
+    "facing_deg": -100.0
+   },
+   {
+    "player": 0,
+    "key": "usa_stryker",
+    "at_m": [
+     -248.0,
+     -318.0
+    ],
+    "facing_deg": -30.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -232.0,
+     -340.0
+    ],
+    "facing_deg": -80.0
+   },
+   {
+    "player": 1,
+    "key": "gla_technical",
+    "at_m": [
+     -249.26,
+     -440.0
+    ],
+    "facing_deg": 90.0
+   }
+  ],
+  "orders": [],
+  "camera": {
+   "focus_m": [
+    -262.0,
+    -326.0
+   ],
+   "distance_m": 95,
+   "yaw_deg": 20.0,
+   "pitch_deg": 50.0
+  },
+  "shots_s": [],
+  "end_s": 48.0,
+  "lab": {
+   "panel": false,
+   "tab": "spawn",
+   "ground_base": "map",
+   "ops": [
+    {
+     "t_s": 0.0,
+     "op": "camera",
+     "focus_m": [
+      -262.0,
+      -326.0
+     ],
+     "distance_m": 95,
+     "yaw_deg": 20.0,
+     "pitch_deg": 50.0
+    },
+    {
+     "t_s": 0.0,
+     "op": "sun",
+     "elevation": 24,
+     "azimuth": 338
+    },
+    {
+     "t_s": 0.0,
+     "op": "ai",
+     "player": 1,
+     "on": false
+    }
+   ]
   }
+ },
+ {
+  "name": "mira_conserto_cursores",
+  "about": "(06/11, a sessão Cursores; a cena mira_conserto da sessão dos poderes com o tempo e a câmera acertados) A mira de verdade do Emergency Repair (26 m) pelo botão (o op aim_power, BeginTargeting num ponto fixo): aos 126 s no grupo (os 4 tanques acesos, o de fora não), aos 130 s 13 m depois do tanque de fora (só ele aceso) e aos 133,5 s usa no grupo. A 1ª mira da mira_conserto caía na recarga (\"Ready in 0:03\") e a 2ª ficava fora do quadro. game.ps1 view -Folder X -Scenario mira_conserto_cursores -Record",
+  "map": "World_TestSalt2",
+  "seed": 31,
+  "fog": "off",
+  "hud": true,
+  "starts_m": [
+   [
+    -340.0,
+    60.0
+   ],
+   [
+    -200.0,
+    140.0
+   ]
+  ],
+  "units_per_player": [],
+  "structures": [
+   {
+    "key": "usa_command_center",
+    "player": 0,
+    "at_m": [
+     -385.0,
+     40.0
+    ]
+   }
+  ],
+  "units": [
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -322.0,
+     80.0
+    ],
+    "facing_deg": 110.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -310.0,
+     84.0
+    ],
+    "facing_deg": 110.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -318.0,
+     66.0
+    ],
+    "facing_deg": 110.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -306.0,
+     70.0
+    ],
+    "facing_deg": 110.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -275.0,
+     75.0
+    ],
+    "facing_deg": 110.0
+   }
+  ],
+  "orders": [],
+  "camera": {
+   "focus_m": [
+    -290.0,
+    75.0
+   ],
+   "distance_m": 95,
+   "yaw_deg": 110.0,
+   "pitch_deg": 55.0
+  },
+  "shots_s": [],
+  "end_s": 138.0,
+  "lab": {
+   "panel": false,
+   "tab": "spawn",
+   "ground_base": "map",
+   "ops": [
+    {
+     "t_s": 0.0,
+     "op": "camera",
+     "focus_m": [
+      -290.0,
+      75.0
+     ],
+     "distance_m": 95,
+     "yaw_deg": 110.0,
+     "pitch_deg": 55.0
+    },
+    {
+     "t_s": 0.0,
+     "op": "sun",
+     "elevation": 24,
+     "azimuth": 45
+    },
+    {
+     "t_s": 0.5,
+     "op": "buy_power",
+     "player": 0,
+     "key": "usa_repair1"
+    },
+    {
+     "t_s": 1.0,
+     "op": "health",
+     "player": 0,
+     "at_m": [
+      -300.0,
+      75.0
+     ],
+     "radius_m": 40,
+     "value": 0.35
+    },
+    {
+     "t_s": 1.5,
+     "op": "time_scale",
+     "value": 12
+    },
+    {
+     "t_s": 116.0,
+     "op": "time_scale",
+     "value": 1
+    },
+    {
+     "t_s": 126.0,
+     "op": "aim_power",
+     "player": 0,
+     "key": "usa_repair1",
+     "at_m": [
+      -315.0,
+      75.0
+     ],
+     "hold_s": 3.0
+    },
+    {
+     "t_s": 127.5,
+     "op": "shot",
+     "name": "1_mira_no_grupo",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 130.0,
+     "op": "aim_power",
+     "player": 0,
+     "key": "usa_repair1",
+     "at_m": [
+      -262.0,
+      75.0
+     ],
+     "hold_s": 3.0
+    },
+    {
+     "t_s": 131.5,
+     "op": "shot",
+     "name": "2_mira_no_de_fora",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 133.5,
+     "op": "use_power",
+     "player": 0,
+     "key": "usa_repair1",
+     "at_m": [
+      -315.0,
+      75.0
+     ]
+    },
+    {
+     "t_s": 133.8,
+     "op": "shot",
+     "name": "3_usou",
+     "after_real_s": 0.0
+    }
+   ]
+  }
+ }
  ]
 }

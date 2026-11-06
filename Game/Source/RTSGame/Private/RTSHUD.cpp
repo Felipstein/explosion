@@ -28,6 +28,11 @@
 #include "RTSMapBaker.h"
 #include "RTSMatchSubsystem.h"
 #include "RTSPlayerController.h"
+#include "RTSAlerts.h"
+#include "RTSOrderMarker.h"
+#include "RTSPowerPreview.h"
+#include "RTSSelectFlash.h"
+#include "RTSSoftDraw.h"
 #include "RTSUnitActor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Misc/CommandLine.h"
@@ -55,8 +60,6 @@ namespace
 	constexpr float MinimapFrameFraction = 0.30f;
 	constexpr float MinimapMarginPx = 16.0f;
 	/** Cores da caixa da câmera do ZH (W3DRadar: topo 225,225,0 e o resto 158,158,0). */
-	const FLinearColor ViewBoxTop(FColor(225, 225, 0));
-	const FLinearColor ViewBoxRest(FColor(158, 158, 0));
 
 	FLinearColor Brighten(const FLinearColor& C, float T)
 	{
@@ -705,6 +708,8 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 
 	DrawNetStatus(Match);
 	DrawChat(PC, Match);
+	// (04/11) a seta vermelha com o brilho da borda, por cima das peças do HUD ("tem que ficar por cima do HUD mesmo")
+	RTSAlerts::DrawEdgeArrows(Canvas, PC, PC->GetMinimapPings());
 	{
 		// o FPS no canto de baixo à direita, pequeno (o desenvolvimento; o quadro real, suavizado em ~0,5 s)
 		const float Ms = float(FApp::GetDeltaTime() * 1000.0);
@@ -809,106 +814,159 @@ void ARTSHUD::DrawGroundRing(const FVector& Center, float RadiusCm, const FLinea
 
 void ARTSHUD::DrawOrderQueues(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
-	// (simulação 35, 01/11; docs/ESTUDO_TRANSPORTE_E_FILA.md §3.4) a fila de cada selecionado, da posição dele pela ordem de agora e por cada
-	// item: a linha segue o chão (a cada 2 m), 2 px com o contorno escuro por cima de tudo; verde andar, vermelho atacar, âmbar o trabalho
-	// do Dozer; o anel nos pontos de andar, o anel maior no alvo, o quadrado na obra. Só com o Alt ou logo depois da ordem (1,5 s)
-	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	// (01/11, ele: "não deve exibir a lista de tarefas ali do alt se o alt não tá mais sendo pressionado, ele só vai aparecer novamente
-	// se segurar o alt") só com o Alt apertado: soltou, some na hora
-	(void)Now;
-	if (!Match->IsQueueingOrders())
+	// (simulação 35, 01/11; docs/ESTUDO_TRANSPORTE_E_FILA.md §3.4) a fila da seleção, só com o Alt apertado (ele: "não deve exibir a
+	// lista de tarefas ali do alt se o alt não tá mais sendo pressionado"). (03/11, o plano aprovado: docs/aprovados/hud/
+	// 2026-11-01_fila_plano_no_chao_fichas_APROVADO.jpg) o mesmo passo das unidades vira uma ficha numerada no meio delas; as linhas
+	// saem do pé de cada unidade até a 1ª ficha dela e depois vai uma linha só de ficha em ficha, na cor do passo de destino (verde
+	// andar, vermelho atacar, âmbar o trabalho); a prévia tracejada vai da última ficha até o chão sob o mouse, onde o cursor carrega
+	// a próxima ficha. Os traços lisos do RTSSoftDraw: com a linha de 2 px do Canvas cada tanque ia até a vaga dele e virava um novelo
+	if (!Match->IsQueueingOrders() || !Canvas)
 	{
 		return;
 	}
 	const FRTSBakedMap* Map = Match->BakedMap();
-	const FLinearColor WorkAmber(1.0f, 0.72f, 0.2f, 1.0f);
-	const FLinearColor Outline(0.0f, 0.0f, 0.0f, 0.55f);
-	TArray<FRTSUnitState> Units;
-	Match->GetUnits(Units);
-	TMap<uint32, FVector2D> PosOf;
-	for (const FRTSUnitState& U : Units)
+	if (!Map)
 	{
-		PosOf.Add(U.Id, U.PosCm);
+		return;
 	}
-	const auto GroundAt = [Map](const FVector2D& P) { return (Map ? Map->GroundZCm(P) : 0.0f) + 30.0f; };
-	const auto Segment = [&](const FVector& A, const FVector& B, const FLinearColor& Col)
-	{
-		const float Len = float(FVector::Dist2D(A, B));
-		const int32 N = FMath::Clamp(FMath::CeilToInt32(Len / 200.0f), 1, 200);
-		FVector2D Prev;
-		bool bPrev = false;
-		for (int32 K = 0; K <= N; ++K)
-		{
-			const FVector2D P2 = FMath::Lerp(FVector2D(A), FVector2D(B), double(K) / N);
-			FVector2D S;
-			const bool bOk = PlayerOwner->ProjectWorldLocationToScreen(FVector(P2.X, P2.Y, GroundAt(P2)), S);
-			if (bOk && bPrev)
-			{
-				DrawLine(Prev.X, Prev.Y, S.X, S.Y, Outline, 4.0f);
-				DrawLine(Prev.X, Prev.Y, S.X, S.Y, Col, 2.0f);
-			}
-			Prev = S;
-			bPrev = bOk;
-		}
-	};
-	struct FQueueToken { FVector Sum; int32 Count; int32 Index; uint8 Kind; };
-	TArray<FQueueToken> Tokens;
-	int32 Drawn = 0;
+	const float S = FMath::Max(0.5f, Canvas->SizeY / 900.0f);
+	static const FColor KindColor[3] = { FColor(79, 224, 90), FColor(255, 59, 48), FColor(255, 178, 31) };
+	const FLinearColor Casing(FColor(10, 11, 12, 150));
+	// a fila que falta de cada um é o fim da mesma lista de ordens: o passo J de quem tem N passos é o passo J + (o maior N − N)
+	struct FPath { FVector2D From; TArray<URTSMatchSubsystem::FRTSOrderStep> Steps; };
+	TArray<FPath> Paths;
+	int32 MaxSteps = 0;
 	for (const uint32 Id : PC->GetSelection())
 	{
-		const FVector2D* P0 = PosOf.Find(Id);
-		TArray<URTSMatchSubsystem::FRTSOrderStep> Steps;
-		if (!P0 || Drawn >= 40 || !Match->GetOrderPath(Id, Steps))
+		FRTSUnitState U;
+		FPath P;
+		if (Paths.Num() >= 40 || !Match->GetUnit(Id, U) || !Match->GetOrderPath(Id, P.Steps) || P.Steps.IsEmpty())
 		{
 			continue;
 		}
-		++Drawn;
-		FVector From(P0->X, P0->Y, GroundAt(*P0));
-		for (int32 K = 0; K < Steps.Num(); ++K)
+		P.From = U.PosCm;
+		MaxSteps = FMath::Max(MaxSteps, P.Steps.Num());
+		Paths.Add(MoveTemp(P));
+	}
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+	struct FToken { FVector Sum = FVector::ZeroVector; int32 Count = 0; uint8 Kind = 0; };
+	TArray<FToken> Tokens;
+	Tokens.SetNum(MaxSteps);
+	for (const FPath& P : Paths)
+	{
+		const int32 Off = MaxSteps - P.Steps.Num();
+		for (int32 J = 0; J < P.Steps.Num(); ++J)
 		{
-			const URTSMatchSubsystem::FRTSOrderStep& St = Steps[K];
-			const FLinearColor Col = St.Kind == 0 ? MoveGreen : (St.Kind == 1 ? AttackRed : WorkAmber);
-			Segment(From, St.Cm, Col);
-			// (01/11, aprovado: "agora sim, tá massa") o ponto vira a ficha numerada, desenhada depois de todas as linhas; as vagas do
-			// mesmo passo do grupo (até 30 m umas das outras) viram uma ficha só, no meio delas
-			FQueueToken* Same = Tokens.FindByPredicate([&](const FQueueToken& T)
-			{
-				return T.Index == K && T.Kind == St.Kind && FVector::Dist2D(T.Sum / float(T.Count), St.Cm) < 3000.0f;
-			});
-			if (Same)
-			{
-				Same->Sum += St.Cm;
-				++Same->Count;
-			}
-			else
-			{
-				Tokens.Add({ St.Cm, 1, K, St.Kind });
-			}
-			From = St.Cm;
+			FToken& T = Tokens[Off + J];
+			T.Sum += P.Steps[J].Cm;
+			++T.Count;
+			T.Kind = FMath::Min<uint8>(P.Steps[J].Kind, 2);
 		}
 	}
-	// a ficha (a mesma do cursor da fila): a sombrinha no chão, o disco na cor da linha e o número da vez
-	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;
-	static const FLinearColor TokenColor[3] = { FLinearColor(FColor(79, 224, 90)), FLinearColor(FColor(255, 59, 48)), FLinearColor(FColor(255, 178, 31)) };
-	for (const FQueueToken& T : Tokens)
+	const auto Center = [&](int32 K) { const FVector C = Tokens[K].Sum / float(FMath::Max(1, Tokens[K].Count)); return FVector2D(C.X, C.Y); };
+	// a linha no chão (a cada 3 m), na tela
+	const auto Ground = [&](const FVector2D& A, const FVector2D& B)
 	{
-		const FVector At = T.Sum / float(T.Count);
-		FVector2D P;
-		if (!PlayerOwner->ProjectWorldLocationToScreen(FVector(At.X, At.Y, GroundAt(FVector2D(At.X, At.Y))), P))
+		TArray<FVector2D> Pts;
+		const int32 N = FMath::Clamp(FMath::CeilToInt32(float(FVector2D::Distance(A, B)) / 300.0f), 1, 120);
+		for (int32 K = 0; K <= N; ++K)
+		{
+			const FVector2D P2 = FMath::Lerp(A, B, double(K) / N);
+			FVector2D Px;
+			if (!PlayerOwner->ProjectWorldLocationToScreen(FVector(P2.X, P2.Y, Map->GroundZCm(P2) + 30.0f), Px))
+			{
+				break;
+			}
+			Pts.Add(Px);
+		}
+		return Pts;
+	};
+	const auto Line = [&](const TArray<FVector2D>& Pts, uint8 Kind)
+	{
+		RTSSoftDraw::Stroke(Canvas, Pts, 4.6f * S, Casing);
+		RTSSoftDraw::Stroke(Canvas, Pts, 2.6f * S, FLinearColor(KindColor[Kind]));
+	};
+	for (const FPath& P : Paths)
+	{
+		const int32 First = MaxSteps - P.Steps.Num();
+		Line(Ground(P.From, Center(First)), Tokens[First].Kind);
+	}
+	for (int32 K = 1; K < MaxSteps; ++K)
+	{
+		if (Tokens[K].Count && Tokens[K - 1].Count)
+		{
+			Line(Ground(Center(K - 1), Center(K)), Tokens[K].Kind);
+		}
+	}
+	// a prévia tracejada até o chão sob o mouse (o raio do mouse no relevo, em duas voltas)
+	FVector Origin, Dir;
+	if (PC->DeprojectMousePositionToWorld(Origin, Dir) && Dir.Z < -0.05)
+	{
+		const FVector2D Last = Center(MaxSteps - 1);
+		float Z = Map->GroundZCm(Last);
+		FVector Hit = Origin;
+		for (int32 It = 0; It < 2; ++It)
+		{
+			Hit = Origin + Dir * ((Z - Origin.Z) / Dir.Z);
+			Z = Map->GroundZCm(FVector2D(Hit.X, Hit.Y));
+		}
+		const TArray<FVector2D> Pts = Ground(Last, FVector2D(Hit.X, Hit.Y));
+		const float On = 14.0f * S, Off = 9.0f * S;
+		float Walked = 0.0f;
+		TArray<FVector2D> Dash;
+		for (int32 K = 1; K < Pts.Num(); ++K)
+		{
+			const FVector2D A = Pts[K - 1], B = Pts[K];
+			const float Len = float(FVector2D::Distance(A, B));
+			float T = 0.0f;
+			while (T < Len)
+			{
+				const float Phase = FMath::Fmod(Walked + T, On + Off);
+				const bool bOn = Phase < On;
+				const float Step = FMath::Min(Len - T, bOn ? On - Phase : On + Off - Phase);
+				if (bOn)
+				{
+					if (Dash.IsEmpty())
+					{
+						Dash.Add(FMath::Lerp(A, B, double(T / Len)));
+					}
+					Dash.Add(FMath::Lerp(A, B, double((T + Step) / Len)));
+				}
+				else if (Dash.Num() >= 2)
+				{
+					Line(Dash, 0);
+					Dash.Reset();
+				}
+				T += FMath::Max(Step, 0.01f);
+			}
+			Walked += Len;
+		}
+		if (Dash.Num() >= 2)
+		{
+			Line(Dash, 0);
+		}
+	}
+	// as fichas por cima das linhas: a sombrinha, o anel escuro, o disco na cor do passo e o número da vez
+	for (int32 K = 0; K < MaxSteps; ++K)
+	{
+		if (!Tokens[K].Count)
 		{
 			continue;
 		}
-		const auto Disc = [this](const FVector2D& C, const FVector2D& R, const FLinearColor& Color)
+		const FVector2D C2 = Center(K);
+		FVector2D P;
+		if (!PlayerOwner->ProjectWorldLocationToScreen(FVector(C2.X, C2.Y, Map->GroundZCm(C2) + 30.0f), P))
 		{
-			FCanvasNGonItem Item(C, R, 24, Color);
-			Item.BlendMode = SE_BLEND_Translucent;
-			Canvas->DrawItem(Item);
-		};
-		Disc(P + FVector2D(0.0f, 6.0f * S), FVector2D(9.0f, 3.2f) * S, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
-		Disc(P, FVector2D(10.5f, 10.5f) * S, FLinearColor(0.004f, 0.005f, 0.006f, 1.0f));
-		Disc(P, FVector2D(9.0f, 9.0f) * S, TokenColor[FMath::Min<int32>(T.Kind, 2)]);
-		const FString Num = T.Index < 9 ? FString::FromInt(T.Index + 1) : FString(TEXT("+"));
-		const int32 Size = FMath::RoundToInt(10.0f * S);
+			continue;
+		}
+		RTSSoftDraw::Disc(Canvas, P + FVector2D(0.0f, 1.5f * S), 11.5f * S, FLinearColor(0.0f, 0.0f, 0.0f, 0.35f));
+		RTSSoftDraw::Disc(Canvas, P, 10.5f * S, FLinearColor(FColor(10, 11, 12)));
+		RTSSoftDraw::Disc(Canvas, P, 9.0f * S, FLinearColor(KindColor[Tokens[K].Kind]));
+		const FString Num = K < 9 ? FString::FromInt(K + 1) : FString(TEXT("+"));
+		const int32 Size = FMath::RoundToInt(11.0f * S);
 		const FVector2D Text = MeasureLabel(Num, Size, true);
 		DrawLabel(Num, P.X, P.Y - Text.Y * 0.5f, Size, FLinearColor::White, true, true);
 	}
@@ -955,9 +1013,8 @@ void ARTSHUD::DrawHealthBar(float X, float Y, float W, float H, float S, float R
 	}
 	if (Vet <= 0)
 	{
-		// a marquinha do time, à esquerda
-		DrawPanel(X - FMath::RoundToFloat(5.0f * S), Y - 1.0f, FMath::RoundToFloat(4.0f * S), H + 2.0f, FLinearColor(Team.R * 0.4f, Team.G * 0.4f, Team.B * 0.4f, 1.0f));
-		DrawPanel(X - FMath::RoundToFloat(4.0f * S), Y, FMath::RoundToFloat(2.0f * S), H, Team);
+		// (04/11, ele: "tira esse quadrado da cor do jogador ao lado da vida") sem patente, a barra fica sozinha; a cor do time está
+		// no próprio modelo e no clarão da seleção
 		return;
 	}
 	// a insígnia da patente no lugar da marquinha, afastada 3 px da barra (ele: "não precisa deixar colada na barra"): a plaquinha escura
@@ -998,6 +1055,30 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	const TArray<uint32>& Selected = PC->GetSelection();
 	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	const float S = Canvas ? FMath::Max(0.5f, Canvas->SizeY / 900.0f) : 1.0f;   // a escala da barra: 1 em 900 linhas
+	// (04/11) quem acabou de entrar na seleção ganha o clarão na cor do time e o estalo da barra (o flashAsSelected do ZH)
+	TSet<uint32> NewlySelected;
+	// -RTSFlashTest: a seleção "entra de novo" a cada 1,5 s (a prova em vídeo do clarão, que dura 0,28 s)
+	static const bool bFlashTest = FParse::Param(FCommandLine::Get(), TEXT("RTSFlashTest"));
+	if (bFlashTest && FMath::FloorToInt(Now / 1.5) != FMath::FloorToInt(LastFlashTestAt / 1.5))
+	{
+		LastSelectedIds.Reset();
+	}
+	LastFlashTestAt = Now;
+	for (const uint32 Id : Selected)
+	{
+		if (!LastSelectedIds.Contains(Id))
+		{
+			NewlySelected.Add(Id);
+			SelectPopAt.Add(Id, Now);
+		}
+	}
+	LastSelectedIds = TSet<uint32>(Selected);
+	if (SelectPopAt.Num() > 512)
+	{
+		SelectPopAt.Reset();
+	}
+	RTSSelectFlash::Tick(GetWorld());
+	int32 SelectFlashes = 0;
 	if (BarLastRatio.Num() > 4096)
 	{
 		BarLastRatio.Reset();   // (os mortos não saem um a um; de vez em quando, tudo)
@@ -1090,6 +1171,15 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 				TopWorld = FVector(Box.GetCenter().X, Box.GetCenter().Y, Box.Max.Z);
 				HalfCm = 0.5f * float(Box.GetExtent().X + Box.GetExtent().Y);
 			}
+			// (04/11, ele: "achei as barras de saúde muito grandes pras unidades [...] rever a escala de cada uma, em comprimento") a
+			// largura sai só do casco, no espaço dele (o cano do canhão e o giro do tanque inflavam a caixa do mundo: o tanque batia
+			// no teto de 150 px, mais largo que ele): a barra tem 70% do comprimento do casco na tela
+			const FBox2D Hull = View->GetFootprintCm();
+			if (Hull.bIsValid)
+			{
+				const FVector Scale = View->GetActorScale3D();
+				HalfCm = 0.35f * float(FMath::Max(Hull.GetSize().X * Scale.X, Hull.GetSize().Y * Scale.Y));
+			}
 		}
 		FVector2D Top, Side;
 		if (!PlayerOwner->ProjectWorldLocationToScreen(TopWorld, Top))
@@ -1099,14 +1189,28 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		const FVector CamRight = PlayerOwner->PlayerCameraManager ? PlayerOwner->PlayerCameraManager->GetCameraRotation().RotateVector(FVector::RightVector) : FVector::RightVector;
 		const float RadiusPx = PlayerOwner->ProjectWorldLocationToScreen(TopWorld + CamRight * HalfCm, Side) ? float(FVector2D::Distance(Top, Side)) : 26.0f * S;
 		// a régua do quadro aprovado (1600 × 900): o tanque 52 px, o prédio 104, o soldado 26
-		const float BarW = FMath::RoundToFloat(FMath::Clamp(RadiusPx * (U.bStructure ? 1.2f : 2.0f), 24.0f * S, 150.0f * S));
+		const float BarW = FMath::RoundToFloat(U.bStructure ? FMath::Clamp(RadiusPx * 1.2f, 24.0f * S, 150.0f * S) : FMath::Clamp(RadiusPx * 2.0f, 18.0f * S, 110.0f * S));
 		const float BarH = FMath::RoundToFloat((U.bStructure ? 6.0f : 5.0f) * S);
+		if (View && NewlySelected.Contains(U.Id) && SelectFlashes < 12)
+		{
+			RTSSelectFlash::Spawn(const_cast<ARTSUnitActor*>(View), Team);
+			++SelectFlashes;
+		}
 		const float X = FMath::RoundToFloat(Top.X - BarW * 0.5f);
 		const float Y = FMath::RoundToFloat(Top.Y - 6.0f * S - BarH);
 		const FBarChip* Chip = BarChips.Find(U.Id);
 		const float ChipFade = Chip && Chip->At >= 0.0 ? 1.0f - FMath::Clamp(float(Now - Chip->At - 0.15) / 0.45f, 0.0f, 1.0f) : 0.0f;
 		const int32 Vet = 0;   // a patente da unidade: a simulação ainda não tem (o ZH: sobe com as baixas); o desenho já está pronto
 		DrawHealthBar(X, Y, BarW, BarH, S, bBuilding ? U.BuildFraction : Ratio, Chip ? Chip->From : 0.0f, ChipFade, bBuilding, U.MaxHp, Vet, Team);
+		if (const double* Pop = SelectPopAt.Find(U.Id))
+		{
+			// o estalo: a barra acende em branco e volta em 0,22 s
+			const float PopT = float(Now - *Pop) / 0.22f;
+			if (bSelected && PopT < 1.0f)
+			{
+				DrawPanel(X - 2.0f, Y - 2.0f, BarW + 4.0f, BarH + 4.0f, FLinearColor(1.0f, 1.0f, 1.0f, 0.7f * FMath::Square(1.0f - PopT)));
+			}
+		}
 		// (simulação 35; 01/11, ele: "ficou só quadradinhos mal feitos, mal pensados") a lotação do transporte: a plaquinha presa embaixo
 		// da barra de vida, com a mesma moldura do time (as duas leem como uma peça só), e dentro um bonequinho por vaga (a cabeça e os
 		// ombros): aceso quem está dentro, apagado a vaga livre. A forma de gente diz "a tropa lá dentro" sem legenda (o garrison dos RTS de
@@ -1123,12 +1227,16 @@ void ARTSHUD::DrawUnits(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 
 void ARTSHUD::DrawMarkers(ARTSPlayerController* PC)
 {
+	// (03/11) a marca da ordem no chão: o anel cortado que fecha, na cor da ordem (RTSOrderMarker.h); era o anel fino de 2 px
+	// que encolhia em 0,7 s, que ninguém via
 	for (const FRTSOrderMarker& M : PC->GetMarkers())
 	{
-		const float T = FMath::Clamp(M.Age / 0.7f, 0.0f, 1.0f);
-		const FLinearColor Base = M.bAttack ? AttackRed : MoveGreen;
-		DrawGroundRing(M.World + FVector(0, 0, 30.0f), FMath::Lerp(280.0f, 70.0f, T), WithAlpha(Base, 1.0f - T), 2.0f);
+		RTSOrderMarker::Draw(Canvas, PC, M.World, M.Age, M.Kind, M.RadiusCm, M.bCross);
 	}
+	RTSOrderMarker::DrawTest(Canvas, PC);
+	// (05/11) a mira dos poderes do general no chão (RTSPowerPreview.h): a sessão dos poderes chama o Show a cada quadro
+	RTSPowerPreview::Draw(Canvas, PC);
+	RTSPowerPreview::DrawTest(Canvas, PC);
 }
 
 void ARTSHUD::DrawLinePreview(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
@@ -1579,12 +1687,41 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 	DrawLine(C11.X, C11.Y, C01.X, C01.Y, Edge, 1.0f);
 	DrawLine(C01.X, C01.Y, C00.X, C00.Y, Edge, 1.0f);
 
+	// (03/11, os alertas aprovados) o minimapa pros alertas: o calor da batalha por baixo dos sinais; sem energia, o radar cai
+	// (o chuvisco por cima e sem os sinais: perder a usina custa a visão, como no ZH)
+	RTSAlerts::FView AlertView;
+	AlertView.Center = MinimapCenter;
+	AlertView.Side = MinimapSide;
+	AlertView.PxPerCm = MinimapSide / float(FMath::Max(MinimapSizeCm.X, 1.0));
+	AlertView.ToScreen = [this](const FVector2D& Cm) { FVector2D S; WorldToMinimapScreen(Cm, S); return S; };
+	{
+		const FVector2D Map[4] = { MinimapMinCm, MinimapMinCm + FVector2D(MinimapSizeCm.X, 0.0), MinimapMinCm + MinimapSizeCm, MinimapMinCm + FVector2D(0.0, MinimapSizeCm.Y) };
+		for (int32 K = 0; K < 4; ++K)
+		{
+			AlertView.Corners[K] = AlertView.ToScreen(Map[K]);
+		}
+	}
+	// (04/11, HUD) o radar cai como no ZH (Energy::hasSufficientPower): só gastando mais do que gera. Com 0 / 0 (sem usina no começo, e a
+	// GLA, que não usa energia) o radar fica ligado; antes a GLA ficava em RADAR OFFLINE a partida inteira
+	const bool bRadarOff = RTSAlerts::TestRadarOff() || (OwnsStructure(Match, Match->LocalPlayer()) && Match->PowerUsed(Match->LocalPlayer()) > Match->PowerMade(Match->LocalPlayer()));
+	if (bRadarOff)
+	{
+		RTSAlerts::DrawRadarOffline(Canvas, AlertView, GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0, [this](const FString& Text, const FVector2D& At)
+		{
+			const int32 Size = FMath::RoundToInt(13.0f * FMath::Max(1.0f, Canvas->SizeY / 900.0f));
+			DrawLabel(Text, At.X, At.Y - MeasureLabel(Text, Size, true).Y * 0.5f, Size, FLinearColor(FColor(255, 178, 31)), true, true);
+		});
+	}
+	else
+	{
+		RTSAlerts::DrawHeat(Canvas, AlertView, GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.0f);
+	}
 	// unidades (inimigo só à vista), na cor do jogador; selecionado com borda clara
 	// ~5 px a 900 linhas: o tanque de 8 m tem 1,5 px no mapa de 1 km, então o ponto é maior que ele
 	const float Dot = FMath::Max(4.0f, F / 55.0f);
 	// os depósitos de suprimento: estáticos e de todos, então sempre à vista (como a prévia do mapa
 	// do ZH marca os SUPPLY_SOURCE); a pilha que caiu só onde se vê
-	for (int32 K = 0; K < Match->DockCount(); ++K)
+	for (int32 K = 0; K < Match->DockCount() && !bRadarOff; ++K)
 	{
 		FRTSDockState D;
 		if (!Match->GetDock(K, D) || D.Boxes <= 0 || (D.bPile && !Match->IsPointShown(D.PosCm)))
@@ -1596,13 +1733,16 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		const float S = D.bPile ? Dot * 0.8f : Dot * 1.4f;
 		DrawPanel(P.X - S * 0.5f - 1.0f, P.Y - S * 0.5f - 1.0f, S + 2.0f, S + 2.0f, FLinearColor(0.0f, 0.0f, 0.0f, 0.8f));
 		DrawPanel(P.X - S * 0.5f, P.Y - S * 0.5f, S, S, FLinearColor(0.98f, 0.82f, 0.30f, 0.95f));
+		// (03/11, o minimapa v4 aprovado) o miolo escuro da caixa: a doca não lê como unidade (o quadrado igual confundia)
+		const float In = FMath::Max(1.0f, FMath::RoundToFloat(S * 0.36f));
+		DrawPanel(P.X - In * 0.5f, P.Y - In * 0.5f, In, In, FLinearColor(FColor(150, 104, 30)));
 	}
 	TArray<FRTSUnitState> Units;
 	Match->GetUnits(Units);
 	const TArray<uint32>& Selected = PC->GetSelection();
 	for (const FRTSUnitState& U : Units)
 	{
-		if (!Match->IsUnitShown(U.Id))
+		if (bRadarOff || !Match->IsUnitShown(U.Id))
 		{
 			continue;
 		}
@@ -1645,10 +1785,16 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		const FVector Hit = O + D * T;
 		WorldToMinimapScreen(FVector2D(Hit.X, Hit.Y), Box[K]);
 	}
-	DrawClippedLine(Box[0], Box[1], ViewBoxTop, 1.5f);
-	DrawClippedLine(Box[1], Box[2], ViewBoxRest, 1.5f);
-	DrawClippedLine(Box[2], Box[3], ViewBoxRest, 1.5f);
-	DrawClippedLine(Box[3], Box[0], ViewBoxRest, 1.5f);
+	// (03/11, o minimapa v4 aprovado) a câmera em branco com a sombra escura por baixo: a amarela de 1,5 px sumia na areia
+	const float BoxScale = FMath::Max(1.0f, Canvas->SizeY / 900.0f);
+	for (int32 K = 0; K < 4; ++K)
+	{
+		DrawClippedLine(Box[K], Box[(K + 1) % 4], FLinearColor(0.0f, 0.0f, 0.0f, 0.6f), 3.4f * BoxScale);
+	}
+	for (int32 K = 0; K < 4; ++K)
+	{
+		DrawClippedLine(Box[K], Box[(K + 1) % 4], FLinearColor(1.0f, 1.0f, 1.0f, 0.95f), 1.6f * BoxScale);
+	}
 
 	// ordens dadas pelo minimapa: um pulso que fecha no destino
 	for (const FRTSMinimapPulse& Pulse : PC->GetMinimapPulses())
@@ -1666,26 +1812,13 @@ void ARTSHUD::DrawMinimap(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		}
 	}
 
-	// "sob ataque" (ZH Radar.cpp): triângulo vermelho que gira e fecha da metade do radar até 6 px
-	// em 1,5 s, fica até 3,5 s e some no último meio segundo
+	// (03/11, os alertas aprovados) o sob ataque (a unidade e a base), a superarma inimiga, o seu poder pronto, a doca, a carga, o
+	// primeiro contato e a perda (RTSAlerts.h), no lugar do triângulo de 1 px do ZH
 	for (const FRTSMinimapPing& Ping : PC->GetMinimapPings())
 	{
-		FVector2D P;
-		WorldToMinimapScreen(Ping.Cm, P);
-		const float Shrink = FMath::Clamp(Ping.Age / 1.5f, 0.0f, 1.0f);
-		const float R = FMath::Lerp(MinimapSide * 0.5f, 6.0f, Shrink);
-		const float Alpha = Ping.Age > 3.5f ? FMath::Clamp((4.0f - Ping.Age) / 0.5f, 0.0f, 1.0f) : 1.0f;
-		const FLinearColor C = WithAlpha(FMath::Lerp(FLinearColor(FColor(255, 0, 0)), FLinearColor(FColor(255, 128, 128)), Shrink), Alpha);
-		const float Spin = Ping.Age * 2.0f * PI * 0.5f;
-		FVector2D V[3];
-		for (int32 K = 0; K < 3; ++K)
+		if (!bRadarOff)   // (03/11, ele: "o radar offline mostrou alertas dentro do minimapa, isso não pode")
 		{
-			const float A = Spin + K * 2.0f * PI / 3.0f - PI * 0.5f;
-			V[K] = P + FVector2D(FMath::Cos(A), FMath::Sin(A)) * R;
-		}
-		for (int32 K = 0; K < 3; ++K)
-		{
-			DrawClippedLine(V[K], V[(K + 1) % 3], C, 2.0f);
+			RTSAlerts::DrawPing(Canvas, AlertView, Ping);
 		}
 	}
 	if (PC->AttackMessageAlpha() > 0.0f && !bNewMinimapGeometry)

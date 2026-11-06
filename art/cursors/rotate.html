@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cursor de girar a obra</title>
+<style>
+  :root { --W: #F3F1EC; --D: #0B0E11; }
+  html, body { margin: 0; background: transparent; }
+  svg { position: absolute; overflow: visible; }
+</style>
+</head>
+<body>
+<!-- (04/11) O cursor de girar a obra, a B escolhida ("B, que gira junto com o cursor"): a cruzinha do construir parada no meio e a
+     volta de 270° com a ponta farpada em volta, no traço dos cursores (o contorno escuro, a luz de cima). A volta gira com o arraste:
+     24 posições de 15° (rotate_00 = a ponta apontando pra direita da tela, girando no sentido do relógio). #export: as 24 nas faixas de
+     48, 64 e 96 px, fundo transparente, pra art/tools/make_rotate_cursors.py recortar. As outras propostas: captures (girar.html) -->
+<script>
+const NS = "http://www.w3.org/2000/svg";
+const E = 2.67;
+const f = n => +n.toFixed(2);
+const pt = (r, deg) => { const a = deg * Math.PI / 180; return [32 + r * Math.cos(a), 32 + r * Math.sin(a)]; };
+const ink = (d, w) => `<path d="${d}" fill="none" stroke="var(--D)" stroke-width="${w + 2 * E}" stroke-linecap="square" stroke-linejoin="round"/>`
+  + `<path d="${d}" fill="none" stroke="url(#L)" stroke-width="${w}" stroke-linecap="square" stroke-linejoin="round"/>`;
+const head = pts => `<polygon points="${pts}" fill="var(--D)" stroke="var(--D)" stroke-width="${2 * E}" stroke-linejoin="miter" stroke-miterlimit="2.2"/><polygon points="${pts}" fill="url(#L)"/>`;
+function arc(r, a0, a1) { const [x0, y0] = pt(r, a0), [x1, y1] = pt(r, a1); return `M${f(x0)} ${f(y0)}A${r} ${r} 0 1 1 ${f(x1)} ${f(y1)}`; }
+function tip(r, a, size = 7.5) {
+  const [x, y] = pt(r, a), t = (a + 90) * Math.PI / 180, n = a * Math.PI / 180;
+  const T = [Math.cos(t), Math.sin(t)], N = [Math.cos(n), Math.sin(n)];
+  const P = (k, s) => `${f(x + T[0] * k + N[0] * s)},${f(y + T[1] * k + N[1] * s)}`;
+  return `${P(size, 0)} ${P(-size * 0.4, size * 0.85)} ${P(0, 0)} ${P(-size * 0.4, -size * 0.85)}`;
+}
+// a volta: 270° que acabam na ponta; Rot gira tudo menos a cruzinha
+const glyph = rot => `<defs><linearGradient id="L" gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="60"><stop offset="0" style="stop-color:color-mix(in srgb, var(--W), white 30%)"/><stop offset=".45" style="stop-color:var(--W)"/><stop offset="1" style="stop-color:color-mix(in srgb, var(--W), black 16%)"/></linearGradient></defs>`
+  + `<g transform="rotate(${rot} 32 32)">${ink(arc(20, -270, 0), 4)}${head(tip(20, 0))}</g>` + ink("M32 27V37M27 32H37", 3);
+const BANDS = [[48, 8, "0 1px 1.3px"], [64, 72, "0 1.3px 1.7px"], [96, 152, "0 2px 2.6px"]];
+const N = 24;
+const manifest = [];
+for (let k = 0; k < N; k++) {
+  BANDS.forEach(([px, top, shadow]) => {
+    const s = document.createElementNS(NS, "svg");
+    s.setAttribute("viewBox", "0 0 64 64");
+    s.innerHTML = glyph(k * 360 / N);
+    s.style.cssText = `left:${k * 112 + 8}px;top:${top}px;width:${px}px;height:${px}px;filter:drop-shadow(${shadow} rgba(0,0,0,.6))`;
+    document.body.appendChild(s);
+  });
+  manifest.push({ name: `rotate_${String(k).padStart(2, "0")}`, x: k * 112 + 8, hot: [32, 32] });
+}
+const pre = document.createElement("pre");
+pre.id = "manifest"; pre.style.display = "none";
+pre.textContent = JSON.stringify({ bands: BANDS.map(([px, top]) => ({ px, top })), cursors: manifest });
+document.body.appendChild(pre);
+</script>
+</body>
+</html>

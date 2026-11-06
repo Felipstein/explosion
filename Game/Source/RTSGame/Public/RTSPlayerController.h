@@ -31,15 +31,15 @@ struct FRTSMinimapPulse
 struct FRTSMinimapPing
 {
 	FVector2D Cm = FVector2D::ZeroVector;
-	float Age = 0.0f;
+	float Age = 0.0f; uint8 Kind = 0; float RadiusCm = 0.0f; float Life = 4.2f;   // (03/11) RTSAlerts::EKind, o raio (a superarma) e quanto dura
 };
 
-/** Marca de ordem no chão (verde = andar, vermelho = atacar), some sozinha. */
+/** Marca de ordem no chão (RTSOrderMarker.h: verde as suas tropas, vermelho o hostil, âmbar o trabalho), some sozinha. */
 struct FRTSOrderMarker
 {
 	FVector World = FVector::ZeroVector;
 	float Age = 0.0f;
-	bool bAttack = false;
+	bool bAttack = false; uint8 Kind = 0; float RadiusCm = 0.0f; bool bCross = false;   // (03/11) Kind: 0 verde, 1 vermelho, 2 âmbar; RadiusCm > 0: o anel fecha em volta do alvo; bCross: o X do tiro no chão
 };
 
 UCLASS()
@@ -115,6 +115,8 @@ public:
 	/** O teste: a unidade ou o prédio debaixo desse ponto da tela (0 = chão livre). */
 	uint32 UnitUnderScreen(const FVector2D& Screen) const { return PickUnit(Screen); }
 	int32 GetPlacingDir() const { return PlacingDir; }
+	/** (04/11) Girando a obra no arraste: a direção do arraste na tela (graus, 0 = pra direita, no sentido do relógio). */
+	bool IsRotatingPlacement(float& OutScreenDeg) const { OutScreenDeg = PlaceRotateDeg; return bPlaceRotating; }
 	/** O chão sob o mouse (o fantasma do prédio). */
 	bool GetCursorGround(FVector& Out) const;
 	/** O primeiro prédio próprio da seleção (o painel mostra ele). */
@@ -183,6 +185,9 @@ private:
 	bool GroundUnderCursor(const FVector2D& Mouse, FVector& Out) const;
 	void PruneSelection();
 	void AddMarker(const FVector& At, bool bAttack);
+	/** (03/11) A marca da ordem: Kind 0 verde, 1 vermelho, 2 âmbar; Target != 0: o anel fecha em volta dele (o raio da planta ou da
+	 *  malha); sem alvo, RadiusCm > 0 dá o tamanho (a obra nova: a planta). */
+	void AddMarker(const FVector& At, uint8 Kind, uint32 Target, bool bCross = false, float RadiusCm = 0.0f);
 	/** bRemember: guarda no GameUserSettings.ini (o próximo jogo abre nele); o teste automático não guarda. */
 	void ApplyQuality(int32 Level, bool bRemember = true);
 	// economia e construção (RTSPlayerEconomy.cpp)
@@ -197,6 +202,12 @@ private:
 	void UpdateGhost();
 	int32 PlacingDef = -1;
 	int32 PlacingDir = 0;
+	/** (04/11, o C&C) Girar a obra no arraste: o clique esquerdo prende o lugar, arrastar vira o prédio pro lado do mouse, soltar põe. */
+	bool bPlaceHeld = false;
+	bool bPlaceRotating = false;
+	FVector PlaceAnchor = FVector::ZeroVector;
+	FVector2D PlacePressPx = FVector2D::ZeroVector;
+	float PlaceRotateDeg = 0.0f;
 	/** (v4, 23/10) O cursor do conserto (a chave do kit, docs/concept/hud/kit/icons/repair.png, recortada da placa e com o contorno
 	 *  escuro, 32 px): feito uma vez, no 1º uso; falso se a plataforma não deixa (fica a mão de sempre). */
 	bool EnsureRepairCursor();

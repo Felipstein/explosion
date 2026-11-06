@@ -211,3 +211,69 @@ de cada unidade (sniper, C4, hacker...), cada um nascendo junto com a unidade.
   e a seta e o brilho desenhados POR CIMA do HUD (hoje o Canvas do `ARTSHUD::DrawMarkers` sai antes das peças do HUD novo; desenhar
   num passe depois delas, ou numa camada acima). Desfazer o desvio das peças em `RTSAlerts::DrawEdgeArrows` (o `InPiece` que empurra
   a seta e o brilho pra dentro). O resto dos alertas, a marca B, o minimapa v4 e a fila do Alt seguem provados, sem commit.
+- **(04/11) Feito no jogo, sem commit, a prova na fila (`captures/game/alertas_v5`, `selecao_v2`, `selecao_sem_cor`):**
+  - **A seta da borda:** encostada na borda da tela (a ponta a 26 px × escala dela) e o brilho numa faixa na própria borda; as duas
+    desenhadas no `ARTSHUD::DrawMatch` depois do HUD novo e do chat (`DrawEdgeArrows` saiu do `DrawMarkers`), sem desviar das peças.
+  - **Girar a obra arrastando (o R saiu do mouse):** apertar ancora o prédio, arrastar mais de 10 px gira (o ângulo do arraste no chão,
+    as 4 direções que a simulação aceita hoje), soltar coloca na âncora (`RTSPlayerEconomy.cpp`). Os 45° e o giro livre esperam a sessão
+    da simulação (o ângulo na simulação, a planta girada na grade, a porta e o encontro pelo ângulo).
+  - **O cursor de girar (a B, "que gira junto com o cursor"):** `art/cursors/rotate.html` desenha as 24 posições de 15°;
+    `python art/tools/make_rotate_cursors.py` grava `Game/Content/Cursors/<48|64|96>/rotate_00..23.cur` (o Windows confere cada um);
+    `FRTSCursors::Apply(..., RotateDeg)` escolhe o quadro pelo ângulo do arraste (cursor de hardware não gira sozinho: 24 quadros prontos).
+  - **A barra de saúde na medida da unidade:** a largura sai só do casco (`GetFootprintCm`, 70% do comprimento na tela; o cano e o giro
+    da torre inflavam a caixa e o tanque batia no teto de 150 px). Unidade: 2 × o raio, entre 18 e 110 px; prédio: 1,2 × o raio, entre 24
+    e 150 px (× a escala da tela). O quadrado da cor do jogador cresceu (a altura da barra + 5 px, borda escura e um fio claro);
+    `-RTSBarTeam=0` tira ele, pra ele escolher.
+  - **O clarão da seleção ("o hover da cor, igual o C&C ZH, porém bem feito"):** o ZH tinge o modelo na cor do time por 4 quadros
+    (`Drawable::flashAsSelected`). Aqui `M_SelectFlash` (feito por `python`, `Game/Tools/make_select_flash.py`: aditivo, sem luz,
+    `cor × clarão × 16000 × (0,32 + 1,68 × Fresnel^2,2)`; o 16000 é pra exposição do jogo, ~7e-5) vai por cima das peças do modelo como
+    material de overlay, num material dinâmico por clarão (não usa os dados das peças: a ruína copia 0–35). Sobe em 30 ms e cai em
+    (1 − t)² até 0,28 s (`RTSSelectFlash`). Sem luz no mundo: lê igual no sol e na noite e não suja o chão (a 1ª ideia, uma luz
+    pontual na cor do time, nem foi provada: acenderia o chão em volta e perderia pro sol). Teste: `-RTSFlashTest` repete a seleção a cada 1,5 s.
+- **(04/11, 15:30, pausa pelo limite semanal) Onde parou:**
+  - **Feito, sem commit:** o quadrado da cor saiu da barra (pedido dele; registrado no APROVADOS). O clarão da seleção foi refeito
+    pelo stencil: o material por cima das peças não aparece em malha Nanite, e no vídeo `selecao_v2` só a barra piscava. Agora as
+    peças marcam o bit 64 e o pós-processo `M_SelectFlash` (`Game/Tools/make_select_flash.py`, já gerado) soma a cor do jogador,
+    mais forte no contorno. A silhueta passou a ler só os bits 1–63 (`build_content.py`, refeita com `BUILD_CONTENT_ONLY=silhouette`).
+    Compilado (11:09), mas **não provado**: a foto `-RTSFlashTest=hold` (`captures/game/selecao_flash_v3/`) caiu no começo do teste.
+  - **A queda não é do clarão:** é em todo teste desde a compilação das 11:09 (o `v72_dano_avioes` caiu igual). A sessão das Telas
+    leu os dumps: a queda é no `FRTSUnitVisual::~FRTSUnitVisual()` dentro do `FRTSGameData::Load()`. A struct mudou às 10:47 (sem
+    commit, outra sessão) e ficaram `.obj` velhos misturados (`RTSAutoTest.cpp.obj`, `Module.RTSGame.4/5`). Conserto: `touch` no
+    `RTSGameData.h` e recompilar pela fila. Depois, refazer a foto e julgar o clarão ampliado: tem de ler como luz na cor do time
+    no contorno, nada como o preenchimento chapado do raio-X ("o raio-x tava feio").
+  - **Ele delegou (04/11):** "aprove tudo sem mim, depois eu revejo". O que passar no meu julgamento vira "APROVADO POR MIM" no
+    APROVADOS, com commit + push só dos meus arquivos.
+  - **Depois:** a mira dos poderes do general (pedido da sessão dos poderes, `docs/poderes/IMPLEMENTACAO.md` §2.3). São as 6 formas:
+    círculo, faixa com direção, traçado livre, ponto de queda, alvo único e a órbita do AC-130. Cada uma com o cursor e a prévia no
+    chão do tamanho exato do poder, a cor pelo tipo do ícone e o inválido com o motivo; a chamada em C++ é tipo
+    `Show(Forma, Centro, Tamanho, Direção, Cor, bValido)` / `Hide()`. Ordem: um estudo curto (o `RadiusCursor`/`RadiusDecal` do ZH,
+    o CoH com a faixa arrastada, o WiC), as pranchas, e então o C++.
+- **(05/11) O clarão da seleção, v6, APROVADO POR MIM** (na ausência dele; `docs/APROVADOS.md`, a imagem em
+  `docs/aprovados/ui/2026-11-05_clarao_da_selecao_v6_APROVADO_POR_MIM.jpg`). Em movimento (`captures/game/selecao_flash_v6`,
+  `-RTSFlashTest` repete o clarão a cada 1,5 s): o pico dura 1 quadro e apaga em ~0,2 s (6 quadros a 30 qps; o ZH, 4); o tanque
+  inteiro acende no azul do time com a sombra e o detalhe, sem a borda dura do raio-X. O método e os números:
+  - **O que o ZH faz:** `Drawable::flashAsSelected` toca um envelope de cor (subida 0, queda linear em 4 quadros) com a cor do time
+    passada por `saturateRGB(c, 0,5)` = `0,5·c − 0,25`; o `W3DScene.cpp` SOMA essa cor ao difuso de cada luz e ao ambiente da unidade.
+    A unidade é reacesa na cor do time, e a metade negativa tira a cor oposta: por isso ela fica da cor do time, sem lavar de branco.
+    O padrão do código é o branco (`SelectionFlashHouseColor` desligado); o pedido dele é a cor do jogador.
+  - **Aqui (`Game/Tools/make_select_flash.py`, `M_SelectFlash`):** no quadro já iluminado, a luz que já está em cada ponto (a
+    luminância: a sombra continua sombra, o desenho da textura fica) passa pro matiz do time, e um pouco mais de luz:
+    `lerp(cena, matiz_do_time × lum, 0,6 × k) × (1 + 0,25 × k)`, só onde as peças marcam o bit 64 e a unidade aparece.
+  - **Os números saíram de uma simulação na foto sem clarão** (`python Game/Tools/flash_sim.py captures/game/selecao_v2/lab_1_fila_tanques.png <saída>`, a máscara do tanque pela cor):
+    - o ZH puro (`cena × (0,5 + c)`) dava um azul-aço tímido;
+    - matiz 0,55 ainda lia como tanque cinza-azulado;
+    - 0,85 lê como a cor do time sem perder o relevo na simulação, mas no jogo (a foto `selecao_flash_v5`, o pico parado) saiu azul
+      puro, quase tinta: a curva de tom do jogo satura mais que a simulação. Ficou 0,6, conferido em movimento (`selecao_flash_v6`);
+    - a luz +25% é metade do clarão branco do ZH (1 + 2 × 0,25), pra ler como luz e não como tinta.
+  - **Reprovados por mim:**
+    - (v4, 05/11) o matiz a 0,55 + a linha do contorno pelos 8 vizinhos do stencil + o Fresnel: na foto do pico (`selecao_flash_v4`)
+      não apareceu nada, o tanque saiu igual ao sem clarão (o material compilou sem erro; a causa não foi achada; a v5 tira os
+      vizinhos). O contorno é a opção D, que ele não escolheu;
+    - (v3) somar a cor por toda a unidade: o tanque ficava branco-azulado, como gelo.
+- **(05/11) A mira dos poderes no jogo:**
+  - **O que roda:** a sessão dos poderes chama `RTSPowerPreview::Show` a cada quadro do `ARTSPlayerController::TickTargeting`. O
+    círculo velho do `ARTSHUD::DrawPowerTarget` sai quando a mira nova tem Show no quadro (`RTSPowerPreview::IsShown()`): saem também
+    o título, a dica e o motivo dele, porque a mira já mostra o motivo, sem legenda.
+  - **Testes:** `-RTSPowerPreviewAt=X,Y` (as 6 formas em 3 voltas, na cena `rally_ponto`). O fluxo de verdade (mirar com o poder
+    comprado) espera um gancho de teste da sessão dos poderes: a cena `conserto_emergencia` usa o poder direto (`use_power`) e
+    está sem HUD.

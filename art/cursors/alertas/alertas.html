@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Alertas do minimapa e a seta da borda</title>
+<style>
+  :root { --R: #FF3B30; --Rl: #FF9A93; --G: #4FE05A; --A: #FFB21F; --C: #48E0F0; --Y: #FFE14A; --W: #F3F1EC; --GOLD: #F2C14E; --D: #0A0B0C; }
+  html, body { margin: 0; background: #15171a; color: #e9e6df; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  .page { width: 1560px; padding: 16px 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 22px 0 4px; }
+  .sub { color: #9a968c; margin: 0 0 8px; max-width: 1500px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .cell { width: var(--w); }
+  .cap { font-weight: 700; margin: 0 0 3px; }
+  .note { color: #9a968c; font-size: 12.5px; margin: 3px 0 0; }
+  .mm { position: relative; overflow: hidden; border-radius: 6px; background: url(alerta_bg.jpg) 0 -610px / 1600px 900px; width: 330px; height: 290px; transform-origin: 0 0; }
+  .fr { position: relative; overflow: hidden; border-radius: 6px; background: url(alerta_bg.jpg) 0 0 / 1600px 900px; width: 1600px; height: 900px; transform-origin: 0 0; }
+  svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  ul { margin: 4px 0 0 18px; padding: 0; max-width: 1500px; }
+  li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+<script>
+// (03/11) os alertas: o "sob ataque" do minimapa (o de hoje: o triângulo do ZH que gira e fecha, feito no Canvas: "mal feito"), a
+// seta vermelha na borda da tela (decidida no HUD, docs/concept/hud/DECISOES.md, e nunca feita) e o catálogo dos outros alertas do
+// radar. O ZH (Radar.cpp, radarColorLookupTable): obra (azul→ciano), melhoria (roxo→rosa), sob ataque (vermelho), informação e o
+// sinal do aliado (amarelo), infiltração (ciano), plano de batalha (branco), invisível descoberto (verde); o Espaço vai ao último.
+// A gramática: a mesma dos cursores (o contorno escuro, a mira do atacar, os cantos do prédio), a cor diz de quem é, a forma diz o
+// quê. #t=1.2 congela no instante.
+const f = n => +n.toFixed(2);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const ramp = (x, a, b) => clamp((x - a) / (b - a));
+// o traço com o contorno escuro embaixo
+const ink = (el, color, w, extra = "", dark = 2.2) => el(`stroke="var(--D)" stroke-width="${f(w + dark)}" ${extra}`) + el(`stroke="${color}" stroke-width="${f(w)}" ${extra}`);
+const circle = (x, y, r, color, w, op = 1) => `<g opacity="${f(op)}">` + ink(a => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(Math.max(0.1, r))}" fill="none" ${a}/>`, color, w) + `</g>`;
+const dot = (x, y, r, color, op = 1) => `<g opacity="${f(op)}"><circle cx="${f(x)}" cy="${f(y)}" r="${f(r + 1.1)}" fill="var(--D)"/><circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="${color}"/></g>`;
+const poly = (pts, color, op = 1) => `<g opacity="${f(op)}"><polygon points="${pts.map(p => p.map(f).join(",")).join(" ")}" fill="${color}" stroke="var(--D)" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke"/></g>`;
+// a mira do atacar (o anel cortado e os quatro triângulos que fecham), raio r
+function aim(x, y, r, color, op = 1) {
+  let s = `<g opacity="${f(op)}">`;
+  const w = Math.max(1.6, r * 0.22), gap = 0.5;
+  for (let q = 0; q < 4; q++) {
+    const a0 = q * Math.PI / 2 + gap / 2 + Math.PI / 4, a1 = a0 + Math.PI / 2 - gap;
+    const p = (a) => `${f(x + r * Math.cos(a))} ${f(y + r * Math.sin(a))}`;
+    s += ink(a => `<path d="M${p(a0)} A${f(r)} ${f(r)} 0 0 1 ${p(a1)}" fill="none" stroke-linecap="round" ${a}/>`, color, w);
+  }
+  for (let q = 0; q < 4; q++) {
+    const a = q * Math.PI / 2 + Math.PI / 4 + Math.PI / 4, u = [Math.cos(a), Math.sin(a)], sd = [-u[1], u[0]], k = Math.max(3, r * 0.42);
+    s += poly([[x + u[0] * (r + k * 0.5) + sd[0] * k * 0.55, y + u[1] * (r + k * 0.5) + sd[1] * k * 0.55], [x + u[0] * (r + k * 0.5) - sd[0] * k * 0.55, y + u[1] * (r + k * 0.5) - sd[1] * k * 0.55], [x + u[0] * (r - k * 0.6), y + u[1] * (r - k * 0.6)]], color);
+  }
+  return s + `</g>`;
+}
+// os cantos do prédio (o selecionar), meia largura h
+function corners(x, y, h, color, w, op = 1) {
+  const L = h * 0.45;
+  let d = "";
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => { d += `M${f(x + sx * h)} ${f(y + sy * (h - L))}L${f(x + sx * h)} ${f(y + sy * h)}L${f(x + sx * (h - L))} ${f(y + sy * h)}`; });
+  return `<g opacity="${f(op)}">` + ink(a => `<path d="${d}" fill="none" stroke-linecap="round" stroke-linejoin="round" ${a}/>`, color, w) + `</g>`;
+}
+const diamond = (x, y, r, color, w, op = 1) => `<g opacity="${f(op)}">` + ink(a => `<polygon points="${f(x)},${f(y - r)} ${f(x + r)},${f(y)} ${f(x)},${f(y + r)} ${f(x - r)},${f(y)}" fill="none" stroke-linejoin="round" ${a}/>`, color, w) + `</g>`;
+// a onda de sonar: anéis que saem do ponto
+const sonar = (x, y, t, color, r0, r1, period, n = 2) => { let s = ""; for (let k = 0; k < n; k++) { const u = (t - k * period * 0.5) / period; if (u > 0 && u < 1) s += circle(x, y, r0 + (r1 - r0) * ease(u), color, 1.6, 1 - u); } return s; };
+const blink = (t, hz = 2.2) => 0.55 + 0.45 * Math.cos(t * hz * 2 * Math.PI);
+
+// ——— os alertas, cada um no minimapa (coordenadas do recorte 330 × 290; o losango vai de 15 a 268 em x, 22 a 270 em y)
+const MM = {
+  hoje(t) {   // o de hoje (RTSHUD.cpp: o triângulo do ZH que gira e fecha da metade do radar até 6 px em 1,5 s, fica até 3,5 s e some)
+    const L = t % 4.5, P = [96, 196], k = clamp(L / 1.5), R = 120 * (1 - k) + 6 * k, sp = L * Math.PI;
+    if (L > 4) return "";
+    const op = L > 3.5 ? 1 - (L - 3.5) / 0.5 : 1;
+    const pts = [0, 1, 2].map(i => [P[0] + R * Math.cos(sp + i * 2.094), P[1] + R * Math.sin(sp + i * 2.094)]);
+    return `<polygon points="${pts.map(p => p.map(f).join(",")).join(" ")}" fill="none" stroke="#ff2a1a" stroke-width="1" opacity="${f(op)}"/>`;
+  },
+  unidade(t) {   // sob ataque, unidade: a mira do atacar fecha no ponto, duas ondas saem, e o ponto pisca até os 4 s
+    const L = t % 4.5, P = [96, 196];
+    if (L > 4.2) return "";
+    const k = ease(L / 0.6), op = L > 3.6 ? 1 - (L - 3.6) / 0.6 : 1;
+    let s = sonar(P[0], P[1], L - 0.5, "var(--R)", 6, 34, 1.1, 2);
+    s += L < 0.9 ? aim(P[0], P[1], 34 - 26 * k, "var(--R)", op) : dot(P[0], P[1], 3.2, "var(--R)", op * blink(L));
+    return s;
+  },
+  base(t) {   // sob ataque, base: os cantos do prédio fecham, três ondas mais largas, e o ponto quadrado pisca até os 6 s
+    const L = t % 6.5, P = [212, 128];
+    if (L > 6.2) return "";
+    const k = ease(L / 0.6), op = L > 5.6 ? 1 - (L - 5.6) / 0.6 : 1;
+    let s = sonar(P[0], P[1], L - 0.5, "var(--R)", 8, 50, 1.3, 3);
+    s += L < 1.0 ? corners(P[0], P[1], 30 - 21 * k, "var(--R)", 2.4, op) : `<g opacity="${f(op * blink(L, 1.6))}"><rect x="${P[0] - 5.5}" y="${P[1] - 5.5}" width="11" height="11" rx="1.5" fill="var(--R)" stroke="var(--D)" stroke-width="1.6" paint-order="stroke"/></g>`;
+    return s;
+  },
+  obra(t) {   // a obra pronta (o azul→ciano do ZH): o losango abre uma vez e o pequeno fica 2 s
+    const L = t % 3, P = [140, 70];
+    if (L > 2.6) return "";
+    return diamond(P[0], P[1], 4 + 22 * ease(L / 0.8), "var(--C)", 1.8, 1 - ramp(L, 0.2, 0.8)) + diamond(P[0], P[1], 5, "var(--C)", 2.2, 1 - ramp(L, 2.0, 2.6));
+  },
+  pronta(t) {   // a unidade pronta na fábrica: o anel verde pequeno abre
+    const L = t % 2.2, P = [120, 131];
+    return sonar(P[0], P[1], L, "var(--G)", 3, 16, 0.9, 1) + dot(P[0], P[1], 2.4, "var(--G)", 1 - ramp(L, 1.2, 1.8));
+  },
+  superpronta(t) {   // a sua superarma pronta: a estrela dourada pulsa devagar no lançador até ser usada
+    const P = [86, 140], k = 0.5 + 0.5 * Math.sin(t * 2.2);
+    let s = sonar(P[0], P[1], t % 2.6, "var(--GOLD)", 6, 22, 2.0, 1);
+    const pts = []; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 3.4 : 7.5 + 1.2 * k; pts.push([P[0] + r * Math.cos(a), P[1] + r * Math.sin(a)]); }
+    return s + poly(pts, "var(--GOLD)");
+  },
+  superinimiga(t) {   // a superarma inimiga lançada: o círculo do estrago no alvo, o ponteiro varrendo e os riscos do relógio
+    const P = [166, 160], R = 30, cd = 1 - (t % 8) / 8;
+    let s = `<circle cx="${P[0]}" cy="${P[1]}" r="${R}" fill="rgba(255,59,48,${f(0.10 + 0.08 * blink(t, 1.4))})"/>` + circle(P[0], P[1], R, "var(--R)", 1.8);
+    for (let i = 0; i < 12; i++) { const a = -Math.PI / 2 + i * Math.PI / 6, on = i / 12 < cd; s += `<line x1="${f(P[0] + (R - 5) * Math.cos(a))}" y1="${f(P[1] + (R - 5) * Math.sin(a))}" x2="${f(P[0] + (R - 1.5) * Math.cos(a))}" y2="${f(P[1] + (R - 1.5) * Math.sin(a))}" stroke="${on ? "var(--Rl)" : "rgba(0,0,0,.4)"}" stroke-width="1.6"/>`; }
+    const a = -Math.PI / 2 + 2 * Math.PI * (1 - cd);
+    s += `<line x1="${P[0]}" y1="${P[1]}" x2="${f(P[0] + (R - 2) * Math.cos(a))}" y2="${f(P[1] + (R - 2) * Math.sin(a))}" stroke="var(--Rl)" stroke-width="1.8" stroke-linecap="round"/>`;
+    return s + dot(P[0], P[1], 2.6, "var(--R)");
+  },
+  sinal(t) {   // o sinal do aliado (o beacon do ZH, amarelo): a bandeirinha cai e solta duas ondas
+    const L = t % 3.2, P = [196, 186], drop = ease(L / 0.3);
+    let s = sonar(P[0], P[1], L - 0.3, "var(--Y)", 4, 24, 1.2, 2);
+    const y = P[1] - 18 * (1 - drop);
+    s += `<g opacity="${f(1 - ramp(L, 2.6, 3.1))}"><line x1="${P[0]}" y1="${f(y)}" x2="${P[0]}" y2="${f(y - 14)}" stroke="var(--D)" stroke-width="3.4"/><line x1="${P[0]}" y1="${f(y)}" x2="${P[0]}" y2="${f(y - 14)}" stroke="var(--W)" stroke-width="1.6"/>`
+      + poly([[P[0] + 0.8, y - 14], [P[0] + 10, y - 11], [P[0] + 0.8, y - 8]], "var(--Y)") + `</g>`;
+    return s;
+  },
+  invisivel(t) {   // o invisível descoberto (verde no ZH): o olho abre no ponto
+    const L = t % 3, P = [70, 150], o = ease(L / 0.4) * (1 - ramp(L, 2.2, 2.8));
+    const h = 5.5 * o;
+    return sonar(P[0], P[1], L, "var(--G)", 4, 20, 1.2, 1) + `<g><path d="M${P[0] - 10} ${P[1]}Q${P[0]} ${f(P[1] - h * 1.6)} ${P[0] + 10} ${P[1]}Q${P[0]} ${f(P[1] + h * 1.6)} ${P[0] - 10} ${P[1]}Z" fill="var(--D)" stroke="var(--D)" stroke-width="2.6" opacity="${f(o)}"/>`
+      + `<path d="M${P[0] - 10} ${P[1]}Q${P[0]} ${f(P[1] - h * 1.6)} ${P[0] + 10} ${P[1]}Q${P[0]} ${f(P[1] + h * 1.6)} ${P[0] - 10} ${P[1]}Z" fill="none" stroke="var(--G)" stroke-width="1.6" opacity="${f(o)}"/>` + dot(P[0], P[1], 2.4 * o + 0.1, "var(--G)", o) + `</g>`;
+  },
+  doca(t) {   // a doca acabou (âmbar): o quadradinho da doca apaga com o X
+    const L = t % 3.4, P = [207, 128], o = 1 - ramp(L, 2.6, 3.2), x = ease(L / 0.35) * 6;
+    return sonar(P[0], P[1], L, "var(--A)", 4, 18, 1.2, 1) + `<g opacity="${f(o)}"><rect x="${P[0] - 5}" y="${P[1] - 5}" width="10" height="10" fill="rgba(255,178,31,.35)" stroke="var(--D)" stroke-width="3"/><rect x="${P[0] - 5}" y="${P[1] - 5}" width="10" height="10" fill="none" stroke="var(--A)" stroke-width="1.4"/>`
+      + ink(a => `<path d="M${P[0] - x} ${P[1] - x}L${P[0] + x} ${P[1] + x}M${P[0] + x} ${P[1] - x}L${P[0] - x} ${P[1] + x}" stroke-linecap="round" ${a}/>`, "var(--A)", 1.8) + `</g>`;
+  },
+  carga(t) {   // a carga que cai (a economia: o avião da Drop Zone): o arco tracejado da borda até a zona e a seta descendo
+    const L = t % 3.6, A = [262, 140], B = [150, 214], k = ease(L / 1.6);
+    const C = [(A[0] + B[0]) / 2 + 10, Math.min(A[1], B[1]) - 30];
+    const q = u => [(1 - u) ** 2 * A[0] + 2 * (1 - u) * u * C[0] + u * u * B[0], (1 - u) ** 2 * A[1] + 2 * (1 - u) * u * C[1] + u * u * B[1]];
+    const P = q(k), o = 1 - ramp(L, 3.0, 3.5);
+    let s = `<path d="M${A[0]} ${A[1]}Q${f(C[0])} ${f(C[1])} ${B[0]} ${B[1]}" fill="none" stroke="var(--D)" stroke-width="3.2" stroke-dasharray="5 4" opacity="${f(o * 0.8)}"/><path d="M${A[0]} ${A[1]}Q${f(C[0])} ${f(C[1])} ${B[0]} ${B[1]}" fill="none" stroke="var(--A)" stroke-width="1.4" stroke-dasharray="5 4" opacity="${f(o)}"/>`;
+    s += poly([[P[0] - 5, P[1] - 7], [P[0] + 5, P[1] - 7], [P[0], P[1] + 2]], "var(--A)", o);
+    if (L > 1.6) s += sonar(B[0], B[1], L - 1.6, "var(--A)", 3, 18, 1.0, 1);
+    return s;
+  },
+  contato(t) {   // o primeiro contato (a base inimiga ou um tipo novo visto pela primeira vez): o olho branco e a onda
+    const L = t % 3.4, P = [118, 66], o = ease(L / 0.4) * (1 - ramp(L, 2.6, 3.2)), h = 5 * o;
+    return sonar(P[0], P[1], L, "var(--W)", 4, 26, 1.4, 2) + `<path d="M${P[0] - 10} ${P[1]}Q${P[0]} ${f(P[1] - h * 1.6)} ${P[0] + 10} ${P[1]}Q${P[0]} ${f(P[1] + h * 1.6)} ${P[0] - 10} ${P[1]}Z" fill="var(--W)" stroke="var(--D)" stroke-width="1.6" paint-order="stroke" opacity="${f(o)}"/>` + dot(P[0], P[1], 2.2, "#22262b", o);
+  },
+  perda(t) {   // a unidade perdida: o X cinza escuro onde ela caiu, que some devagar (não pede ação: não pisca)
+    const L = t % 4, P = [150, 236], o = 1 - ramp(L, 1.5, 3.6), x = 4.5;
+    return `<g opacity="${f(o)}">` + ink(a => `<path d="M${P[0] - x} ${P[1] - x}L${P[0] + x} ${P[1] + x}M${P[0] + x} ${P[1] - x}L${P[0] - x} ${P[1] + x}" stroke-linecap="round" ${a}/>`, "#9AA1A8", 1.8) + `</g>`;
+  },
+  calor(t) {   // o calor da batalha: onde há tiro, o minimapa brilha vermelho fraco e esfria em 20 s (lê a guerra inteira de relance)
+    const spots = [[150, 200, 22, 1], [176, 168, 14, 0.7], [104, 120, 12, 0.45]];
+    return `<defs><radialGradient id="heat"><stop offset="0" stop-color="#ff4a2a" stop-opacity=".55"/><stop offset=".55" stop-color="#ff3b30" stop-opacity=".22"/><stop offset="1" stop-color="#ff3b30" stop-opacity="0"/></radialGradient></defs>`
+      + spots.map(([x, y, r, w]) => `<circle cx="${x}" cy="${y}" r="${f(r * (1 + 0.06 * Math.sin(t * 3 + x)))}" fill="url(#heat)" opacity="${f(w)}"/>`).join("");
+  },
+  semforca(t) {   // sem energia, o radar cai (o ZH: o radar precisa de energia): o chuvisco por cima e "RADAR OFFLINE"
+    let s = `<clipPath id="dia"><polygon points="147,30 262,145 147,262 22,145"/></clipPath><g clip-path="url(#dia)"><rect x="0" y="0" width="330" height="290" fill="rgba(10,14,18,.62)"/>`;
+    for (let i = 0; i < 46; i++) { const y = 30 + ((i * 37 + Math.floor(t * 24) * 13) % 232); s += `<rect x="0" y="${y}" width="330" height="${1 + (i % 3)}" fill="rgba(200,215,225,${f(0.05 + 0.08 * ((i * 7) % 5) / 5)})"/>`; }
+    return s + `</g><text x="147" y="150" text-anchor="middle" fill="var(--A)" font-size="13" font-weight="800" font-family="Segoe UI" letter-spacing="1.5" stroke="var(--D)" stroke-width="3" paint-order="stroke" opacity="${f(0.7 + 0.3 * blink(t, 1))}">RADAR OFFLINE</text>`;
+  },
+};
+
+// ——— a seta da borda (a tela inteira, 1600 × 900): o evento fora da vista, a direção vista do meio da tela
+const EVENTS = [{ dir: 200, kind: "base", m: 340 }, { dir: -38, kind: "unit", m: 180 }];
+function edgePoint(deg, M) {
+  const W = 1600, H = 900, cx = W / 2, cy = H / 2 - 60, a = deg * Math.PI / 180, u = [Math.cos(a), Math.sin(a)];
+  const lo = [M, 100 + M * 0.4], hi = [W - M, 690 - M];   // o HUD de cima (os avisos, o placar, o dinheiro) e a barra de baixo ficam livres
+  let tt = 1e9;
+  if (u[0] > 0) tt = Math.min(tt, (hi[0] - cx) / u[0]); if (u[0] < 0) tt = Math.min(tt, (lo[0] - cx) / u[0]);
+  if (u[1] > 0) tt = Math.min(tt, (hi[1] - cy) / u[1]); if (u[1] < 0) tt = Math.min(tt, (lo[1] - cy) / u[1]);
+  return { x: cx + u[0] * tt, y: cy + u[1] * tt, u };
+}
+function icon(kind, x, y, s, color) {
+  return kind === "base" ? corners(x, y, 7 * s, color, 2 * s) + `<rect x="${f(x - 2.5 * s)}" y="${f(y - 2.5 * s)}" width="${f(5 * s)}" height="${f(5 * s)}" fill="${color}"/>` : aim(x, y, 6.5 * s, color);
+}
+const ARROWS = {
+  // A: a seta com a ficha (a recomendada): a ficha escura com o ícone de quem (os cantos = prédio, a mira = unidade) e a seta
+  // vermelha grossa pra fora; a distância embaixo; pulsa 3 s e fica até os 6 s
+  A(t, e) {
+    const P = edgePoint(e.dir, 46), L = t % 7, pul = L < 3 ? 1 + 0.14 * Math.max(0, Math.sin(L * 2 * Math.PI * 1.4)) : 1, op = L > 6 ? 1 - (L - 6) : 1;
+    const a = Math.atan2(P.u[1], P.u[0]) * 180 / Math.PI;
+    let s = `<g opacity="${f(op)}" transform="translate(${f(P.x)} ${f(P.y)}) scale(${f(pul)})">`;
+    s += `<g transform="rotate(${f(a)})">` + poly([[13, -14], [38, 0], [13, 14], [19, 0]], "var(--R)") + `</g>`;
+    s += `<circle r="17" fill="rgba(10,11,12,.82)" stroke="var(--R)" stroke-width="2.4"/>` + icon(e.kind, 0, 0, 1.25, "var(--R)");
+    s += `</g><text x="${f(P.x)}" y="${f(P.y + 34)}" text-anchor="middle" fill="var(--W)" font-size="13" font-weight="700" font-family="Segoe UI" stroke="var(--D)" stroke-width="3" paint-order="stroke" opacity="${f(op)}">${e.m} m</text>`;
+    return s;
+  },
+  // B: a seta só (a ponta grande vermelha com o brilho que pulsa), sem ícone
+  B(t, e) {
+    const P = edgePoint(e.dir, 40), L = t % 7, op = L > 6 ? 1 - (L - 6) : 1, glow = 0.35 + 0.35 * Math.max(0, Math.sin(L * 2 * Math.PI * 1.4));
+    const a = Math.atan2(P.u[1], P.u[0]) * 180 / Math.PI;
+    return `<g opacity="${f(op)}" transform="translate(${f(P.x)} ${f(P.y)}) rotate(${f(a)})"><polygon points="-14,-20 18,0 -14,20 -6,0" fill="rgba(255,59,48,${f(glow)})" transform="scale(1.6)"/>` + poly([[-14, -20], [18, 0], [-14, 20], [-6, 0]], "var(--R)") + `</g>`;
+  },
+  // C: o brilho na borda (a luz vermelha corre pela borda no lado do problema, com a setinha no meio)
+  C(t, e) {
+    const P = edgePoint(e.dir, 0), L = t % 7, op = (L > 6 ? 1 - (L - 6) : 1) * (0.55 + 0.45 * blink(L, 1.2));
+    const along = Math.abs(P.u[0]) * 1600 / 2 > Math.abs(P.u[1]) * 690 / 2;
+    const id = "g" + e.dir + (along ? "v" : "h");
+    const grad = along ? `<linearGradient id="${id}" x1="${P.x > 800 ? 1 : 0}" x2="${P.x > 800 ? 0 : 1}" y1="0" y2="0"><stop offset="0" stop-color="#ff3b30" stop-opacity=".75"/><stop offset="1" stop-color="#ff3b30" stop-opacity="0"/></linearGradient>`
+      : `<linearGradient id="${id}" x1="0" x2="0" y1="${P.y > 400 ? 1 : 0}" y2="${P.y > 400 ? 0 : 1}"><stop offset="0" stop-color="#ff3b30" stop-opacity=".75"/><stop offset="1" stop-color="#ff3b30" stop-opacity="0"/></linearGradient>`;
+    const rect = along ? `<rect x="${P.x > 800 ? 1600 - 46 : 0}" y="${f(P.y - 110)}" width="46" height="220" fill="url(#${id})"/>` : `<rect x="${f(P.x - 160)}" y="${P.y > 400 ? 690 - 40 : 0}" width="320" height="40" fill="url(#${id})"/>`;
+    const Q = edgePoint(e.dir, 24), a = Math.atan2(P.u[1], P.u[0]) * 180 / Math.PI;
+    return `<defs>${grad}</defs><g opacity="${f(op)}">${rect}</g><g transform="translate(${f(Q.x)} ${f(Q.y)}) rotate(${f(a)})">` + poly([[-8, -10], [10, 0], [-8, 10], [-3, 0]], "var(--R)") + `</g>`;
+  },
+};
+
+// ——— a página
+const T = /t=([\d.]+)/.exec(location.hash);
+const page = document.getElementById("page");
+const live = [];
+function mmCell(name, cap, note, fn, scale = 1) {
+  const w = 330 * scale;
+  page.lastChild.insertAdjacentHTML("beforeend", `<div class="cell" style="--w:${w}px"><div class="cap">${cap}</div><div style="width:${w}px;height:${290 * scale}px"><div class="mm" style="transform:scale(${scale})"><svg width="330" height="290" viewBox="0 0 330 290"></svg></div></div><div class="note">${note}</div></div>`);
+  live.push([page.lastChild.lastChild.querySelector("svg"), fn]);
+}
+function frCell(cap, note, fn, scale = /big/.test(location.hash) ? 1 : 0.48) {
+  page.lastChild.insertAdjacentHTML("beforeend", `<div class="cell" style="--w:${1600 * scale}px"><div class="cap">${cap}</div><div style="width:${1600 * scale}px;height:${900 * scale}px"><div class="fr" style="transform:scale(${scale})"><svg width="1600" height="900" viewBox="0 0 1600 900"></svg></div></div><div class="note">${note}</div></div>`);
+  live.push([page.lastChild.lastChild.querySelector("svg"), fn]);
+}
+const row = () => page.insertAdjacentHTML("beforeend", `<div class="row"></div>`);
+page.insertAdjacentHTML("beforeend", `<h1>Os alertas: o minimapa e a seta da borda</h1><p class="sub">O que acontece fora da sua vista, dito pela forma e pela cor, na mesma língua dos cursores (o contorno escuro, a mira do atacar, os cantos do prédio). A cor diz de quem é (vermelho o perigo, verde as suas tropas, âmbar o trabalho, ciano a obra, amarelo o aliado, dourado a sua superarma, branco a informação); a forma diz o quê.</p>`);
+page.insertAdjacentHTML("beforeend", `<h2>1 · Sob ataque no minimapa: hoje × o novo (1,5×)</h2>`);
+row();
+mmCell("", "Hoje", "o triângulo do ZH que gira e fecha, numa linha de 1 px: some no mapa claro e não diz se é a base ou uma unidade", MM.hoje, 1.5);
+mmCell("", "Novo · uma unidade sob ataque", "a mira do atacar fecha no ponto (0,6 s), duas ondas saem e o ponto vermelho pisca até os 4 s; no máximo um a cada 10 s por 66 m (o ZH)", MM.unidade, 1.5);
+mmCell("", "Novo · a base sob ataque", "os cantos do prédio fecham, três ondas mais largas e o quadrado pisca até os 6 s: a base pesa mais que a unidade", MM.base, 1.5);
+page.insertAdjacentHTML("beforeend", `<h2>2 · A seta da borda (o evento fora da vista)</h2><p class="sub">Aparece junto com o alerta do minimapa quando o ponto está fora da tela, na direção dele vista do meio da tela; some quando a câmera chega. Clicar na seta (ou o Espaço) leva a câmera até lá. Duas ao mesmo tempo aqui: a base atrás, à esquerda, e uma unidade em cima, à direita.</p>`);
+row();
+frCell("A · a seta com a ficha (a recomendada)", "a ficha escura com o ícone de quem (os cantos = prédio, a mira = unidade), a ponta vermelha pra fora e a distância; pulsa 3 s e fica até os 6 s", (t) => EVENTS.map(e => ARROWS.A(t, e)).join(""));
+frCell("B · a seta só", "a ponta vermelha grande com o brilho que pulsa: a mais limpa, mas não diz o que é nem a distância", (t) => EVENTS.map(e => ARROWS.B(t, e)).join(""));
+row();
+frCell("C · o brilho na borda", "a luz vermelha no lado da tela onde está o problema, com a setinha: sente-se antes de ler, mas é vaga no canto", (t) => EVENTS.map(e => ARROWS.C(t, e)).join(""));
+page.insertAdjacentHTML("beforeend", `<h2>3 · Os outros alertas do minimapa (no tamanho do jogo)</h2>`);
+row();
+[["obra", "A obra pronta", "o losango ciano abre (o azul→ciano do ZH)"], ["pronta", "A unidade pronta", "o anel verde pequeno na fábrica"],
+ ["superpronta", "A sua superarma pronta", "a estrela dourada pulsa no lançador até ser usada"], ["superinimiga", "A superarma inimiga lançada", "o círculo do estrago no alvo, com o ponteiro e o relógio: dá tempo de fugir"],
+ ["sinal", "O sinal do aliado", "a bandeirinha amarela cai e solta duas ondas (o beacon do ZH; no multiplayer, Alt + clique no minimapa)"], ["invisivel", "O invisível descoberto", "o olho verde abre onde o detector achou"],
+ ["doca", "A doca acabou", "o quadradinho âmbar da doca apaga com o X"], ["carga", "A carga que cai", "o arco tracejado do avião até a zona e a seta descendo (a economia)"],
+ ["contato", "O primeiro contato", "o olho branco onde a base inimiga ou um tipo novo apareceu pela primeira vez"], ["perda", "A unidade perdida", "o X cinza onde ela caiu, que só some (não pede ação: não pisca)"],
+ ["calor", "O calor da batalha", "onde há tiro o mapa brilha vermelho fraco e esfria em 20 s: a guerra inteira de relance"], ["semforca", "Sem energia, o radar cai", "o chuvisco e o RADAR OFFLINE (no ZH o radar precisa de energia): perder a usina custa a visão"],
+].forEach(([k, cap, note]) => mmCell(k, cap, note, MM[k], 1));
+page.insertAdjacentHTML("beforeend", `<h2>4 · O que vem junto</h2><ul>
+<li><b>O Espaço vai ao último alerta</b> e, apertado de novo, ao anterior (o ZH só vai ao último); o clique na seta da borda faz o mesmo.</li>
+<li><b>A fila dos alertas no canto</b> (o AlertFeed já decidido): o texto curto com o ícone da mesma forma do minimapa, clicável.</li>
+<li><b>O som</b> por último, como combinado: cada forma tem o seu sinal curto (o ataque grave, a obra um toque limpo), e a voz do EVA depois.</li>
+<li><b>O sinal do aliado com o tipo</b> no multiplayer: atacar aqui (a mira), defender aqui (os cantos), juntar aqui (o anel do mover).</li>
+<li><b>A trilha do inimigo visto</b>: o último lugar onde a coluna inimiga foi vista fica como um rastro fraco no minimapa por 30 s (o radar "lembra").</li>
+</ul>`);
+function draw(t) { live.forEach(([svg, fn]) => { svg.innerHTML = fn(t); }); }
+if (T) draw(+T[1]);
+else { const t0 = performance.now(); const tick = now => { draw((now - t0) / 1000); requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+</script>
+</body>
+</html>

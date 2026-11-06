@@ -492,15 +492,16 @@ SILHOUETTE_HLSL = r'''
 float d = CD.r;
 float z = SD.r;
 // (14/10, a máscara da poeira da Arte: toda unidade viva grava o bit 128; a silhueta só lê os bits 1–127, o 1 + dono
-// de quem é seu ou aliado, então o inimigo continua sem aparecer atrás das coisas)
-float st = fmod(round(ST.r), 128.0);
+// de quem é seu ou aliado, então o inimigo continua sem aparecer atrás das coisas; 04/11: o bit 64 é o clarão da seleção,
+// RTSSelectFlash, então a silhueta lê só os bits 1–63)
+float st = fmod(round(ST.r), 64.0);
 // a unidade está atrás de algo opaco: a profundidade dela passa da da cena (30 cm de folga: a lagarta
 // encostada no chão não conta; a 1ª versão comparava ao contrário e nunca acendia, base1 de 13/10)
 float hidden = (st > 0.5 && d > z + 30.0) ? 1.0 : 0.0;
 float3 c = st < 1.5 ? C1.rgb : (st < 2.5 ? C2.rgb : (st < 3.5 ? C3.rgb : (st < 4.5 ? C4.rgb :
            (st < 5.5 ? C5.rgb : (st < 6.5 ? C6.rgb : (st < 7.5 ? C7.rgb : C8.rgb))))));
 // a borda: onde o vizinho não é da unidade, mais forte (a forma lê de longe)
-float edge = (fmod(round(N1.r), 128.0) != st || fmod(round(N2.r), 128.0) != st || fmod(round(N3.r), 128.0) != st || fmod(round(N4.r), 128.0) != st) ? 1.0 : 0.0;
+float edge = (fmod(round(N1.r), 64.0) != st || fmod(round(N2.r), 64.0) != st || fmod(round(N3.r), 64.0) != st || fmod(round(N4.r), 64.0) != st) ? 1.0 : 0.0;
 return lerp(Scene.rgb, c, hidden * lerp(Fill, 0.9, edge));
 '''
 
