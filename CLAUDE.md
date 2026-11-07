@@ -29,9 +29,12 @@ Ver `README.md` (mapa do repositório e como rodar). Em resumo:
   - **Menu principal:** nativo em Slate (`SRTSMenu`).
     - O jogo abre num mapa vazio (`/Game/Maps/FrontEnd`) e mostra a abertura aprovada só na 1ª vez do processo.
     - `-RTSNoBoot` pula a abertura; `-RTSScenario`, `-RTSAutoTest` e as fotos nunca passam por ela.
-  - **Skirmish, multiplayer e opções:** ainda são páginas do navegador, até cada uma ficar nativa.
+  - **Skirmish, sala da LAN, multiplayer, opções e SCRIPT:** nativos também (06/11, sem commit até o ok dele).
+    - `SRTSSkirmish` (a sala da LAN é o modo de rede dela), `SRTSMultiplayer`, `SRTSOptions`, `SRTSScript`.
+    - Nenhuma tela usa mais o navegador embutido (CEF); ele sai quando o Felipe aprovar as telas.
   - **Cena de teste à mão:** `game.ps1 view -Scenario <nome>`, depois SCRIPT no menu e Enter.
-  - **Teste automático (`-Folder`):** segue no menu antigo.
+  - **Teste automático (`-Folder`):** usa o menu nativo; o menu antigo do HUD saiu (06/11 à noite). Os roteiros clicam pela função
+    do botão, sem mudança neles.
   - Guia: `docs/TELAS_NO_JOGO.md`.
   **A lista viva da base jogável** (multiplayer, War Factory, névoa, minimapa, visual
   final; o que é de cada sessão) é `docs/BASE_JOGAVEL.md`: quem mexer num item marca lá.

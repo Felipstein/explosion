@@ -4,14 +4,19 @@
 # -Src: a pasta com os fontes editados (o padrão é a pasta deste script)
 param([string]$Src = '')
 $Q = 'C:\Users\luisf\.gpu_queue\gpu_queue.ps1'
-$Owner = 'Telas | compilar o menu nativo'
+$Owner = if ($env:RTS_QUEUE_OWNER) { $env:RTS_QUEUE_OWNER } else { 'Telas | compilar o menu nativo' }   # RTS_QUEUE_OWNER: a corrente que já está com a vez
 $NS = if ($Src) { $Src } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Log = Join-Path $NS 'deploy.log'
 $P = 'C:\Users\luisf\explosion\Game\Plugins\RTSShell\Source\RTSShell'
 $G = 'C:\Users\luisf\explosion\Game'
 $Files = [ordered]@{ 'SRTSMenu.h' = "$P\Private\SRTSMenu.h"; 'SRTSMenu.cpp' = "$P\Private\SRTSMenu.cpp"; 'RTSShell.cpp' = "$P\Private\RTSShell.cpp";
   'RTSShellUI.h' = "$P\Private\RTSShellUI.h"; 'RTSShellUI.cpp' = "$P\Private\RTSShellUI.cpp";
-  'RTSShellAudio.h' = "$P\Private\RTSShellAudio.h"; 'RTSShellAudio.cpp' = "$P\Private\RTSShellAudio.cpp"; 'RTSShell.Build.cs' = "$P\RTSShell.Build.cs" }
+  'RTSShellAudio.h' = "$P\Private\RTSShellAudio.h"; 'RTSShellAudio.cpp' = "$P\Private\RTSShellAudio.cpp";
+  'SRTSSkirmish.h' = "$P\Private\SRTSSkirmish.h"; 'SRTSSkirmish.cpp' = "$P\Private\SRTSSkirmish.cpp"; 'RTSShell.Build.cs' = "$P\RTSShell.Build.cs";
+  'RTSShellBridge.h' = "$P\Public\RTSShellBridge.h"; 'SRTSMultiplayer.h' = "$P\Private\SRTSMultiplayer.h"; 'SRTSMultiplayer.cpp' = "$P\Private\SRTSMultiplayer.cpp";
+  'SRTSOptions.h' = "$P\Private\SRTSOptions.h"; 'SRTSOptions.cpp' = "$P\Private\SRTSOptions.cpp";
+  'SRTSScript.h' = "$P\Private\SRTSScript.h"; 'SRTSScript.cpp' = "$P\Private\SRTSScript.cpp";
+  'SRTSMatch.h' = "$P\Private\SRTSMatch.h"; 'SRTSMatch.cpp' = "$P\Private\SRTSMatch.cpp"; 'RTSShell.h' = "$P\Public\RTSShell.h" }   # (06/11) as telas da partida
 $Prev = Join-Path $NS 'prev'
 New-Item -ItemType Directory -Force $Prev | Out-Null
 "inicio $(Get-Date -Format s)" | Out-File $Log -Encoding utf8
@@ -52,6 +57,6 @@ try {
   }
 } finally {
   Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -Force -ErrorAction SilentlyContinue
-  powershell -NoProfile -File $Q leave -Owner $Owner | Out-Null
+  if (-not $env:RTS_QUEUE_OWNER) { powershell -NoProfile -File $Q leave -Owner $Owner | Out-Null }
   "fim $(Get-Date -Format s)" | Add-Content $Log
 }

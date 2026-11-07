@@ -19,7 +19,7 @@ namespace
 {
 	// a geometria do painel e do tubo (menu.html, "a geometria do painel e do tubo")
 	constexpr float PX0 = 818.0f, PY0 = 64.0f, PX1 = 1866.0f, PY1 = 1016.0f;
-	constexpr float SCX = 1312.0f, SCY = 540.0f, R = 424.0f, RANGE = 40.0f, KM = R / RANGE;
+	constexpr float SCX = 1312.0f, SCY = 540.0f, RADAR_R = 424.0f /* o raio do radar (RADAR_R: um R solto colidia com os R locais das outras telas no arquivo unificado) */, RANGE = 40.0f, KM = RADAR_R / RANGE;
 	constexpr float PERIOD = 6.5f, TAU = 3.6f;
 	constexpr int32 NB = 1440, NR = 300;
 	constexpr float D2R = PI / 180.0f;
@@ -29,7 +29,7 @@ namespace
 	FVector2f Polar(float Brg, float Rr) { return FVector2f(SCX + FMath::Sin(Brg) * Rr, SCY - FMath::Cos(Brg) * Rr); }
 	float BrgOf(float X, float Y) { return FMath::Fmod(FMath::Atan2(X - SCX, -(Y - SCY)) + TWO_PI_F * 2.0f, TWO_PI_F); }
 	float RiverY(float X) { return 60.0f + 70.0f * FMath::Sin(X / 150.0f + 0.6f) + 20.0f * FMath::Sin(X / 47.0f); }
-	const FVector2f TOWN = Polar(35.0f * D2R, 0.45f * R);
+	const FVector2f TOWN = Polar(35.0f * D2R, 0.45f * RADAR_R);
 
 	struct FArmy { const TCHAR* Id; const TCHAR* Name; int32 C[3]; int32 Frame; float FromBrg, FromR; int32 Spd; };
 	// os frames do APP-6: 0 retângulo (amigo), 1 quadrado (neutro), 2 losango (hostil), 3 trevo (desconhecido)
@@ -44,7 +44,7 @@ namespace
 	FVector3f ArmyPos(int32 I, float T)
 	{
 		const FArmy& A = ARMY[I];
-		const FVector2f P0 = Polar(A.FromBrg * D2R, A.FromR * R);
+		const FVector2f P0 = Polar(A.FromBrg * D2R, A.FromR * RADAR_R);
 		const float K = FMath::Fmod(T / LEG + I * 0.13f, 1.0f), E = K * 0.82f;
 		const float Wob = FMath::Sin(T * 0.05f + A.Spd) * 8.0f;
 		const float Dx = TOWN.X - P0.X, Dy = TOWN.Y - P0.Y, L = FMath::Sqrt(Dx * Dx + Dy * Dy);
@@ -54,13 +54,13 @@ namespace
 	FVector3f JetPos(float T)
 	{
 		const float K = FMath::Fmod(T, 26.0f) / 26.0f;
-		const FVector2f A = Polar(262.0f * D2R, R * 1.05f), B = Polar(78.0f * D2R, R * 1.05f);
+		const FVector2f A = Polar(262.0f * D2R, RADAR_R * 1.05f), B = Polar(78.0f * D2R, RADAR_R * 1.05f);
 		return FVector3f(A.X + (B.X - A.X) * K, A.Y + (B.Y - A.Y) * K, FMath::Atan2(B.X - A.X, -(B.Y - A.Y)));
 	}
 	FVector2f HeloPos(float T) { const float A = T / 20.0f * TWO_PI_F; return FVector2f(TOWN.X + FMath::Cos(A) * 30.0f, TOWN.Y + FMath::Sin(A) * 30.0f); }
 	constexpr float MIS_EVERY = 44.0f, MIS_FLY = 9.0f;
-	const FVector2f MIS_FROM = Polar(58.0f * D2R, R * 1.02f);
-	FVector2f RainCenter(float T) { return Polar((300.0f + T * 0.04f) * D2R, 0.62f * R); }
+	const FVector2f MIS_FROM = Polar(58.0f * D2R, RADAR_R * 1.02f);
+	FVector2f RainCenter(float T) { return Polar((300.0f + T * 0.04f) * D2R, 0.62f * RADAR_R); }
 	const FVector2f DIALS[2] = { FVector2f(868.0f, 182.0f), FVector2f(930.0f, 182.0f) };
 
 	float Glow(float S) { return FMath::Exp(-S / TAU); }
@@ -598,41 +598,41 @@ void SRTSMenu::PaintStatic(FSlateWindowElementList& Out, int32& L, const FGeomet
 	for (int32 K = -8; K <= 8; ++K)
 	{
 		const float O = K * 5.0f * KM;
-		const float H = FMath::Sqrt(FMath::Max(0.0f, R * R - O * O));
+		const float H = FMath::Sqrt(FMath::Max(0.0f, RADAR_R * RADAR_R - O * O));
 		Lines(Out, L, S, { FVector2f(SCX + O, SCY - H), FVector2f(SCX + O, SCY + H) }, Ac);
 		Lines(Out, L, S, { FVector2f(SCX - H, SCY + O), FVector2f(SCX + H, SCY + O) }, Ac);
 	}
 	{
 		TArray<FVector2f> Seg;
-		for (float X = -R; X <= R; X += 4.0f)
+		for (float X = -RADAR_R; X <= RADAR_R; X += 4.0f)
 		{
 			const FVector2f P(SCX + X, SCY + RiverY(X));
-			if (FVector2f::Distance(P, FVector2f(SCX, SCY)) <= R) Seg.Add(P);
+			if (FVector2f::Distance(P, FVector2f(SCX, SCY)) <= RADAR_R) Seg.Add(P);
 			else if (Seg.Num()) { Lines(Out, L, S, Seg, Css(120, 190, 200, 0.16f), 2.0f); Seg.Reset(); }
 		}
 		Lines(Out, L, S, Seg, Css(120, 190, 200, 0.16f), 2.0f);
 	}
 	const FLinearColor Road = Css(216, 173, 78, 0.13f);
-	Dashed(Out, L, S, { Polar(225 * D2R, R), Polar(215 * D2R, 0.6f * R), Polar(120 * D2R, 0.1f * R), TOWN, Polar(48 * D2R, R) }, Road, 1.2f, 7.0f);
-	Dashed(Out, L, S, { Polar(300 * D2R, R), Polar(320 * D2R, 0.55f * R), TOWN }, Road, 1.2f, 7.0f);
-	Dashed(Out, L, S, { TOWN, Polar(110 * D2R, 0.55f * R), Polar(140 * D2R, R) }, Road, 1.2f, 7.0f);
+	Dashed(Out, L, S, { Polar(225 * D2R, RADAR_R), Polar(215 * D2R, 0.6f * RADAR_R), Polar(120 * D2R, 0.1f * RADAR_R), TOWN, Polar(48 * D2R, RADAR_R) }, Road, 1.2f, 7.0f);
+	Dashed(Out, L, S, { Polar(300 * D2R, RADAR_R), Polar(320 * D2R, 0.55f * RADAR_R), TOWN }, Road, 1.2f, 7.0f);
+	Dashed(Out, L, S, { TOWN, Polar(110 * D2R, 0.55f * RADAR_R), Polar(140 * D2R, RADAR_R) }, Road, 1.2f, 7.0f);
 	++L;
 	for (int32 K = 1; K <= 4; ++K) Lines(Out, L, S, Arc(FVector2f(SCX, SCY), K * 10.0f * KM), Css(216, 173, 78, 0.16f));
-	for (int32 A = 0; A < 360; A += 30) Lines(Out, L, S, { FVector2f(SCX, SCY), Polar(A * D2R, R) }, Css(216, 173, 78, 0.07f));
+	for (int32 A = 0; A < 360; A += 30) Lines(Out, L, S, { FVector2f(SCX, SCY), Polar(A * D2R, RADAR_R) }, Css(216, 173, 78, 0.07f));
 	const FSlateFontInfo Mono11 = Font(EFace::Mono500, 11.0f), Mono12 = Font(EFace::Mono500, 12.0f), Mono10b = Font(EFace::Mono600, 10.0f);
 	for (int32 K = 1; K <= 4; ++K) Text(Out, L, S, FString::FromInt(K * 10), Mono11, SCX + 4.0f, SCY - K * 10.0f * KM + 13.0f, Css(216, 173, 78, 0.35f));
 	for (int32 A = 0; A < 360; A += 2)
 	{
 		const bool bBig = A % 10 == 0;
-		Lines(Out, L, S, { Polar(A * D2R, R + 3.0f), Polar(A * D2R, R + (bBig ? 15.0f : 8.0f)) }, Css(216, 173, 78, bBig ? 0.5f : 0.25f));
+		Lines(Out, L, S, { Polar(A * D2R, RADAR_R + 3.0f), Polar(A * D2R, RADAR_R + (bBig ? 15.0f : 8.0f)) }, Css(216, 173, 78, bBig ? 0.5f : 0.25f));
 	}
 	for (int32 A = 0; A < 360; A += 30)
 	{
-		const FVector2f P = Polar(A * D2R, R + 30.0f);
+		const FVector2f P = Polar(A * D2R, RADAR_R + 30.0f);
 		Text(Out, L, S, Pad3(A), Mono12, P.X, P.Y + 4.5f, Css(216, 173, 78, 0.55f), 1);   // textBaseline middle
 	}
-	Lines(Out, L, S, Arc(FVector2f(SCX, SCY), R), Css(216, 173, 78, 0.3f), 1.2f);
-	Lines(Out, L, S, Arc(FVector2f(SCX, SCY), R + 44.0f), Css(216, 173, 78, 0.12f), 1.2f);
+	Lines(Out, L, S, Arc(FVector2f(SCX, SCY), RADAR_R), Css(216, 173, 78, 0.3f), 1.2f);
+	Lines(Out, L, S, Arc(FVector2f(SCX, SCY), RADAR_R + 44.0f), Css(216, 173, 78, 0.12f), 1.2f);
 	++L;
 	// a moldura do painel (o fundo bem leve por cima do tubo, a borda fina, as cantoneiras douradas)
 	{
@@ -672,7 +672,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 		FMesh M(S);
 		const FVector2f C0(SCX - 60.0f, SCY - 80.0f);
 		const FVector2f E = C - C0;
-		const float Dr = R - 20.0f;
+		const float Dr = RADAR_R - 20.0f;
 		const auto AlphaAt = [&](FVector2f P)
 		{
 			const FVector2f Dd = P - C0;
@@ -687,7 +687,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 		for (int32 Ri = 0; Ri <= NRg; ++Ri)
 		{
 			Cur.Reset();
-			const float Rr = R * Ri / NRg;
+			const float Rr = RADAR_R * Ri / NRg;
 			for (int32 Ai = 0; Ai <= NA; ++Ai)
 			{
 				const FVector2f P = Polar(TWO_PI_F * Ai / NA, Rr);
@@ -706,7 +706,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 	// clarão somando luz (o "lighter": alfa pré-multiplicado com alfa zero)
 	{
 		const FSlateBrush* RetBrush = Image(TEXT("radar_returns.png"), FVector2f(852, 852));
-		const float U0 = SCX - R - 2.0f, V0 = SCY - R - 2.0f, Size = 2.0f * R + 4.0f;
+		const float U0 = SCX - RADAR_R - 2.0f, V0 = SCY - RADAR_R - 2.0f, Size = 2.0f * RADAR_R + 4.0f;
 		const auto UV = [&](FVector2f P) { return FVector2f((P.X - U0) / Size, (P.Y - V0) / Size); };
 		const int32 N = 720;
 		for (int32 Pass = 0; Pass < 2; ++Pass)
@@ -722,7 +722,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 				const float A = Mask * Strength;
 				if (Pass == 1 && A < 0.002f && K > 0) break;
 				const float Brg = Beam - TWO_PI_F * K / N;
-				const FVector2f Pi = Polar(Brg, 0.5f), Po = Polar(Brg, R + 2.0f);
+				const FVector2f Pi = Polar(Brg, 0.5f), Po = Polar(Brg, RADAR_R + 2.0f);
 				const FColor Vc = Pass == 0 ? ColV(AMB, A, true) : FColor(uint8(FLASH[0] * A), uint8(FLASH[1] * A), uint8(FLASH[2] * A), 0);
 				const int32 I0 = M.Vert(Pi, UV(Pi), Vc), I1 = M.Vert(Po, UV(Po), Vc);
 				if (Last0 >= 0) { M.Tri(Last0, Last1, I1); M.Tri(Last0, I1, I0); }
@@ -743,7 +743,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 		}
 	}
 	// o fio do feixe (do claro no centro ao fraco na borda)
-	FSlateDrawElement::MakeLines(Out, L++, S.ToPaintGeometry(), TArray<FVector2f>{ C, Polar(Beam, R) },
+	FSlateDrawElement::MakeLines(Out, L++, S.ToPaintGeometry(), TArray<FVector2f>{ C, Polar(Beam, RADAR_R) },
 		TArray<FLinearColor>{ Col(FLASH, 0.5f * D), Col(FLASH, 0.12f * D) }, ESlateDrawEffect::None, FLinearColor::White, true, 1.4f);
 	// a névoa do fósforo logo atrás do feixe (meio radiano, de 0 a 0,05)
 	{
@@ -755,7 +755,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 			const float F = float(K) / N;   // 0 = o começo da cunha (meio radiano atrás), 1 = o feixe
 			const float Brg = Beam - 0.5f + 0.5f * F;
 			const FColor Vc = ColV(AMB, 0.05f * D * F, true);
-			const int32 I0 = M.Vert(Polar(Brg, 0.5f), FVector2f(0, 0), Vc), I1 = M.Vert(Polar(Brg, R), FVector2f(0, 0), Vc);
+			const int32 I0 = M.Vert(Polar(Brg, 0.5f), FVector2f(0, 0), Vc), I1 = M.Vert(Polar(Brg, RADAR_R), FVector2f(0, 0), Vc);
 			if (Last0 >= 0) { M.Tri(Last0, Last1, I1); M.Tri(Last0, I1, I0); }
 			Last0 = I0; Last1 = I1;
 		}
@@ -768,7 +768,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 		for (const FVector4f& P : Rain)
 		{
 			const float X = Rc.X + P.X, Y = Rc.Y + P.Y;
-			if (FVector2f::Distance(FVector2f(X, Y), C) > R) continue;
+			if (FVector2f::Distance(FVector2f(X, Y), C) > RADAR_R) continue;
 			const float A = Glow(Since(BrgOf(X, Y))) * (0.18f + 0.3f * P.Z) * D * Gain;
 			if (A >= 0.01f) M.Rect(X, Y, 1.6f, 1.6f, ColV(AMB, A));
 		}
@@ -778,7 +778,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 			const float G = Glow(Since(Jb));
 			for (int32 I = 0; I < 160; ++I)
 			{
-				const FVector2f P = Polar(Jb + (FMath::FRand() - 0.5f) * 0.03f, FMath::FRand() * R);
+				const FVector2f P = Polar(Jb + (FMath::FRand() - 0.5f) * 0.03f, FMath::FRand() * RADAR_R);
 				M.Rect(P.X, P.Y, 2.0f, 2.0f, ColV(AMB, (0.15f + FMath::FRand() * 0.4f) * D * G));
 			}
 		}
@@ -790,7 +790,7 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 	if (Hover == HitSkirmish)
 	{
 		const float B = BrgOf(TOWN.X, TOWN.Y), Rr = FVector2f::Distance(TOWN, C);
-		Dashed(Out, L, S, { C, Polar(B, R) }, Css(FLASH[0], FLASH[1], FLASH[2], 0.4f), 1.0f, 4.0f);
+		Dashed(Out, L, S, { C, Polar(B, RADAR_R) }, Css(FLASH[0], FLASH[1], FLASH[2], 0.4f), 1.0f, 4.0f);
 		TArray<FVector2f> ArcP;
 		for (int32 I = 0; I <= 24; ++I) ArcP.Add(Polar(B - 0.25f + 0.5f * I / 24, Rr));
 		Dashed(Out, L, S, ArcP, Css(FLASH[0], FLASH[1], FLASH[2], 0.4f), 1.0f, 4.0f);
@@ -806,10 +806,10 @@ void SRTSMenu::PaintRadar(FSlateWindowElementList& Out, int32& L, const FGeometr
 	if (Off > 0.01f)
 	{
 		const float K = Off;
-		const float Ry = FMath::Max(1.0f, R * (1.0f - FMath::Min(1.0f, K * 1.6f)));
-		const float Rx = R * (K < 0.62f ? 1.0f : 1.0f - (K - 0.62f) / 0.38f);
+		const float Ry = FMath::Max(1.0f, RADAR_R * (1.0f - FMath::Min(1.0f, K * 1.6f)));
+		const float Rx = RADAR_R * (K < 0.62f ? 1.0f : 1.0f - (K - 0.62f) / 0.38f);
 		FMesh M(S);
-		TArray<FVector2f> Disc = Arc(C, R + 1.0f, 0.0f, TWO_PI_F, 120);
+		TArray<FVector2f> Disc = Arc(C, RADAR_R + 1.0f, 0.0f, TWO_PI_F, 120);
 		M.Poly(Disc, CssV(10, 13, 11, FMath::Min(1.0f, K * 1.4f)));
 		if (Ry < 3.0f)
 		{
@@ -911,7 +911,7 @@ void SRTSMenu::PaintTracks(FSlateWindowElementList& Out, int32& L, const FGeomet
 	{
 		const FVector3f J = JetPos(T);
 		const float Al = (0.3f + 0.7f * Glow(Since(BrgOf(J.X, J.Y)))) * D;
-		if (FVector2f::Distance(FVector2f(J.X, J.Y), FVector2f(SCX, SCY)) < R)
+		if (FVector2f::Distance(FVector2f(J.X, J.Y), FVector2f(SCX, SCY)) < RADAR_R)
 		{
 			Symbol(4, J.X, J.Y, AIRC, Al);
 			Symbol(4, J.X - 10, J.Y + 7, AIRC, Al * 0.8f);
@@ -1061,9 +1061,8 @@ void SRTSMenu::PaintSide(FSlateWindowElementList& Out, int32& L, const FGeometry
 	// o lado esquerdo (.side): as bases medidas no Chrome (menu_layout.json)
 	// (04/11) sem o título e sem o kicker: o "FOUR ARMIES. ONE MAP." e o "OPERATIONS · THEATER 04" eram provisórios ("o título tem
 	// que ir embora"; o kicker "sem criatividade"). O jogo ainda não tem nome: o alto da coluna fica livre pro nome e o logo
-	const FSlateFontInfo Sub = Font(EFace::Barlow500, 18.0f, 1.0f);
-	Text(Out, L, S, TEXT("The ground changes as you fight: craters, ruins,"), Sub, 110, 375.9f, Css(152, 161, 154));
-	Text(Out, L, S, TEXT("burned palms. Read it, then take it."), Sub, 110, 400.2f, Css(152, 161, 154));
+	// (06/11) a frase de efeito embaixo do título saiu ("que lixo, parece que estamos tentando desesperadamente vender"): sobrava do
+	// título grande, que já tinha saído em 04/11
 	// a lista: a linha de cima de cada item, o número, a barrinha que acende, o título que anda e a descrição que abre
 	float Top[4], Extra[4];
 	ItemLayout(Top, Extra);
@@ -1264,10 +1263,10 @@ void SRTSMenu::PaintBootCover(FSlateWindowElementList& Out, int32& L, const FGeo
 		for (int32 I = 0; I < Ang.Num(); ++I)
 		{
 			const float A0 = Ang[I], A1 = Ang[(I + 1) % Ang.Num()] + (I + 1 == Ang.Num() ? TWO_PI_F : 0.0f);
-			const int32 P0 = M.Vert(Ctr + FVector2f(FMath::Cos(A0), FMath::Sin(A0)) * (R + 3.0f), FVector2f(0, 0), C);
+			const int32 P0 = M.Vert(Ctr + FVector2f(FMath::Cos(A0), FMath::Sin(A0)) * (RADAR_R + 3.0f), FVector2f(0, 0), C);
 			const int32 P1 = M.Vert(Edge(A0), FVector2f(0, 0), C);
 			const int32 P2 = M.Vert(Edge(A1), FVector2f(0, 0), C);
-			const int32 P3 = M.Vert(Ctr + FVector2f(FMath::Cos(A1), FMath::Sin(A1)) * (R + 3.0f), FVector2f(0, 0), C);
+			const int32 P3 = M.Vert(Ctr + FVector2f(FMath::Cos(A1), FMath::Sin(A1)) * (RADAR_R + 3.0f), FVector2f(0, 0), C);
 			M.Tri(P0, P1, P2);
 			M.Tri(P0, P2, P3);
 		}

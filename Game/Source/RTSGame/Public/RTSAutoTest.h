@@ -94,6 +94,8 @@ private:
 	FVector2D ToSlate(const FVector2D& Pixel) const;
 	FVector2D ViewportFrac(const FVector2D& Frac) const;
 	FVector2D ButtonCenter(FName Id) const;
+	/** (06/11, Telas) O botão do menu nativo que o ButtonCenter achou (o menu antigo do HUD saiu): o QueueClick chama a função dele. */
+	mutable FName PendingButton;
 	ARTSPlayerController* PC() const;
 	URTSMatchSubsystem* Match() const;
 	class URTSNetSession* NetSession() const;

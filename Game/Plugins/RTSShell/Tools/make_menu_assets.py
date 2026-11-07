@@ -173,5 +173,34 @@ def main():
     print('ok', OUT, 'cobertura média %.3f' % cov.mean())
 
 
+def skirmish():
+    """Os dois gradientes do fundo da sala do skirmish (04/11), pela mesma conta: o brilho âmbar no alto à direita,
+    radial-gradient(at 66% 10%, rgba(216,173,78,.07), transparent 60%), e a vinheta centrada no mapa,
+    radial-gradient(ellipse at 66% 50%, transparent 50%, rgba(0,0,0,.55)); as elipses até o canto mais longe."""
+    gw, gh = 480, 270
+    al = radial(.66 * W, .1 * H, .66 * W * math.sqrt(2), .9 * H * math.sqrt(2), gw, gh, [(0, .07), (.6, 0), (9, 0)])
+    al8 = np.clip(np.round(al * 255), 0, 255).astype(np.uint8)
+    Image.fromarray(np.dstack([np.full_like(al8, 216), np.full_like(al8, 173), np.full_like(al8, 78), al8]), 'RGBA').save(os.path.join(OUT, 'skirmish_glow.png'))
+    vi = radial(.66 * W, .5 * H, .66 * W * math.sqrt(2), .5 * H * math.sqrt(2), gw, gh, [(0, 0), (.5, 0), (1, .55), (9, .55)])
+    v8 = np.clip(np.round(vi * 255), 0, 255).astype(np.uint8)
+    Image.fromarray(np.dstack([np.zeros_like(v8), np.zeros_like(v8), np.zeros_like(v8), v8]), 'RGBA').save(os.path.join(OUT, 'skirmish_vign.png'))
+    print('ok', OUT, 'skirmish_glow.png, skirmish_vign.png')
+
+
+def screens():
+    """O brilho do alto das outras telas (06/11: o multiplayer, as opções, o SCRIPT), pela mesma conta:
+    radial-gradient(at 50% 0%, rgba(216,173,78,.07), rgba(0,0,0,0) 60%), a elipse até o canto mais longe."""
+    gw, gh = 480, 270
+    al = radial(.5 * W, 0, .5 * W * math.sqrt(2), H * math.sqrt(2), gw, gh, [(0, .07), (.6, 0), (9, 0)])
+    al8 = np.clip(np.round(al * 255), 0, 255).astype(np.uint8)
+    Image.fromarray(np.dstack([np.full_like(al8, 216), np.full_like(al8, 173), np.full_like(al8, 78), al8]), 'RGBA').save(os.path.join(OUT, 'screens_glow.png'))
+    # o SCRIPT (a tela do desenvolvimento) tem o mesmo brilho em ciano de planta: rgba(120,190,220,.06)
+    al = radial(.5 * W, 0, .5 * W * math.sqrt(2), H * math.sqrt(2), gw, gh, [(0, .06), (.6, 0), (9, 0)])
+    al8 = np.clip(np.round(al * 255), 0, 255).astype(np.uint8)
+    Image.fromarray(np.dstack([np.full_like(al8, 120), np.full_like(al8, 190), np.full_like(al8, 220), al8]), 'RGBA').save(os.path.join(OUT, 'script_glow.png'))
+    print('ok', OUT, 'screens_glow.png, script_glow.png')
+
+
 if __name__ == '__main__':
-    main()
+    import sys
+    skirmish() if '--skirmish' in sys.argv else screens() if '--screens' in sys.argv else main()

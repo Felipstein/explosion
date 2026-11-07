@@ -405,9 +405,9 @@ const thumbs = new Map(), THUMB_MAX = 160;
 async function thumbOf(e) {
   if (thumbs.has(e.id)) { const t = thumbs.get(e.id); thumbs.delete(e.id); thumbs.set(e.id, t); return t; }
   const M = e.real ? await getMap(e) : Object.assign(genMap(e, 96), { terr: e.terr, cond: e.cond });
-  const flat = renderMinimap(M, 160), c = document.createElement('canvas'); c.width = c.height = 200; const g = c.getContext('2d'); g.translate(100, 100); g.rotate(Math.PI / 4); const s2 = 200 / Math.SQRT2; g.drawImage(flat, -s2 / 2, -s2 / 2, s2, s2);
+  const flat = renderMinimap(M, 160), c = document.createElement('canvas'); c.width = c.height = 200; const g = c.getContext('2d'); g.translate(100, 100); g.rotate(Math.PI * 1.25); const s2 = 200 / Math.SQRT2; g.drawImage(flat, -s2 / 2, -s2 / 2, s2, s2);
   const sr = M.starts.length > 8 ? 4.5 : 6.5; for (const [x, y] of M.starts) { const u = (x + 512) / 1024 * s2 - s2 / 2, v = (y + 512) / 1024 * s2 - s2 / 2;
-    g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(u + 1, v + 1, sr + 2.2, 0, 7); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(u, v, sr, 0, 7); g.fill(); g.strokeStyle = 'rgba(10,12,11,.9)'; g.lineWidth = 2; g.stroke(); }
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(u - 1, v - 1, sr + 2.2, 0, 7); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(u, v, sr, 0, 7); g.fill(); g.strokeStyle = 'rgba(10,12,11,.9)'; g.lineWidth = 2; g.stroke(); }
   thumbs.set(e.id, c); if (thumbs.size > THUMB_MAX) thumbs.delete(thumbs.keys().next().value); return c;
 }
 const tq = []; let tbusy = false;           // a fila das miniaturas: até ~8 ms por quadro; as que saíram da tela são puladas
@@ -422,12 +422,13 @@ async function pump() {
 
 // ---------- o losango: o mapa girado 45° como no minimapa do jogo ----------
 const DX = 1348, DY = 520, HALF = 420, SCL = HALF / (512 * Math.SQRT2);
-const toD = (x, y) => [DX + (x - y) * Math.SQRT1_2 * SCL, DY + (x + y) * Math.SQRT1_2 * SCL];
+// girado como a câmera da partida (yaw 45: a frente da tela é +X+Y) e o minimapa do HUD (06/11; antes ficava 180° ao contrário)
+const toD = (x, y) => [DX + (y - x) * Math.SQRT1_2 * SCL, DY - (x + y) * Math.SQRT1_2 * SCL];
 let CUR = null, big = null, entry = CAT[0];
 const DIA = HALF * 2 + 120, dia = document.createElement('canvas'); dia.width = dia.height = DIA;
 function bakeDiamond() {     // o losango pronto: a sombra, o mapa, a vinheta, a moldura e os pontos cardeais
   const g = dia.getContext('2d'), side = HALF * Math.SQRT2; g.clearRect(0, 0, DIA, DIA);
-  g.save(); g.translate(DIA / 2, DIA / 2); g.rotate(Math.PI / 4);
+  g.save(); g.translate(DIA / 2, DIA / 2); g.rotate(Math.PI * 1.25);
   g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 40; g.fillStyle = '#000'; g.fillRect(-side / 2, -side / 2, side, side); g.shadowBlur = 0;
   g.imageSmoothingQuality = 'high'; g.drawImage(big, -side / 2, -side / 2, side, side);
   const vg = g.createRadialGradient(0, 0, side * .3, 0, 0, side * .75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)'); g.fillStyle = vg; g.fillRect(-side / 2, -side / 2, side, side);

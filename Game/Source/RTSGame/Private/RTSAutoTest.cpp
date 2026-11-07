@@ -1,4 +1,5 @@
 #include "RTSAutoTest.h"
+#include "RTSShellGame.h"   // (06/11, Telas) os botões das telas da partida nativas
 #include "EngineUtils.h"
 #include "LookDirector.h"
 #include "LookRecipe.h"
@@ -175,11 +176,31 @@ void URTSAutoTest::QueueDrag(const FVector2D& From, const FVector2D& To)
 }
 
 void URTSAutoTest::QueueChord(const FVector2D& From, const FVector2D& To, bool bRightFirst, bool bRelease)
+	FVector2D Native;
+	if (RTSShellGame::MatchButtonCenter(Id, Native))
+	{
+		return Native;   // (06/11, Telas) o resultado e o Esc são as telas nativas: o botão de mesmo nome
+	}
+	if (P && P->IsMenu() && RTSShellGame::IsCovering())
+	{
+		PendingButton = Id;   // (06/11, Telas) o menu nativo cobre (o antigo do HUD saiu): o QueueClick chama a função do botão
+		return FVector2D(-7777.0, -7777.0);
+	}
 {
 	const FKey First = bRightFirst ? EKeys::RightMouseButton : EKeys::LeftMouseButton;
 	const FKey Second = bRightFirst ? EKeys::LeftMouseButton : EKeys::RightMouseButton;
 	Pending.Add({ FInputEvent::EType::Move, From, EKeys::Invalid });
 	Pending.Add({ FInputEvent::EType::Down, From, First });
+	if (Pixel.X == -7777.0 && Pixel.Y == -7777.0)
+	{
+		// (06/11, Telas) o botão do menu nativo: a função dele direto no controle (o ButtonCenter guardou qual), o que o clique fazia
+		if (ARTSPlayerController* P = PC())
+		{
+			UE_LOG(LogTemp, Display, TEXT("RTS TEST %s pela função do botão (o menu nativo)"), *PendingButton.ToString());
+			P->OnButton(PendingButton);
+		}
+		return;
+	}
 	Pending.Add({ FInputEvent::EType::Down, From, Second });
 	for (int32 K = 1; K <= 8; ++K)
 	{

@@ -206,7 +206,7 @@ async function thumb(m, size) {      // a miniatura do mapa, em losango (o mesmo
   const M = m.real ? await getMap(m) : Object.assign(genMap(m, size > 100 ? 256 : 64), { terr: m.terr, cond: m.cond });
   const flat = renderMinimap(M, size > 100 ? 420 : 72),   // a prévia tem 231 px de lado: 420 já é o dobro (720 travava a entrada meio segundo)
   c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d');
-  g.translate(size / 2, size / 2); g.rotate(Math.PI / 4); const s2 = size / Math.SQRT2 * (size > 100 ? .86 : 1); g.drawImage(flat, -s2 / 2, -s2 / 2, s2, s2);
+  g.translate(size / 2, size / 2); g.rotate(Math.PI * 1.25); const s2 = size / Math.SQRT2 * (size > 100 ? .86 : 1); g.drawImage(flat, -s2 / 2, -s2 / 2, s2, s2);
   if (size > 100) { g.strokeStyle = 'rgba(230,220,190,.35)'; g.lineWidth = 1.5; g.strokeRect(-s2 / 2, -s2 / 2, s2, s2); }
   return thumbC[key] = { c, M };
 }
@@ -255,7 +255,7 @@ async function renderDet(r) {
   if (!thumbC[m.id + ':380']) await new Promise(res => requestAnimationFrame(() => setTimeout(res, 0)));   // a tela aparece (e a música volta) antes da prévia grande
   const t = await thumb(m, 380), g = det.querySelector('canvas').getContext('2d'); g.drawImage(t.c, 0, 0);
   // as bases ocupadas na prévia: a ficha de cada um no lugar dele
-  const S = 380, s2 = S / Math.SQRT2 * .86, sc = s2 / 1024, toP = (x, y) => { const u = (x) * sc, v = (y) * sc; return [S / 2 + (u - v) * Math.SQRT1_2, S / 2 + (u + v) * Math.SQRT1_2]; };
+  const S = 380, s2 = S / Math.SQRT2 * .86, sc = s2 / 1024, toP = (x, y) => { const u = (x) * sc, v = (y) * sc; return [S / 2 + (v - u) * Math.SQRT1_2, S / 2 - (u + v) * Math.SQRT1_2]; };
   t.M.starts.slice(0, r.max).forEach(([x, y], k) => { const [a, b] = toP(x, y), p = r.pl[k];
     if (!p) { g.setLineDash([3, 3]); g.strokeStyle = 'rgba(238,241,244,.7)'; g.lineWidth = 1.4; g.beginPath(); g.arc(a, b, 11, 0, 7); g.stroke(); g.setLineDash([]); return; }
     g.fillStyle = COLORS[p.c][1]; g.beginPath(); g.arc(a, b, 13, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();

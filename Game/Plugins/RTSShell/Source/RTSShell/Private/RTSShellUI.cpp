@@ -69,6 +69,13 @@ namespace RTSShellUI
 		FShapedGlyphSequenceRef Shape(const FString& S, const FSlateFontInfo& F, float Scale)
 		{
 			const TSharedRef<FSlateFontCache> Cache = FSlateApplication::Get().GetRenderer()->GetFontCache();
+			if (!IsInGameThread())
+			{
+				// (06/11) a tela de carregar no MoviePlayer pinta noutra thread, e o HarfBuzz da Unreal só cria a fonte na thread do jogo
+				// (FontCacheHarfBuzz.cpp, check(IsInGameThread()) no CreateFont: a 1ª partida caiu no teste da rede). Lá vai o caminho do
+				// STextBlock no latim (o kerning do FreeType, sem HarfBuzz) e sem a lista guardada (ela é da thread do jogo)
+				return Cache->ShapeUnidirectionalText(S, F, Scale, TextBiDi::ETextDirection::LeftToRight, ETextShapingMethod::KerningOnly);
+			}
 			static bool bHooked = false;
 			if (!bHooked)
 			{
@@ -85,7 +92,8 @@ namespace RTSShellUI
 			{
 				GShaped.Reset();
 			}
-			const FShapedGlyphSequenceRef R = Cache->ShapeUnidirectionalText(S, F, Scale, TextBiDi::ETextDirection::LeftToRight, ETextShapingMethod::Auto);
+			// (06/11) o HarfBuzz sempre (o kerning do GPOS das fontes do mockup; ver o Unspaced)
+			const FShapedGlyphSequenceRef R = Cache->ShapeUnidirectionalText(S, F, Scale, TextBiDi::ETextDirection::LeftToRight, ETextShapingMethod::FullShaping);
 			GShaped.Add(Key, R);
 			return R;
 		}
@@ -95,7 +103,14 @@ namespace RTSShellUI
 	{
 		/** O espaçamento do CSS em pixels do palco (o Font guardou em milésimos do tamanho em pontos) e a fonte sem ele. */
 		float SpacingOf(const FSlateFontInfo& F) { return F.LetterSpacing * F.Size / 1000.0f; }
-		FSlateFontInfo Unspaced(const FSlateFontInfo& F) { FSlateFontInfo R = F; R.LetterSpacing = 0; return R; }
+		// (06/11) 1 milésimo e não 0: a Slate só liga o kerning do HarfBuzz quando a fonte tem a tabela kern antiga ou quando há
+		// espaçamento (SlateTextShaper.cpp, bHasKerning); as fontes do mockup têm o kerning no GPOS. 1/1000 do tamanho vira 0 px no
+		// arredondamento da Slate, então só liga o kerning ("BATTLE" com o A e o T encostados, como no Chrome)
+		FSlateFontInfo Unspaced(const FSlateFontInfo& F) { FSlateFontInfo R = F; R.LetterSpacing = 1; return R; }
+		/** (06/11) O avanço de cada letra em quartos de pixel: o texto é medido moldado em 4× a escala da tela, como o navegador que
+		 *  põe as letras em posição fracionária. A Slate arredonda o avanço de cada letra pro pixel inteiro, e um parágrafo de 500 px
+		 *  saía ~1% mais estreito que no Chrome (as quebras de linha do SCRIPT e das opções mudavam de lugar). */
+		constexpr float FINE = 4.0f;
 	}
 
 	float TextWidth(const FString& S, const FSlateFontInfo& F, float Scale)
@@ -104,7 +119,7 @@ namespace RTSShellUI
 		{
 			return 0.0f;
 		}
-		return float(Shape(S, Unspaced(F), Scale)->GetMeasuredWidth()) / Scale + SpacingOf(F) * S.Len();
+		return float(Shape(S, Unspaced(F), Scale * FINE)->GetMeasuredWidth()) / (Scale * FINE) + SpacingOf(F) * S.Len();
 	}
 
 	float Text(FSlateWindowElementList& Out, int32 Layer, const FGeometry& Stage, const FString& S, const FSlateFontInfo& F,
@@ -119,19 +134,15 @@ namespace RTSShellUI
 		const FSlateFontInfo F0 = Unspaced(F);
 		const float Sp = SpacingOf(F);
 		const FShapedGlyphSequenceRef Sh = Shape(S, F0, Scale);
-		const float W = float(Sh->GetMeasuredWidth()) / Scale + Sp * S.Len();
+		const FShapedGlyphSequenceRef Fine = Shape(S, F0, Scale * FINE);   // os avanços fracionários (o FINE)
+		const float W = float(Fine->GetMeasuredWidth()) / (Scale * FINE) + Sp * S.Len();
 		const float MaxH = float(Sh->GetMaxTextHeight()) / Scale;
 		const float Base = float(Sh->GetTextBaseline()) / Scale;   // negativo: a distância do fim da célula até a base
 		const float Top = BaseY - (MaxH + Base);
 		const float Left = Align == 1 ? X - W * 0.5f : (Align == 2 ? X - W : X);
-		if (Sp == 0.0f)
-		{
-			FSlateDrawElement::MakeShapedText(Out, Layer, Stage.ToPaintGeometry(FVector2f(W + 4.0f, MaxH), FSlateLayoutTransform(FVector2f(Left, Top))), Sh,
-				ESlateDrawEffect::None, Color, FLinearColor::Transparent);
-			return W;
-		}
+		// cada letra desenhada na escala da tela (nítida), na posição fracionária do texto moldado em 4×
 		float Pen = Left;
-		for (const FShapedGlyphEntry& G : Sh->GetGlyphsToRender())
+		for (const FShapedGlyphEntry& G : Fine->GetGlyphsToRender())
 		{
 			const int32 N = FMath::Max<int32>(1, G.NumCharactersInGlyph);
 			if (G.bIsVisible)
@@ -140,7 +151,7 @@ namespace RTSShellUI
 				FSlateDrawElement::MakeShapedText(Out, Layer, Stage.ToPaintGeometry(FVector2f(float(One->GetMeasuredWidth()) / Scale + 4.0f, MaxH),
 					FSlateLayoutTransform(FVector2f(Pen, Top))), One, ESlateDrawEffect::None, Color, FLinearColor::Transparent);
 			}
-			Pen += float(G.XAdvance) / Scale + Sp * N;
+			Pen += float(G.XAdvance) / (Scale * FINE) + Sp * N;
 		}
 		return W;
 	}
@@ -243,4 +254,113 @@ namespace RTSShellUI
 		}
 		return P;
 	}
+
+	FLinearColor Hex(uint32 H, float A) { return Css((H >> 16) & 255, (H >> 8) & 255, H & 255, A); }
+	FColor HexV(uint32 H, float A, bool bPremul) { return CssV((H >> 16) & 255, (H >> 8) & 255, H & 255, A, bPremul); }
+	FLinearColor Ac(float A) { return Css(216, 173, 78, A); }
+	FColor AcV(float A) { return CssV(216, 173, 78, A); }
+	bool In(const FVector4f& R, FVector2f P) { return P.X >= R.X && P.X <= R.X + R.Z && P.Y >= R.Y && P.Y <= R.Y + R.W; }
+
+	void BoxRect(FMesh& M, const FVector4f& R, FColor Fill, FColor Border)
+	{
+		if (Fill.A) M.Rect(R.X, R.Y, R.Z, R.W, Fill);
+		if (Border.A)
+		{
+			M.Rect(R.X, R.Y, R.Z, 1, Border); M.Rect(R.X, R.Y + R.W - 1, R.Z, 1, Border);
+			M.Rect(R.X, R.Y + 1, 1, R.W - 2, Border); M.Rect(R.X + R.Z - 1, R.Y + 1, 1, R.W - 2, Border);
+		}
+	}
+
+	/** A função erro (Abramowitz e Stegun 7.1.26, erro abaixo de 1,5e-7). */
+	static float ErfA(float X)
+	{
+		const float Sg = X < 0.0f ? -1.0f : 1.0f, A = FMath::Abs(X), T = 1.0f / (1.0f + 0.3275911f * A);
+		const float P = ((((1.061405429f * T - 1.453152027f) * T + 1.421413741f) * T - 0.284496736f) * T + 0.254829592f) * T;
+		return Sg * (1.0f - P * FMath::Exp(-A * A));
+	}
+
+	void GlowRect(FMesh& M, const FVector4f& R, uint32 HexC, float Alpha, float Blur)
+	{
+		const float Sig = FMath::Max(0.5f, Blur * 0.5f), K = 1.0f / (Sig * 1.41421356f);
+		const auto Axis = [&](float A, float B, TArray<float>& Xs, TArray<float>& Ps)
+		{
+			for (int32 I = 0; I <= 12; ++I) { Xs.Add(A - 3.0f * Sig + 0.5f * Sig * I); Xs.Add(B - 3.0f * Sig + 0.5f * Sig * I); }
+			Xs.Sort();
+			TArray<float> U;
+			for (const float X : Xs) if (!U.Num() || X - U.Last() > 0.25f) U.Add(X);
+			Xs = U;
+			for (const float X : Xs) Ps.Add(0.5f * (ErfA((X - A) * K) - ErfA((X - B) * K)));
+		};
+		TArray<float> Xs, Px, Ys, Py;
+		Axis(R.X, R.X + R.Z, Xs, Px);
+		Axis(R.Y, R.Y + R.W, Ys, Py);
+		const int32 Base = M.Verts.Num(), Nx = Xs.Num();
+		for (int32 J = 0; J < Ys.Num(); ++J)
+			for (int32 I = 0; I < Nx; ++I)
+				M.Vert(FVector2f(Xs[I], Ys[J]), FVector2f(0, 0), HexV(HexC, Alpha * Px[I] * Py[J]));
+		for (int32 J = 0; J + 1 < Ys.Num(); ++J)
+			for (int32 I = 0; I + 1 < Nx; ++I)
+			{
+				const int32 A = Base + J * Nx + I;
+				M.Tri(A, A + 1, A + Nx + 1); M.Tri(A, A + Nx + 1, A + Nx);
+			}
+	}
+
+	void Disc(FMesh& M, FVector2f C, float R, FColor Col, int32 Seg) { M.Poly(Arc(C, R, 0.0f, 2.0f * PI, Seg), Col); }
+
+	void Chev(FSlateWindowElementList& Out, int32 L, const FGeometry& S, FVector2f C, const FLinearColor& Col, float Half)
+	{
+		Lines(Out, L, S, { FVector2f(C.X - Half, C.Y - Half * 0.5f), FVector2f(C.X, C.Y + Half * 0.5f), FVector2f(C.X + Half, C.Y - Half * 0.5f) }, Col, 1.5f);
+	}
+
+	FGeometry StageFit(const FGeometry& G)
+	{
+		const FVector2f Local = FVector2f(G.GetLocalSize());
+		const float S = FMath::Min(Local.X / StageW, Local.Y / StageH);
+		const FVector2f Offset = (Local - FVector2f(StageW, StageH) * S) * 0.5f;
+		return G.MakeChild(FVector2f(StageW, StageH), FSlateLayoutTransform(S, Offset));
+	}
+
+	void Backdrop(FSlateWindowElementList& Out, int32& L, const FGeometry& Allotted, const FGeometry& S, const TCHAR* GlowImage)
+	{
+		FSlateDrawElement::MakeBox(Out, L++, Allotted.ToPaintGeometry(), White(), ESlateDrawEffect::None, Css(10, 13, 11));
+		const FPaintGeometry Full = S.ToPaintGeometry(FVector2f(StageW, StageH), FSlateLayoutTransform());
+		FSlateDrawElement::MakeBox(Out, L++, Full, Image(GlowImage, FVector2f(480, 270)), ESlateDrawEffect::None, FLinearColor::White);
+		FMesh Grid(S);
+		const FColor C = CssV(255, 255, 255, 0.02f);
+		for (float X = 0.0f; X < StageW; X += 48.0f) Grid.Rect(X, 0.0f, 1.0f, StageH, C);
+		for (float Y = 0.0f; Y < StageH; Y += 48.0f) Grid.Rect(0.0f, Y, StageW, 1.0f, C);
+		Grid.Draw(Out, L++, White());
+	}
+
+	FVector4f BackRect() { return FVector4f(110, 30, 156.55f, 44); }
+
+	void BackButton(FSlateWindowElementList& Out, int32& L, const FGeometry& S, float Hover)
+	{
+		// o .backbtn: o fundo, a borda que vai pro âmbar no hover (.15 s), a seta, o BACK e a tecla ESC
+		const FLinearColor Bc = FMath::Lerp(Css(238, 241, 244, 0.9f), Ac(), Hover);
+		{
+			FMesh M(S);
+			const FLinearColor B0 = Css(230, 220, 190, 0.32f), B1 = Ac(0.8f);
+			BoxRect(M, BackRect(), CssV(16, 21, 19, 0.85f), FMath::Lerp(B0, B1, Hover).ToFColorSRGB());
+			M.Draw(Out, L++, White());
+		}
+		Lines(Out, L, S, { FVector2f(134.75f, 45.58f), FVector2f(128.33f, 52.0f), FVector2f(134.75f, 58.42f) }, Bc, 2.2f);
+		Text(Out, L, S, TEXT("BACK"), Font(EFace::Shoulders800, 19, 3), 155, 59.5f, Bc);
+		const FLinearColor Kc(Bc.R, Bc.G, Bc.B, Bc.A * 0.7f);
+		Lines(Out, L, S, { FVector2f(213.23f, 42.5f), FVector2f(249.04f, 42.5f), FVector2f(249.04f, 61.5f), FVector2f(213.23f, 61.5f), FVector2f(213.23f, 42.5f) }, Kc, 1.0f);
+		Text(Out, L, S, TEXT("ESC"), Font(EFace::Mono600, 11, 1), 219.73f, 56, Kc);
+		++L;
+	}
+
+	void StageCorners(FMesh& M)
+	{
+		const FColor Cc = CssV(216, 173, 78, 0.45f);
+		M.Rect(40, 40, 24, 2, Cc); M.Rect(40, 40, 2, 24, Cc);
+		M.Rect(1856, 40, 24, 2, Cc); M.Rect(1878, 40, 2, 24, Cc);
+		M.Rect(40, 1038, 24, 2, Cc); M.Rect(40, 1016, 2, 24, Cc);
+		M.Rect(1856, 1038, 24, 2, Cc); M.Rect(1878, 1016, 2, 24, Cc);
+	}
 }
+
+

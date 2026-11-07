@@ -22,4 +22,8 @@ namespace RTSShellAudio
 	 *  getByteTimeDomainData de 8 em 8). Falso quando a música não toca: o radar fica só com os emissores do teatro. */
 	bool Analyse(TArray<uint8>& OutBytes, float& OutLevel);
 	void Shutdown();
+	/** Os volumes do jogador (06/11, o SOUND das opções: master, music, sfx, voice, ui, amb, de 0 a 100) no mix SM_UserVolumes. Values
+	 *  = os da tela agora (a prévia enquanto arrasta); nulo = os guardados no GameUserSettings [RTS] (Vol_<item>). No padrão de cada
+	 *  item o volume é o aprovado de hoje (a música 0,55, o clique 0,6, o resto 1); o MASTER multiplica tudo (o padrão 80 = 1). */
+	void ApplyUserVolumes(const TMap<FString, int32>* Values = nullptr);
 }

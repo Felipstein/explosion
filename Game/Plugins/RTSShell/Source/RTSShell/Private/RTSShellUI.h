@@ -90,4 +90,36 @@ namespace RTSShellUI
 	void Dashed(FSlateWindowElementList& Out, int32 Layer, const FGeometry& Stage, const TArray<FVector2f>& Points, const FLinearColor& Color, float Width, float Dash);
 	/** Um círculo (ou um arco) como linha. */
 	TArray<FVector2f> Arc(FVector2f C, float R, float A0 = 0.0f, float A1 = 2.0f * PI, int32 Segments = 0);
+
+	// (06/11) as peças comuns das telas nativas (vieram da sala do skirmish; o multiplayer, as opções e o SCRIPT usam as mesmas)
+	/** A cor 0xRRGGBB como a Slate quer (Hex) e pros vértices (HexV). */
+	FLinearColor Hex(uint32 H, float A = 1.0f);
+	FColor HexV(uint32 H, float A = 1.0f, bool bPremul = false);
+	/** O âmbar do mockup (rgb(216,173,78)). */
+	FLinearColor Ac(float A = 1.0f);
+	FColor AcV(float A = 1.0f);
+	/** O ponto dentro do retângulo (x, y, largura, altura). */
+	bool In(const FVector4f& R, FVector2f P);
+	/** Um retângulo com fundo e borda de 1 px (as caixas do CSS); cor de alfa 0 = sem. */
+	void BoxRect(FMesh& M, const FVector4f& R, FColor Fill, FColor Border);
+	/** O box-shadow do CSS (0 0 Bpx cor; pra sombra, o retângulo já deslocado): o retângulo borrado por uma gaussiana de sigma B/2,
+	 *  como o navegador faz. A gaussiana de um retângulo é separável (o perfil em x vezes o perfil em y), então a grade leva o alfa
+	 *  exato em cada vértice, de meio sigma em meio sigma perto das bordas, e a placa interpola no meio. Sem degrau nenhum. */
+	void GlowRect(FMesh& M, const FVector4f& R, uint32 HexC, float Alpha, float Blur);
+	/** Um disco cheio. */
+	void Disc(FMesh& M, FVector2f C, float R, FColor Col, int32 Seg = 32);
+	/** A setinha das células (o quadrado com duas bordas girado 45°). */
+	void Chev(FSlateWindowElementList& Out, int32 L, const FGeometry& S, FVector2f C, const FLinearColor& Col, float Half = 4.24f);
+	/** O palco de 1920 × 1080 dentro do widget (a escala que cabe, centrado), e o ponto do mouse no palco. */
+	FGeometry StageFit(const FGeometry& Allotted);
+	/** O fundo das telas (#stage): a cor, o brilho do alto (uma imagem 480 × 270 de Resources/Menu) e a grade de 48 px. */
+	void Backdrop(FSlateWindowElementList& Out, int32& L, const FGeometry& Allotted, const FGeometry& S, const TCHAR* GlowImage);
+	/** O BACK do canto (110, 30, com o ESC), no hover 0–1 (a cor vai pro âmbar). */
+	void BackButton(FSlateWindowElementList& Out, int32& L, const FGeometry& S, float Hover);
+	/** O retângulo do BACK, pra acertar o mouse. */
+	FVector4f BackRect();
+	/** As quatro cantoneiras do palco (24 px, 2 de espessura, âmbar a 45%). */
+	void StageCorners(FMesh& M);
 }
+
+

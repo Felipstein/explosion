@@ -37,8 +37,22 @@ namespace
 		Beacon = 1, Hello, Welcome, Reject, Lobby, SetupChunk, SetupAck, Ready, Go, Input, Ticks, Ping, Pong, Bye, Color, Team,
 		Control,     // cliente → anfitrião: pausa, volta, voto (13/10)
 		PauseState,  // anfitrião → todos: o estado da pausa e da espera
-		Chat         // (17/10) o chat: cliente → anfitrião → quem deve ver (fora da simulação)
+		Chat,        // (17/10) o chat: cliente → anfitrião → quem deve ver (fora da simulação)
+		SlotSet      // (06/11) cliente → anfitrião: um campo da vaga dele (o time, a facção, a base, a cor), o valor exato
 	};
+	enum : uint8 { FieldTeam = 0, FieldFaction = 1, FieldBase = 2, FieldColor = 3, FieldReady = 4 };
+	const TCHAR* const FactionKeys[] = { TEXT("random"), TEXT("usa"), TEXT("russia"), TEXT("china"), TEXT("gla") };
+	bool IsFactionKey(const FString& K)
+	{
+		for (const TCHAR* F : FactionKeys)
+		{
+			if (K == F)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// (17/10) o chat: até 120 letras (a caixa corta), que em UTF-8 cabem em 360 bytes
 	constexpr int32 ChatMaxBytes = 360;
@@ -180,8 +194,9 @@ uint64 URTSNetSession::VersionHash() const
 		FString Err;
 		const uint64 Rules = Data.Load(Err) ? Data.Rules.Hash() : 0;
 		// (0002, 11/10: a sala ganhou time, IA e a névoa de 3 tipos; 0003, 13/10: a pausa e a queda; 0004, 22/10: o dinheiro
-		// inicial no pacote da sala; o jogo velho não entra)
-		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0004ull;
+		// inicial no pacote da sala; 0005, 06/11: a sala nova, cada vaga com facção, base, cor e nível, as fechadas, o mapa e o
+		// ping no pacote da sala, e o SlotSet; o jogo velho não entra)
+		CachedVersion = (Rules * 0x9E3779B97F4A7C15ull) ^ uint64(Sim::SimVersion) ^ 0x5254534C414E0005ull;
 	}
 	return CachedVersion;
 }
@@ -259,6 +274,10 @@ bool URTSNetSession::Host(FString& OutError)
 	MySlot = 0;
 	MyColor = 0;
 	MyTeam = 0;
+	MyFaction = TEXT("random");
+	MyBase = -1;
+	MyRgb = 0;
+	ClosedMask = 0;
 	Ais.Reset();
 	if (const URTSSessionSubsystem* S = GetGameInstance()->GetSubsystem<URTSSessionSubsystem>())
 	{
@@ -266,10 +285,11 @@ bool URTSNetSession::Host(FString& OutError)
 		StartingMoney = S->StartingMoney;
 	}
 	{
-		// a sala não passa das largadas do mapa (4 no de hoje)
+		// a sala não passa das largadas do mapa
+		MapName = URTSSessionSubsystem::SkirmishMapName();
 		FRTSGameData Data;
 		FString Err;
-		const FRTSMapInfo* Info = Data.Load(Err) ? Data.FindMap(URTSSessionSubsystem::SkirmishMapName()) : nullptr;
+		const FRTSMapInfo* Info = Data.Load(Err) ? Data.FindMap(MapName) : nullptr;
 		MapSlots = Info ? FMath::Clamp(Info->StartsM.Num(), 2, int32(MaxPlayers)) : int32(MaxPlayers);
 	}
 	HostName = PlayerName();
@@ -399,13 +419,370 @@ void URTSNetSession::SetStartingMoney(int32 Money)
 
 uint8 URTSNetSession::FirstFreeSlot() const
 {
+	// (06/11) a primeira vaga aberta da sala: nem ocupada, nem fechada; MapSlots = a sala está cheia
 	uint8 Slot = 1;
-	while (Peers.ContainsByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; })
-		|| Ais.ContainsByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; }))
+	while (Slot < MapSlots && ((ClosedMask & (1u << Slot)) != 0 || Peers.ContainsByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; })
+		|| Ais.ContainsByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; })))
 	{
 		++Slot;
 	}
 	return Slot;
+}
+
+int32* URTSNetSession::BaseRef(uint8 Slot)
+{
+	if (Slot == 0)
+	{
+		return &MyBase;
+	}
+	if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+	{
+		return &P->Base;
+	}
+	if (FAiSlot* A = Ais.FindByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; }))
+	{
+		return &A->Base;
+	}
+	return nullptr;
+}
+
+uint32* URTSNetSession::RgbRef(uint8 Slot)
+{
+	if (Slot == 0)
+	{
+		return &MyRgb;
+	}
+	if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+	{
+		return &P->Rgb;
+	}
+	if (FAiSlot* A = Ais.FindByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; }))
+	{
+		return &A->Rgb;
+	}
+	return nullptr;
+}
+
+void URTSNetSession::HostSetField(uint8 Slot, uint8 Field, int32 Value, const FString& Text)
+{
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby)
+	{
+		return;
+	}
+	switch (Field)
+	{
+	case FieldTeam:
+	{
+		const uint8 T = uint8(FMath::Clamp(Value, 0, 8));   // os times 1–8 da sala
+		if (Slot == 0)
+		{
+			MyTeam = T;
+		}
+		else if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+		{
+			P->Team = T;
+		}
+		else if (FAiSlot* A = Ais.FindByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; }))
+		{
+			A->Team = T;
+		}
+		break;
+	}
+	case FieldFaction:
+		if (!IsFactionKey(Text))
+		{
+			return;
+		}
+		if (Slot == 0)
+		{
+			MyFaction = Text;
+		}
+		else if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+		{
+			P->Faction = Text;
+		}
+		else if (FAiSlot* A = Ais.FindByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; }))
+		{
+			A->Faction = Text;
+		}
+		break;
+	case FieldBase:
+	{
+		int32* Mine = BaseRef(Slot);
+		if (!Mine || Value >= MapSlots)
+		{
+			return;
+		}
+		const int32 B = Value < 0 ? -1 : Value;
+		if (B >= 0)
+		{
+			// quem já está nessa base fica com a base antiga de quem chegou (a troca da sala do skirmish)
+			for (const FRTSNetMember& M : Lobby)
+			{
+				int32* Other = M.Slot != Slot ? BaseRef(M.Slot) : nullptr;
+				if (Other && *Other == B)
+				{
+					*Other = *Mine;
+				}
+			}
+		}
+		*Mine = B;
+		break;
+	}
+	case FieldReady:
+		if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+		{
+			P->bLobbyReady = Value != 0;
+		}
+		break;
+	case FieldColor:
+	{
+		uint32* Mine = RgbRef(Slot);
+		const uint32 Rgb = uint32(Value) & 0xFFFFFFu;
+		if (!Mine)
+		{
+			return;
+		}
+		if (Rgb != 0)
+		{
+			for (const FRTSNetMember& M : Lobby)
+			{
+				if (M.Slot != Slot && M.Rgb == Rgb)
+				{
+					return;   // a cor é de outro
+				}
+			}
+		}
+		*Mine = Rgb;
+		break;
+	}
+	default:
+		return;
+	}
+	RebuildLobby();
+	SendLobby();
+}
+
+void URTSNetSession::ClientSetField(uint8 Field, int32 Value, const FString& Text)
+{
+	Sim::ByteWriter W = Begin(EMsg::SlotSet);
+	W.U8(Field);
+	W.U32(uint32(Value));
+	WriteString(W, Text);
+	const TArray<uint8> Packet = ToArray(W);
+	for (int32 K = 0; K < 2; ++K)
+	{
+		SendHost(Packet);   // o valor é absoluto: repetir não muda nada, e o UDP perde pacote
+	}
+}
+
+void URTSNetSession::SetLobbyReady(bool bReady)
+{
+	if (Role == ERTSNetRole::Client && Phase == ERTSNetPhase::Lobby)
+	{
+		ClientSetField(FieldReady, bReady ? 1 : 0, FString());
+	}
+}
+
+void URTSNetSession::SetCountdown(int32 Seconds)
+{
+	const uint8 C = uint8(FMath::Clamp(Seconds, 0, 9));
+	if (Role == ERTSNetRole::Host && Phase == ERTSNetPhase::Lobby && C != Countdown)
+	{
+		Countdown = C;
+		SendLobby();
+	}
+}
+
+void URTSNetSession::SetTeamOf(uint8 Slot, uint8 Team)
+{
+	if (Role == ERTSNetRole::Host)
+	{
+		HostSetField(Slot, FieldTeam, Team, FString());
+	}
+	else if (Role == ERTSNetRole::Client && Slot == MySlot && Phase == ERTSNetPhase::Lobby)
+	{
+		ClientSetField(FieldTeam, Team, FString());
+	}
+}
+
+void URTSNetSession::SetFactionOf(uint8 Slot, const FString& Faction)
+{
+	if (Role == ERTSNetRole::Host)
+	{
+		HostSetField(Slot, FieldFaction, 0, Faction);
+	}
+	else if (Role == ERTSNetRole::Client && Slot == MySlot && Phase == ERTSNetPhase::Lobby)
+	{
+		ClientSetField(FieldFaction, 0, Faction);
+	}
+}
+
+void URTSNetSession::SetBaseOf(uint8 Slot, int32 Base)
+{
+	if (Role == ERTSNetRole::Host)
+	{
+		HostSetField(Slot, FieldBase, Base, FString());
+	}
+	else if (Role == ERTSNetRole::Client && Slot == MySlot && Phase == ERTSNetPhase::Lobby)
+	{
+		ClientSetField(FieldBase, Base, FString());
+	}
+}
+
+void URTSNetSession::SetColorOf(uint8 Slot, uint32 Rgb)
+{
+	if (Role == ERTSNetRole::Host)
+	{
+		HostSetField(Slot, FieldColor, int32(Rgb), FString());
+	}
+	else if (Role == ERTSNetRole::Client && Slot == MySlot && Phase == ERTSNetPhase::Lobby)
+	{
+		ClientSetField(FieldColor, int32(Rgb), FString());
+	}
+}
+
+void URTSNetSession::SetSlotState(uint8 Slot, int32 State, uint8 Difficulty)
+{
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Slot == 0 || Slot >= MapSlots
+		|| Peers.ContainsByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+	{
+		return;   // a vaga de quem entrou só muda pelo expulsar
+	}
+	FAiSlot* A = Ais.FindByPredicate([Slot](const FAiSlot& X) { return X.Slot == Slot; });
+	if (State == 2)
+	{
+		ClosedMask &= uint8(~(1u << Slot));
+		if (!A)
+		{
+			FAiSlot New;
+			New.Slot = Slot;
+			New.Color = FirstFreeColor(Slot, Slot);
+			A = &Ais.Add_GetRef(New);
+			UE_LOG(LogTemp, Log, TEXT("RTS LAN: IA na vaga %d"), Slot);
+		}
+		A->Difficulty = uint8(FMath::Clamp(int32(Difficulty), 0, 2));
+	}
+	else
+	{
+		Ais.RemoveAll([Slot](const FAiSlot& X) { return X.Slot == Slot; });
+		if (State == 1)
+		{
+			ClosedMask |= uint8(1u << Slot);
+		}
+		else
+		{
+			ClosedMask &= uint8(~(1u << Slot));
+		}
+	}
+	RebuildLobby();
+	SendLobby();
+}
+
+void URTSNetSession::Kick(uint8 Slot)
+{
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Slot == 0)
+	{
+		return;
+	}
+	if (FPeer* P = Peers.FindByPredicate([Slot](const FPeer& X) { return X.Slot == Slot; }))
+	{
+		Sim::ByteWriter W = Begin(EMsg::Reject);
+		WriteString(W, TEXT("Removed by the host"));
+		const TArray<uint8> Packet = ToArray(W);
+		for (int32 K = 0; K < 3; ++K)
+		{
+			SendTo(*P->Addr, Packet);
+		}
+		UE_LOG(LogTemp, Log, TEXT("RTS LAN: %s saiu da sala (o anfitrião tirou)"), *P->Name);
+		const FString Key = P->Key;
+		Peers.RemoveAll([&Key](const FPeer& X) { return X.Key == Key; });
+		RebuildLobby();
+		SendLobby();
+		return;
+	}
+	RemoveAI(Slot);
+}
+
+bool URTSNetSession::SetMap(const FString& Name)
+{
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Name.IsEmpty())
+	{
+		return false;
+	}
+	FRTSGameData Data;
+	FString Err;
+	const FRTSMapInfo* Info = Data.Load(Err) ? Data.FindMap(Name) : nullptr;
+	if (!Info)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS LAN: o mapa %s não existe"), *Name);
+		return false;
+	}
+	const int32 Slots = FMath::Clamp(Info->StartsM.Num(), 2, int32(MaxPlayers));
+	if (Lobby.Num() > Slots)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("RTS LAN: o mapa %s tem %d bases e a sala tem %d"), *Name, Slots, Lobby.Num());
+		return false;
+	}
+	MapName = Name;
+	MapSlots = Slots;
+	RTSShellGame::SetMapOverride(Name);   // a partida abre este mapa (aqui; nos clientes, pelo pacote da sala)
+	ClosedMask &= uint8((1u << Slots) - 1u);
+	if (Lobby.Num() > Slots - FMath::CountBits(ClosedMask))
+	{
+		ClosedMask = 0;   // não cabem todos com as fechadas: abrem
+	}
+	// quem ficou além das vagas do mapa novo desce pra uma livre; as bases voltam pra sorteadas (são do mapa antigo)
+	MyBase = -1;
+	for (FPeer& P : Peers)
+	{
+		P.Base = -1;
+	}
+	for (FAiSlot& A : Ais)
+	{
+		A.Base = -1;
+	}
+	for (FPeer& P : Peers)
+	{
+		if (P.Slot >= Slots)
+		{
+			P.Slot = MaxPlayers;   // fora, até achar a livre
+			P.Slot = FirstFreeSlot();
+		}
+	}
+	for (FAiSlot& A : Ais)
+	{
+		if (A.Slot >= Slots)
+		{
+			A.Slot = MaxPlayers;
+			A.Slot = FirstFreeSlot();
+		}
+	}
+	RebuildLobby();
+	SendLobby();
+	UE_LOG(LogTemp, Log, TEXT("RTS LAN: o mapa da sala agora é %s (%d bases)"), *Name, Slots);
+	return true;
+}
+
+const TArray<FRTSLocalSlot>* URTSNetSession::MatchSlots() const
+{
+	// (06/11) a partida em rede monta as vagas como o skirmish local (RTSShellGame::LocalSlots): na ordem das vagas da partida
+	// (contínuas depois do StartMatch), em todos os PCs iguais (a cor sai daqui no cliente; o resto, da montagem do anfitrião)
+	MatchSlotList.Reset();
+	for (const FRTSNetMember& M : Lobby)
+	{
+		FRTSLocalSlot S;
+		S.bAI = M.bAI;
+		S.Team = M.Team;
+		S.Start = M.Base;
+		S.Faction = M.Faction;
+		S.bHasColor = M.Rgb != 0;
+		// como a paleta do jogo e o skirmish local (RTSShellGame ParseColor): os números da tela direto, sem a curva do sRGB
+		S.Color = FLinearColor(((M.Rgb >> 16) & 255) / 255.0f, ((M.Rgb >> 8) & 255) / 255.0f, (M.Rgb & 255) / 255.0f);
+		S.Difficulty = M.Difficulty;
+		MatchSlotList.Add(S);
+	}
+	return Lobby.Num() ? &MatchSlotList : nullptr;
 }
 
 bool URTSNetSession::IsAISlot(uint8 Slot) const
@@ -439,6 +816,7 @@ void URTSNetSession::AddChat(uint8 Slot, const FString& Text, bool bTeam)
 	L.Text = Text;
 	L.bTeam = bTeam;
 	L.Time = FPlatformTime::Seconds();
+	++ChatTotal;
 	if (Chat.Num() > ChatKeep)
 	{
 		Chat.RemoveAt(0, Chat.Num() - ChatKeep);
@@ -476,7 +854,7 @@ void URTSNetSession::SendChat(const FString& InText, bool bTeam)
 	}
 	const uint8 From = Role == ERTSNetRole::None ? uint8(0) : MySlot;
 	const uint16 Id = NextChatId++;
-	ChatSeen.Add((uint32(From) << 16) | Id);
+	ChatSeen.Add(0x80000000u | (uint32(From) << 16) | Id);
 	AddChat(From, Text, bTeam);
 	if (Role == ERTSNetRole::Host)
 	{
@@ -550,7 +928,7 @@ void URTSNetSession::CycleColorOf(uint8 Slot)
 
 void URTSNetSession::AddAI()
 {
-	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Lobby.Num() >= MapSlots)
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Lobby.Num() >= MapSlots || FirstFreeSlot() >= MapSlots)
 	{
 		return;
 	}
@@ -611,9 +989,10 @@ void URTSNetSession::RandomTeams()
 
 bool URTSNetSession::CanStart() const
 {
-	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Lobby.Num() < 2 || Lobby.Num() > MapSlots || !EveryoneInLobby())
+	if (Role != ERTSNetRole::Host || Phase != ERTSNetPhase::Lobby || Lobby.Num() < 2 || Lobby.Num() > MapSlots || !EveryoneInLobby()
+		|| Peers.ContainsByPredicate([](const FPeer& P) { return !P.bLobbyReady; }))
 	{
-		return false;
+		return false;   // (06/11) quem entrou tem de ter apertado READY
 	}
 	// pelo menos 2 lados: quem está sem time é um lado sozinho
 	TSet<uint8> Teams;
@@ -700,6 +1079,7 @@ void URTSNetSession::BackToLobby()
 	{
 		for (FPeer& P : Peers)
 		{
+			P.bLobbyReady = false;   // (06/11) a próxima partida pede o READY de novo
 			P.bInLobby = false;   // até o "estou na sala" de cada um
 			P.LastHeard = Clock;
 		}
@@ -732,7 +1112,17 @@ void URTSNetSession::Leave()
 	MySlot = 0;
 	MyColor = 0;
 	MyTeam = 0;
+	MyFaction = TEXT("random");
+	MyBase = -1;
+	MyRgb = 0;
+	ClosedMask = 0;
+	MapName.Reset();
+	Countdown = 0;
 	Ais.Reset();
+	Chat.Reset();
+	ChatTotal = 0;
+	ChatSeen.Reset();
+	NextChatId = 1;
 	bHostInLobby = false;
 	ResetMatchData();
 }
@@ -768,6 +1158,8 @@ void URTSNetSession::StartMatch()
 		}
 	}
 	Peers.Sort([](const FPeer& A, const FPeer& B) { return A.Slot < B.Slot; });
+	ClosedMask = 0;   // (06/11) as vagas mudaram de lugar: as fechadas eram das antigas
+	Countdown = 0;
 	ResetMatchData();
 	++Epoch;
 	++Matches;
@@ -789,6 +1181,10 @@ void URTSNetSession::RebuildLobby()
 	Me.bReady = bLocalReady;
 	Me.Color = MyColor;
 	Me.Team = MyTeam;
+	Me.Faction = MyFaction;
+	Me.Base = MyBase;
+	Me.Rgb = MyRgb;
+	Me.bLobbyReady = true;
 	Me.bInLobby = Phase == ERTSNetPhase::Lobby;
 	Lobby.Add(Me);
 	for (const FPeer& P : Peers)
@@ -799,6 +1195,11 @@ void URTSNetSession::RebuildLobby()
 		M.bReady = P.bReady;
 		M.Color = P.Color;
 		M.Team = P.Team;
+		M.Faction = P.Faction;
+		M.Base = P.Base;
+		M.Rgb = P.Rgb;
+		M.PingMs = P.RttMs;
+		M.bLobbyReady = P.bLobbyReady;
 		M.bInLobby = P.bInLobby;
 		Lobby.Add(M);
 	}
@@ -810,6 +1211,11 @@ void URTSNetSession::RebuildLobby()
 		M.bReady = true;
 		M.Color = A.Color;
 		M.Team = A.Team;
+		M.Faction = A.Faction;
+		M.Base = A.Base;
+		M.Rgb = A.Rgb;
+		M.Difficulty = A.Difficulty;
+		M.bLobbyReady = true;
 		M.bAI = true;
 		Lobby.Add(M);
 	}
@@ -1254,10 +1660,18 @@ void URTSNetSession::SendLobby()
 	{
 		W.U8(M.Slot);
 		WriteString(W, M.Name);
-		W.U8((M.bReady ? 1 : 0) | (M.bInLobby ? 2 : 0) | (M.bAI ? 4 : 0));
+		W.U8((M.bReady ? 1 : 0) | (M.bInLobby ? 2 : 0) | (M.bAI ? 4 : 0) | (M.bLobbyReady ? 8 : 0));
 		W.U8(M.Color);
 		W.U8(M.Team);
+		WriteString(W, M.Faction);             // (0005, 06/11) a facção, a base (255 = sorteada), a cor da sala, o nível e o ping
+		W.U8(M.Base < 0 ? uint8(255) : uint8(M.Base));
+		W.U32(M.Rgb);
+		W.U8(M.Difficulty);
+		W.U16(uint16(FMath::Clamp(M.PingMs, 0, 65535)));
 	}
+	W.U8(ClosedMask);
+	WriteString(W, MapName);
+	W.U8(Countdown);
 	for (FPeer& P : Peers)
 	{
 		Sim::ByteWriter Per = W;
@@ -1605,6 +2019,18 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 				return;
 			}
 			const uint8 Slot = FirstFreeSlot();
+			if (Slot >= MapSlots)
+			{
+				Reject(TEXT("The room is full"));
+				return;
+			}
+			for (auto It = ChatSeen.CreateIterator(); It; ++It)
+			{
+				if ((*It & 0x80000000u) == 0 && ((*It >> 16) & 0xFFu) == Slot)
+				{
+					It.RemoveCurrent();
+				}
+			}
 			FPeer New;
 			New.Addr = From.Clone();
 			New.Key = From.ToString(true);
@@ -1706,6 +2132,17 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			}
 			return;
 		}
+		case EMsg::SlotSet:
+		{
+			uint8 Field = 0;
+			uint32 Value = 0;
+			FString Text;
+			if (P && R.U8(Field) && R.U32(Value) && ReadString(R, Text))
+			{
+				HostSetField(P->Slot, Field, int32(Value), Text);
+			}
+			return;
+		}
 		case EMsg::Pong:
 		{
 			uint64 Sent = 0;
@@ -1755,7 +2192,7 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			{
 				AddChat(P->Slot, Text, bTeamLine);
 			}
-			RelayChat(P->Slot, Id, bTeamLine, Text);
+			RelayChat(P->Slot, NextChatId++, bTeamLine, Text);   // (06/11) o número do anfitrião: não se repete na sala
 			return;
 		}
 		case EMsg::Bye:
@@ -1804,6 +2241,13 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 					Phase = ERTSNetPhase::Lobby;
 				}
 				Error.Reset();
+				// (06/11) sem a sala nova (o robô da LAN, o teste automático, o menu antigo), ninguém aperta READY: fica pronto ao entrar
+				FString Ignored;
+				if (FParse::Param(FCommandLine::Get(), TEXT("RTSNetBot")) || FParse::Param(FCommandLine::Get(), TEXT("RTSOldMenu"))
+					|| FParse::Value(FCommandLine::Get(), TEXT("-RTSAutoTest="), Ignored))
+				{
+					ClientSetField(FieldReady, 1, FString());
+				}
 			}
 			return;
 		}
@@ -1836,19 +2280,46 @@ void URTSNetSession::Receive(const uint8* Data, int32 Size, const FInternetAddr&
 			{
 				FRTSNetMember Mb;
 				uint8 Flags = 0;
-				if (!R.U8(Mb.Slot) || !ReadString(R, Mb.Name) || !R.U8(Flags) || !R.U8(Mb.Color) || !R.U8(Mb.Team))
+				uint8 BaseB = 255, Diff = 1;
+				uint16 Ping = 0;
+				if (!R.U8(Mb.Slot) || !ReadString(R, Mb.Name) || !R.U8(Flags) || !R.U8(Mb.Color) || !R.U8(Mb.Team)
+					|| !ReadString(R, Mb.Faction) || !R.U8(BaseB) || !R.U32(Mb.Rgb) || !R.U8(Diff) || !R.U16(Ping))
 				{
 					return;
 				}
+				if (!IsFactionKey(Mb.Faction))
+				{
+					Mb.Faction = TEXT("random");
+				}
+				Mb.Base = BaseB == 255 ? -1 : int32(BaseB);
+				Mb.Rgb &= 0xFFFFFFu;
+				Mb.Difficulty = uint8(FMath::Min<int32>(Diff, 2));
+				Mb.PingMs = Ping;
 				Mb.bReady = (Flags & 1) != 0;
+				Mb.bLobbyReady = (Flags & 8) != 0;
 				Mb.bInLobby = (Flags & 2) != 0;
 				Mb.bAI = (Flags & 4) != 0;
 				List.Add(Mb);
 			}
+			uint8 Closed = 0, Count5 = 0;
+			FString HostMap;
+			if (!R.U8(Closed) || !ReadString(R, HostMap) || !R.U8(Count5))
+			{
+				return;
+			}
+			Countdown = Count5;
 			uint8 YourSlot = MySlot;
 			if (R.U8(YourSlot) && YourSlot > 0)
 			{
 				MySlot = YourSlot;
+			}
+			ClosedMask = Closed;
+			if (!HostMap.IsEmpty() && HostMap != MapName)
+			{
+				// o mapa da sala: a partida abre o mesmo aqui
+				MapName = HostMap;
+				RTSShellGame::SetMapOverride(HostMap);
+				UE_LOG(LogTemp, Log, TEXT("RTS LAN: o mapa da sala é %s"), *HostMap);
 			}
 			Lobby = MoveTemp(List);
 			FogMode = Fog;

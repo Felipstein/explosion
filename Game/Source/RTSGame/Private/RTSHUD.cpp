@@ -284,6 +284,10 @@ void ARTSHUD::DrawHUD()
 	if (!Match || !Match->IsRunning())
 	{
 		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0, 0, 0, 0.6f));
+		if (RTSShellGame::IsMatchOverlay())
+		{
+			return;   // (06/11, Telas) o carregando e o erro de montar a partida são as telas nativas por cima
+		}
 		const bool bError = !PC->GetError().IsEmpty();
 		const bool bAwaitNet = Match && Match->IsAwaitingNetSetup();
 		DrawLabel(bError ? PC->GetError() : (bAwaitNet ? LOCTEXT("ReceivingMatch", "Receiving the match from the host…").ToString() : LOCTEXT("SettingUp", "Setting up the match…").ToString()),
@@ -524,6 +528,10 @@ void ARTSHUD::DrawLanMenu(ARTSPlayerController* PC, const URTSNetSession& Net, f
 
 void ARTSHUD::DrawNetStatus(URTSMatchSubsystem* Match)
 {
+	if (RTSShellGame::IsMatchOverlay())
+	{
+		return;   // (06/11, Telas) os avisos da rede nativos (longe do trecho do chat da sessão do HUD, no DrawMatch)
+	}
 	const URTSNetSession* Net = GetGameInstance() ? GetGameInstance()->GetSubsystem<URTSNetSession>() : nullptr;
 	if (!Match->IsNetMatch() || !Net)
 	{
@@ -602,11 +610,13 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 {
 	if (!Match->IsReady())
 	{
-		// a tela de carregar continua (a mesma da troca de mapa) até a cena estar pronta
-		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0.012f, 0.014f, 0.017f, 1.0f));
-		DrawLabel(LOCTEXT("Loading", "LOADING").ToString(), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f - 30.0f, 26, FLinearColor(0.92f, 0.93f, 0.95f), true, true);
-		const int32 Dots = int32(FPlatformTime::Seconds() * 3.0) % 4;
-		DrawLabel(FString::ChrN(Dots, TEXT('.')), Canvas->SizeX * 0.5f, Canvas->SizeY * 0.5f + 12.0f, 20, FLinearColor(0.92f, 0.93f, 0.95f, 0.7f), true);
+		if (RTSShellGame::IsMatchOverlay())
+		{
+			return;   // (06/11, Telas) a tela de carregar nativa cobre
+		}
+		// a tela de carregar continua (a mesma da troca de mapa) até a cena estar pronta. (06/11, Telas) O "LOADING" velho saiu: a tela é a
+		// nativa (o SRTSMatch); se ela ainda não estiver por cima, só o escuro dela (rgb 10, 13, 11), sem texto
+		DrawPanel(0, 0, Canvas->SizeX, Canvas->SizeY, FLinearColor(0.003f, 0.004f, 0.0033f, 1.0f));
 		return;
 	}
 	if (!bNewHudChecked)
@@ -718,7 +728,11 @@ void ARTSHUD::DrawMatch(ARTSPlayerController* PC, URTSMatchSubsystem* Match)
 		const FLinearColor C = Fps >= 55.0f ? FLinearColor(0.55f, 0.85f, 0.55f, 0.75f) : (Fps >= 30.0f ? FLinearColor(0.9f, 0.8f, 0.45f, 0.75f) : FLinearColor(0.95f, 0.45f, 0.4f, 0.8f));
 		DrawLabel(FString::Printf(TEXT("%.0f fps  %.1f ms"), Fps, FrameMsSmooth), Canvas->SizeX - 112.0f, Canvas->SizeY - 18.0f, 9, C);
 	}
-	if (!bPlaying && Match->SecondsSinceEnd() > ResultDelaySeconds)
+	if (RTSShellGame::IsMatchOverlay())
+	{
+		// (06/11, Telas) o resultado e o Esc nativos (o plugin RTSShell, SRTSMatch)
+	}
+	else if (!bPlaying && Match->SecondsSinceEnd() > ResultDelaySeconds)
 	{
 		DrawResult(Match);
 	}

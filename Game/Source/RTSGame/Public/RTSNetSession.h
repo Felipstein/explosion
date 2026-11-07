@@ -16,6 +16,7 @@
 #include "Tickable.h"
 #include "Sim/Commands.h"
 #include "RTSSessionSubsystem.h"
+#include "RTSShellGame.h"
 #include "RTSNetSession.generated.h"
 
 class FInternetAddr;
@@ -64,6 +65,15 @@ struct FRTSNetMember
 	uint8 Team = 0;
 	/** Vaga de computador (a IA roda no anfitrião e manda as ordens como um jogador). */
 	bool bAI = false;
+	/** (06/11, a sala nova) a facção ("random", "usa", "russia", "china", "gla"), a base do mapa (−1 = sorteada), a cor escolhida
+	 *  das 24 da sala (0xRRGGBB; 0 = a da paleta, automática), o nível da IA (0 fácil, 1 médio, 2 difícil) e o ping (ms, o anfitrião mede). */
+	FString Faction = TEXT("random");
+	int32 Base = -1;
+	uint32 Rgb = 0;
+	uint8 Difficulty = 1;
+	int32 PingMs = 0;
+	/** O READY da sala (quem entrou aperta; o anfitrião e a IA sempre prontos). O bReady acima é o da partida (o mapa carregou). */
+	bool bLobbyReady = false;
 };
 
 UCLASS()
@@ -113,6 +123,30 @@ public:
 	void RemoveAI(uint8 Slot);
 	/** O anfitrião: sorteia 2 times (2 contra 2, 2 contra 1...). */
 	void RandomTeams();
+	// (06/11, a sala nova: cada campo com o valor exato, como no skirmish; o cliente só mexe na vaga dele, o anfitrião nas da IA e no
+	// time e na base de todos)
+	/** O anfitrião: a vaga aberta, fechada ou com uma IA no nível Difficulty (State: 0 aberta, 1 fechada, 2 IA). Tira a IA que estava. */
+	void SetSlotState(uint8 Slot, int32 State, uint8 Difficulty = 1);
+	void SetTeamOf(uint8 Slot, uint8 Team);
+	void SetFactionOf(uint8 Slot, const FString& Faction);
+	/** A base do mapa (−1 = sorteada); se outro já está nela, os dois trocam. */
+	void SetBaseOf(uint8 Slot, int32 Base);
+	/** A cor das 24 da sala (0xRRGGBB; 0 = automática); uma cor é de um só. */
+	void SetColorOf(uint8 Slot, uint32 Rgb);
+	/** O anfitrião: tira da sala quem entrou (ou a IA). */
+	void Kick(uint8 Slot);
+	/** O anfitrião: o mapa da sala (o nome do Maps.json); as bases voltam pra sorteadas. Falso se não existe ou não cabem todos. */
+	bool SetMap(const FString& Name);
+	const FString& GetMapName() const { return MapName; }
+	/** As vagas fechadas (um bit por vaga). */
+	uint8 GetClosedMask() const { return ClosedMask; }
+	/** Quem entrou: o READY da sala. */
+	void SetLobbyReady(bool bReady);
+	/** O anfitrião: a contagem antes de começar (5..1; 0 = sem contagem); todos vêem. */
+	void SetCountdown(int32 Seconds);
+	int32 GetCountdown() const { return Countdown; }
+	/** A partida: as vagas na ordem dela (a mesma montagem do skirmish local: IA, time, base, facção, cor, nível). */
+	const TArray<FRTSLocalSlot>* MatchSlots() const;
 	/** Dá pra começar: 2 ou mais na sala, todos de volta, e pelo menos 2 lados. */
 	bool CanStart() const;
 	/** Vagas do mapa (as largadas): a sala não passa disso. */
@@ -218,10 +252,15 @@ public:
 	 *  só pros aliados vai só pra quem é do mesmo time. Sem rede (a escaramuça), fica só aqui. */
 	void SendChat(const FString& Text, bool bTeam);
 	const TArray<FChatLine>& ChatLines() const { return Chat; }
+	/** (06/11) Quantas linhas já chegaram nesta sala (só sobe; a lista guarda as últimas 50): a sala nova sabe quais são novas. */
+	int32 ChatTotalCount() const { return ChatTotal; }
 
 private:
 	TArray<FChatLine> Chat;
-	TSet<uint32> ChatSeen;                  // (a vaga << 16) | o número: a mesma linha chega 3 vezes (UDP)
+	int32 ChatTotal = 0;
+	// (a vaga << 16) | o número: a mesma linha chega 3 vezes (UDP). (06/11) O anfitrião numera de novo tudo o que repassa (o número
+	// dele não se repete na sala); as minhas levam o bit 31 (as minhas e as dos outros nunca colidem, nem depois das vagas mudarem)
+	TSet<uint32> ChatSeen;
 	uint16 NextChatId = 1;
 	void AddChat(uint8 Slot, const FString& Text, bool bTeam);
 	/** Anfitrião: repassa a linha pra quem deve ver (menos quem mandou). */
@@ -244,6 +283,10 @@ private:
 		int32 RttMs = 0;
 		uint8 Color = 0;
 		uint8 Team = 0;
+		FString Faction = TEXT("random");
+		int32 Base = -1;
+		uint32 Rgb = 0;
+		bool bLobbyReady = false;
 		bool bInLobby = true;
 		/** Caiu da partida (sumiu 60 s, votado, ou saiu): o anfitrião mandou o render-se por ele. */
 		bool bDropped = false;
@@ -291,8 +334,27 @@ private:
 		uint8 Slot = 0;
 		uint8 Color = 0;
 		uint8 Team = 0;
+		FString Faction = TEXT("random");
+		int32 Base = -1;
+		uint32 Rgb = 0;
+		uint8 Difficulty = 1;
 	};
 	TArray<FAiSlot> Ais;
+	// (06/11) a minha vaga (o anfitrião é a 0), as fechadas e o mapa da sala
+	FString MyFaction = TEXT("random");
+	int32 MyBase = -1;
+	uint32 MyRgb = 0;
+	uint8 ClosedMask = 0;
+	FString MapName;
+	uint8 Countdown = 0;
+	mutable TArray<FRTSLocalSlot> MatchSlotList;
+	/** O anfitrião: aplica um campo numa vaga (0 time, 1 facção, 2 base, 3 cor), conferindo quem pode. */
+	void HostSetField(uint8 Slot, uint8 Field, int32 Value, const FString& Text);
+	/** O cliente: pede ao anfitrião um campo da vaga dele. */
+	void ClientSetField(uint8 Field, int32 Value, const FString& Text);
+	/** A base / a cor de uma vaga (o anfitrião), como ponteiros pro campo dela (nullptr = vaga vazia). */
+	int32* BaseRef(uint8 Slot);
+	uint32* RgbRef(uint8 Slot);
 	uint8 FirstFreeSlot() const;
 	/** Cliente: o anfitrião voltou pra sala (a partida acabou): todos voltam junto. */
 	bool bHostInLobby = false;

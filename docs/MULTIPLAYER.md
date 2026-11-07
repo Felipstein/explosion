@@ -409,6 +409,38 @@ O primeiro corte: lockstep com o anfitrião como relógio, só na LAN, sem pausa
   9. a queda.
   - Com 4 cópias no mesmo PC a memória acaba (o arquivo de paginação encheu o disco em 14/10): até 3 cópias.
 
+**A sala nova (06/11, a versão 0005 da rede; pedido dele: "a tela de host tá bugada [...] não tem tela de trocar mapa [...] faltou
+um chat"):**
+- **A sala da LAN é a sala do skirmish:** cada campo com o valor exato, não mais em sequência. Detalhe da tela em
+  `docs/TELAS_NO_JOGO.md`, "A tarde de 06/11".
+- **Cada vaga (`FRTSNetMember`) leva também:**
+  - a facção (`"random"`, `"usa"`, `"russia"`, `"china"`, `"gla"`);
+  - a base do mapa (−1 = sorteada);
+  - a cor escolhida das 24 da sala (0xRRGGBB; 0 = a automática da paleta de 8);
+  - o nível da IA, o ping (o anfitrião mede) e o READY da sala (`bLobbyReady`; o `bReady` de antes é o da partida, o mapa carregado).
+- **O pacote da sala leva ainda:** as vagas fechadas (um bit por vaga), o nome do mapa e a contagem do START.
+- **O pedido do cliente:** a mensagem nova `SlotSet {campo, valor, texto}` (o time, a facção, a base, a cor, o READY).
+  - O anfitrião só aceita na vaga de quem mandou e confere: a cor é de um só; a base que já tem dono troca com a antiga de quem chegou.
+- **O anfitrião:**
+  - `SetSlotState` põe a IA na vaga pedida ou abre/fecha a vaga;
+  - `Kick` tira quem entrou (o `Reject` "Removed by the host");
+  - `SetMap` troca o mapa, se cabem todos: as bases voltam pra sorteadas e quem passou do tamanho desce pra uma vaga livre;
+  - `SetCountdown` (5..0) mostra a contagem a todos;
+  - `CanStart` pede todos de quem entrou com READY.
+- **A facção de quem entra (07/11):** a salva do jogador (`URTSSessionSubsystem::PlayerFaction`, a mesma com que a sala do skirmish
+  começa). O anfitrião a põe na própria vaga ao criar a sala; o cliente a pede por `SlotSet` logo que recebe a vaga.
+  - Antes, o 0005 punha todo humano em `"random"`. Antes do 0005, na rede todo humano era USA.
+  - Quem achou: o teste automático da LAN (o `lanhost` no menu nativo). O anfitrião caiu de China, e a base de USA do roteiro não
+    ficou de pé.
+- **Os testes sem as telas** (o robô da LAN, o `-RTSAutoTest`, o `-RTSOldMenu`) apertam o READY sozinhos ao entrar.
+- **O chat da sala:** é o mesmo da partida.
+  - O anfitrião numera de novo tudo o que repassa, então o número não se repete na sala.
+  - As linhas de quem manda levam o bit 31 na chave e não colidem com as dos outros, nem depois das vagas mudarem ao começar.
+  - Sair da sala limpa a conversa; quem entra numa vaga começa com a conta dela limpa.
+- **Na partida:** as vagas da rede entram pelo mesmo caminho do skirmish local (`URTSNetSession::MatchSlots()`, igual em todos os
+  PCs: a cor sai daqui no cliente, o resto da montagem do anfitrião).
+- **A versão da rede** subiu (0005): o jogo velho não entra na sala nova.
+
 ---
 
 ## Fontes

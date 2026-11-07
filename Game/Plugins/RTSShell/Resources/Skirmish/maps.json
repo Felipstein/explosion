@@ -1,0 +1,134 @@
+[
+ {
+  "real": "World_TestSalt2",
+  "name": "SALT FLATS",
+  "players": 4,
+  "size": "M",
+  "terr": "DESERT",
+  "cond": "DAY",
+  "src": "OFFICIAL",
+  "plays": 9999,
+  "date": 999,
+  "naval": false,
+  "starts": [
+   [
+    -282.6,
+    -335.7
+   ],
+   [
+    282.6,
+    335.7
+   ],
+   [
+    -288,
+    328
+   ],
+   [
+    272,
+    -320
+   ]
+  ],
+  "docks": [
+   [
+    -150,
+    60,
+    26.33,
+    32.12
+   ],
+   [
+    150,
+    -60,
+    26.33,
+    32.12
+   ]
+  ]
+ },
+ {
+  "real": "World_TestDunesSim",
+  "name": "DUNE SEA",
+  "players": 4,
+  "size": "M",
+  "terr": "DESERT",
+  "cond": "DUSK",
+  "src": "OFFICIAL",
+  "plays": 4200,
+  "date": 998,
+  "naval": false,
+  "starts": [
+   [
+    -282.6,
+    -335.7
+   ],
+   [
+    282.6,
+    335.7
+   ],
+   [
+    -288,
+    328
+   ],
+   [
+    272,
+    -320
+   ]
+  ],
+  "docks": [
+   [
+    -150,
+    60,
+    26.33,
+    32.12
+   ],
+   [
+    150,
+    -60,
+    26.33,
+    32.12
+   ]
+  ]
+ },
+ {
+  "real": "World_TestHills",
+  "name": "BROKEN HILLS",
+  "players": 4,
+  "size": "M",
+  "terr": "DESERT",
+  "cond": "LOW SUN",
+  "src": "OFFICIAL",
+  "plays": 3100,
+  "date": 997,
+  "naval": false,
+  "starts": [
+   [
+    -282.6,
+    -335.7
+   ],
+   [
+    282.6,
+    335.7
+   ],
+   [
+    -288,
+    328
+   ],
+   [
+    272,
+    -320
+   ]
+  ],
+  "docks": [
+   [
+    -150,
+    60,
+    26.33,
+    32.12
+   ],
+   [
+    150,
+    -60,
+    26.33,
+    32.12
+   ]
+  ]
+ }
+]

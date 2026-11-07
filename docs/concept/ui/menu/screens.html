@@ -342,9 +342,9 @@ let lprog = [0, 0], ltimer = null, lT = 0;
 INIT.load = async () => {
   const M = await getMap({ id: 0, real: 'World_TestSalt2', terr: 'DESERT', cond: 'DAY' });
   const flat = renderMinimap(M, 1024), cv = $('#lmap'), g = cv.getContext('2d'), S = 820, side = 560;
-  g.clearRect(0, 0, S, S); g.save(); g.translate(S / 2, S / 2); g.rotate(Math.PI / 4); g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 40; g.drawImage(flat, -side / 2, -side / 2, side, side); g.shadowBlur = 0;
+  g.clearRect(0, 0, S, S); g.save(); g.translate(S / 2, S / 2); g.rotate(Math.PI * 1.25);   // (06/11) o giro da partida g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 40; g.drawImage(flat, -side / 2, -side / 2, side, side); g.shadowBlur = 0;
   g.strokeStyle = 'rgba(230,220,190,.35)'; g.lineWidth = 1.5; g.strokeRect(-side / 2, -side / 2, side, side); g.restore();
-  const sc = side / 1024, toP = (x, y) => [S / 2 + (x - y) * Math.SQRT1_2 * sc, S / 2 + (x + y) * Math.SQRT1_2 * sc];
+  const sc = side / 1024, toP = (x, y) => [S / 2 + (y - x) * Math.SQRT1_2 * sc, S / 2 - (x + y) * Math.SQRT1_2 * sc];
   for (const p of PLAYERS) { const [a, b] = toP(...M.starts[p.base]); g.fillStyle = 'rgba(0,0,0,.45)'; g.beginPath(); g.arc(a + 2, b + 4, 27, 0, 7); g.fill(); g.fillStyle = p.c; g.beginPath(); g.arc(a, b, 25, 0, 7); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
     const im = new Image(); im.onload = () => g.drawImage(im, a - 18, b - 18, 36, 36); im.src = `../../factions/small/glyph_${p.f}.png`;
     g.font = "800 16px 'Big Shoulders Display'"; const lw = g.measureText(p.n).width + 16; g.fillStyle = 'rgba(8,10,9,.88)'; g.fillRect(a - lw / 2, b + 31, lw, 22); g.fillStyle = p.c; g.fillRect(a - lw / 2, b + 31, 3, 22); g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(p.n, a + 1, b + 43); }

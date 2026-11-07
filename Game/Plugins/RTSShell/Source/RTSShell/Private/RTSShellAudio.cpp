@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/ScopeLock.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
@@ -72,6 +73,12 @@ namespace
 	double GLastHover = 0.0;
 	TStrongObjectPtr<USoundMix> GDuck, GUser;
 	TStrongObjectPtr<USoundClass> GMusicClass, GUiClass;
+	// (06/11) os volumes do jogador: o item das opções, a classe, o volume aprovado e o padrão do item
+	struct FUserVol { const TCHAR* Key; const TCHAR* Class; float Base; int32 Def; };
+	const FUserVol USER_VOLS[6] = { { TEXT("master"), TEXT("SC_Master"), 1.0f, 80 }, { TEXT("music"), TEXT("SC_Music"), MusicVolume, 55 },
+		{ TEXT("sfx"), TEXT("SC_Effects"), 1.0f, 90 }, { TEXT("voice"), TEXT("SC_Voice"), 1.0f, 75 }, { TEXT("ui"), TEXT("SC_UI"), UiVolume, 60 },
+		{ TEXT("amb"), TEXT("SC_Ambience"), 1.0f, 65 } };
+	TStrongObjectPtr<USoundClass> GVolClass[6];
 	TStrongObjectPtr<USoundSubmix> GBus;
 	TStrongObjectPtr<UAudioComponent> GMusic;
 	TSharedPtr<FMusicTap, ESPMode::ThreadSafe> GTap;
@@ -96,6 +103,29 @@ namespace
 			UE_LOG(LogTemp, Warning, TEXT("RTS telas: o som %s não existe (rodar Tools/import_menu_audio.py)"), Path);
 		}
 		return O;
+	}
+
+	/** Os volumes do jogador no mix: Values = os da tela (a prévia), nulo = os guardados (o padrão de cada item se nunca gravou). */
+	void PushUserVolumes(UWorld* W, const TMap<FString, int32>* Values, float Fade)
+	{
+		if (!W || !GUser.IsValid()) return;
+		const auto Get = [&](const FUserVol& V)
+		{
+			if (Values) { const int32* P = Values->Find(V.Key); if (P) return FMath::Clamp(*P, 0, 100); }
+			int32 Saved = -1;
+			if (GConfig && GConfig->GetInt(TEXT("RTS"), *FString::Printf(TEXT("Vol_%s"), V.Key), Saved, GGameUserSettingsIni) && Saved >= 0) return FMath::Clamp(Saved, 0, 100);
+			return V.Def;
+		};
+		const float Master = Get(USER_VOLS[0]) / 80.0f;
+		for (int32 I = 0; I < 6; ++I)
+		{
+			const FUserVol& V = USER_VOLS[I];
+			if (!GVolClass[I].IsValid()) GVolClass[I].Reset(Load<USoundClass>(*FString::Printf(TEXT("/Game/Audio/Classes/%s.%s"), V.Class, V.Class)));
+			if (!GVolClass[I].IsValid()) continue;
+			const float Own = I == 0 ? 1.0f : Get(V) / float(V.Def);
+			// o MASTER vale pras classes de baixo pela conta (Own × Master); no SC_Master ele só pega o que toca direto nele
+			UGameplayStatics::SetSoundMixClassOverride(W, GUser.Get(), GVolClass[I].Get(), FMath::Clamp(V.Base * Own * Master, 0.0f, 2.0f), 1.0f, Fade, I != 0);
+		}
 	}
 
 	bool Ensure()
@@ -127,8 +157,7 @@ namespace
 		// os volumes do jogador: um mix sempre ligado com o volume de cada classe
 		if (!GUserOn && GUser.IsValid() && GMusicClass.IsValid() && GUiClass.IsValid())
 		{
-			UGameplayStatics::SetSoundMixClassOverride(W, GUser.Get(), GMusicClass.Get(), MusicVolume, 1.0f, 0.0f, true);
-			UGameplayStatics::SetSoundMixClassOverride(W, GUser.Get(), GUiClass.Get(), UiVolume, 1.0f, 0.0f, true);
+			PushUserVolumes(W, nullptr, 0.0f);
 			UGameplayStatics::PushSoundMixModifier(W, GUser.Get());
 			GUserOn = true;
 		}
@@ -346,4 +375,10 @@ namespace RTSShellAudio
 		GMode = EMusic::Off;
 		GDuckOn = GUserOn = false;
 	}
+}
+
+void RTSShellAudio::ApplyUserVolumes(const TMap<FString, int32>* Values)
+{
+	if (!Ensure()) return;
+	PushUserVolumes(World(), Values, 0.1f);
 }

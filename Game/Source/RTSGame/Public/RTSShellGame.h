@@ -23,10 +23,17 @@ struct FRTSLocalSlot
 
 namespace RTSShellGame
 {
+	/** (06/11) O mapa da próxima partida: a sala da LAN escolhe (o anfitrião) e o pacote da sala leva pros outros. */
+	void SetMapOverride(const FString& Map);
 	/** Do BeginPlay do controle do jogador: no menu põe as telas; na partida tira. */
 	void OnPlayerBegin(ARTSPlayerController* PC, bool bMenu);
 	/** As telas novas estão cobrindo o menu (o HUD não desenha o menu antigo). */
 	bool IsCovering();
+	/** (06/11) Uma tela da partida nativa está por cima (o HUD não desenha o LOADING, o aviso de rede, o resultado e o Esc velhos). */
+	bool IsMatchOverlay();
+	/** (06/11 à noite) O botão da tela da partida nativa pelo Id do OnButton ("menu", "lobby"...), em pixels do viewport: o teste
+	 *  automático clica nele como clicava no do HUD velho. */
+	bool MatchButtonCenter(FName Id, FVector2D& OutViewportPixel);
 	/** O skirmish montado na sala nova, pra próxima partida local (nullptr = o 1 contra 1 de antes). */
 	const TArray<FRTSLocalSlot>* LocalSlots();
 	/** O mapa escolhido na sala nova ou o da cena do SCRIPT (vazio = o de sempre). */

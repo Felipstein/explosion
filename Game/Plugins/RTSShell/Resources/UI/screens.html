@@ -199,7 +199,9 @@ const GAMEO = [
   { g: 'LANGUAGE', k: 'voices', n: 'UNIT VOICES', o: ['FACTION LANGUAGE', 'GAME LANGUAGE'], v: 0, d: 'Faction language: each army speaks its own (English, Russian, Chinese, Arabic). Game language: every unit speaks the language chosen above.' },
   { g: 'MATCH', k: 'timer', n: 'MATCH TIMER', o: ['ON', 'OFF'], v: 0 },
   { g: 'MATCH', k: 'chat', n: 'CHAT', o: ['ALL', 'ALLIES ONLY', 'OFF'], v: 0 },
-  { g: 'MATCH', k: 'tips', n: 'TOOLTIPS', o: ['FAST', 'NORMAL', 'OFF'], v: 1 }];
+  { g: 'MATCH', k: 'tips', n: 'TOOLTIPS', o: ['FAST', 'NORMAL', 'OFF'], v: 1, d: 'Off needs the button labels on: with clean buttons the tooltip is where the price shows.' },
+  { g: 'HUD', k: 'hudclean', n: 'BUTTON LABELS', o: ['CLEAN', 'HOTKEYS & PRICES'], v: 0, ini: 'HudCleanSlots', d: 'Clean: the buttons show only the picture; the tooltip shows the hotkey, the price and the time.' },
+  { g: 'HUD', k: 'hudhide', n: 'EMPTY SLOTS', o: ['HIDDEN', 'SHOWN'], v: 0, ini: 'HudHideEmptySlots', d: 'Hidden: the panel shows only the buttons that exist.' }];
 const ACC = [
   { g: 'VISION', k: 'cb', n: 'COLORBLIND MODE', o: ['OFF', 'PROTANOPIA', 'DEUTERANOPIA', 'TRITANOPIA'], v: 0, d: 'Shifts player colors and the interface so every army stays different.' },
   { g: 'VISION', k: 'outline', n: 'UNIT OUTLINES', o: ['OFF', 'ON'], v: 0, d: 'A thin outline in the player color around every unit.' },
@@ -225,6 +227,7 @@ function renderOpt() {
   $('#presets').innerHTML = PRESETS.map(([n, d], k) => { const e = estimate(presetVals(k)), bars = k === 0 ? 1 : k === 5 ? 4 : k + 1;
     return `<div class="pr ${k === pre && !custom ? 'on' : ''} ${k === 5 ? 'auto' : ''}" data-p="${k}">${k === 4 && e.fps < 45 ? '<div class="warn">ABOVE THIS PC</div>' : ''}<b>${n}</b><span>${k === 5 ? 'MEASURED · HIGH' : d}</span><div class="fps">${e.fps} <em>FPS</em></div><div class="bars">${[8, 12, 16, 20, 24].map((h, i) => `<i class="${i < bars ? 'f' : ''}" style="height:${h}px"></i>`).join('')}</div></div>`; }).join('');
   $('#ocustom').classList.toggle('on', custom);
+  GAMEO.find(x => x.k === 'tips').na = OPT.hudclean === 0 ? [2] : [];
   $('#gfxrows').innerHTML = groupHTML(GFX); $('#sndrows').innerHTML = groupHTML(SND); $('#ctlrows').innerHTML = groupHTML(CTL); $('#gamerows').innerHTML = groupHTML(GAMEO); $('#accrows').innerHTML = groupHTML(ACC);
   renderKeys(); meter(); if (!$('#ocard').dataset.k) card(null);
 }
@@ -241,7 +244,7 @@ $('#omain').addEventListener('mouseover', e => { const r = e.target.closest('.r'
 $('#omain').addEventListener('mouseleave', () => card(null));
 $('#omain').addEventListener('click', e => {
   const p = e.target.closest('.pr'); if (p) { applyPreset(+p.dataset.p); renderOpt(); return; }
-  const s = e.target.closest('.seg span'); if (s) { OPT[s.dataset.k] = +s.dataset.i; if (GFX.some(x => x.k === s.dataset.k && !x.fixed)) custom = true; renderOpt(); card(s.dataset.k); }
+  const s = e.target.closest('.seg span'); if (s && !s.classList.contains('na')) { OPT[s.dataset.k] = +s.dataset.i; if (OPT.hudclean === 0 && OPT.tips === 2) OPT.tips = 1; if (GFX.some(x => x.k === s.dataset.k && !x.fixed)) custom = true; renderOpt(); card(s.dataset.k); }
 });
 let slDrag = null;
 $('#omain').addEventListener('pointerdown', e => { const sl = e.target.closest('.sl'); if (!sl) return; slDrag = sl.dataset.k; document.body.classList.add('dragging'); slSet(e); });
@@ -251,10 +254,13 @@ function slSet(e) { const sl = document.querySelector(`.sl[data-k="${slDrag}"]`)
   sl.querySelector('i').style.width = f + '%'; sl.querySelector('b').style.left = f + '%'; sl.nextElementSibling.textContent = OPT[slDrag] + (slDrag === 'uiscale' ? '%' : ''); }
 $('#otabs').onclick = e => { const t = e.target.closest('.tab'); if (!t) return; document.querySelectorAll('#otabs .tab').forEach(x => x.classList.toggle('on', x === t)); document.querySelectorAll('#opt .pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + t.dataset.p)); $('#omain').scrollTop = 0; card(null); $('#ometer').style.display = t.dataset.p === 'gfx' ? '' : 'none'; };   // os quadros só fazem sentido nos gráficos
 $('#oreset').onclick = () => { applyPreset(5); renderOpt(); };
-INIT.opt = () => { if (!INIT.opt.done) { applyPreset(5); INIT.opt.done = true;
+const HUDO = GAMEO.filter(x => x.ini);     // as opções que o jogo já lê: true = a 1ª escolha (CLEAN, HIDDEN)
+function loadIni() { if (!(window.ue && window.ue.shell && window.ue.shell.getoption)) return;
+  HUDO.forEach(x => Promise.resolve(window.ue.shell.getoption(x.ini)).then(v => { if (v === '' || v == null) return; OPT[x.k] = /^(true|1|yes)$/i.test(String(v).trim()) ? 0 : 1; if (OPT.hudclean === 0 && OPT.tips === 2) OPT.tips = 1; renderOpt(); }).catch(() => { })); }
+INIT.opt = () => { loadIni(); if (!INIT.opt.done) { applyPreset(5); INIT.opt.done = true;
     if (window.ue && window.ue.shell) Promise.resolve(window.ue.shell.getquality()).then(q => { applyPreset(Math.max(0, Math.min(4, +q))); renderOpt(); }).catch(() => { }); }
   renderOpt(); };
-$('#oapply').onclick = () => { if (window.ue && window.ue.shell) window.ue.shell.setquality(custom ? 3 : pre); $('#oback').click(); };   // os outros itens ficam guardados pra quando o jogo tiver cada um
+$('#oapply').onclick = () => { if (window.ue && window.ue.shell) { window.ue.shell.setquality(custom ? 3 : pre); if (window.ue.shell.setoption) HUDO.forEach(x => window.ue.shell.setoption(x.ini, OPT[x.k] === 0 ? 'True' : 'False')); } $('#oback').click(); };   // os outros itens ficam guardados pra quando o jogo tiver cada um
 const KEYS = [['SELECT ALL UNITS', 'Q'], ['ATTACK MOVE', 'A'], ['FORCE FIRE', 'CTRL'], ['STOP', 'S'], ['GUARD', 'G'], ['SCATTER', 'X'], ['CENTER ON BASE', 'H'], ['NEXT IDLE WORKER', '.'], ['CHAT', 'ENTER'], ['GENERAL POWERS', 'G']];
 function renderKeys() {
   const q = ($('#kq').value || '').toUpperCase(), cnt = {}; KEYS.forEach(([, k]) => cnt[k] = (cnt[k] || 0) + 1);

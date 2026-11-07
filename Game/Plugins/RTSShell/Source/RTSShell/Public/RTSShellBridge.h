@@ -22,6 +22,10 @@ public:
 	UFUNCTION() int32 GetQuality();
 	UFUNCTION() void Quit();
 	UFUNCTION() bool Lan(const FString& Command);
+	/** As opções que o jogo lê do GameUserSettings, seção [RTS] (o HUD relê a cada segundo: HudCleanSlots, HudHideEmptySlots).
+	 *  O valor em texto ("True"/"False" pros sim/não); vazio = nunca gravada (a página fica no padrão dela). */
+	UFUNCTION() FString GetOption(const FString& Key);
+	UFUNCTION() void SetOption(const FString& Key, const FString& Value);
 	/** O console da página no log do jogo (o console.log não chega sozinho). */
 	UFUNCTION() void Log(const FString& Text);
 };

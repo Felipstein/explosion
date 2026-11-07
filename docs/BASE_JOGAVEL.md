@@ -83,6 +83,14 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - a batalha escondida muda, que vem com o som;
   - o custo da passada da névoa, a medir com a placa livre.
 - [ ] **Minimapa também na sala de espera:** mapa com as bases e a escolha da largada.
+  - [~] 06/11 (Telas, sem o teste do Felipe): a sala da LAN nativa mostra o mapa da partida com as bases e as fichas de cada um, como
+    a sala do skirmish. A escolha da largada ainda não existe no protocolo da rede: as bases saem dos times.
+  - [~] 06/11 à tarde (Telas, sem o teste do Felipe): a sala da LAN é a do skirmish, com cada campo exato (a vaga, a facção, a cor
+    das 24, o time, a base), o mapa do anfitrião, o chat, o READY e a contagem; a rede 0005 (`docs/MULTIPLAYER.md`). As telas da
+    partida nativas: o carregando, o Esc, VICTORY/DEFEAT com a tabela e o gráfico, e os avisos da rede (`docs/TELAS_NO_JOGO.md`).
+  - [~] 06–07/11 à noite (Telas, sem o teste do Felipe): a caça às telas velhas. O menu antigo do HUD saiu, e o teste automático usa o
+    menu nativo. A partida que não monta ganhou o aviso nativo, com MAIN MENU. Na sala da LAN, cada um entra com a sua facção salva,
+    e não mais em "random". A LAN automática (`lanhost`, com um robô) deu 58 passos ok e nenhuma falha.
 - [~] **Multiplayer de verdade** (jogo, 10/10: LAN pronta, sem o teste do Felipe). Feito: menu MULTIPLAYER (LAN), sala com até 8, cor por jogador, névoa do anfitrião, a montagem do anfitrião pra todos, lockstep com a impressão digital, volta de todos pra sala, mapa com 4 bases (`docs/MULTIPLAYER.md` Parte 7). Em 11/10: times na sala (aliados lado a lado, vitória do time), IA nas vagas, espectador de quem cai, névoa em 3 tipos (explorada, preta, desligada), a seta "enemy base" fora. Em 13/10 (N5, sem o teste do Felipe): a pausa pra todos, render-se e a queda com espera de 60 s e votação, como no ZH (`docs/MULTIPLAYER.md` Parte 7). Falta: reconexão, barras de carregamento, sinal no mapa, dar dinheiro, o online (último do jogo). Ver a seção 1.
 - [~] **A v4 (22–23/10, a Arte fazendo sozinha; sem o teste do Felipe, sem commit).** O pedido dele em 6 itens. O design e as
   contas em `docs/V4_ARSENAL.md`:

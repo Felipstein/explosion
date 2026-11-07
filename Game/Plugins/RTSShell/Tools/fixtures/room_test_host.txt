@@ -1,0 +1,13 @@
+2|slot:2=ai:2
+3|fac:2=china
+4|color:2=#d83a2e
+5|team:2=2
+6|fac:0=usa
+7|team:0=1
+8|slot:3=closed
+45|map:World_TestHills
+48|base:0=2
+50|base:2=0
+52|say:hello from the host
+55|team:1=1
+62|start

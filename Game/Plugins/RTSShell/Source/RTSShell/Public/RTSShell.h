@@ -8,6 +8,24 @@
 
 #include "CoreMinimal.h"
 
+class SWidget;
+
+/** (06/11) A largada da próxima partida, pra tela de carregar (o filme lê numa thread própria: só estes dados, nada do jogo). A sala
+ *  (o skirmish e a LAN) preenche ao começar; o SCRIPT, com o nome da cena. */
+struct FRTSMatchIntro
+{
+	struct FPlayer
+	{
+		FString Name, Fac;               // o nome na tela ("FE", "AI · HARD") e a facção ("usa", "random"...)
+		int32 Team = 0, Base = -1, Diff = 1;
+		uint32 Hex = 0xffffff;           // a cor (0xRRGGBB)
+		bool bAi = false, bYou = false;
+	};
+	FString Op, Map, MapReal;            // a operação, o nome do mapa na tela e o do jogo
+	bool bLan = false;
+	TArray<FPlayer> Players;
+};
+
 /** O que o jogo responde às páginas. Cada um pode ficar vazio (a página trata como "não tem"). */
 struct FRTSShellHandlers
 {
@@ -27,7 +45,13 @@ struct FRTSShellHandlers
 	TFunction<bool(const FString& /*Command*/)> Lan;
 	/** api/<Path>: o JSON que o jogo devolve (false = 404). */
 	TFunction<bool(const FString& /*Path*/, FString& /*OutJson*/)> Api;
+	/** (06/11) Os botões das telas da partida: "resume", "menu", "lobby", "restart", "surrender", "net_pause", "net_resume",
+	 *  "net_vote", "back_to_room" (o skirmish: o menu e a sala de novo). */
+	TFunction<void(const FString& /*Id*/)> MatchButton;
 };
+
+/** (06/11) A camada das telas da partida, por cima do jogo (o HUD não desenha as velhas enquanto ela está). */
+enum class ERTSMatchOverlay : uint8 { None, Loading, Pause, Result, Net };
 
 class RTSSHELL_API FRTSShell
 {
@@ -43,4 +67,16 @@ public:
 	static bool IsAvailable();
 	/** A pasta das páginas (Resources/UI do plugin). */
 	static FString UiDir();
+
+	// (06/11) as telas da partida
+	static void SetIntro(const FRTSMatchIntro& In);
+	static FRTSMatchIntro GetIntro();
+	/** A tela de carregar aprovada, pro MoviePlayer (o RTSGameModule chama no PreLoadMap, na thread do jogo). */
+	static TSharedRef<SWidget> MakeLoadingScreen();
+	/** Põe (ou tira, com None) a tela da partida por cima do jogo; o RTSShellGame decide qual pelo estado da partida. */
+	static void SetMatchOverlay(ERTSMatchOverlay Overlay);
+	static ERTSMatchOverlay GetMatchOverlay();
+	/** O centro de um botão da tela da partida (o Id do OnButton: "menu", "lobby", "resume"...) em pixels do viewport do jogo, pro teste
+	 *  automático clicar como clicava nos botões do HUD velho. Falso se a tela não está ou não tem esse botão. */
+	static bool MatchButtonCenter(const FString& Id, FVector2D& OutViewportPixel);
 };

@@ -1,0 +1,848 @@
+{
+ "who": {
+  "x": 117,
+  "y": 506.89,
+  "w": 208,
+  "h": 195,
+  "items": [
+   {
+    "cls": "it ",
+    "x": 124,
+    "y": 513.89,
+    "w": 194,
+    "h": 34,
+    "base": 536.89,
+    "text": "OPEN",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 124,
+    "y": 547.89,
+    "w": 194,
+    "h": 34,
+    "base": 570.89,
+    "text": "CLOSED",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "sep",
+    "x": 128,
+    "y": 586.89,
+    "w": 186,
+    "h": 1,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 124,
+    "y": 592.89,
+    "w": 194,
+    "h": 34,
+    "base": 615.89,
+    "text": "AI · EASY",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 124,
+    "y": 626.89,
+    "w": 194,
+    "h": 34,
+    "base": 649.89,
+    "text": "AI · MEDIUM",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it cur",
+    "x": 124,
+    "y": 660.89,
+    "w": 194,
+    "h": 34,
+    "base": 683.89,
+    "text": "AI · HARD",
+    "img": null,
+    "small": null,
+    "dots": null
+   }
+  ]
+ },
+ "fac": {
+  "x": 311,
+  "y": 440.89,
+  "w": 194,
+  "h": 316,
+  "items": [
+   {
+    "cls": "it ",
+    "x": 318,
+    "y": 447.89,
+    "w": 180,
+    "h": 62,
+    "base": 485.89,
+    "text": "?RANDOM",
+    "img": {
+     "x": 328,
+     "y": 455.89,
+     "w": 46,
+     "h": 46
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it cur",
+    "x": 318,
+    "y": 509.89,
+    "w": 180,
+    "h": 60,
+    "base": 546.89,
+    "text": "USA",
+    "img": {
+     "x": 328,
+     "y": 517.89,
+     "w": 44,
+     "h": 44
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 318,
+    "y": 569.89,
+    "w": 180,
+    "h": 60,
+    "base": 606.89,
+    "text": "RUSSIA",
+    "img": {
+     "x": 328,
+     "y": 577.89,
+     "w": 44,
+     "h": 44
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 318,
+    "y": 629.89,
+    "w": 180,
+    "h": 60,
+    "base": 666.89,
+    "text": "CHINA",
+    "img": {
+     "x": 328,
+     "y": 637.89,
+     "w": 44,
+     "h": 44
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 318,
+    "y": 689.89,
+    "w": 180,
+    "h": 60,
+    "base": 726.89,
+    "text": "GLA",
+    "img": {
+     "x": 328,
+     "y": 697.89,
+     "w": 44,
+     "h": 44
+    },
+    "small": null,
+    "dots": null
+   }
+  ]
+ },
+ "color": {
+  "x": 471,
+  "y": 440.89,
+  "w": 270,
+  "h": 224,
+  "items": [
+   {
+    "cls": "",
+    "x": 484,
+    "y": 453.89,
+    "w": 244,
+    "h": 30,
+    "base": 475.39,
+    "text": "? RANDOM",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " dis",
+    "x": 484,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 526,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " dis",
+    "x": 568,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 610,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 652,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 694,
+    "y": 491.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 484,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 526,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 568,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "cur ",
+    "x": 610,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 652,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 694,
+    "y": 533.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " dis",
+    "x": 484,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 526,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 568,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 610,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 652,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 694,
+    "y": 575.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 484,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 526,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 568,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 610,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 652,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": " ",
+    "x": 694,
+    "y": 617.89,
+    "w": 34,
+    "h": 34,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   }
+  ]
+ },
+ "team": {
+  "x": 551,
+  "y": 440.89,
+  "w": 228,
+  "h": 170,
+  "items": [
+   {
+    "cls": "nt ",
+    "x": 564,
+    "y": 453.89,
+    "w": 202,
+    "h": 36,
+    "base": 477.39,
+    "text": "NO TEAM",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "tn cur",
+    "x": 564,
+    "y": 495.89,
+    "w": 46,
+    "h": 48,
+    "base": 523.39,
+    "text": "1",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 584.5,
+     "y": 530.39,
+     "w": 5,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 616,
+    "y": 495.89,
+    "w": 46,
+    "h": 48,
+    "base": 523.39,
+    "text": "2",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 633,
+     "y": 530.39,
+     "w": 12,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 668,
+    "y": 495.89,
+    "w": 46,
+    "h": 48,
+    "base": 523.39,
+    "text": "3",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 691,
+     "y": 530.39,
+     "w": 0,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 720,
+    "y": 495.89,
+    "w": 46,
+    "h": 48,
+    "base": 523.39,
+    "text": "4",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 743,
+     "y": 530.39,
+     "w": 0,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 564,
+    "y": 549.89,
+    "w": 46,
+    "h": 48,
+    "base": 577.39,
+    "text": "5",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 587,
+     "y": 584.39,
+     "w": 0,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 616,
+    "y": 549.89,
+    "w": 46,
+    "h": 48,
+    "base": 577.39,
+    "text": "6",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 639,
+     "y": 584.39,
+     "w": 0,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 668,
+    "y": 549.89,
+    "w": 46,
+    "h": 48,
+    "base": 577.39,
+    "text": "7",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 691,
+     "y": 584.39,
+     "w": 0,
+     "h": 5
+    }
+   },
+   {
+    "cls": "tn ",
+    "x": 720,
+    "y": 549.89,
+    "w": 46,
+    "h": 48,
+    "base": 577.39,
+    "text": "8",
+    "img": null,
+    "small": null,
+    "dots": {
+     "x": 743,
+     "y": 584.39,
+     "w": 0,
+     "h": 5
+    }
+   }
+  ]
+ },
+ "base": {
+  "x": 629,
+  "y": 440.89,
+  "w": 194,
+  "h": 235,
+  "items": [
+   {
+    "cls": "it cur",
+    "x": 636,
+    "y": 447.89,
+    "w": 180,
+    "h": 42,
+    "base": 474.89,
+    "text": "? RANDOM",
+    "img": {
+     "x": 646,
+     "y": 455.89,
+     "w": 26,
+     "h": 26
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "sep",
+    "x": 640,
+    "y": 494.89,
+    "w": 172,
+    "h": 1,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 636,
+    "y": 500.89,
+    "w": 180,
+    "h": 42,
+    "base": 527.89,
+    "text": "NORTH",
+    "img": {
+     "x": 646,
+     "y": 508.89,
+     "w": 26,
+     "h": 26
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 636,
+    "y": 542.89,
+    "w": 180,
+    "h": 42,
+    "base": 569.89,
+    "text": "SOUTH",
+    "img": {
+     "x": 646,
+     "y": 550.89,
+     "w": 26,
+     "h": 26
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 636,
+    "y": 584.89,
+    "w": 180,
+    "h": 42,
+    "base": 611.89,
+    "text": "WEST",
+    "img": {
+     "x": 646,
+     "y": 592.89,
+     "w": 26,
+     "h": 26
+    },
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it ",
+    "x": 636,
+    "y": 626.89,
+    "w": 180,
+    "h": 42,
+    "base": 653.89,
+    "text": "EAST",
+    "img": {
+     "x": 646,
+     "y": 634.89,
+     "w": 26,
+     "h": 26
+    },
+    "small": null,
+    "dots": null
+   }
+  ]
+ },
+ "teams": {
+  "x": 570,
+  "y": 343.89,
+  "w": 234,
+  "h": 240,
+  "items": [
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 350.89,
+    "w": 220,
+    "h": 34,
+    "base": 373.89,
+    "text": "FREE FOR ALL",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 384.89,
+    "w": 220,
+    "h": 34,
+    "base": 407.89,
+    "text": "2 TEAMS",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 418.89,
+    "w": 220,
+    "h": 34,
+    "base": 441.89,
+    "text": "4 TEAMS",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "sep",
+    "x": 581,
+    "y": 457.89,
+    "w": 212,
+    "h": 1,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 463.89,
+    "w": 220,
+    "h": 34,
+    "base": 486.89,
+    "text": "NORTH VS SOUTH",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 497.89,
+    "w": 220,
+    "h": 34,
+    "base": 520.89,
+    "text": "WEST VS EAST",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "sep",
+    "x": 581,
+    "y": 536.89,
+    "w": 212,
+    "h": 1,
+    "base": null,
+    "text": "",
+    "img": null,
+    "small": null,
+    "dots": null
+   },
+   {
+    "cls": "it",
+    "x": 577,
+    "y": 542.89,
+    "w": 220,
+    "h": 34,
+    "base": 565.89,
+    "text": "YOU VS ALL AI",
+    "img": null,
+    "small": null,
+    "dots": null
+   }
+  ]
+ }
+}

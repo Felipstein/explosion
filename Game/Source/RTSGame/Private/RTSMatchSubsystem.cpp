@@ -558,7 +558,8 @@ bool URTSMatchSubsystem::StartSkirmish(const FString& InMapName, FString& OutErr
 	// quantos jogam: na LAN, todos da sala (um por base do mapa); no skirmish, você e a IA; (v5) no laboratório, os pedidos (a
 	// cena: um por largada dela), até as bases do mapa
 	// (01/11) o skirmish montado na sala nova (RTSShellGame.h): as vagas dela no lugar do você contra uma IA
-	const TArray<FRTSLocalSlot>* LocalSlots = (!bNet && !bLab && !bScenario) ? RTSShellGame::LocalSlots() : nullptr;
+	// (06/11) na rede, as vagas da sala da LAN (facção, base, cor, time, IA) pelo mesmo caminho do skirmish local
+	const TArray<FRTSLocalSlot>* LocalSlots = bNet ? NetSession->MatchSlots() : (!bLab && !bScenario) ? RTSShellGame::LocalSlots() : nullptr;
 	const int32 PlayerCount = bNet ? NetSession->PlayerCount()
 		: (bLab ? FMath::Clamp(bScenario ? Info->StartsM.Num() : LabPlayers, 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num())))
 			: (LocalSlots ? FMath::Clamp(LocalSlots->Num(), 2, FMath::Max(2, FMath::Min(int32(Sim::MaxPlayers), Info->StartsM.Num()))) : 2));
