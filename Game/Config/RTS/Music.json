@@ -1,0 +1,1204 @@
+{
+ "_comment": "A trilha da partida (docs/TRILHA_DA_PARTIDA.md): gerado pelo Game/Tools/music/music_pack.py; os assets pelo import_music.py. O URTSMusic (Game/Source/RTSGame) lê daqui. gain_db = o ajuste à mão de cada faixa (o volume do ZH), em dB.",
+ "tracks": [
+  {
+   "id": "usa_last_advance",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_last_advance.MU_usa_last_advance",
+   "source": "usa/The_Last_Advance.mp3",
+   "dur_s": 179.342,
+   "bpm": 120.2,
+   "downbeat_s": 0.157,
+   "grid": true,
+   "entry_s": 22.12,
+   "build_s": 14.134,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -12.6,
+   "lufs": -16.0,
+   "true_peak_db": -3.0,
+   "tempo_conf": 14.6,
+   "notes": [
+    "começo: tirei 0.07 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_overwatch",
+   "faction": "usa",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_overwatch.MU_usa_overwatch",
+   "source": "gerado/usa/usa_overwatch.mp3",
+   "dur_s": 111.858,
+   "bpm": 100.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 19.2,
+   "build_s": 9.6,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Theme",
+     "start_s": 19.2
+    },
+    {
+     "name": "Lift",
+     "start_s": 57.6
+    },
+    {
+     "name": "Ending",
+     "start_s": 96.0
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -14.4,
+   "lufs": -17.5,
+   "true_peak_db": -3.9,
+   "tempo_conf": 15.7,
+   "notes": [
+    "começo: tirei 2.38 s de silêncio",
+    "fim: tirei 0.2 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_dawn_patrol",
+   "faction": "usa",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_dawn_patrol.MU_usa_dawn_patrol",
+   "source": "gerado/usa/usa_dawn_patrol.mp3",
+   "dur_s": 102.023,
+   "bpm": 96.0,
+   "downbeat_s": 0.015,
+   "grid": true,
+   "entry_s": 10.015,
+   "build_s": 0.015,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.015
+    },
+    {
+     "name": "Horn",
+     "start_s": 10.015
+    },
+    {
+     "name": "Piano",
+     "start_s": 30.015
+    },
+    {
+     "name": "Rise",
+     "start_s": 50.015
+    },
+    {
+     "name": "Strings",
+     "start_s": 70.015
+    },
+    {
+     "name": "Ending",
+     "start_s": 90.015
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -17.8,
+   "lufs": -17.4,
+   "true_peak_db": -1.3,
+   "tempo_conf": 7.6,
+   "notes": [
+    "começo: tirei 1.93 s de silêncio",
+    "fim: tirei 0.1 s de silêncio",
+    "limitador: o pico era -0.6 dBTP"
+   ]
+  },
+  {
+   "id": "usa_vanguard",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_vanguard.MU_usa_vanguard",
+   "source": "gerado/usa/usa_vanguard_ref.mp3",
+   "dur_s": 114.105,
+   "bpm": 128.0,
+   "downbeat_s": 0.096,
+   "grid": true,
+   "entry_s": 7.596,
+   "build_s": 0.096,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.096
+    },
+    {
+     "name": "Theme",
+     "start_s": 7.596
+    },
+    {
+     "name": "Answer",
+     "start_s": 22.596
+    },
+    {
+     "name": "Development",
+     "start_s": 37.596
+    },
+    {
+     "name": "Breakdown",
+     "start_s": 52.596
+    },
+    {
+     "name": "Build",
+     "start_s": 67.596
+    },
+    {
+     "name": "Climax",
+     "start_s": 75.096
+    },
+    {
+     "name": "Climax 2",
+     "start_s": 90.096
+    },
+    {
+     "name": "Ending",
+     "start_s": 105.096
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -12.9,
+   "lufs": -16.0,
+   "true_peak_db": -3.3,
+   "tempo_conf": 12.5,
+   "notes": [
+    "começo: tirei 0.48 s de silêncio",
+    "fim: tirei 2.0 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_steel_rain",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_steel_rain.MU_usa_steel_rain",
+   "source": "gerado/usa/usa_steel_rain.mp3",
+   "dur_s": 91.98,
+   "bpm": 140.0,
+   "downbeat_s": 0.02,
+   "grid": true,
+   "entry_s": 6.877,
+   "build_s": 0.02,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.02
+    },
+    {
+     "name": "Charge",
+     "start_s": 6.877
+    },
+    {
+     "name": "Theme",
+     "start_s": 20.591
+    },
+    {
+     "name": "Counter",
+     "start_s": 34.305
+    },
+    {
+     "name": "Breakdown",
+     "start_s": 48.019
+    },
+    {
+     "name": "Build",
+     "start_s": 61.733
+    },
+    {
+     "name": "Climax",
+     "start_s": 68.59
+    },
+    {
+     "name": "Ending",
+     "start_s": 82.304
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -13.7,
+   "lufs": -16.0,
+   "true_peak_db": -2.7,
+   "tempo_conf": 9.5,
+   "notes": [
+    "começo: tirei 0.48 s de silêncio",
+    "fim: tirei 0.7 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_final_breach",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_final_breach.MU_usa_final_breach",
+   "source": "usa/The_Final_Breach.mp3",
+   "dur_s": 176.312,
+   "bpm": 149.8,
+   "downbeat_s": 1.376,
+   "grid": true,
+   "entry_s": 15.795,
+   "build_s": 9.387,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -11.7,
+   "lufs": -16.0,
+   "true_peak_db": -3.8,
+   "tempo_conf": 11.6,
+   "notes": [
+    "começo: tirei 0.07 s de silêncio",
+    "fim: tirei 0.0 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_iron_wing_horizon",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_iron_wing_horizon.MU_usa_iron_wing_horizon",
+   "source": "usa/Iron_Wing_Horizon.mp3",
+   "dur_s": 177.247,
+   "bpm": 110.0,
+   "downbeat_s": 2.17,
+   "grid": true,
+   "entry_s": 26.17,
+   "build_s": 17.443,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -12.4,
+   "lufs": -16.0,
+   "true_peak_db": -3.3,
+   "tempo_conf": 12.9,
+   "notes": [
+    "começo: tirei 0.06 s de silêncio",
+    "fim: tirei 0.6 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_strike_coordinates",
+   "faction": "usa",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_strike_coordinates.MU_usa_strike_coordinates",
+   "source": "usa/Strike_Coordinates.mp3",
+   "dur_s": 177.059,
+   "bpm": 139.7,
+   "downbeat_s": 0.409,
+   "grid": true,
+   "entry_s": 2.127,
+   "build_s": 0.0,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -11.5,
+   "lufs": -16.0,
+   "true_peak_db": -3.4,
+   "tempo_conf": 10.6,
+   "notes": [
+    "começo: tirei 0.14 s de silêncio",
+    "fim: tirei 0.5 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_victory",
+   "faction": "usa",
+   "role": "victory",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_victory.MU_usa_victory",
+   "source": "gerado/usa/usa_victory.mp3",
+   "dur_s": 17.45,
+   "bpm": 100.0,
+   "downbeat_s": 0.02,
+   "grid": true,
+   "entry_s": 9.62,
+   "build_s": 0.02,
+   "sections": [
+    {
+     "name": "Fanfare",
+     "start_s": 0.02
+    },
+    {
+     "name": "Ending",
+     "start_s": 9.62
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -14.0,
+   "lufs": -15.9,
+   "true_peak_db": -4.5,
+   "tempo_conf": 2.1,
+   "notes": [
+    "começo: tirei 0.99 s de silêncio"
+   ]
+  },
+  {
+   "id": "usa_defeat",
+   "faction": "usa",
+   "role": "defeat",
+   "asset": "/Game/Audio/Music/Match/usa/MU_usa_defeat.MU_usa_defeat",
+   "source": "gerado/usa/usa_defeat_v2.mp3",
+   "dur_s": 17.363,
+   "bpm": 72.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 10.0,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Lament",
+     "start_s": 0.0
+    },
+    {
+     "name": "Ending",
+     "start_s": 10.0
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -20.4,
+   "lufs": -17.0,
+   "true_peak_db": -2.9,
+   "tempo_conf": 2.1,
+   "notes": [
+    "começo: tirei 0.01 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_jade_garrison_march",
+   "faction": "china",
+   "role": "theme",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_jade_garrison_march.MU_china_jade_garrison_march",
+   "source": "china/Jade_Garrison_March.mp3",
+   "dur_s": 177.392,
+   "bpm": 105.0,
+   "downbeat_s": 2.272,
+   "grid": true,
+   "entry_s": 27.415,
+   "build_s": 18.272,
+   "sections": [],
+   "gain_db": -3.0,
+   "lufs_before": -11.7,
+   "lufs": -16.0,
+   "true_peak_db": -3.9,
+   "tempo_conf": 13.2,
+   "notes": [
+    "começo: tirei 0.06 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_jade_dawn",
+   "faction": "china",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_jade_dawn.MU_china_jade_dawn",
+   "source": "gerado/china/china_jade_dawn_v2.mp3",
+   "dur_s": 108.0,
+   "bpm": 92.0,
+   "downbeat_s": 0.017,
+   "grid": true,
+   "entry_s": 20.887,
+   "build_s": 10.452,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.017
+    },
+    {
+     "name": "Theme",
+     "start_s": 20.887
+    },
+    {
+     "name": "Lift",
+     "start_s": 62.626
+    },
+    {
+     "name": "Ending",
+     "start_s": 104.365
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -14.4,
+   "lufs": -17.4,
+   "true_peak_db": -3.2,
+   "tempo_conf": 33.7,
+   "notes": [
+    "começo: tirei 1.29 s de silêncio",
+    "fim: silêncio em 108 s e um estouro depois: cortei no silêncio (era 122.7 s)"
+   ]
+  },
+  {
+   "id": "china_red_lantern",
+   "faction": "china",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_red_lantern.MU_china_red_lantern",
+   "source": "gerado/china/china_red_lantern_v2.mp3",
+   "dur_s": 113.499,
+   "bpm": 100.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 19.2,
+   "build_s": 9.6,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Watch",
+     "start_s": 19.2
+    },
+    {
+     "name": "Machine",
+     "start_s": 57.6
+    },
+    {
+     "name": "Ending",
+     "start_s": 96.0
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -13.1,
+   "lufs": -17.5,
+   "true_peak_db": -4.8,
+   "tempo_conf": 13.8,
+   "notes": [
+    "fim: tirei 0.9 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_jade_command",
+   "faction": "china",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_jade_command.MU_china_jade_command",
+   "source": "china/Beneath_the_Jade_Command.mp3",
+   "dur_s": 178.271,
+   "bpm": 139.7,
+   "downbeat_s": 1.599,
+   "grid": true,
+   "entry_s": 27.369,
+   "build_s": 20.497,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -11.6,
+   "lufs": -16.0,
+   "true_peak_db": -3.7,
+   "tempo_conf": 6.7,
+   "notes": [
+    "começo: tirei 0.07 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_iron_banner",
+   "faction": "china",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_iron_banner.MU_china_iron_banner",
+   "source": "china/Beneath_the_Iron_Banner.mp3",
+   "dur_s": 179.727,
+   "bpm": 123.8,
+   "downbeat_s": 1.886,
+   "grid": true,
+   "entry_s": 17.395,
+   "build_s": 9.64,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -12.1,
+   "lufs": -16.0,
+   "true_peak_db": -2.3,
+   "tempo_conf": 10.3,
+   "notes": [
+    "começo: tirei 0.07 s de silêncio",
+    "fim: tirei 0.4 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_banner_ridge",
+   "faction": "china",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_banner_ridge.MU_china_banner_ridge",
+   "source": "china/Banner_on_the_Ridge.mp3",
+   "dur_s": 177.622,
+   "bpm": 123.0,
+   "downbeat_s": 1.463,
+   "grid": false,
+   "entry_s": 2.437,
+   "build_s": 0.0,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -12.0,
+   "lufs": -16.0,
+   "true_peak_db": -3.6,
+   "tempo_conf": 5.1,
+   "notes": [
+    "começo: tirei 0.06 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_dragon_ascent",
+   "faction": "china",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_dragon_ascent.MU_china_dragon_ascent",
+   "source": "gerado/china/china_dragon_ascent.mp3",
+   "dur_s": 102.3,
+   "bpm": 136.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 7.059,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Riff",
+     "start_s": 7.059
+    },
+    {
+     "name": "Verse",
+     "start_s": 21.177
+    },
+    {
+     "name": "Lift",
+     "start_s": 35.295
+    },
+    {
+     "name": "Break",
+     "start_s": 49.413
+    },
+    {
+     "name": "Climax",
+     "start_s": 63.531
+    },
+    {
+     "name": "Climax 2",
+     "start_s": 77.649
+    },
+    {
+     "name": "Ending",
+     "start_s": 91.767
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -13.2,
+   "lufs": -16.0,
+   "true_peak_db": -3.4,
+   "tempo_conf": 6.2,
+   "notes": [
+    "começo: tirei 0.54 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_iron_lotus",
+   "faction": "china",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_iron_lotus.MU_china_iron_lotus",
+   "source": "gerado/china/china_iron_lotus.mp3",
+   "dur_s": 99.566,
+   "bpm": 118.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 8.136,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Riff",
+     "start_s": 8.136
+    },
+    {
+     "name": "Song",
+     "start_s": 24.407
+    },
+    {
+     "name": "Machine",
+     "start_s": 40.678
+    },
+    {
+     "name": "Break",
+     "start_s": 56.949
+    },
+    {
+     "name": "Climax",
+     "start_s": 73.22
+    },
+    {
+     "name": "Ending",
+     "start_s": 89.491
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -11.8,
+   "lufs": -15.9,
+   "true_peak_db": -4.7,
+   "tempo_conf": 6.4,
+   "notes": [
+    "começo: tirei 2.10 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_victory",
+   "faction": "china",
+   "role": "victory",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_victory.MU_china_victory",
+   "source": "gerado/china/china_victory_v2.mp3",
+   "dur_s": 17.682,
+   "bpm": 100.0,
+   "downbeat_s": 0.075,
+   "grid": true,
+   "entry_s": 9.675,
+   "build_s": 0.075,
+   "sections": [
+    {
+     "name": "Fanfare",
+     "start_s": 0.075
+    },
+    {
+     "name": "Ending",
+     "start_s": 9.675
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -13.1,
+   "lufs": -16.0,
+   "true_peak_db": -4.2,
+   "tempo_conf": 5.1,
+   "notes": [
+    "começo: tirei 0.76 s de silêncio"
+   ]
+  },
+  {
+   "id": "china_defeat",
+   "faction": "china",
+   "role": "defeat",
+   "asset": "/Game/Audio/Music/Match/china/MU_china_defeat.MU_china_defeat",
+   "source": "gerado/china/china_defeat.mp3",
+   "dur_s": 16.902,
+   "bpm": 72.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 10.0,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Lament",
+     "start_s": 0.0
+    },
+    {
+     "name": "Ending",
+     "start_s": 10.0
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -22.9,
+   "lufs": -17.0,
+   "true_peak_db": -2.5,
+   "tempo_conf": 1.8,
+   "notes": [
+    "começo: tirei 0.37 s de silêncio",
+    "fim: tirei 0.1 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_calculated_perimeter",
+   "faction": "gla",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_calculated_perimeter.MU_gla_calculated_perimeter",
+   "source": "gla/Calculated_Perimeter.mp3",
+   "dur_s": 176.658,
+   "bpm": 105.0,
+   "downbeat_s": 2.274,
+   "grid": true,
+   "entry_s": 18.274,
+   "build_s": 9.131,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -13.2,
+   "lufs": -16.0,
+   "true_peak_db": -2.1,
+   "tempo_conf": 10.6,
+   "notes": [
+    "começo: tirei 0.06 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_tunnels_vanguard",
+   "faction": "gla",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_tunnels_vanguard.MU_gla_tunnels_vanguard",
+   "source": "gla/Tunnels_of_the_Vanguard_2026-10-05T161254.wav",
+   "dur_s": 119.255,
+   "bpm": 103.9,
+   "downbeat_s": 0.406,
+   "grid": true,
+   "entry_s": 2.716,
+   "build_s": 0.0,
+   "sections": [],
+   "gain_db": -1.5,
+   "lufs_before": -20.8,
+   "lufs": -17.6,
+   "true_peak_db": -1.3,
+   "tempo_conf": 16.0,
+   "notes": [
+    "começo: tirei 0.61 s de silêncio",
+    "fim: tirei 0.1 s de silêncio",
+    "limitador: o pico era +2.5 dBTP"
+   ]
+  },
+  {
+   "id": "gla_black_market",
+   "faction": "gla",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_black_market.MU_gla_black_market",
+   "source": "gerado/gla/gla_black_market.mp3",
+   "dur_s": 93.752,
+   "bpm": 126.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 7.619,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Riff",
+     "start_s": 7.619
+    },
+    {
+     "name": "Wail",
+     "start_s": 22.857
+    },
+    {
+     "name": "Market",
+     "start_s": 38.095
+    },
+    {
+     "name": "Break",
+     "start_s": 53.333
+    },
+    {
+     "name": "Climax",
+     "start_s": 68.571
+    },
+    {
+     "name": "Ending",
+     "start_s": 83.809
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -15.0,
+   "lufs": -17.5,
+   "true_peak_db": -3.8,
+   "tempo_conf": 3.7,
+   "notes": [
+    "começo: tirei 0.46 s de silêncio",
+    "fim: tirei 1.2 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_steel_dunes",
+   "faction": "gla",
+   "role": "both",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_steel_dunes.MU_gla_steel_dunes",
+   "source": "gla/Steel_Under_the_Dunes.mp3",
+   "dur_s": 176.808,
+   "bpm": 104.9,
+   "downbeat_s": 2.183,
+   "grid": false,
+   "entry_s": 26.433,
+   "build_s": 18.433,
+   "sections": [],
+   "gain_db": -1.5,
+   "lufs_before": -12.9,
+   "lufs": -16.0,
+   "true_peak_db": -2.7,
+   "tempo_conf": 4.4,
+   "notes": [
+    "começo: tirei 0.07 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_shadow_hijaz",
+   "faction": "gla",
+   "role": "both",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_shadow_hijaz.MU_gla_shadow_hijaz",
+   "source": "gla/Shadow_of_the_Hijaz.mp3",
+   "dur_s": 178.44,
+   "bpm": 136.0,
+   "downbeat_s": 0.441,
+   "grid": false,
+   "entry_s": 16.446,
+   "build_s": 8.446,
+   "sections": [],
+   "gain_db": -1.5,
+   "lufs_before": -13.1,
+   "lufs": -16.0,
+   "true_peak_db": -2.7,
+   "tempo_conf": 4.0,
+   "notes": [
+    "começo: tirei 0.05 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_sun_trenches",
+   "faction": "gla",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_sun_trenches.MU_gla_sun_trenches",
+   "source": "gla/Sun_Scorched_Trenches.mp3",
+   "dur_s": 150.142,
+   "bpm": 120.2,
+   "downbeat_s": 1.886,
+   "grid": true,
+   "entry_s": 15.863,
+   "build_s": 7.876,
+   "sections": [],
+   "gain_db": 0.0,
+   "lufs_before": -12.1,
+   "lufs": -16.0,
+   "true_peak_db": -3.1,
+   "tempo_conf": 6.4,
+   "notes": [
+    "começo: tirei 0.05 s de silêncio",
+    "fim: tirei 0.5 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_victory",
+   "faction": "gla",
+   "role": "victory",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_victory.MU_gla_victory",
+   "source": "gerado/gla/gla_victory.mp3",
+   "dur_s": 14.164,
+   "bpm": 100.0,
+   "downbeat_s": 0.017,
+   "grid": true,
+   "entry_s": 9.617,
+   "build_s": 0.017,
+   "sections": [
+    {
+     "name": "Fanfare",
+     "start_s": 0.017
+    },
+    {
+     "name": "Ending",
+     "start_s": 9.617
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -14.8,
+   "lufs": -16.0,
+   "true_peak_db": -2.7,
+   "tempo_conf": 5.4,
+   "notes": [
+    "começo: tirei 4.28 s de silêncio"
+   ]
+  },
+  {
+   "id": "gla_defeat",
+   "faction": "gla",
+   "role": "defeat",
+   "asset": "/Game/Audio/Music/Match/gla/MU_gla_defeat.MU_gla_defeat",
+   "source": "gerado/gla/gla_defeat.mp3",
+   "dur_s": 15.585,
+   "bpm": 72.0,
+   "downbeat_s": 0.015,
+   "grid": true,
+   "entry_s": 10.015,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Lament",
+     "start_s": 0.015
+    },
+    {
+     "name": "Ending",
+     "start_s": 10.015
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -16.3,
+   "lufs": -17.0,
+   "true_peak_db": -1.5,
+   "tempo_conf": 4.5,
+   "notes": [
+    "começo: tirei 1.79 s de silêncio"
+   ]
+  },
+  {
+   "id": "russia_iron_directive",
+   "faction": "russia",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_iron_directive.MU_russia_iron_directive",
+   "source": "gerado/russia/russia_iron_directive.mp3",
+   "dur_s": 116.494,
+   "bpm": 112.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 17.143,
+   "build_s": 8.572,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Theme",
+     "start_s": 17.143
+    },
+    {
+     "name": "Build",
+     "start_s": 51.429
+    },
+    {
+     "name": "Anthem",
+     "start_s": 68.572
+    },
+    {
+     "name": "Ending",
+     "start_s": 102.858
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -15.5,
+   "lufs": -16.0,
+   "true_peak_db": -1.3,
+   "tempo_conf": 15.9,
+   "notes": [
+    "fim: tirei 3.3 s de silêncio"
+   ]
+  },
+  {
+   "id": "russia_cold_line",
+   "faction": "russia",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_cold_line.MU_russia_cold_line",
+   "source": "gerado/russia/russia_cold_line.mp3",
+   "dur_s": 104.0,
+   "bpm": 96.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 20.0,
+   "build_s": 10.0,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Pulse",
+     "start_s": 20.0
+    },
+    {
+     "name": "Motif",
+     "start_s": 60.0
+    },
+    {
+     "name": "Ending",
+     "start_s": 100.0
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -14.4,
+   "lufs": -17.6,
+   "true_peak_db": -3.7,
+   "tempo_conf": 11.4,
+   "notes": [
+    "começo: tirei 0.01 s de silêncio",
+    "fim: silêncio em 104 s e um estouro depois: cortei no silêncio (era 119.0 s)"
+   ]
+  },
+  {
+   "id": "russia_white_silence",
+   "faction": "russia",
+   "role": "calm",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_white_silence.MU_russia_white_silence",
+   "source": "gerado/russia/russia_white_silence.mp3",
+   "dur_s": 129.425,
+   "bpm": 88.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 21.818,
+   "build_s": 10.909,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Snow",
+     "start_s": 21.818
+    },
+    {
+     "name": "Steel",
+     "start_s": 65.454
+    },
+    {
+     "name": "Ending",
+     "start_s": 109.09
+    }
+   ],
+   "gain_db": -1.5,
+   "lufs_before": -14.2,
+   "lufs": -17.4,
+   "true_peak_db": -3.9,
+   "tempo_conf": 8.0,
+   "notes": [
+    "fim: tirei 0.1 s de silêncio"
+   ]
+  },
+  {
+   "id": "russia_red_tide",
+   "faction": "russia",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_red_tide.MU_russia_red_tide",
+   "source": "gerado/russia/russia_red_tide.mp3",
+   "dur_s": 131.265,
+   "bpm": 132.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 14.545,
+   "build_s": 7.272,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.0
+    },
+    {
+     "name": "Main theme",
+     "start_s": 14.545
+    },
+    {
+     "name": "Main theme variation",
+     "start_s": 43.636
+    },
+    {
+     "name": "Break",
+     "start_s": 72.727
+    },
+    {
+     "name": "Climax",
+     "start_s": 87.272
+    },
+    {
+     "name": "Ending",
+     "start_s": 116.363
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -12.4,
+   "lufs": -16.0,
+   "true_peak_db": -3.9,
+   "tempo_conf": 8.5,
+   "notes": [
+    "começo: tirei 0.00 s de silêncio",
+    "fim: tirei 1.1 s de silêncio"
+   ]
+  },
+  {
+   "id": "russia_steel_avalanche",
+   "faction": "russia",
+   "role": "battle",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_steel_avalanche.MU_russia_steel_avalanche",
+   "source": "gerado/russia/russia_steel_avalanche.mp3",
+   "dur_s": 124.029,
+   "bpm": 136.0,
+   "downbeat_s": 0.052,
+   "grid": true,
+   "entry_s": 14.17,
+   "build_s": 7.111,
+   "sections": [
+    {
+     "name": "Intro",
+     "start_s": 0.052
+    },
+    {
+     "name": "Charge",
+     "start_s": 14.17
+    },
+    {
+     "name": "Assault",
+     "start_s": 42.405
+    },
+    {
+     "name": "Break",
+     "start_s": 70.64
+    },
+    {
+     "name": "Climax",
+     "start_s": 84.758
+    },
+    {
+     "name": "Ending",
+     "start_s": 112.993
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -12.0,
+   "lufs": -16.0,
+   "true_peak_db": -4.2,
+   "tempo_conf": 17.0,
+   "notes": []
+  },
+  {
+   "id": "russia_victory",
+   "faction": "russia",
+   "role": "victory",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_victory.MU_russia_victory",
+   "source": "gerado/russia/russia_victory.mp3",
+   "dur_s": 18.165,
+   "bpm": 100.0,
+   "downbeat_s": 0.073,
+   "grid": true,
+   "entry_s": 9.673,
+   "build_s": 0.073,
+   "sections": [
+    {
+     "name": "Fanfare",
+     "start_s": 0.073
+    },
+    {
+     "name": "Ending",
+     "start_s": 9.673
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -14.5,
+   "lufs": -15.9,
+   "true_peak_db": -2.1,
+   "tempo_conf": 6.0,
+   "notes": [
+    "começo: tirei 0.28 s de silêncio"
+   ]
+  },
+  {
+   "id": "russia_defeat",
+   "faction": "russia",
+   "role": "defeat",
+   "asset": "/Game/Audio/Music/Match/russia/MU_russia_defeat.MU_russia_defeat",
+   "source": "gerado/russia/russia_defeat_v2.mp3",
+   "dur_s": 17.366,
+   "bpm": 72.0,
+   "downbeat_s": 0.0,
+   "grid": true,
+   "entry_s": 10.0,
+   "build_s": 0.0,
+   "sections": [
+    {
+     "name": "Lament",
+     "start_s": 0.0
+    },
+    {
+     "name": "Ending",
+     "start_s": 10.0
+    }
+   ],
+   "gain_db": 0.0,
+   "lufs_before": -19.0,
+   "lufs": -17.0,
+   "true_peak_db": -6.1,
+   "tempo_conf": 1.3,
+   "notes": [
+    "começo: tirei 0.01 s de silêncio"
+   ]
+  }
+ ]
+}

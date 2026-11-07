@@ -1,0 +1,60 @@
+{
+ "id": "russia_defeat",
+ "faction": "russia",
+ "role": "defeat",
+ "bpm": 72,
+ "bar_s": 3.33333,
+ "why": "Derrota da RUSSIA: o lamento curto no fim da partida.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Lament",
+   "start_s": 0.0
+  },
+  {
+   "name": "Ending",
+   "start_s": 10.0
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Lament]\n{a slow somber lament by choir and low brass, the faction motif in a minor key, descending, heavy}",
+    "duration_ms": 10000,
+    "positive_styles": [
+     "dark orchestral",
+     "deep Russian male choir",
+     "low brass",
+     "war drums",
+     "bayan accordion",
+     "somber",
+     "minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a last low chord}\n{it rings out naturally; no fade-out}",
+    "duration_ms": 7333,
+    "positive_styles": [
+     "final low chord",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

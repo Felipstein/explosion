@@ -1,0 +1,133 @@
+{
+ "id": "russia_red_tide",
+ "faction": "russia",
+ "role": "battle",
+ "why": "A Rússia não tinha nenhuma faixa. A 1ª de batalha: o teste da ElevenLabs Music v2.5 (a qualidade e o custo) antes das outras. A identidade: fria, pesada, de Estado (a EVA dela é o oficial do estado-maior); metal industrial com orquestra e coro masculino, um motivo de 4 notas que volta a faixa inteira (o gancho que se lembra, como os RTS clássicos), mixagem seca e firme (o defeito de todas as nossas era o grave embolado), fim de verdade (nada de corte).",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{cold open: one low anvil strike, then a distorted synth bass pulsing in eighth notes}\n{a deep male choir hums the signature: a dark 4-note descending minor motif, the hook of the whole track}\n{a snare roll builds into the downbeat}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "industrial metal",
+     "dark orchestral",
+     "deep Russian male choir",
+     "heavy war drums",
+     "distorted synth bass",
+     "low brass",
+     "132 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "long fade"
+    ]
+   },
+   {
+    "text": "[Main theme]\n{the full band hits on the downbeat: tight palm-muted metal guitars locked with war drums}\n{the brass section states the 4-note signature motif loud and clear}\n{the male choir shouts short wordless 'hey' accents on beat four; punchy, clear, tight low end}",
+    "duration_ms": 29091,
+    "positive_styles": [
+     "full band",
+     "brass lead melody",
+     "male choir accents",
+     "driving war drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Main theme variation]\n{the same motif harmonized in octaves by brass over double-time drums}\n{metallic anvil hits on the backbeat; a short balalaika tremolo phrase answers between the brass statements}",
+    "duration_ms": 29091,
+    "positive_styles": [
+     "harmonized brass",
+     "double-time drums",
+     "anvil percussion",
+     "balalaika tremolo answer"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{the drums drop out: only the synth bass pulse, ticking metal percussion and the low choir holding a minor chord}\n{cold and tense, a faint radio static texture; in the last two bars a big tom fill}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "low male choir pad",
+     "ticking metal percussion"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "silence"
+    ]
+   },
+   {
+    "text": "[Climax]\n{everything returns at full intensity: the choir sings the motif fortissimo, brass and guitars in unison}\n{driving kick drum, cymbal crashes on every phrase start}",
+    "duration_ms": 29091,
+    "positive_styles": [
+     "maximum intensity",
+     "choir fortissimo",
+     "brass and guitars in unison",
+     "driving kick drum"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a last statement of the motif by brass and choir in half-time}\n{then one full-band unison hit on the downbeat and a long natural ring-out of the choir and a low gong; a definitive ending, no fade-out}",
+    "duration_ms": 16000,
+    "positive_styles": [
+     "final statement",
+     "half-time",
+     "unison hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "fade out",
+     "abrupt cut",
+     "lyrics"
+    ]
+   }
+  ]
+ },
+ "bpm": 132,
+ "bar_s": 1.81818,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Main theme",
+   "start_s": 14.545
+  },
+  {
+   "name": "Main theme variation",
+   "start_s": 43.636
+  },
+  {
+   "name": "Break",
+   "start_s": 72.727
+  },
+  {
+   "name": "Climax",
+   "start_s": 87.272
+  },
+  {
+   "name": "Ending",
+   "start_s": 116.363
+  }
+ ]
+}

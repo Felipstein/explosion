@@ -1,0 +1,237 @@
+{
+ "id": "usa_vanguard_ref",
+ "faction": "usa",
+ "role": "battle",
+ "bpm": 128,
+ "bar_s": 1.875,
+ "why": "Batalha 1 da USA, a 3ª volta, A/B: com o tema dele de referência (condition medium nos 2 primeiros trechos).",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Theme",
+   "start_s": 7.5
+  },
+  {
+   "name": "Answer",
+   "start_s": 22.5
+  },
+  {
+   "name": "Development",
+   "start_s": 37.5
+  },
+  {
+   "name": "Breakdown",
+   "start_s": 52.5
+  },
+  {
+   "name": "Build",
+   "start_s": 67.5
+  },
+  {
+   "name": "Climax",
+   "start_s": 75
+  },
+  {
+   "name": "Climax 2",
+   "start_s": 90
+  },
+  {
+   "name": "Ending",
+   "start_s": 105
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a snare roll and a timpani hit; the brass announces the first four notes of a heroic march motif}\n{electric guitar power chords swell under it}",
+    "duration_ms": 7500,
+    "positive_styles": [
+     "heroic orchestral rock",
+     "military brass fanfare",
+     "marching snare and rock drums",
+     "electric guitar power chords",
+     "strings",
+     "timpani",
+     "128 bpm, major key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "choir",
+     "synthwave",
+     "EDM",
+     "lo-fi"
+    ],
+    "conditioning_ref": {
+     "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+     "range": {
+      "start_ms": 15000,
+      "end_ms": 45000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Theme]\n{the full heroic brass melody over a driving rock beat and a marching snare}\n{the guitars chug in eighth notes}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "heroic brass melody",
+     "driving rock beat",
+     "marching snare"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+     "range": {
+      "start_ms": 15000,
+      "end_ms": 45000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Answer]\n{the strings take the melody one octave higher, the brass answers with short fanfare stabs}\n{the drums switch to a half-time groove}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "strings melody",
+     "brass stabs",
+     "half-time drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Development]\n{the motif broken into fragments passed between horns, trumpets and guitar over new chords}\n{a rising sequence, tom-heavy drums}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "motif fragments",
+     "new harmony",
+     "tom drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Breakdown]\n{the band drops out: a low string ostinato and timpani pulses}\n{a solo French horn plays the motif slowly in minor, tense}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "sparse",
+     "solo horn",
+     "tension"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Build]\n{a snare roll crescendo and rising strings, a cymbal swell into a key change}",
+    "duration_ms": 7500,
+    "positive_styles": [
+     "crescendo",
+     "key change"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{everything returns one whole step higher: brass in unison on the motif, guitars and drums at full power}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "full power",
+     "higher key",
+     "brass unison"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax 2]\n{the trumpets harmonize the motif in thirds, a new countermelody in the strings, double-time snare}",
+    "duration_ms": 15000,
+    "positive_styles": [
+     "harmonized trumpets",
+     "countermelody",
+     "double-time snare"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a final heroic statement in half-time}\n{one big unison hit on the downbeat and a natural ring-out; no fade-out}",
+    "duration_ms": 11500,
+    "positive_styles": [
+     "final statement",
+     "unison hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+  "range": {
+   "start_ms": 15000,
+   "end_ms": 45000
+  },
+  "strength": "medium",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ },
+ "generated_at": "2026-11-06T19:48:05.910Z",
+ "seconds_planned": 116.5,
+ "seconds_wall": 22.52,
+ "credits_spent": 0,
+ "credits_left": 11861,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2798698",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 19:47:43 GMT",
+  "server": "uvicorn",
+  "song-id": "F8fVsjJiX3ofyWgfngOb",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "752148ed4b9ab43c99a195e62a3c8518"
+ },
+ "audio": "captures/musica/gerado/usa/usa_vanguard_ref.mp3"
+}

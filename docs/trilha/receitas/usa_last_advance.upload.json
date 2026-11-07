@@ -1,0 +1,105 @@
+{
+ "id": "usa_last_advance",
+ "source": "captures/musica/usa/The_Last_Advance.mp3",
+ "uploaded_at": "2026-11-06T19:46:47.698Z",
+ "credits_spent": 0,
+ "response": {
+  "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+  "composition_plan": {
+   "chunks": [
+    {
+     "text": "[Intro]",
+     "duration_ms": 15000,
+     "positive_styles": [
+      "electronic",
+      "synthwave",
+      "upbeat",
+      "energetic",
+      "instrumental",
+      "synth",
+      "arpeggio",
+      "building"
+     ],
+     "negative_styles": [
+      "vocal",
+      "slow",
+      "acoustic",
+      "sad",
+      "classical",
+      "drums",
+      "heavy bass"
+     ],
+     "context_adherence": "high",
+     "conditioning_ref": null,
+     "condition_strength": null
+    },
+    {
+     "text": "[Main Theme]",
+     "duration_ms": 30000,
+     "positive_styles": [
+      "driving beat",
+      "synth lead",
+      "energetic"
+     ],
+     "negative_styles": [
+      "slow tempo",
+      "acoustic guitar"
+     ],
+     "context_adherence": "high",
+     "conditioning_ref": null,
+     "condition_strength": null
+    },
+    {
+     "text": "[Bridge]",
+     "duration_ms": 15000,
+     "positive_styles": [
+      "filtered synth",
+      "tension",
+      "buildup"
+     ],
+     "negative_styles": [
+      "full beat",
+      "heavy drums"
+     ],
+     "context_adherence": "high",
+     "conditioning_ref": null,
+     "condition_strength": null
+    },
+    {
+     "text": "[Climax]",
+     "duration_ms": 30000,
+     "positive_styles": [
+      "high energy",
+      "pounding drums",
+      "bright synths"
+     ],
+     "negative_styles": [
+      "minimalist",
+      "quiet"
+     ],
+     "context_adherence": "high",
+     "conditioning_ref": null,
+     "condition_strength": null
+    },
+    {
+     "text": "[Outro]",
+     "duration_ms": 89409,
+     "positive_styles": [
+      "fading",
+      "reverb",
+      "calming"
+     ],
+     "negative_styles": [
+      "intense",
+      "fast tempo"
+     ],
+     "context_adherence": "high",
+     "conditioning_ref": null,
+     "condition_strength": null
+    }
+   ]
+  },
+  "words_timestamps": null,
+  "waveform_visual": null
+ }
+}

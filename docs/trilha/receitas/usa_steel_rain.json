@@ -1,0 +1,219 @@
+{
+ "id": "usa_steel_rain",
+ "faction": "usa",
+ "role": "battle",
+ "bpm": 140,
+ "bar_s": 1.71429,
+ "why": "Batalha nova 2 da USA: o ataque blindado; mais rápida e pesada que a vanguard, a guitarra e os metais sobre a caixa militar dobrada, pelo tema dele.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Charge",
+   "start_s": 6.857
+  },
+  {
+   "name": "Theme",
+   "start_s": 20.571
+  },
+  {
+   "name": "Counter",
+   "start_s": 34.285
+  },
+  {
+   "name": "Breakdown",
+   "start_s": 47.999
+  },
+  {
+   "name": "Build",
+   "start_s": 61.713
+  },
+  {
+   "name": "Climax",
+   "start_s": 68.57
+  },
+  {
+   "name": "Ending",
+   "start_s": 82.284
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a fast military snare cadence and a guitar riff hinting the heroic motif in minor}",
+    "duration_ms": 6857,
+    "positive_styles": [
+     "heroic orchestral rock",
+     "distorted electric guitars",
+     "brass section",
+     "double-time military snare",
+     "rock drums",
+     "strings",
+     "140 bpm, minor to major"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "choir",
+     "synthwave",
+     "EDM",
+     "lo-fi"
+    ],
+    "conditioning_ref": {
+     "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+     "range": {
+      "start_ms": 100000,
+      "end_ms": 130000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Charge]\n{the band hits: chugging guitars and brass stabs on the motif, double-time snare, aggressive}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "chugging guitars",
+     "brass stabs",
+     "double-time snare"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+     "range": {
+      "start_ms": 100000,
+      "end_ms": 130000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Theme]\n{the brass plays the heroic motif in major over the riff, cymbals on every bar, triumphant}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "brass melody",
+     "major key",
+     "triumphant"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Counter]\n{the strings play fast runs, the guitars take a new riff, the drums switch to a half-time groove}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "string runs",
+     "new guitar riff",
+     "half-time"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Breakdown]\n{only timpani, low strings and a muted guitar chug, the horns hint the motif, tension}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "timpani"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Build]\n{a snare roll and rising brass into a key change}",
+    "duration_ms": 6857,
+    "positive_styles": [
+     "crescendo",
+     "key change"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: guitars, brass and drums in unison on the motif at full power}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "full power",
+     "unison",
+     "higher key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff ends on one big unison hit}\n{a natural ring-out; no fade-out}",
+    "duration_ms": 10857,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "LqIsaMflvuqkc4a0dft4_upload",
+  "range": {
+   "start_ms": 100000,
+   "end_ms": 130000
+  },
+  "strength": "medium",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ },
+ "generated_at": "2026-11-06T19:50:36.555Z",
+ "seconds_planned": 93.141,
+ "seconds_wall": 9.623,
+ "credits_spent": 0,
+ "credits_left": 10261,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2235707",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 19:50:26 GMT",
+  "server": "uvicorn",
+  "song-id": "fnxvLXjQsY8zCtg0iED0",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "997db2638ce2148ca40088165342fe71"
+ },
+ "audio": "captures/musica/gerado/usa/usa_steel_rain.mp3"
+}

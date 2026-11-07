@@ -1,0 +1,181 @@
+{
+ "id": "gla_ambush_alley",
+ "faction": "gla",
+ "role": "battle",
+ "bpm": 140,
+ "bar_s": 1.71429,
+ "why": "Ícone da GLA, batalha 2: a emboscada rápida; a zurna estridente no riff, tambores de moldura com bateria de rock, a guitarra suja e sirenes ao longe.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Attack",
+   "start_s": 6.857
+  },
+  {
+   "name": "Run",
+   "start_s": 20.571
+  },
+  {
+   "name": "Hide",
+   "start_s": 34.285
+  },
+  {
+   "name": "Climax",
+   "start_s": 47.999
+  },
+  {
+   "name": "Climax 2",
+   "start_s": 61.713
+  },
+  {
+   "name": "Ending",
+   "start_s": 75.427
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{distant sirens and a frame drum roll, then the zurna shrieks the signature riff alone}",
+    "duration_ms": 6857,
+    "positive_styles": [
+     "Middle Eastern rock",
+     "shrill zurna lead riff",
+     "frame drums and rock drums",
+     "dirty electric guitar",
+     "distant sirens texture",
+     "darbuka",
+     "140 bpm, phrygian dominant"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "generic epic trailer",
+     "muddy low end",
+     "lyrics",
+     "female vocals",
+     "western orchestra"
+    ],
+    "conditioning_ref": {
+     "song_id": "rKMv041OxAkXjxTix0o8",
+     "range": {
+      "start_ms": 1500,
+      "end_ms": 15000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Attack]\n{rock drums and frame drums together, the dirty guitar locks with the zurna riff, fast and aggressive}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "zurna riff",
+     "rock drums",
+     "dirty guitar"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "rKMv041OxAkXjxTix0o8",
+     "range": {
+      "start_ms": 1500,
+      "end_ms": 15000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Run]\n{the guitar plays a new riff, the zurna answers in short bursts, the darbuka drives a double-time pattern}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "new riff",
+     "zurna bursts",
+     "double-time darbuka"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Hide]\n{the band drops to a tense pulse: oud plucks and a low drone, footsteps-like percussion, the riff hinted}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "tense",
+     "oud plucks",
+     "low drone"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: the zurna and guitar riff in unison over the full drums, the sirens returning}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "full force",
+     "higher key",
+     "unison riff"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax 2]\n{the riff in call and response between zurna and guitar, claps and shouts without words}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "call and response",
+     "claps",
+     "shouts"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff ends on a hit}\n{a natural ring-out; no fade-out}",
+    "duration_ms": 10857,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "rKMv041OxAkXjxTix0o8",
+  "range": {
+   "start_ms": 1500,
+   "end_ms": 15000
+  },
+  "strength": "low",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ }
+}

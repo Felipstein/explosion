@@ -34751,6 +34751,334 @@
       "shots_s": [2.0],
       "end_s": 8.0,
       "lab": {"panel": false, "ops": [{"t_s": 1.0, "op": "money", "player": 0, "amount": 20000}, {"t_s": 1.5, "op": "camera", "yaw_deg": 45.0, "distance_m": 80.0, "focus_m": [-276.0, -345.0]}, {"t_s": 2.5, "op": "select", "key": "nenhuma_unidade"}, {"t_s": 3.5, "op": "shot", "name": "4p_1_topo"}, {"t_s": 4.0, "op": "select", "key": "usa_mbt"}, {"t_s": 5.0, "op": "shot", "name": "4p_2_unidades"}, {"t_s": 5.6, "op": "shot", "name": "4p_3_tab_placar"}]}
+    },
+    {
+      "name": "trilha_batalha",
+      "about": "(06/11, a trilha da partida, docs/TRILHA_DA_PARTIDA.md) A música inteira numa cena: o tema da facção abrindo, a calma, 5 tanques inimigos atacando a base aos 14 s (a batalha entra no tempo da faixa), a luta, e depois o silêncio de 30 s com a volta pra calma (a batalha desce em 8 s ou acaba sozinha). O inimigo tem uma usina longe, pra não perder (sem o tema da vitória aqui). Rodar: game.ps1 view -Scenario trilha_batalha -Folder <pasta> -Record -Sound -Extra '-NewHud -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_command_center",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_barracks",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -370.0
+          ]
+        },
+        {
+          "key": "usa_supply_center",
+          "player": 0,
+          "at_m": [
+            -268.0,
+            -368.0
+          ]
+        },
+        {
+          "key": "usa_power_plant",
+          "player": 0,
+          "at_m": [
+            -245.0,
+            -368.0
+          ]
+        },
+        {
+          "key": "usa_power_plant",
+          "player": 1,
+          "at_m": [
+            290.0,
+            330.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -262.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -254.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -246.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -238.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -230.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -222.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -180.0,
+            -215.0
+          ],
+          "facing_deg": 225.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -171.0,
+            -221.0
+          ],
+          "facing_deg": 225.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -162.0,
+            -227.0
+          ],
+          "facing_deg": 225.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -153.0,
+            -233.0
+          ],
+          "facing_deg": 225.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -144.0,
+            -239.0
+          ],
+          "facing_deg": 225.0
+        }
+      ],
+      "orders": [
+        {
+          "t_s": 14.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -262.0,
+            -310.0
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -235.0,
+          -275.0
+        ],
+        "distance_m": 95.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        5.0,
+        30.0,
+        60.0,
+        110.0
+      ],
+      "end_s": 150.0
+    },
+    {
+      "name": "trilha_vitoria",
+      "about": "(06/11, a trilha da partida) O fim da partida: a calma, 1 tanque inimigo (o único que ele tem) atacando 4 seus aos 8 s, ele cai, a vitória: a música desce em 2 s e entra o tema da vitória da facção. Rodar: game.ps1 view -Scenario trilha_vitoria -Folder <pasta> -Record -Sound -Extra '-NewHud -RTSFaction=<facção>'.",
+      "map": "World_TestSalt2",
+      "seed": 31,
+      "fog": "off",
+      "hud": true,
+      "starts_m": [
+        [
+          -282.6,
+          -335.7
+        ],
+        [
+          282.6,
+          335.7
+        ]
+      ],
+      "units_per_player": [],
+      "structures": [
+        {
+          "key": "usa_command_center",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_war_factory",
+          "player": 0,
+          "at_m": [
+            -265.0,
+            -330.0
+          ]
+        },
+        {
+          "key": "usa_barracks",
+          "player": 0,
+          "at_m": [
+            -300.0,
+            -370.0
+          ]
+        },
+        {
+          "key": "usa_supply_center",
+          "player": 0,
+          "at_m": [
+            -268.0,
+            -368.0
+          ]
+        },
+        {
+          "key": "usa_power_plant",
+          "player": 0,
+          "at_m": [
+            -245.0,
+            -368.0
+          ]
+        }
+      ],
+      "units": [
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -262.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -254.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -246.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 0,
+          "key": "usa_mbt",
+          "at_m": [
+            -238.0,
+            -298.0
+          ],
+          "facing_deg": 45.0
+        },
+        {
+          "player": 1,
+          "key": "usa_mbt",
+          "at_m": [
+            -200.0,
+            -240.0
+          ],
+          "facing_deg": 225.0
+        }
+      ],
+      "orders": [
+        {
+          "t_s": 8.0,
+          "player": 1,
+          "type": "attack_move",
+          "to_m": [
+            -262.0,
+            -310.0
+          ]
+        }
+      ],
+      "camera": {
+        "focus_m": [
+          -240.0,
+          -280.0
+        ],
+        "distance_m": 95.0,
+        "yaw_deg": 45.0
+      },
+      "shots_s": [
+        5.0,
+        25.0
+      ],
+      "end_s": 45.0
     }
   ]
 }

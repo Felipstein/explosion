@@ -516,6 +516,14 @@ Economia, construção livre e unidades novas ficam pra depois, só quando o Fel
   - O dano vem em lascas de ~0,35 m: ~5% aos 70% da vida, ~25% perto da morte.
   - Cena de teste: `game.ps1 view -Scenario carcaca`.
 - [~] **Fábrica viva no desenho** (10/10, provisório: ventiladores girando, luzes que acendem e apagam com a energia, a obra subindo com andaime e solda; falta portão, ponte rolante e braço ligados à produção): um ator do prédio anima portão, ponte rolante, braço e ventiladores e acende as luzes, ligado aos eventos de produção; mais a entrada do prédio no `import_units.py` e o link de Buildings no `game.ps1`.
+- [~] **A trilha sonora da partida** (pedido dele, 06/11: "o que eu quero é os soundtrack"): feita, sem commit, esperando o teste dele.
+  Dono: a sessão do HUD. A receita e o estado em `docs/TRILHA_DA_PARTIDA.md`.
+  - 35 faixas nas 4 facções: tema, calma, batalha, vitória e derrota (13 do assgets, 22 geradas na ElevenLabs Music; 06/11 saíram os loops que ele achou repetidos).
+  - O `URTSMusic` troca calma e batalha pelo combate, sem corte, no tempo da faixa.
+- [ ] **A veterania das unidades** (ele, 06/11: "realmente falta"): a unidade sobe de patente matando (Veteran, Elite, Heroic, como no
+  RA2 e no ZH), mais forte, com a EVA e a insígnia na barra de vida (a da sessão Cursores já tem o lugar). Sem dono ainda.
+- [ ] **O tique do dinheiro** (ele, 06/11: "pode ser interessante, tanto pra ganho quanto pra perda, mas tem que ser bem feito pra não
+  ser enjoativo nem repetitivo"): o som do contador animado do HUD. Dono: a sessão do HUD; estudar antes (C&C, RA, RA2 e os de hoje).
 - [ ] **Paleta das cores dos jogadores** (8, como no ZH): testada no deserto e no zoom mais afastado; as mesmas no tanque, na fábrica, no minimapa e no HUD; cor única por vaga na sala (dois USA sairiam azuis).
 - [ ] **Lado legível sem o anel no inimigo:** no USA contra USA sobra só a cor em detalhes pequenos. Testar no zoom máximo (81,6 m); se não der, o inimigo ganha uma marca mínima na cor.
 - [ ] **Sujeira acumulada:** o tanque que andou e lutou fica empoeirado (CoH3).

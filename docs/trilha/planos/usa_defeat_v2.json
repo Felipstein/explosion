@@ -1,0 +1,63 @@
+{
+ "id": "usa_defeat_v2",
+ "faction": "usa",
+ "role": "defeat",
+ "bpm": 72,
+ "bar_s": 3.33333,
+ "why": "Derrota da USA, v2: a v1 saiu rock. O trompete solo e as cordas graves.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Lament",
+   "start_s": 0.0
+  },
+  {
+   "name": "Ending",
+   "start_s": 10.0
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Lament]\n{a solo trumpet plays the faction motif slowly in minor over low strings and a muffled military snare}",
+    "duration_ms": 10000,
+    "positive_styles": [
+     "cinematic orchestral",
+     "solo trumpet",
+     "low strings",
+     "muffled military snare",
+     "french horns",
+     "somber",
+     "minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "rock",
+     "electric guitar",
+     "drum kit"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a last low chord on horns and strings}\n{it rings out naturally; no fade-out}",
+    "duration_ms": 7333,
+    "positive_styles": [
+     "final low chord",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

@@ -1,0 +1,151 @@
+{
+ "id": "russia_northern_hammer",
+ "faction": "russia",
+ "role": "battle",
+ "bpm": 140,
+ "bar_s": 1.71429,
+ "why": "Batalha 2 da Rússia: o peso industrial (a 1ª, a russia_red_tide, ficou mais orquestral).",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Main",
+   "start_s": 13.714
+  },
+  {
+   "name": "Drive",
+   "start_s": 41.143
+  },
+  {
+   "name": "Break",
+   "start_s": 68.572
+  },
+  {
+   "name": "Climax",
+   "start_s": 82.286
+  },
+  {
+   "name": "Ending",
+   "start_s": 109.715
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{drums and a distorted bass riff built on the 4-note descending minor motif}\n{anvil hits on every bar}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "industrial metal",
+     "heavy distorted guitars",
+     "distorted synth bass",
+     "deep Russian male choir shouts",
+     "brass stabs",
+     "anvil percussion",
+     "140 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Main]\n{heavy half-time groove: chugging guitars, brass stabs on the motif, short wordless choir shouts}",
+    "duration_ms": 27429,
+    "positive_styles": [
+     "half-time groove",
+     "chugging guitars",
+     "brass stabs"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Drive]\n{double-time drums, the guitars play the motif as a riff, the choir chants on the off-beats}",
+    "duration_ms": 27429,
+    "positive_styles": [
+     "double-time drums",
+     "guitar riff",
+     "choir chants"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only the distorted bass pulse and ticking metal, then a big tom fill}",
+    "duration_ms": 13714,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "tom fill"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{everything at once at full force: choir, brass and guitars in unison on the motif}",
+    "duration_ms": 27429,
+    "positive_styles": [
+     "maximum intensity",
+     "unison",
+     "choir and brass"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff stops on a final unison hit}\n{the choir and a low gong ring out naturally; no fade-out}",
+    "duration_ms": 10857,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "generated_at": "2026-11-06T15:31:24.423Z",
+ "seconds_planned": 120.572,
+ "seconds_wall": 13.351,
+ "credits_spent": 0,
+ "credits_left": 29241,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+  "content-length": "2895247",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 15:31:10 GMT",
+  "server": "uvicorn",
+  "song-id": "lpmVjRM1gnpHPqIgABVK",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "47a7dfc3b7a7b2688446585e397c3ce4"
+ },
+ "audio": "captures/musica/gerado/russia/russia_northern_hammer.mp3"
+}

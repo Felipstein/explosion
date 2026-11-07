@@ -1,0 +1,60 @@
+{
+ "id": "russia_victory",
+ "faction": "russia",
+ "role": "victory",
+ "bpm": 100,
+ "bar_s": 2.4,
+ "why": "Vitória da RUSSIA: a fanfarra curta no fim da partida.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Fanfare",
+   "start_s": 0.0
+  },
+  {
+   "name": "Ending",
+   "start_s": 9.6
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Fanfare]\n{a triumphant short fanfare by choir and low brass, the faction motif in a major key, proud}",
+    "duration_ms": 9600,
+    "positive_styles": [
+     "dark orchestral",
+     "deep Russian male choir",
+     "low brass",
+     "war drums",
+     "bayan accordion",
+     "triumphant",
+     "major key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a final big chord}\n{it rings out naturally; no fade-out}",
+    "duration_ms": 8800,
+    "positive_styles": [
+     "final chord",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

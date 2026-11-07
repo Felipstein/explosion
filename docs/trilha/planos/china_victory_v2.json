@@ -1,0 +1,64 @@
+{
+ "id": "china_victory_v2",
+ "faction": "china",
+ "role": "victory",
+ "bpm": 100,
+ "bar_s": 2.4,
+ "why": "Vitória da China, v2: a v1 saiu fanfarra ocidental. A suona, os tambores e os gongos.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Fanfare",
+   "start_s": 0.0
+  },
+  {
+   "name": "Ending",
+   "start_s": 9.6
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Fanfare]\n{a triumphant short fanfare: the suona plays the faction motif over dagu drums, gongs and cymbals}",
+    "duration_ms": 9600,
+    "positive_styles": [
+     "traditional Chinese instrumental",
+     "suona",
+     "dagu drums",
+     "gongs and cymbals",
+     "erhu",
+     "dizi",
+     "triumphant, major pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "western symphony orchestra",
+     "choir",
+     "brass section",
+     "epic trailer"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a final big gong and drum hit}\n{it rings out naturally; no fade-out}",
+    "duration_ms": 8800,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

@@ -1,0 +1,86 @@
+{
+ "id": "usa_defeat_v2",
+ "faction": "usa",
+ "role": "defeat",
+ "bpm": 72,
+ "bar_s": 3.33333,
+ "why": "Derrota da USA, v2: a v1 saiu rock. O trompete solo e as cordas graves.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Lament",
+   "start_s": 0
+  },
+  {
+   "name": "Ending",
+   "start_s": 10
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Lament]\n{a solo trumpet plays the faction motif slowly in minor over low strings and a muffled military snare}",
+    "duration_ms": 10000,
+    "positive_styles": [
+     "cinematic orchestral",
+     "solo trumpet",
+     "low strings",
+     "muffled military snare",
+     "french horns",
+     "somber",
+     "minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "rock",
+     "electric guitar",
+     "drum kit"
+    ]
+   },
+   {
+    "text": "[Ending]\n{a last low chord on horns and strings}\n{it rings out naturally; no fade-out}",
+    "duration_ms": 7333,
+    "positive_styles": [
+     "final low chord",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "generated_at": "2026-11-06T15:37:59.305Z",
+ "seconds_planned": 17.333,
+ "seconds_wall": 4.333,
+ "credits_spent": 0,
+ "credits_left": 26315,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "416958",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 15:37:55 GMT",
+  "server": "uvicorn",
+  "song-id": "NVGNawSgmFaVRYoaAc8I",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "717459572730cf2a30d23ac76823f37f"
+ },
+ "audio": "captures/musica/gerado/usa/usa_defeat_v2.mp3"
+}

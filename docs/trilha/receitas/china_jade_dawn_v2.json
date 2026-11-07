@@ -1,0 +1,121 @@
+{
+ "id": "china_jade_dawn_v2",
+ "faction": "china",
+ "role": "calm",
+ "bpm": 92,
+ "bar_s": 2.6087,
+ "why": "Calma da China, v2: a v1 saiu orquestra genérica. Os instrumentos chineses pelo nome, sem orquestra ocidental.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Theme",
+   "start_s": 20.87
+  },
+  {
+   "name": "Lift",
+   "start_s": 62.609
+  },
+  {
+   "name": "Ending",
+   "start_s": 104.348
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{solo guzheng arpeggios in a pentatonic mode, a soft electronic pulse fades in}",
+    "duration_ms": 20870,
+    "positive_styles": [
+     "traditional Chinese instrumental",
+     "guzheng",
+     "dizi bamboo flute",
+     "erhu",
+     "soft electronic pulse",
+     "Chinese drums and gongs",
+     "92 bpm, pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "western symphony orchestra",
+     "choir",
+     "brass section",
+     "epic trailer"
+    ]
+   },
+   {
+    "text": "[Theme]\n{the dizi flute plays a memorable 5-note pentatonic motif over the guzheng, light Chinese drum hits}",
+    "duration_ms": 41739,
+    "positive_styles": [
+     "dizi melody",
+     "guzheng",
+     "light Chinese drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Lift]\n{the erhu answers the dizi, the pulse grows a little, a low gong on each phrase}",
+    "duration_ms": 41739,
+    "positive_styles": [
+     "erhu answer",
+     "gentle growth",
+     "gong"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the motif once more on the guzheng alone}\n{a last soft gong rings out naturally}",
+    "duration_ms": 19652,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "generated_at": "2026-11-06T15:37:20.958Z",
+ "seconds_planned": 124,
+ "seconds_wall": 12.032,
+ "credits_spent": 0,
+ "credits_left": 26315,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2976122",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 15:37:08 GMT",
+  "server": "uvicorn",
+  "song-id": "hrW0AsK0OdAx47PYab76",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "c9196c393a9de118a63679c42e2d84a4"
+ },
+ "audio": "captures/musica/gerado/china/china_jade_dawn_v2.mp3"
+}

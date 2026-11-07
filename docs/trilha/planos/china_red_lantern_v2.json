@@ -1,0 +1,98 @@
+{
+ "id": "china_red_lantern_v2",
+ "faction": "china",
+ "role": "calm",
+ "bpm": 100,
+ "bar_s": 2.4,
+ "why": "Calma 2 da China, v2: a v1 saiu épico genérico. A pipa e o erhu pelo nome sobre um pulso eletrônico grave.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Watch",
+   "start_s": 19.2
+  },
+  {
+   "name": "Machine",
+   "start_s": 57.6
+  },
+  {
+   "name": "Ending",
+   "start_s": 96.0
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a deep electronic pulse and a plucked pipa ostinato in minor pentatonic}",
+    "duration_ms": 19200,
+    "positive_styles": [
+     "traditional Chinese instrumental",
+     "pipa",
+     "erhu",
+     "guzheng",
+     "deep electronic pulse",
+     "Chinese drums",
+     "100 bpm, minor pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "western symphony orchestra",
+     "choir",
+     "brass section",
+     "epic trailer"
+    ]
+   },
+   {
+    "text": "[Watch]\n{the erhu sings a tense, memorable phrase over the pipa, soft Chinese drums every two bars}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "erhu lead",
+     "pipa ostinato",
+     "soft Chinese drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Machine]\n{metallic percussion and a mechanical rhythm join, the erhu phrase repeats higher, restrained}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "mechanical rhythm",
+     "metallic percussion",
+     "restrained"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the pulse stops, the pipa plays the phrase one last time}\n{a gong rings out naturally}",
+    "duration_ms": 18400,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

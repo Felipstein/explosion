@@ -1,0 +1,181 @@
+{
+ "id": "china_iron_lotus",
+ "faction": "china",
+ "role": "battle",
+ "bpm": 118,
+ "bar_s": 2.0339,
+ "why": "Ícone da China, batalha 2: pesada e em meio-tempo; o tremolo da pipa como riff, o baixo industrial, os pratos da ópera de Pequim como assinatura e o erhu cantando por cima.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Riff",
+   "start_s": 8.136
+  },
+  {
+   "name": "Song",
+   "start_s": 24.407
+  },
+  {
+   "name": "Machine",
+   "start_s": 40.678
+  },
+  {
+   "name": "Break",
+   "start_s": 56.949
+  },
+  {
+   "name": "Climax",
+   "start_s": 73.22
+  },
+  {
+   "name": "Ending",
+   "start_s": 89.491
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{Peking opera clappers and cymbals start a fast pattern, a dark synth bass drone underneath}",
+    "duration_ms": 8136,
+    "positive_styles": [
+     "Chinese industrial electronic",
+     "pipa tremolo riff",
+     "heavy industrial synth bass",
+     "Peking opera cymbals and clappers",
+     "soaring erhu melody",
+     "taiko-like Chinese drums",
+     "118 bpm, minor pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "generic epic trailer",
+     "muddy low end",
+     "western symphony orchestra",
+     "choir",
+     "lyrics"
+    ],
+    "conditioning_ref": {
+     "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+     "range": {
+      "start_ms": 0,
+      "end_ms": 14000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Riff]\n{a heavy half-time beat; the pipa tremolo plays the signature riff, the industrial bass locks with it}",
+    "duration_ms": 16271,
+    "positive_styles": [
+     "pipa riff",
+     "half-time beat",
+     "industrial bass"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+     "range": {
+      "start_ms": 0,
+      "end_ms": 14000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Song]\n{the erhu sings a soaring, memorable melody over the riff, wide and emotional}",
+    "duration_ms": 16271,
+    "positive_styles": [
+     "erhu melody",
+     "soaring",
+     "emotional"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Machine]\n{the beat turns mechanical and faster, metallic hits, the riff chopped and glitched}",
+    "duration_ms": 16271,
+    "positive_styles": [
+     "mechanical",
+     "metallic hits",
+     "glitched riff"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{the drums stop: a guzheng plays the melody softly over the bass drone, then the opera cymbals return building}",
+    "duration_ms": 16271,
+    "positive_styles": [
+     "sparse",
+     "guzheng",
+     "build"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: the erhu melody and the pipa riff together over the full beat at maximum weight}",
+    "duration_ms": 16271,
+    "positive_styles": [
+     "full weight",
+     "higher key",
+     "erhu and pipa"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff slows to a final heavy hit}\n{a gong and the bass ring out naturally; no fade-out}",
+    "duration_ms": 12136,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+  "range": {
+   "start_ms": 0,
+   "end_ms": 14000
+  },
+  "strength": "low",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ }
+}

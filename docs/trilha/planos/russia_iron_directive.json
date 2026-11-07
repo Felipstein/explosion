@@ -1,0 +1,112 @@
+{
+ "id": "russia_iron_directive",
+ "faction": "russia",
+ "role": "theme",
+ "bpm": 112,
+ "bar_s": 2.14286,
+ "why": "O tema da Rússia (o começo da partida e o tema da facção): a marcha de Estado, lenta e enorme.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Theme",
+   "start_s": 17.143
+  },
+  {
+   "name": "Build",
+   "start_s": 51.429
+  },
+  {
+   "name": "Anthem",
+   "start_s": 68.572
+  },
+  {
+   "name": "Ending",
+   "start_s": 102.858
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a lone bayan accordion plays the faction motif: a dark 4-note descending minor phrase}\n{a deep male choir hums under it, cold wind texture}",
+    "duration_ms": 17143,
+    "positive_styles": [
+     "dark orchestral march",
+     "deep Russian male choir",
+     "low brass",
+     "bayan accordion",
+     "war drums",
+     "anvil percussion",
+     "112 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Theme]\n{a military snare march starts on the downbeat}\n{the low brass states the 4-note motif, strong and slow, the choir answers}",
+    "duration_ms": 34286,
+    "positive_styles": [
+     "military snare march",
+     "low brass melody",
+     "male choir"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Build]\n{string ostinato and anvil hits on the backbeat, the tension rises bar by bar}",
+    "duration_ms": 17143,
+    "positive_styles": [
+     "string ostinato",
+     "anvil hits",
+     "rising tension"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Anthem]\n{the full choir sings the motif fortissimo over brass and war drums, huge and proud}",
+    "duration_ms": 34286,
+    "positive_styles": [
+     "full choir fortissimo",
+     "brass",
+     "war drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the motif one last time in half-time by choir and brass}\n{then one unison hit on the downbeat and a long natural ring-out; a definitive ending, no fade-out}",
+    "duration_ms": 16857,
+    "positive_styles": [
+     "final statement",
+     "unison hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

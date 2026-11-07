@@ -1,0 +1,94 @@
+{
+ "id": "china_jade_dawn",
+ "faction": "china",
+ "role": "calm",
+ "bpm": 92,
+ "bar_s": 2.6087,
+ "why": "Calma da China: o amanhecer sobre a base; a pentatônica clara, o guzheng e a dizi sobre um pulso eletrônico macio.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Theme",
+   "start_s": 20.87
+  },
+  {
+   "name": "Lift",
+   "start_s": 62.609
+  },
+  {
+   "name": "Ending",
+   "start_s": 104.348
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{guzheng arpeggios in a pentatonic mode, a soft electronic pulse fades in}",
+    "duration_ms": 20870,
+    "positive_styles": [
+     "modern Chinese cinematic",
+     "guzheng arpeggios",
+     "dizi bamboo flute",
+     "soft electronic pulse",
+     "warm strings",
+     "light dagu drums",
+     "92 bpm, pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Theme]\n{the dizi flute plays a memorable 5-note pentatonic motif, warm strings underneath, light dagu drum hits}",
+    "duration_ms": 41739,
+    "positive_styles": [
+     "dizi melody",
+     "warm strings",
+     "light drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Lift]\n{the erhu answers the dizi, the pulse grows a little, a low gong on each phrase}",
+    "duration_ms": 41739,
+    "positive_styles": [
+     "erhu answer",
+     "gentle growth",
+     "gong"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the motif once more on the guzheng alone}\n{a last soft gong rings out naturally}",
+    "duration_ms": 19652,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

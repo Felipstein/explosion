@@ -1,0 +1,152 @@
+{
+ "id": "russia_steel_avalanche",
+ "faction": "russia",
+ "role": "battle",
+ "bpm": 136,
+ "bar_s": 1.76471,
+ "why": "Batalha 3 da Rússia: a avalanche de blindados; o coro masculino gritando o motivo sobre metais e o peso industrial.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Charge",
+   "start_s": 14.118
+  },
+  {
+   "name": "Assault",
+   "start_s": 42.353
+  },
+  {
+   "name": "Break",
+   "start_s": 70.588
+  },
+  {
+   "name": "Climax",
+   "start_s": 84.706
+  },
+  {
+   "name": "Ending",
+   "start_s": 112.941
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{war drums and a distorted synth bass pulse, the low brass hints the dark 4-note descending motif}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "epic dark orchestral",
+     "deep Russian male choir",
+     "heavy brass",
+     "industrial percussion",
+     "distorted synth bass",
+     "war drums",
+     "136 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "electric guitar"
+    ]
+   },
+   {
+    "text": "[Charge]\n{the full choir shouts the motif in unison over heavy brass and pounding war drums}",
+    "duration_ms": 28235,
+    "positive_styles": [
+     "choir unison",
+     "heavy brass",
+     "pounding drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Assault]\n{double-time industrial percussion, brass stabs on the motif, the choir answers with short wordless shouts}",
+    "duration_ms": 28235,
+    "positive_styles": [
+     "double-time",
+     "brass stabs",
+     "choir shouts"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only the synth bass and ticking metal percussion, then a huge drum fill}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "drum fill"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{everything at maximum: choir fortissimo, brass and drums in unison on the motif}",
+    "duration_ms": 28235,
+    "positive_styles": [
+     "maximum intensity",
+     "choir fortissimo",
+     "unison"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the motif ends on one huge unison hit}\n{the choir and a low gong ring out naturally; no fade-out}",
+    "duration_ms": 11059,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "generated_at": "2026-11-06T15:42:15.051Z",
+ "seconds_planned": 124,
+ "seconds_wall": 12.357,
+ "credits_spent": 0,
+ "credits_left": 24313,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2976749",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 15:42:01 GMT",
+  "server": "uvicorn",
+  "song-id": "qSivJT4CZUCzkVw07XMi",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "be93f2d0dcddd0154b9a67a767907011"
+ },
+ "audio": "captures/musica/gerado/russia/russia_steel_avalanche.mp3"
+}

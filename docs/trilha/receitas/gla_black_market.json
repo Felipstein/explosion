@@ -1,0 +1,204 @@
+{
+ "id": "gla_black_market",
+ "faction": "gla",
+ "role": "battle",
+ "bpm": 126,
+ "bar_s": 1.90476,
+ "why": "Ícone da GLA, batalha 1: o lamento sem palavras de uma voz masculina (no estilo mawwal) como gancho, o riff do oud distorcido na escala hijaz e o breakbeat de darbuka.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Riff",
+   "start_s": 7.619
+  },
+  {
+   "name": "Wail",
+   "start_s": 22.857
+  },
+  {
+   "name": "Market",
+   "start_s": 38.095
+  },
+  {
+   "name": "Break",
+   "start_s": 53.333
+  },
+  {
+   "name": "Climax",
+   "start_s": 68.571
+  },
+  {
+   "name": "Ending",
+   "start_s": 83.809
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a lone wordless male vocal wail in the hijaz scale over desert wind, the signature hook of the track}",
+    "duration_ms": 7619,
+    "positive_styles": [
+     "Middle Eastern industrial hip-hop",
+     "wordless male vocal wail, mawwal style",
+     "distorted oud riff, hijaz scale",
+     "darbuka breakbeat",
+     "heavy sub bass",
+     "dusty and gritty",
+     "126 bpm"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "generic epic trailer",
+     "muddy low end",
+     "lyrics",
+     "female vocals",
+     "western orchestra"
+    ],
+    "conditioning_ref": {
+     "song_id": "rKMv041OxAkXjxTix0o8",
+     "range": {
+      "start_ms": 1500,
+      "end_ms": 15000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Riff]\n{a heavy darbuka breakbeat drops with a distorted oud riff, short and catchy, and a deep sub bass}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "oud riff",
+     "darbuka breakbeat",
+     "sub bass"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "rKMv041OxAkXjxTix0o8",
+     "range": {
+      "start_ms": 1500,
+      "end_ms": 15000
+     }
+    },
+    "condition_strength": "low"
+   },
+   {
+    "text": "[Wail]\n{the vocal wail returns over the beat, answered by the oud, gritty electric guitar doubling the bass}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "vocal wail",
+     "oud answer",
+     "gritty guitar"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Market]\n{the beat switches to a fast frame drum pattern with claps, the riff played by a zurna, chaotic and alive}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "frame drums",
+     "claps",
+     "zurna riff"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only a filtered bass and a darbuka, radio static, the wail far away, then a big drum fill}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "drum fill"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: the full beat, the oud riff and the vocal wail together at full force}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "full force",
+     "higher key",
+     "wail and riff"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff stops on one hit}\n{the last vocal note and the hit ring out naturally; no fade-out}",
+    "duration_ms": 11619,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "rKMv041OxAkXjxTix0o8",
+  "range": {
+   "start_ms": 1500,
+   "end_ms": 15000
+  },
+  "strength": "low",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ },
+ "generated_at": "2026-11-06T20:00:21.159Z",
+ "seconds_planned": 95.428,
+ "seconds_wall": 11.925,
+ "credits_spent": 0,
+ "credits_left": 8907,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2290878",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 20:00:08 GMT",
+  "server": "uvicorn",
+  "song-id": "IvgaGAXc3EoKEqofX1oK",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "2e0c5fc2c8ac9358850bf392782a20ae"
+ },
+ "audio": "captures/musica/gerado/gla/gla_black_market.mp3"
+}

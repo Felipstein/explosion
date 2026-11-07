@@ -1,0 +1,198 @@
+{
+ "id": "china_dragon_ascent",
+ "faction": "china",
+ "role": "battle",
+ "bpm": 136,
+ "bar_s": 1.76471,
+ "why": "Ícone da China, batalha 1: o riff do erhu dobrado com a guitarra distorcida, em pentatônica, sobre os tambores dagu de guerra e o sub eletrônico; a suona no clímax.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Riff",
+   "start_s": 7.059
+  },
+  {
+   "name": "Verse",
+   "start_s": 21.177
+  },
+  {
+   "name": "Lift",
+   "start_s": 35.295
+  },
+  {
+   "name": "Break",
+   "start_s": 49.413
+  },
+  {
+   "name": "Climax",
+   "start_s": 63.531
+  },
+  {
+   "name": "Climax 2",
+   "start_s": 77.649
+  },
+  {
+   "name": "Ending",
+   "start_s": 91.767
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a huge gong hit, then the erhu alone plays the signature: a fierce two-bar pentatonic riff, instantly memorable}",
+    "duration_ms": 7059,
+    "positive_styles": [
+     "modern Chinese battle anthem",
+     "erhu and distorted electric guitar unison riff",
+     "dagu war drums",
+     "electronic sub bass",
+     "gongs and cymbals",
+     "suona lead",
+     "136 bpm, minor pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "generic epic trailer",
+     "muddy low end",
+     "western symphony orchestra",
+     "choir",
+     "lyrics"
+    ],
+    "conditioning_ref": {
+     "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+     "range": {
+      "start_ms": 0,
+      "end_ms": 14000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Riff]\n{the distorted guitar doubles the erhu riff in unison over pounding dagu war drums and a deep electronic sub bass}\n{short wordless male shouts \"ha\" on the accents}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "erhu and guitar unison riff",
+     "dagu drums",
+     "shouts"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+     "range": {
+      "start_ms": 0,
+      "end_ms": 14000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Verse]\n{the pipa plays a fast tremolo answer, the drums switch to a broken half-time groove, the riff hinted by low brass}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "pipa tremolo",
+     "half-time groove",
+     "low brass"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Lift]\n{the dizi flute takes the riff an octave higher over driving drums, Peking opera clappers and cymbals as accents}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "dizi lead",
+     "opera percussion",
+     "driving"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only the sub bass, a ticking woodblock and a long erhu note bending, then a big dagu roll}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "drum roll"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: the suona screams the riff over the full band, guitars, erhu and drums in unison}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "suona lead",
+     "full power",
+     "higher key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax 2]\n{the riff in canon between suona, erhu and guitar, double-time drums, gong on every phrase}",
+    "duration_ms": 14118,
+    "positive_styles": [
+     "canon",
+     "double-time",
+     "gongs"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff one last time in half-time}\n{a final unison hit with a giant gong ringing out; no fade-out}",
+    "duration_ms": 11059,
+    "positive_styles": [
+     "final hit",
+     "gong ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "5OdaiS6F7anrJ7L5GxnZ",
+  "range": {
+   "start_ms": 0,
+   "end_ms": 14000
+  },
+  "strength": "medium",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ }
+}

@@ -1,0 +1,180 @@
+{
+ "id": "russia_hammer_and_steel",
+ "faction": "russia",
+ "role": "battle",
+ "bpm": 132,
+ "bar_s": 1.81818,
+ "why": "Ícone da Rússia, batalha: a marcha industrial; o passo de botas no tempo como assinatura, o coro masculino gritando sem palavras, metal e metais pesados, a bigorna; pelo tema da facção (Iron Directive) de referência.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "March",
+   "start_s": 7.273
+  },
+  {
+   "name": "Chant",
+   "start_s": 21.818
+  },
+  {
+   "name": "Steel",
+   "start_s": 36.363
+  },
+  {
+   "name": "Break",
+   "start_s": 50.908
+  },
+  {
+   "name": "Climax",
+   "start_s": 65.453
+  },
+  {
+   "name": "Ending",
+   "start_s": 79.998
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{marching boots stomp in perfect time, an anvil strikes on beat four, a low choir hums the dark 4-note faction motif}",
+    "duration_ms": 7273,
+    "positive_styles": [
+     "industrial metal march",
+     "marching boots stomping on every beat",
+     "deep male choir chanting wordless",
+     "heavy distorted guitars",
+     "heavy brass",
+     "anvil hits",
+     "132 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "repetitive loop",
+     "same section repeated",
+     "generic epic trailer",
+     "muddy low end",
+     "lyrics",
+     "female vocals"
+    ],
+    "conditioning_ref": {
+     "song_id": "lfQv9xgS5WOmktQNxyB3",
+     "range": {
+      "start_ms": 17000,
+      "end_ms": 47000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[March]\n{heavy guitars and drums lock with the boots, the brass blasts the motif, the choir shouts a wordless chant on the backbeat}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "boots and drums",
+     "brass motif",
+     "choir chant"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ],
+    "conditioning_ref": {
+     "song_id": "lfQv9xgS5WOmktQNxyB3",
+     "range": {
+      "start_ms": 17000,
+      "end_ms": 47000
+     }
+    },
+    "condition_strength": "medium"
+   },
+   {
+    "text": "[Chant]\n{the choir sings the motif in unison like an army, the guitars chug under it, anvils on every bar}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "army choir unison",
+     "chugging guitars",
+     "anvils"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Steel]\n{the guitars play the motif as a riff, the drums double-time, the brass answers with stabs}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "guitar riff",
+     "double-time",
+     "brass stabs"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only the boots, a distant air raid siren and a low bayan accordion playing the motif, cold, then a huge drum fill}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "sparse",
+     "boots",
+     "bayan"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{one step higher: choir, brass and guitars in unison on the motif over the boots, maximum force}",
+    "duration_ms": 14545,
+    "positive_styles": [
+     "maximum force",
+     "higher key",
+     "choir and brass unison"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the march stops on one giant unison hit}\n{the choir chord and a low gong ring out naturally; no fade-out}",
+    "duration_ms": 11273,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "reference": {
+  "song_id": "lfQv9xgS5WOmktQNxyB3",
+  "range": {
+   "start_ms": 17000,
+   "end_ms": 47000
+  },
+  "strength": "medium",
+  "chunks": [
+   0,
+   1
+  ],
+  "source": "usa_last_advance (The_Last_Advance.mp3, o tema aprovado)"
+ }
+}

@@ -1,0 +1,117 @@
+{
+ "id": "china_red_lantern",
+ "faction": "china",
+ "role": "calm",
+ "bpm": 100,
+ "bar_s": 2.4,
+ "why": "Calma 2 da China: a vigília, mais tensa; a pipa e o erhu sobre um pulso grave, a máquina de guerra se preparando.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0
+  },
+  {
+   "name": "Watch",
+   "start_s": 19.2
+  },
+  {
+   "name": "Machine",
+   "start_s": 57.6
+  },
+  {
+   "name": "Ending",
+   "start_s": 96
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a deep electronic pulse and a plucked pipa ostinato in minor pentatonic}",
+    "duration_ms": 19200,
+    "positive_styles": [
+     "modern Chinese cinematic",
+     "pipa",
+     "erhu",
+     "deep electronic pulse",
+     "low strings",
+     "taiko-like dagu drums",
+     "100 bpm, minor pentatonic"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Watch]\n{the erhu sings a tense, memorable phrase over low strings, soft dagu drums every two bars}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "erhu lead",
+     "low strings",
+     "soft drums"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Machine]\n{metallic percussion and a mechanical rhythm join, the erhu phrase repeats higher, restrained}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "mechanical rhythm",
+     "metallic percussion",
+     "restrained"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the pulse stops, the pipa plays the phrase one last time}\n{a gong rings out naturally}",
+    "duration_ms": 18400,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ },
+ "generated_at": "2026-11-06T15:29:55.485Z",
+ "seconds_planned": 114.4,
+ "seconds_wall": 10.5,
+ "credits_spent": 0,
+ "credits_left": 32132,
+ "response_headers": {
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "POST, PATCH, OPTIONS, DELETE, GET, PUT",
+  "access-control-allow-origin": "*",
+  "access-control-max-age": "600",
+  "alt-svc": "h3=\":443\"; ma=2592000",
+  "content-length": "2746662",
+  "content-type": "audio/mpeg",
+  "date": "Fri, 06 Nov 2026 15:29:44 GMT",
+  "server": "uvicorn",
+  "song-id": "4lt9pdqq5hDblvOUBI1Y",
+  "strict-transport-security": "max-age=1800;",
+  "vary": "Accept-Language",
+  "via": "1.1 google",
+  "x-region": "us-central1",
+  "x-trace-id": "ffcd62334a55d4efb2a7a6948622ee87"
+ },
+ "audio": "captures/musica/gerado/china/china_red_lantern.mp3"
+}

@@ -39,6 +39,8 @@ public:
 	void OnOrder(const TArray<uint32>& Group, EOrder Kind);
 	/** O clique que seleciona uma unidade sua (o PlayerController): fala de novo mesmo com ela já selecionada (o ZH). */
 	void OnSelectClick() { bSelectClick = true; }
+	/** (06/11, a trilha da partida, RTSMusic.h) A EVA está falando agora: a música abaixa embaixo dela. */
+	bool IsEvaSpeaking() const { return FPlatformTime::Seconds() < EvaBusyUntil; }
 
 	// UTickableWorldSubsystem
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;

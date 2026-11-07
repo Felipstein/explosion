@@ -1,0 +1,96 @@
+{
+ "id": "russia_white_silence",
+ "faction": "russia",
+ "role": "calm",
+ "bpm": 88,
+ "bar_s": 2.72727,
+ "why": "Calma 2 da Rússia: a neve e o aço; o acordeão e as cordas graves, sinos ao longe, o coro bem baixo; o motivo de 4 notas.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Snow",
+   "start_s": 21.818
+  },
+  {
+   "name": "Steel",
+   "start_s": 65.454
+  },
+  {
+   "name": "Ending",
+   "start_s": 109.09
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{distant bells in a cold wide space, a bayan accordion breathes the dark 4-note descending motif}",
+    "duration_ms": 21818,
+    "positive_styles": [
+     "dark Russian cinematic",
+     "bayan accordion",
+     "low strings",
+     "distant church bells",
+     "deep male choir pad",
+     "slow war drum",
+     "88 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix",
+     "rock",
+     "electric guitar"
+    ]
+   },
+   {
+    "text": "[Snow]\n{low strings hold long minor chords, a slow war drum every two bars, the motif on a solo cello}",
+    "duration_ms": 43636,
+    "positive_styles": [
+     "low strings",
+     "slow war drum",
+     "solo cello"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Steel]\n{a deep male choir pad hums the motif under the strings, a metallic pulse begins, restrained and cold}",
+    "duration_ms": 43636,
+    "positive_styles": [
+     "male choir pad",
+     "metallic pulse",
+     "restrained"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the bayan plays the motif one last time alone}\n{a last bell and the strings ring out naturally}",
+    "duration_ms": 20364,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

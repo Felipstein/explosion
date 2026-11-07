@@ -1,0 +1,128 @@
+{
+ "id": "gla_scorpion_road",
+ "faction": "gla",
+ "role": "battle",
+ "bpm": 126,
+ "bar_s": 1.90476,
+ "why": "Batalha da GLA: a emboscada; o riff de oud distorcido na escala hijaz, darbuka e breakbeat, o baixo industrial.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Riff",
+   "start_s": 15.238
+  },
+  {
+   "name": "Raid",
+   "start_s": 45.714
+  },
+  {
+   "name": "Break",
+   "start_s": 76.19
+  },
+  {
+   "name": "Climax",
+   "start_s": 91.428
+  },
+  {
+   "name": "Ending",
+   "start_s": 121.904
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a darbuka pattern and a ney flute call in the hijaz scale, a dusty desert wind}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "Middle Eastern industrial",
+     "distorted oud riff",
+     "darbuka and frame drums",
+     "breakbeat",
+     "industrial bass",
+     "ney flute",
+     "126 bpm, hijaz scale"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Riff]\n{a breakbeat kicks in with a distorted oud riff, short and memorable, in the hijaz scale, industrial bass}",
+    "duration_ms": 30476,
+    "positive_styles": [
+     "distorted oud riff",
+     "breakbeat",
+     "industrial bass"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Raid]\n{dirty electric guitars double the oud riff, frame drums and claps, gritty and fast}",
+    "duration_ms": 30476,
+    "positive_styles": [
+     "dirty guitars",
+     "frame drums",
+     "gritty"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Break]\n{only the darbuka and a filtered bass, a radio static texture, then a drum fill}",
+    "duration_ms": 15238,
+    "positive_styles": [
+     "sparse",
+     "tension",
+     "drum fill"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Climax]\n{everything together at full force, the ney screams the riff above the band}",
+    "duration_ms": 30476,
+    "positive_styles": [
+     "maximum intensity",
+     "ney lead",
+     "full band"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the riff ends on one unison hit}\n{the hit rings out naturally; no fade-out}",
+    "duration_ms": 11619,
+    "positive_styles": [
+     "final hit",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}

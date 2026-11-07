@@ -1,0 +1,93 @@
+{
+ "id": "usa_overwatch",
+ "faction": "usa",
+ "role": "calm",
+ "bpm": 100,
+ "bar_s": 2.4,
+ "why": "Calma da USA: a vigilância por satélite; pulso de sintetizador, guitarra limpa com eco, cordas graves e caixa militar de leve.",
+ "model_id": "music_v2_5",
+ "seed": 1,
+ "sections": [
+  {
+   "name": "Intro",
+   "start_s": 0.0
+  },
+  {
+   "name": "Theme",
+   "start_s": 19.2
+  },
+  {
+   "name": "Lift",
+   "start_s": 57.6
+  },
+  {
+   "name": "Ending",
+   "start_s": 96.0
+  }
+ ],
+ "composition_plan": {
+  "chunks": [
+   {
+    "text": "[Intro]\n{a precise synth pulse like a radar sweep, a clean electric guitar with delay plays a short heroic motif}",
+    "duration_ms": 19200,
+    "positive_styles": [
+     "modern military cinematic",
+     "synth pulse",
+     "clean electric guitar with delay",
+     "low strings",
+     "light military snare",
+     "soft brass",
+     "100 bpm, minor key"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "spoken words",
+     "female vocals",
+     "pop",
+     "EDM drop",
+     "lo-fi",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Theme]\n{low strings and a light military snare join, soft French horns state the motif}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "low strings",
+     "light snare",
+     "soft horns"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Lift]\n{the motif rises one step, the pulse gets busier, still calm and controlled}",
+    "duration_ms": 38400,
+    "positive_styles": [
+     "controlled growth",
+     "busier pulse"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix"
+    ]
+   },
+   {
+    "text": "[Ending]\n{the guitar alone plays the motif}\n{a soft low brass chord rings out naturally}",
+    "duration_ms": 18400,
+    "positive_styles": [
+     "quiet ending",
+     "natural ring-out"
+    ],
+    "negative_styles": [
+     "lyrics",
+     "muddy mix",
+     "fade out",
+     "abrupt cut"
+    ]
+   }
+  ]
+ }
+}
