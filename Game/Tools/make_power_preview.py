@@ -161,9 +161,12 @@ else if (shape == 1)
 		STROKE(sd, 1.3, 1.0);
 		int rows = max(1, (int)round(Pe.x));
 		float rw = 2.0 * W / rows;
-		for (int k = 1; k < rows && k < 8; ++k)
+		[unroll] for (int k = 1; k < 8; ++k)
 		{
-			STROKE(c - (-W + rw * k), 0.6, 0.7 * inside * DASH(a, 12.0 * px, 0.5));
+			if (k < rows)
+			{
+				STROKE(c - (-W + rw * k), 0.6, 0.7 * inside * DASH(a, 12.0 * px, 0.5));
+			}
 		}
 		// cada fileira: a fileira de impactos no eixo e as setas correndo no sentido do voo (4 na faixa, 9 m/s)
 		float cc = c - ((floor((c + W) / rw) + 0.5) * rw - W);
@@ -192,8 +195,10 @@ else if (shape == 2)
 	float best = 1e9;
 	float sAt = 0.0;
 	float acc = 0.0;
-	for (int k = 0; k + 1 < cnt && k < 23; ++k)
+	// (06/11) desenrolado: com o índice variável a lista ia pra memória lenta da placa (1,69 ms no ProfileGPU, o vídeo mira_custo_v1)
+	[unroll] for (int k = 0; k < 23; ++k)
 	{
+		if (k + 1 >= cnt) { continue; }
 		float4 E0 = QA[k / 2];
 		float4 E1 = QA[(k + 1) / 2];
 		float2 A = (k % 2 == 0) ? E0.xy : E0.zw;
@@ -236,15 +241,20 @@ else if (shape == 3)
 	{
 		float4 DA[5] = { D0, D1, D2, D3, D4 };
 		int nd = (int)round(Pe.z);
-		for (int k = 0; k < nd && k < 10; ++k)
+		// (06/11, os poderes) o raio do anel de cada ponto: o de sempre (1,6 m) ou o que a mira manda no Pe.y (o Tornado-S: o dano cheio
+		// do foguete); o pulso fecha de 3x (o de sempre) ou de 1,4x (o anel grande)
+		float Rd = Pe.y > 1.0 ? Pe.y : 160.0;
+		float Rp = Rd > 300.0 ? Rd * 1.4 : Rd * 3.0;
+		[unroll] for (int k = 0; k < 10; ++k)
 		{
+			if (k >= nd) { continue; }
 			float4 E = DA[k / 2];
 			float2 P0 = (k % 2 == 0) ? E.xy : E.zw;
 			float dd = length(p - P0);
 			float ph = frac(T / 1.2 + k * 0.137);
-			STROKE(dd - 160.0, 1.0, 1.0);
+			STROKE(dd - Rd, 1.0, 1.0);
 			STROKE(dd, 1.7, 1.0);
-			beam = max(beam, AA(dd - lerp(480.0, 160.0, ph), 0.9) * ph * 0.8);
+			beam = max(beam, AA(dd - lerp(Rp, Rd, ph), 0.9) * ph * 0.8);
 		}
 	}
 }
@@ -278,8 +288,9 @@ int na = (int)round(Pe.w);
 if (valid && na > 0)
 {
 	float4 UA[16] = { U0, U1, U2, U3, U4, U5, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15 };
-	for (int k = 0; k < na && k < 16; ++k)
+	[unroll] for (int k = 0; k < 16; ++k)
 	{
+		if (k >= na) { continue; }
 		float2 q = p - UA[k].xy;
 		float r = length(q);
 		float Ru = max(UA[k].z, 50.0);

@@ -46,6 +46,12 @@ profundidade, [realtimevfx](https://realtimevfx.com/t/found-an-easy-way-to-creat
 - O C++ (`RTSPowerPreview.cpp`, `Upload`) passa os números da forma a cada quadro (o centro, o raio, a direção, os 24 pontos do
   traçado, os 10 da queda, os 16 afetados, o plano do chão, a escala). Sem mira, o peso do pós-processo vai a 0 e ele não roda.
 - A interface (`FSpec`, `Show`, `Hide`) ficou igual: a sessão dos poderes e a das superarmas não mudam nada.
+- **O custo na placa (GTX 1660, 1600×900, Ultra; o ProfileGPU pela cena `mira_custo`):** só enquanto mira (sem mira o peso do
+  pós-processo é 0 e ele não roda). A 1ª medida (`captures/game/mira_custo_v1`): 0,15 ms na maioria das formas e 1,69 ms numa delas
+  (4% do quadro de ~39 ms): os laços do traçado, da queda e dos afetados liam as listas com o índice variável (a placa joga isso pra
+  memória lenta). Desenrolados (`[unroll]`, o índice fixo em cada volta), a 2ª medida, forma por forma (`captures/game/mira_custo_v2`,
+  o ProfileGPU a cada 2,5 s com a foto de cada um): **0,15 ms** em todas as formas (o círculo, a faixa, a queda, o alvo, a órbita, os
+  olhos) e **0,32 a 0,47 ms** no traçado livre da muralha (a distância aos 23 trechos em cada pixel), menos de 1,2% do quadro.
 - **Teste:** `game.ps1 view -Folder <pasta> -Scenario mira_poderes -Extra '-RTSPowerPreviewAt=-262,-326' -Record` (as 6 formas,
   2,5 s cada, em 3 voltas: a válida; a válida com o apoio acendendo os 3 tanques dentro e os olhos no lugar da órbita; a inválida).
   **O fluxo de verdade, provado (06/11, `captures/game/mira_conserto_v3`):** a cena `mira_conserto_cursores` mira o Emergency Repair

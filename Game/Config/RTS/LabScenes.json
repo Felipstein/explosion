@@ -27651,6 +27651,222 @@
     }
    ]
   }
+ },
+ {
+  "name": "mira_custo",
+  "about": "(06/11, a sessão Cursores) O custo da mira dos poderes na placa: a cena mira_poderes com o ProfileGPU a cada 2,5 s dos 5 aos 25 s, com a foto logo depois (qual forma estava na tela) (o tempo do passe M_PowerPreview no log, em LogRHI). Rodar SEM gravar: game.ps1 view -Folder X -Scenario mira_custo -Extra '-RTSPowerPreviewAt=-262,-326'",
+  "map": "World_TestSalt2",
+  "seed": 28,
+  "fog": "off",
+  "hud": true,
+  "starts_m": [
+   [
+    -292.86,
+    -307.51
+   ],
+   [
+    -249.26,
+    -398.06
+   ]
+  ],
+  "units_per_player": [],
+  "units": [
+   {
+    "player": 0,
+    "key": "usa_power_plant",
+    "at_m": [
+     -273.76,
+     -317.59
+    ],
+    "facing_deg": -90.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -252.0,
+     -334.0
+    ],
+    "facing_deg": -60.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -266.0,
+     -342.0
+    ],
+    "facing_deg": -100.0
+   },
+   {
+    "player": 0,
+    "key": "usa_stryker",
+    "at_m": [
+     -248.0,
+     -318.0
+    ],
+    "facing_deg": -30.0
+   },
+   {
+    "player": 0,
+    "key": "usa_mbt",
+    "at_m": [
+     -232.0,
+     -340.0
+    ],
+    "facing_deg": -80.0
+   },
+   {
+    "player": 1,
+    "key": "gla_technical",
+    "at_m": [
+     -249.26,
+     -440.0
+    ],
+    "facing_deg": 90.0
+   }
+  ],
+  "orders": [],
+  "camera": {
+   "focus_m": [
+    -262.0,
+    -326.0
+   ],
+   "distance_m": 95,
+   "yaw_deg": 20.0,
+   "pitch_deg": 50.0
+  },
+  "end_s": 30.0,
+  "lab": {
+   "panel": false,
+   "tab": "spawn",
+   "ground_base": "map",
+   "ops": [
+    {
+     "t_s": 0.0,
+     "op": "camera",
+     "focus_m": [
+      -262.0,
+      -326.0
+     ],
+     "distance_m": 95,
+     "yaw_deg": 20.0,
+     "pitch_deg": 50.0
+    },
+    {
+     "t_s": 0.0,
+     "op": "sun",
+     "elevation": 24,
+     "azimuth": 338
+    },
+    {
+     "t_s": 0.0,
+     "op": "ai",
+     "player": 1,
+     "on": false
+    },
+    {
+     "t_s": 5.0,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 5.05,
+     "op": "shot",
+     "name": "p0",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 7.5,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 7.55,
+     "op": "shot",
+     "name": "p1",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 10.0,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 10.05,
+     "op": "shot",
+     "name": "p2",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 12.5,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 12.55,
+     "op": "shot",
+     "name": "p3",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 15.0,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 15.05,
+     "op": "shot",
+     "name": "p4",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 17.5,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 17.55,
+     "op": "shot",
+     "name": "p5",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 20.0,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 20.05,
+     "op": "shot",
+     "name": "p6",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 22.5,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 22.55,
+     "op": "shot",
+     "name": "p7",
+     "after_real_s": 0.0
+    },
+    {
+     "t_s": 25.0,
+     "op": "exec",
+     "command": "ProfileGPU"
+    },
+    {
+     "t_s": 25.05,
+     "op": "shot",
+     "name": "p8",
+     "after_real_s": 0.0
+    }
+   ]
+  },
+  "shots_s": []
  }
  ]
 }
